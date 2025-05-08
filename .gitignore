@@ -1,0 +1,178 @@
+# -----------------
+# OS-specific files
+# -----------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*.~lock.*
+*.swp
+*.swo
+*~
+
+# -----------------
+# Application-specific files
+# -----------------
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.egg
+*.egg-info/
+dist/
+build/
+env/
+venv/
+.idea/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# C/C++
+*.o
+*.out
+*.obj
+*.exe
+*.gch
+*.so
+*.dll
+
+# R
+.Rhistory
+.Rapp.history
+.Rproj.user/
+
+# Go
+bin/
+*.test
+*.exe
+
+# Rust
+/target/
+
+# Ruby
+*.gem
+*.rbc
+.ruby-version
+.ruby-gemset
+.rvmrc
+
+# JavaScript/TypeScript
+coverage/
+*.log
+
+# PHP
+vendor/
+*.phpunit.result.cache
+.php_cs.cache
+
+# -----------------
+# IDEs and editors
+# -----------------
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+out/
+
+# Eclipse
+.metadata/
+bin/
+tmp/
+
+# NetBeans
+nbproject/private/
+build/
+dist/
+
+# -----------------
+# Others
+# -----------------
+
+# Logs
+*.log
+*.out
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+temp.md
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# EXCEPT allow images in ...
+!images/*.png
+
+# Backup and generated files
+*.bak
+*.old
+*.orig
+*.rej
+
+# Libraries
+lib/
+libs/
+
+# -----------------
+# Custom additions
+# -----------------
+
+experiments/*/raw_data/
+experiments/*/plate_map.csv
+experiments/*/outputs/
+**/batch_results/
+**/progress_status_*.yaml
+**/summary.yaml
+
+# uv lockfile (optional if you prefer to commit it)
+uv.lock
+
+# Ignore PyTorch (or similar) model files
+*.pt
+
+# Ignore specific file types
+*.env
+*.key
