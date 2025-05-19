@@ -160,7 +160,7 @@ libs/
 # Custom additions
 # -----------------
 
-experiments/*/raw_data/
+experiments/
 experiments/*/plate_map.csv
 experiments/*/outputs/
 **/batch_results/
