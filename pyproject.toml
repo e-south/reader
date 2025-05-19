@@ -1,0 +1,34 @@
+[build-system]
+requires      = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "reader"
+version         = "0.1.0"
+description     = "Lab instrumentation data pipeline"
+readme          = "README.md"
+requires-python = ">=3.11"
+authors         = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
+
+dependencies = [
+  "pandas",
+  "pydantic",
+  "click",
+  "openpyxl",
+  "seaborn",
+  "pyyaml>=6.0.2",
+]
+
+[project.scripts]
+reader = "reader.main:cli"
+
+# uv-specific section
+[tool.uv]
+dev-dependencies = ["pytest", "ruff"]
+
+# `package = true` is OPTIONAL here.
+
+# Uncomment only if you ever want to *disable* packaging or
+# turn off editable mode via CLI flags, e.g.:
+# package = true        # boolean, not a table
+# no-editable = true    # install as a wheel

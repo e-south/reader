@@ -167,8 +167,9 @@ experiments/*/outputs/
 **/progress_status_*.yaml
 **/summary.yaml
 
-# uv lockfile (optional if you prefer to commit it)
-uv.lock
+# uv / virtual-env
+# uv.lock
+.venv/
 
 # Ignore PyTorch (or similar) model files
 *.pt
