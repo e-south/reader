@@ -177,3 +177,4 @@ experiments/*/outputs/
 # Ignore specific file types
 *.env
 *.key
+experiments/

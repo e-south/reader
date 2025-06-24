@@ -1,42 +1,40 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
+reader/plotters/time_series.py
 
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
+from __future__ import annotations
+
 import re
 import math
 import warnings
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-warnings.filterwarnings(
-    "ignore",
-    message="The markers list has more values",
-    category=UserWarning
-)
-warnings.filterwarnings(
-    "ignore",
-    message="Glyph.*missing from font",
-    category=UserWarning
-)
+from reader.utils.plot_style import PaletteBook
+
+__all__ = ["plot_time_series"]
 
 
 def plot_time_series(
     df: pd.DataFrame,
     blanks: pd.DataFrame,
     output_dir: Union[str, Path],
+    *,
+    channels: Optional[List[str]] = None,
     x: str,
-    y: List[str] | str,
+    y: Optional[Union[List[str], str]] = None,
     hue: str,
-    groupby_col: Optional[str] = None,
+    groupby: Optional[str] = None,
     subplots: Optional[str] = None,
     groups: Optional[List[Dict[str, List[str]]]] = None,
     iterate_genotypes: bool = False,
@@ -45,87 +43,83 @@ def plot_time_series(
     channel_col: str = "channel",
     value_col: str = "value",
     add_sheet_line: bool = False,
-    log_transform: List[str] | bool = False,
-):
-    """
-    Plot time series with optional log2 transform on a selected subset of channels.
-
-    Parameters
-    ----------
-    df : DataFrame of measurements
-    blanks : DataFrame of blanks (unused here)
-    output_dir : output directory path
-    x : column name for the x-axis (e.g. 'time')
-    y : one or more channels to plot
-    hue : column name for grouping/hue
-    subplots : 'group' for per-group panels, else single per channel
-    groups : list of {group_name: [values]} to facet by group
-    add_sheet_line : whether to draw vertical separators at sheet transitions
-    log_transform : list of channel names to log2-transform, or False
-    """
+    log_transform: Union[List[str], bool] = False,
+    time_window: Optional[List[float]] = None,
+    palette_book: Optional[PaletteBook] = None,
+    **_kwargs,
+) -> None:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # ensure y is a list
-    ys = y if isinstance(y, list) else [y]
-    dpi = fig_kwargs.get("dpi", 300) if fig_kwargs else 300
+    # ─── time window filter ─────────────────────────────────────────────
+    if time_window is not None:
+        try:
+            start, end = time_window
+            df = df[df[x].between(start, end)]
+            blanks = blanks[blanks[x].between(start, end)]
+        except Exception:
+            warnings.warn(f"Invalid time_window: {time_window}, skipping filter.")
 
-    # prepare style & palette
-    sns.set_style(fig_kwargs.get("seaborn_style", "ticks") if fig_kwargs else "ticks")
-    base_pal = fig_kwargs.get("palette", "colorblind") if fig_kwargs else "colorblind"
-    levels = sorted(df[hue].dropna().unique())
-    pal = dict(zip(levels, sns.color_palette(base_pal, len(levels))))
+    # ─── determine y-columns ────────────────────────────────────────────
+    if y is None:
+        if channels is None:
+            raise ValueError("Must supply either 'y' or 'channels' for time_series")
+        ys = channels
+    else:
+        ys = [y] if isinstance(y, str) else y
 
-    # markers
+    # ─── style & rc ────────────────────────────────────────────────────
+    fig_kwargs = fig_kwargs or {}
+    rc = fig_kwargs.get("rc", {})
+    dpi = fig_kwargs.get("dpi", 300)
+    sns.set_style(fig_kwargs.get("seaborn_style", "ticks"), rc=rc)
+
+    # ─── sheet transition lines ─────────────────────────────────────────
     base_markers = ["o", "s", "^", "X", "D", "P", "*"]
-    repeat = math.ceil(len(levels) / len(base_markers))
-    markers = (base_markers * repeat)[: len(levels)]
-
-    # compute sheet transitions
     transitions: List[float] = []
     if add_sheet_line and "sheet" in df.columns:
         mins = df.groupby("sheet")[x].min().sort_index()
         transitions = mins.iloc[1:].tolist()
 
-    # interpret log_transform param
     log_list = log_transform if isinstance(log_transform, list) else []
 
+    # ─── helper to size subplots ───────────────────────────────────────
     def get_figsize(n: int) -> tuple[float, float]:
         cols = min(3, n)
         rows = math.ceil(n / cols)
-        if fig_kwargs and "figsize" in fig_kwargs:
-            return tuple(fig_kwargs["figsize"])
-        return (5 * cols, 4 * rows)
+        return tuple(fig_kwargs.get("figsize", (5 * cols, 4 * rows)))
 
     def _numeric_prefix(s: str) -> float:
-        m = re.match(r"^(\d+)", s)
+        m = re.match(r"^(\d+\.?\d*)", str(s))
         return float(m.group(1)) if m else float("inf")
 
-    def style(ax: plt.Axes, col: str, data_sub: pd.DataFrame):
-        try:
-            ax.set_box_aspect(1)
-        except Exception:
-            ax.set_aspect("equal", adjustable="box")
-        vals = data_sub[value_col]
-        if not vals.empty:
-            ax.set_ylim(vals.min(), vals.max())
+    # ─── styling for each panel ────────────────────────────────────────
+    def style(ax: plt.Axes, col: str, subdf: pd.DataFrame):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.set_xlabel(x, fontweight="bold")
+        ax.set_xlabel("Time (h)", fontweight="bold")
         ylabel = f"log2({col})" if col in log_list else col
         ax.set_ylabel(ylabel, fontweight="bold")
+        vals = subdf[value_col]
+        if not vals.empty:
+            ax.set_ylim(vals.min(), vals.max())
 
     def mark(ax: plt.Axes):
         for t in transitions:
             ax.axvline(t, color="gray", linestyle="--", linewidth=1)
 
-    # -------------------------------------------------------------------------
-    # plotting: grouped subplots?
-    # -------------------------------------------------------------------------
-    if subplots == "group" and groups and groupby_col:
+    # ─── FACETED BY GROUP ───────────────────────────────────────────────
+    if subplots == "group" and groups and groupby:
         for grp_map in groups:
             name, vals = next(iter(grp_map.items()))
-            subdf = df[df[groupby_col].isin(vals)]
+            subdf = df[df[groupby].isin(vals)]
+            levels = sorted(subdf[hue].dropna().unique())
+            pal = (
+                palette_book(levels, key=f"time_series/{name}")
+                if palette_book
+                else dict(zip(levels, sns.color_palette(fig_kwargs.get("palette", "colorblind"), len(levels))))
+            )
+            markers = (base_markers * math.ceil(len(levels) / len(base_markers)))[: len(levels)]
             n = len(ys)
 
             fig, axes = plt.subplots(
@@ -135,33 +129,26 @@ def plot_time_series(
                 dpi=dpi,
                 constrained_layout=True,
             )
-            axes_flat = axes.flatten() if hasattr(axes, "flatten") else [axes]
+            axes_flat = axes.flatten()
 
             for i, col in enumerate(ys):
                 ax = axes_flat[i]
-                data_sub = subdf[subdf[channel_col] == col].copy()
-
-                # optionally transform
+                dsub = subdf[subdf[channel_col] == col].copy()
                 if col in log_list:
-                    data_sub[value_col] = np.log2(data_sub[value_col].astype(float))
+                    dsub[value_col] = np.log2(dsub[value_col].astype(float))
 
                 sns.lineplot(
-                    data=data_sub,
+                    data=dsub,
                     x=x,
                     y=value_col,
                     hue=hue,
                     palette=pal,
                     estimator="mean",
-                    errorbar=("ci", 95),
+                    errorbar="sd",
                     ax=ax,
                     legend=False,
                 )
-
-                pts = (
-                    data_sub.groupby([x, hue])[value_col]
-                    .mean()
-                    .reset_index()
-                )
+                pts = dsub.groupby([x, hue])[value_col].mean().reset_index()
                 if col in log_list:
                     pts[value_col] = np.log2(pts[value_col].astype(float))
 
@@ -173,71 +160,60 @@ def plot_time_series(
                     style=hue,
                     palette=pal,
                     markers=markers,
-                    legend=(i == n - 1),
+                    legend=(i == 0),
                     ax=ax,
                     s=30,
-                    alpha=0.5,
+                    alpha=0.6,
                 )
 
-                style(ax, col, data_sub)
+                style(ax, col, dsub)
                 if add_sheet_line:
                     mark(ax)
 
-                if i == n - 1:
-                    handles, labels = ax.get_legend_handles_labels()
-                    pairs = list(zip(labels, handles))
-                    pairs.sort(key=lambda lh: _numeric_prefix(lh[0]))
-                    sorted_labels, sorted_handles = zip(*pairs) if pairs else (labels, handles)
-                    ax.legend(
-                        sorted_handles,
-                        sorted_labels,
-                        loc="upper left",
-                        frameon=False,
-                        fontsize="small",
-                    )
+                if i == 0:
+                    handles, labs = ax.get_legend_handles_labels()
+                    pairs = sorted(zip(labs, handles), key=lambda lh: _numeric_prefix(lh[0]))
+                    if pairs:
+                        lbls, hnds = zip(*pairs)
+                        ax.legend(hnds, lbls, loc="upper left", frameon=False, fontsize="small")
 
             for ax in axes_flat[n:]:
                 ax.axis("off")
 
-            fig.suptitle(f"Group: {name}", fontweight="bold")
+            fig.suptitle(name, fontweight="bold")
             out_file = filename or f"time_series_grouped_{name}.pdf"
             fig.savefig(out / out_file, dpi=dpi, bbox_inches="tight")
             plt.close(fig)
 
-    # -------------------------------------------------------------------------
-    # plotting: single panel per y
-    # -------------------------------------------------------------------------
+    # ─── SINGLE-PANEL FALLBACK ──────────────────────────────────────────
     else:
         for col in ys:
-            fig, ax = plt.subplots(
-                1,
-                1,
-                figsize=get_figsize(len(ys)),
-                dpi=dpi,
-                constrained_layout=True,
+            subdf = df[df[channel_col] == col]
+            levels = sorted(subdf[hue].dropna().unique())
+            pal = (
+                palette_book(levels, key=f"time_series/{col}")
+                if palette_book
+                else dict(zip(levels, sns.color_palette(fig_kwargs.get("palette", "colorblind"), len(levels))))
             )
-            data_sub = df[df[channel_col] == col].copy()
+            markers = (base_markers * math.ceil(len(levels) / len(base_markers)))[: len(levels)]
 
+            fig, ax = plt.subplots(1, 1, figsize=get_figsize(len(ys)), dpi=dpi, constrained_layout=True)
+            dsub = subdf.copy()
             if col in log_list:
-                data_sub[value_col] = np.log2(data_sub[value_col].astype(float))
+                dsub[value_col] = np.log2(dsub[value_col].astype(float))
 
             sns.lineplot(
-                data=data_sub,
+                data=dsub,
                 x=x,
                 y=value_col,
                 hue=hue,
                 palette=pal,
                 estimator="mean",
-                errorbar=("ci", 95),
+                errorbar="sd",
                 ax=ax,
                 legend=False,
             )
-
-            pts = (
-                data_sub.groupby([x, hue])[value_col]
-                .mean()
-                .reset_index()
-            )
+            pts = dsub.groupby([x, hue])[value_col].mean().reset_index()
             if col in log_list:
                 pts[value_col] = np.log2(pts[value_col].astype(float))
 
@@ -252,24 +228,18 @@ def plot_time_series(
                 legend=True,
                 ax=ax,
                 s=30,
-                alpha=0.5,
+                alpha=0.6,
             )
 
-            style(ax, col, data_sub)
+            style(ax, col, dsub)
             if add_sheet_line:
                 mark(ax)
 
-            handles, labels = ax.get_legend_handles_labels()
-            pairs = list(zip(labels, handles))
-            pairs.sort(key=lambda lh: _numeric_prefix(lh[0]))
-            sorted_labels, sorted_handles = zip(*pairs) if pairs else (labels, handles)
-            ax.legend(
-                sorted_handles,
-                sorted_labels,
-                loc="upper left",
-                frameon=False,
-                fontsize="small",
-            )
+            handles, labs = ax.get_legend_handles_labels()
+            pairs = sorted(zip(labs, handles), key=lambda lh: _numeric_prefix(lh[0]))
+            if pairs:
+                lbls, hnds = zip(*pairs)
+                ax.legend(hnds, lbls, loc="upper left", frameon=False, fontsize="small")
 
             out_file = filename or f"time_series_{col}.pdf"
             fig.savefig(out / out_file, dpi=dpi, bbox_inches="tight")
