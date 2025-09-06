@@ -41,12 +41,28 @@ def _sort_treatments(labels: List[str]) -> List[str]:
     return sorted(labels, key=key)
 
 
+def _make_square(ax: plt.Axes) -> None:
+    """
+    Prefer Matplotlib's box-aspect (keeps the drawing box square without
+    touching data scaling). Fall back to 'equal' aspect on older Matplotlib.
+    """
+    set_box_aspect = getattr(ax, "set_box_aspect", None)
+    if callable(set_box_aspect):
+        set_box_aspect(1)  # 1:1 panel – square subplot
+    else:  # pragma: no cover (legacy)
+        try:
+            ax.set_aspect("equal", adjustable="box")
+        except Exception:
+            # If backend/layout cannot honor aspect, quietly skip.
+            pass
+
+
 def plot_snapshot_multi_feature(
     df: pd.DataFrame,
-    blanks: pd.DataFrame,
+    blanks: pd.DataFrame,  # unused – kept for API symmetry
     output_dir: Union[str, Path],
     *,
-    channels: Optional[List[str]] = None,
+    channels: Optional[List[str]] = None,  # retained for API compatibility
     x: str,
     y: Union[str, List[str]],
     hue: str,
@@ -84,7 +100,9 @@ def plot_snapshot_multi_feature(
         figsize = tuple(fig_kwargs.get("figsize", [5 * cols, 4 * rows]))
         dpi = fig_kwargs.get("dpi", 300)
 
-        fig, axes = plt.subplots(rows, cols, figsize=figsize, dpi=dpi, constrained_layout=True)
+        fig, axes = plt.subplots(
+            rows, cols, figsize=figsize, dpi=dpi, constrained_layout=True
+        )
         axes_flat = axes.flatten() if hasattr(axes, "flatten") else [axes]
 
         for idx, metric in enumerate(metrics):
@@ -92,8 +110,10 @@ def plot_snapshot_multi_feature(
             data_all = subdf[subdf["channel"] == metric]
             if data_all.empty:
                 ax.axis("off")
+                _make_square(ax)  # keep grid cells consistently square
                 continue
 
+            # Use nearest available time to requested 'time'
             sel_t = data_all.loc[(data_all["time"] - time).abs().idxmin(), "time"]
             sel_data = data_all[data_all["time"] == sel_t]
 
@@ -126,13 +146,22 @@ def plot_snapshot_multi_feature(
                 zorder=10,
             )
 
+            # Square panel (1:1 drawing box) — does not change figure size/DPI
+            _make_square(ax)
+
             ax.spines[["top", "right"]].set_visible(False)
             ax.set_ylabel(metric, fontweight="bold")
             ax.set_xlabel("")
             ax.set_xticklabels(treatments, rotation=45, ha="right")
 
+        # Turn off any unused axes and still keep squares for consistent layout
         for extra in axes_flat[len(metrics):]:
             extra.axis("off")
+            _make_square(extra)
+
+        # Safety net: enforce square on any axes created upstream
+        for ax in fig.axes:
+            _make_square(ax)
 
         fig.suptitle(f"{name}  (t ≈ {time:.2f} h)", fontweight="bold")
         out_file = filename or f"grouped_bar_by_group_{name}.pdf"

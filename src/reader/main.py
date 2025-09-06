@@ -30,7 +30,7 @@ import yaml
 
 from reader.utils.plot_style import PaletteBook
 from reader.utils.prune_config import _prune_empty_config_elements 
-from reader.config import ReaderCfg, CustomParameter
+from reader.config import ReaderCfg, CustomParameter, normalize_plot_params
 from reader.parsers.raw import ensure_all_parsers_imported, get_raw_parser
 from reader.parsers import parse_plate_map
 from reader.processors.custom_params import apply_custom_parameters
@@ -146,9 +146,16 @@ def generate_plots(df, blanks, cfg: ReaderCfg):
         mod = import_module(f"reader.plotters.{spec.module}")
         plot_fn = getattr(mod, f"plot_{spec.module}")
 
-        kws = deepcopy(spec.params)
-        kws.setdefault("channels", dft.channels)
-        kws.setdefault("groups",   spec.groups or dft.groups)
+        # Validate/normalize module params (typed for logic_symmetry)
+        kws = normalize_plot_params(spec)
+
+        # Only attach common defaults when the plot actually expects them.
+        # (Many plots do, but 'logic_symmetry' does not need channels/groups.)
+        if "channels" not in kws:
+            kws.setdefault("channels", dft.channels)
+        if "groups" not in kws:
+            kws.setdefault("groups",   spec.groups or dft.groups)
+
         kws["palette_book"] = palette_book
 
         plot_fn(

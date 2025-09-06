@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore", category=FutureWarning, message="errwidth")
 
 # ────────────────────────────── helpers ───────────────────────────────────────
 
+
 def _closest_time(df: pd.DataFrame, ch: str, tgt: float) -> float:
     """Return the available time-point closest to *tgt* for channel *ch*."""
     avail = df.loc[df["channel"] == ch, "time"].unique()
@@ -65,7 +66,24 @@ def _sanitize_time(t: float) -> str:
     return token.replace(".", "p") or "0"
 
 
+def _make_square(ax: plt.Axes) -> None:
+    """
+    Prefer Matplotlib's box-aspect (keeps the drawing box square without touching
+    data scaling). Fall back to 'equal' aspect on older Matplotlib.
+    """
+    set_box_aspect = getattr(ax, "set_box_aspect", None)
+    if callable(set_box_aspect):
+        set_box_aspect(1)  # 1:1 panel – square subplot
+    else:  # pragma: no cover (legacy)
+        try:
+            ax.set_aspect("equal", adjustable="box")
+        except Exception:
+            # Last-resort: ignore if backend cannot honor aspect in this layout
+            pass
+
+
 # ─────────────────────────────── main ────────────────────────────────────────
+
 
 def plot_snapshot_multi_genotype(
     df: pd.DataFrame,
@@ -91,6 +109,8 @@ def plot_snapshot_multi_genotype(
     * If the actual data lack that exact time-point the nearest available value
       is plotted, and a warning is issued, but the filename still reflects the
       requested snapshot.
+    * Each small axis (genotype panel) is constrained to a 1:1 box aspect so it
+      appears square without changing figure size or DPI.
     """
 
     out = Path(output_dir)
@@ -133,7 +153,9 @@ def plot_snapshot_multi_genotype(
                     & (df["time"] == sel_t)
                     & (df["channel"] == ycol),
                     hue,
-                ].dropna().unique(),
+                ]
+                .dropna()
+                .unique(),
                 key=_numeric_prefix,
             )
 
@@ -144,7 +166,9 @@ def plot_snapshot_multi_genotype(
                 else dict(
                     zip(
                         grp_treats,
-                        sns.color_palette(fig_kwargs.get("palette", "colorblind"), len(grp_treats)),
+                        sns.color_palette(
+                            fig_kwargs.get("palette", "colorblind"), len(grp_treats)
+                        ),
                     )
                 )
             )
@@ -155,6 +179,7 @@ def plot_snapshot_multi_genotype(
             first_ax: Optional[plt.Axes] = None
             for si, geno in enumerate(genos):
                 ax = fig.add_subplot(inner[0, si], sharey=first_ax or None)
+
                 slab = df[
                     (df["genotype"] == geno)
                     & (df["time"] == sel_t)
@@ -162,6 +187,7 @@ def plot_snapshot_multi_genotype(
                 ]
                 if slab.empty:
                     ax.set_axis_off()
+                    _make_square(ax)  # keep grid consistent even if off
                     continue
 
                 treats_here = [t for t in grp_treats if t in slab[hue].unique()]
@@ -195,6 +221,9 @@ def plot_snapshot_multi_genotype(
                     ax=ax,
                 )
 
+                # Square panel (1:1 drawing box) — does not change figure size/DPI
+                _make_square(ax)
+
                 ax.set_ylim(0, ymax)
                 ax.spines[["top", "right"]].set_visible(False)
                 ax.set_xlabel("")
@@ -212,6 +241,10 @@ def plot_snapshot_multi_genotype(
                     lbl.set_ha("right")
 
                 first_ax = first_ax or ax
+
+        # As a safety net, enforce square panels on any axes created upstream
+        for ax in fig.axes:
+            _make_square(ax)
 
         # ────────── save figure ──────────
         if filename is None:

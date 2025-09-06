@@ -26,7 +26,7 @@ __all__ = ["plot_snapshot_heatmap"]
 # ───────────────────────────── helpers ─────────────────────────────────────
 
 def _closest_time(df: pd.DataFrame, ch: str, tgt: float) -> float:
-    """Return the available time‑point closest to *tgt* for channel *ch*."""
+    """Return the available time-point closest to *tgt* for channel *ch*."""
     avail = df.loc[df["channel"] == ch, "time"].unique()
     if len(avail) == 0:
         raise ValueError(f"No data for channel {ch!r}")
@@ -34,7 +34,7 @@ def _closest_time(df: pd.DataFrame, ch: str, tgt: float) -> float:
 
 
 def _sanitize_time(t: float) -> str:
-    """Return filename‑safe token (e.g. 1.25 → "1p25")."""
+    """Return filename-safe token (e.g. 1.25 → "1p25")."""
     tok = f"{t:g}".rstrip("0").rstrip(".")
     return tok.replace(".", "p") or "0"
 

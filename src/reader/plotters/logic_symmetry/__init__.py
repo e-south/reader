@@ -1,11 +1,12 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
-reader/parsers/__init__.py
+src/reader/plotters/logic_symmetry/__init__.py
 
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
-from .raw import get_raw_parser, ensure_all_parsers_imported
-from .plate_map import parse_plate_map
+from .main import plot_logic_symmetry
+
+__all__ = ["plot_logic_symmetry"]

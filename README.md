@@ -84,9 +84,6 @@ $ reader list
 001_2025‑05‑12_biosensor_panel_M9_glu …
 ```
 
-
-
-
 #### Minimal config example (`config.yaml`)
 
 ```yaml
