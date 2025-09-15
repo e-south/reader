@@ -186,6 +186,12 @@ def run_pipeline(cfg_path: Path):
 
     tidy.to_csv(cfg.output.dir / "tidy_data.csv", index=False)
     
+    # (Optional) sfxi_ingest_prep (if configured in yaml)
+    sfxi_cfg = cfg.xform("sfxi_ingest_prep")
+    if sfxi_cfg:
+        from reader.processors.sfxi_ingest_prep import run_sfxi_ingest_prep
+        run_sfxi_ingest_prep(tidy, sfxi_cfg, cfg.output.dir)
+    
     fc_cfg = cfg.xform("fold_change")
     if fc_cfg:
         tidy = apply_fold_change(tidy, fc_cfg, out_dir=cfg.output.dir)

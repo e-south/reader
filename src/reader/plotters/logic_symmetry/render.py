@@ -7,6 +7,7 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,8 +31,14 @@ class VisualConfig:
     color: str
     annotate_designs: bool = False
     design_label_col: Optional[str] = None
-    label_fontsize: int = 9
+    label_fontsize: int = 12
     label_offset: float = 0.02
+
+    # Global font sizing knobs
+    axis_label_fontsize: int = 16
+    tick_label_fontsize: int = 14
+    title_fontsize: int = 18
+    legend_fontsize: int = 12
 
 
 def _color_map_for_hue(series: pd.Series) -> Dict[object, str]:
@@ -49,11 +56,39 @@ def _u_to_color(u: float) -> str:
     return to_hex((g, g, g))
 
 
+def _pixels_per_data(ax) -> Tuple[float, float]:
+    """
+    Return (px_per_data_x, px_per_data_y) for the current axes transform.
+    Assumes linear scales (true here).
+    """
+    x0, y0 = ax.transData.transform((0.0, 0.0))
+    x1, _  = ax.transData.transform((1.0, 0.0))
+    _, y1  = ax.transData.transform((0.0, 1.0))
+    return abs(x1 - x0), abs(y1 - y0)
+
+
+def _effective_square_cell_h(ax, cell_w_data: float) -> float:
+    """
+    Given a desired cell width in *data X* units, return the *data Y* height
+    that yields a square on screen under the current axes scaling.
+    """
+    sx, sy = _pixels_per_data(ax)  # px per data unit along x and y
+    if sy <= 0:
+        return cell_w_data  # fallback; shouldn't happen
+    return float(cell_w_data) * (sx / sy)
+
+
 def _draw_tile_strip(ax, L: float, A: float, u: List[float], style: OverlayStyle, *, zorder: float = 0.3):
-    """Draw a centered 4-square horizontal strip encoding u00,u10,u01,u11."""
-    cell_w = float(style.tile_cell_w)
-    cell_h = float(style.tile_cell_h)
-    gap    = float(style.tile_gap)
+    """Draw a centered 4-square horizontal strip encoding u00,u10,u01,u11.
+
+    Squares are enforced in DISPLAY space (pixels), while positions are in DATA
+    space. We therefore compute the required data-height from the current x/y
+    pixel scaling so each tile appears 1:1 regardless of figure aspect.
+    """
+    cell_w = float(style.tile_cell_w)                 # in data-X units
+    cell_h = _effective_square_cell_h(ax, cell_w)     # computed data-Y units
+    gap    = float(style.tile_gap)                    # horizontal gap in data-X
+
     total_w = 4 * cell_w + 3 * gap
     x0 = float(L) - total_w / 2.0
     y0 = float(A) - cell_h / 2.0
@@ -89,12 +124,16 @@ def draw_scatter(
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     ax.set_xlim(*visuals.xlim)
     ax.set_ylim(*visuals.ylim)
-    ax.set_xlabel("Logic (L)", fontsize=14)
-    ax.set_ylabel("Asymmetry (A)", fontsize=14)
+
+    # NOTE: Do NOT force equal aspect. This allows wide/tall figures to honor figsize.
+    # We keep overlay tiles square by computing their data-height from pixel scaling.
+
+    ax.set_xlabel("Logic (L)", fontsize=visuals.axis_label_fontsize)
+    ax.set_ylabel("Asymmetry (A)", fontsize=visuals.axis_label_fontsize)
 
     ax.set_xticks([-1, -0.5, 0, 0.5, 1])
     ax.set_yticks([-1, -0.5, 0, 0.5, 1])
-    ax.tick_params(axis="both", which="major", labelsize=12)
+    ax.tick_params(axis="both", which="major", labelsize=visuals.tick_label_fontsize)
 
     if visuals.grid:
         ax.grid(True, linestyle="--", alpha=0.25, linewidth=0.6)
@@ -115,11 +154,14 @@ def draw_scatter(
         ymin, ymax = visuals.ylim
 
         if str(overlay_cfg.mode).lower() == "tiles":
+            # Precompute the effective (square) data-height for stacking offsets.
+            cell_h_eff = _effective_square_cell_h(ax, float(overlay_cfg.tile_cell_w))
+
             # Stack multiple strips at the same (L,A)
             for (L, A), g in ol.groupby(["L", "A"], sort=False):
                 n = len(g)
                 if overlay_cfg.tiles_stack_multiple and n > 1:
-                    dy = overlay_cfg.tile_cell_h + overlay_cfg.label_line_height
+                    dy = cell_h_eff + overlay_cfg.label_line_height
                     offsets = [(i - (n - 1) / 2.0) * dy for i in range(n)]
                 else:
                     offsets = [0.0] * n
@@ -127,7 +169,7 @@ def draw_scatter(
                 for off, (_, row) in zip(offsets, g.iterrows()):
                     _draw_tile_strip(ax, float(L), float(A) + float(off), list(row["u"]), overlay_cfg, zorder=0.3)
 
-            # Labels: keep the existing stacked-text behavior
+            # Labels
             if overlay_cfg.show_labels:
                 for (L, A), g in ol.groupby(["L", "A"], sort=False):
                     labels = sorted(g["label"].astype(str).tolist())
@@ -148,7 +190,8 @@ def draw_scatter(
                         yy = np.clip(y0 + i * dy, ymin + 0.005, ymax - 0.005)
                         ax.text(
                             float(L), float(yy), text,
-                            fontsize=9, ha="center", va=va,
+                            fontsize=int(getattr(overlay_cfg, "label_fontsize", 12)),
+                            ha="center", va=va,
                             alpha=min(1.0, float(overlay_cfg.alpha) + 0.25),
                             zorder=0.35,
                         )
@@ -183,7 +226,8 @@ def draw_scatter(
                         yy = np.clip(y0 + i * dy, ymin + 0.005, ymax - 0.005)
                         ax.text(
                             float(L), float(yy), text,
-                            fontsize=9, ha="center", va=va,
+                            fontsize=int(getattr(overlay_cfg, "label_fontsize", 12)),
+                            ha="center", va=va,
                             alpha=min(1.0, float(overlay_cfg.alpha) + 0.25),
                             zorder=0
                         )
@@ -252,7 +296,14 @@ def draw_scatter(
         for cat, col in cmap.items():
             handles.append(Line2D([0], [0], marker='o', color='none', markerfacecolor=col,
                                   label=str(cat), markersize=8))
-        first_legend = ax.legend(title=hue_col, handles=handles, loc="best", frameon=False)
+        first_legend = ax.legend(
+            title=hue_col,
+            handles=handles,
+            loc="best",
+            frameon=False,
+            prop={"size": visuals.legend_fontsize},
+            title_fontsize=visuals.legend_fontsize
+        )
         if first_legend is not None:
             frame = first_legend.get_frame()
             frame.set_facecolor('none'); frame.set_edgecolor('none'); frame.set_alpha(0)
@@ -263,7 +314,14 @@ def draw_scatter(
         for marker in points["shape_value"].unique().tolist():
             sh_handles.append(Line2D([0], [0], marker=marker, color='k', markerfacecolor='none',
                                      label=str(marker), markersize=8, linewidth=0))
-        second_legend = ax.legend(title=(hue_col or "shape"), handles=sh_handles, loc="upper left", frameon=False)
+        second_legend = ax.legend(
+            title=(hue_col or "shape"),
+            handles=sh_handles,
+            loc="upper left",
+            frameon=False,
+            prop={"size": visuals.legend_fontsize},
+            title_fontsize=visuals.legend_fontsize
+        )
         if second_legend is not None:
             frame = second_legend.get_frame()
             frame.set_facecolor('none'); frame.set_edgecolor('none'); frame.set_alpha(0)
@@ -271,7 +329,7 @@ def draw_scatter(
             ax.add_artist(first_legend)
 
     if title:
-        ax.set_title(title, fontsize=14)
+        ax.set_title(title, fontsize=visuals.title_fontsize)
 
     fig.tight_layout()
     return fig, ax

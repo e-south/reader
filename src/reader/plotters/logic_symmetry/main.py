@@ -111,6 +111,7 @@ def plot_logic_symmetry(
         show_labels=bool(_dget(overlay_style_cfg, "show_labels", True)),
         label_offset=float(_dget(overlay_style_cfg, "label_offset", 0.02)),
         label_line_height=float(_dget(overlay_style_cfg, "label_line_height", 0.018)),
+        label_fontsize=int(_dget(overlay_style_cfg, "label_fontsize", 12)),  # NEW
         tile_cell_w=float(_dget(overlay_style_cfg, "tile_cell_w", 0.035)),
         tile_cell_h=float(_dget(overlay_style_cfg, "tile_cell_h", 0.035)),
         tile_gap=float(_dget(overlay_style_cfg, "tile_gap", 0.0)),
@@ -125,8 +126,12 @@ def plot_logic_symmetry(
         color=str(_dget(visuals, "color", "#6e6e6e")),
         annotate_designs=bool(_dget(visuals, "annotate_designs", False)),
         design_label_col=_dget(visuals, "design_label_col", None) or (design_by[0] if design_by else None),
-        label_fontsize=int(_dget(visuals, "label_fontsize", 9)),
+        label_fontsize=int(_dget(visuals, "label_fontsize", 12)),
         label_offset=float(_dget(visuals, "label_offset", 0.02)),
+        axis_label_fontsize=int(_dget(visuals, "axis_label_fontsize", 16)),
+        tick_label_fontsize=int(_dget(visuals, "tick_label_fontsize", 14)),
+        title_fontsize=int(_dget(visuals, "title_fontsize", 18)),
+        legend_fontsize=int(_dget(visuals, "legend_fontsize", 12)),
     )
 
     out_formats = [ext.lower() for ext in _dget(output, "format", ["pdf"])]

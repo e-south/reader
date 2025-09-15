@@ -34,6 +34,7 @@ class OverlayStyle:
     show_labels: bool = True
     label_offset: float = 0.02
     label_line_height: float = 0.018
+    label_fontsize: int = 12  # NEW: overlay label font
 
     # dot-specific
     size: float = 40.0
