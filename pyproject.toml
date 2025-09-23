@@ -32,3 +32,39 @@ dev-dependencies = ["pytest", "ruff"]
 # turn off editable mode via CLI flags, e.g.:
 # package = true        # boolean, not a table
 # no-editable = true    # install as a wheel
+
+[tool.ruff]
+# Match your runtime
+target-version = "py311"
+line-length = 120
+src = ["src"]
+extend-exclude = [".venv", "build", "dist", ".eggs", "*.egg-info"]
+
+[tool.ruff.lint]
+# Core errors + imports (isort), modernizations, bugbear, warnings, pandas rules, etc.
+select = [
+  "E", "F", "W",   # pycodestyle/pyflakes/warnings
+  "I",             # isort (import sorting)
+  "UP",            # pyupgrade
+  "B",             # flake8-bugbear
+  "SIM",           # flake8-simplify
+  "C4",            # flake8-comprehensions
+  "PLC", "PLE",    # pylint (convention/errors - light touch)
+]
+ignore = [
+  # Long lines are handled by formatter; relax if you want Ruff to enforce 100 cols:
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and notebooks often need a bit more flexibility
+"tests/**" = ["S101", "PLR2004", "B011", "SIM*"]
+"**/*.ipynb" = ["E402"]
+
+[tool.ruff.format]
+# Ruff formatter settings
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
