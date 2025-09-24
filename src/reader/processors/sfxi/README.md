@@ -14,8 +14,8 @@
 ## Inputs and notation
 
 * Upstream tidy data provides:
-  `position,time,value,channel,treatment,batch,genotype,id,sequence`.
-* SFXI expects a **reference genotype** with constitutive YFP (keyed by `genotype`). It anchors absolute intensity across runs.
+  `position,time,value,channel,treatment,batch,genotype,id,sequence`
+* SFXI expects a **reference genotype** with constitutive YFP (keyed by `genotype`) to anchor absolute intensity across runs.
 * **Channels (explicit):**
 
   * **Logic channel** (for `v`): usually `YFP/CFP`.
@@ -23,10 +23,10 @@
 * Corners use state order `00,10,01,11`.
 
 Let \$L\_i\$ be the logic-channel value at corner \$i\$ (e.g., `YFP/CFP`), and \$I\_i\$ be the intensity-channel value at corner \$i\$ (e.g., `YFP/OD600`).
-Let \$A\_i\$ be the **reference** intensity value for corner \$i\$ (from the reference genotype, per **scope**: batch or global, summarized by `stat` mean/median).
+Let \$A\_i\$ be the **reference** intensity value for corner \$i\$ (from the reference genotype, per **scope**: batch or global, summarized by a chosen statistic such as mean or median).
 
 **Stabilizers** (recorded in `sfxi_log.json`):
-`ε` (ratio guard), `η` (range guard), `α` (reference denom guard), `δ` (absolute add before log; here we keep `δ=0` and use `ε` guards).
+\$\varepsilon\$ (ratio guard), \$\eta\$ (range guard), \$\alpha\$ (reference-denominator guard), \$\delta\$ (absolute add before log; we keep \$\delta=0\$ and rely on \$\varepsilon\$ guards).
 
 ---
 
@@ -34,29 +34,31 @@ Let \$A\_i\$ be the **reference** intensity value for corner \$i\$ (from the ref
 
 ### Logic dynamic range
 
-`r_logic` reports the **dynamic range** of the **logic channel** values *before* min–max scaling—i.e., how far apart the four corners are in **linear space**. It’s computed from the raw per-state logic measurements \$L\_i\$ (e.g., `YFP/CFP`) as
+`r_logic` reports the **dynamic range** of the **logic channel** values *before* min–max scaling (how far apart the four corners are in linear space):
 
 $$
-r_{\text{logic}} \;=\;
-\frac{\max_i \,\max(L_i,\ \varepsilon)}
-     {\min_i \,\max(L_i,\ \varepsilon)}
-\;\;\ge\; 1,
+r_{\text{logic}}
+=
+\frac{\max_i\,\max(L_i,\ \varepsilon)}
+     {\min_i\,\max(L_i,\ \varepsilon)}
+\;\ge\;1.
 $$
-
-using the same small guard \$\varepsilon\$ as the log step to avoid division by zero.
 
 * `r_logic ≈ 1` → corners are essentially indistinguishable on the logic channel (flat).
-* `> 4×` → robust separation; the v-shape is driven by real differences.
+* `> 4×` → robust separation; the shape is driven by real differences.
 
 ### Logic shape (unit interval, from logic channel)
 
 1. **Log2:**
-   $u_i \;=\; \log_2\!\big(\max(L_i,\ \varepsilon)\big)$
-2. **Flat check:** if \$\max(u) - \min(u) \le \eta\$, set all \$v\_i = \tfrac14\$ and **warn**.
+
+   $$
+   u_i = \log_2\big(\max(L_i,\ \varepsilon)\big)
+   $$
+2. **Flat check:** if \$\max(u)-\min(u)\le\eta\$, set all \$v\_i=\tfrac14\$ and flag `flat_logic=true`.
 3. **Otherwise, min–max in log space:**
 
    $$
-   v_i \;=\; \frac{u_i - u_{\min}}{u_{\max} - u_{\min}} \;\in\; [0,1].
+   v_i = \frac{u_i - u_{\min}}{u_{\max} - u_{\min}} \in [0,1].
    $$
 
 This preserves shape while discarding scale; hard 0/1 at extrema are expected. When flat, `0.25` is a neutral, symmetry-preserving fallback with no directional bias.
@@ -64,28 +66,31 @@ This preserves shape while discarding scale; hard 0/1 at extrema are expected. W
 ### Absolute intensity (anchor-normalized, stored in log2)
 
 1. **Reference anchor (per scope/stat):**
-   $A_i \;=\; \operatorname{stat}\{\text{reference } I_i\}$
+
+   $$
+   A_i = \text{statistic over reference } I_i
+   $$
+
+   *(Use mean or median, per config.)*
 2. **Unitless scale:**
 
    $$
-   y_i^{\text{linear}} \;=\; \frac{I_i + \alpha}{\max(A_i,\ \alpha)}
+   y_i^{\text{linear}} = \frac{I_i + \alpha}{\max(A_i,\ \alpha)}
    $$
 3. **Store in log2:**
 
    $$
-   y_i^* \;=\; \log_2\!\big(\max(y_i^{\text{linear}},\ \varepsilon)\big)
+   y_i^* = \log_2\!\big(\max(y_i^{\text{linear}},\ \varepsilon)\big)
    $$
 
 Using **the same intensity channel** (`YFP/OD600`) for both the sample and the reference anchor keeps the effect size interpretable even when growth differs across conditions.
-
-We also call a **flat** logic shape when the log-span \$\max(u)-\min(u)\le \eta\$; in that case we set \$v=\[0.25,0.25,0.25,0.25]\$ and flag `flat_logic=true`.
 
 ---
 
 ## Output files
 
 * `sfxi/vec8.csv` — one row per (design × batch) with keys (`… design_by …, batch`), `v00..v11`, `y*00..y*11`, plus diagnostics (`r_logic`, `flat_logic`).
-  *(By default, the reference genotype row(s) are excluded from this file.)*
+  *By default, the reference genotype row(s) are excluded from this file.*
 * `sfxi/sfxi_log.json` — echo of config, chosen snapshot times, dropped batches, epsilons, and row counts.
 
 ---
@@ -137,4 +142,6 @@ transformations:
     log_filename:  "sfxi_log.json"
 ```
 
-— @e-south
+---
+
+@e-south
