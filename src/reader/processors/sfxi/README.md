@@ -28,9 +28,22 @@ Stabilizers (recorded in `sfxi_log.json`):
 
 ---
 
-### Computation
+### Computations
 
-#### 1) Logic shape (unit interval, from logic channel)
+#### Logic dynamic range
+
+`r_logic` reports the **dynamic range** of the **logic channel** values *before* min–max scaling—i.e., how far apart the four corners are in **linear space**. It’s computed from the raw per-state logic measurements $L_i$ (e.g., `YFP/CFP`) as
+
+$$
+r_{\text{logic}} \;=\; \frac{\max_i \max(L_i,\ \varepsilon)}{\min_i \max(L_i,\ \varepsilon)} \;\;\ge 1,
+$$
+
+using the same small guard $\varepsilon$ as the log step to avoid division by zero.
+
+* `r_logic ≈ 1` → corners are essentially indistinguishable on the logic channel (flat).
+* `>4×` → robust separation; the v-shape is driven by real differences.
+
+#### Logic shape (unit interval, from logic channel)
 
 1. Log2: \( u_i = \log_2\!\big(\max(L_i,\ \varepsilon)\big) \)
 2. If flat: if \( \max(u) - \min(u) \le \eta \), set all \( v_i = 1/4 \) and **warn**.
@@ -41,13 +54,15 @@ Stabilizers (recorded in `sfxi_log.json`):
 
 This preserves shape while discarding scale; hard 0/1 at extrema are expected. When flat, `0.25` is a neutral, symmetry-preserving fallback with no directional bias.
 
-#### 2) Absolute intensity (anchor-normalized, stored in log2)
+#### Absolute intensity (anchor-normalized, stored in log2)
 
 1. Reference anchor (per scope/stat): \( A_i = \text{stat}\{\text{reference } I_i\} \)
 2. Unitless scale: \( y_i^{\text{linear}} = \dfrac{I_i + \alpha}{\max(A_i,\ \alpha)} \)
 3. Store in log2: \( y_i^* = \log_2\!\big(\max(y_i^{\text{linear}},\ \varepsilon)\big) \)
 
 Using **the same intensity channel** (`YFP/OD600`) for both the sample and the reference anchor keeps the effect size interpretable even when growth differs across conditions.
+
+ We also call a **flat** logic shape when the log-span $\max(u)-\min(u)\le \eta$; in that case we set $v=[0.25,0.25,0.25,0.25]$ and flag `flat_logic=true`.
 
 ---
 
