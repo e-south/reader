@@ -1,68 +1,58 @@
 [build-system]
-requires      = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name            = "reader"
-version         = "0.1.0"
-description     = "Lab instrumentation data pipeline"
-readme          = "README.md"
+name = "reader"
+version = "1.0.0"
+description = "Lab instrumentation data pipeline (plugin engine)"
+readme = "README.md"
 requires-python = ">=3.11"
-authors         = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
+authors = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
 
+# <-- MOVE dependencies HERE (was accidentally under tool.setuptools.packages.find)
 dependencies = [
-  "pandas",
-  "pydantic",
-  "click",
-  "openpyxl",
-  "seaborn",
+  "pandas>=2.1",
+  "pydantic>=2.6",
   "pyyaml>=6.0.2",
+  "typer>=0.12.0",
+  "rich>=13.7",
+  "pyarrow>=15.0",
+  "openpyxl>=3.1",
+  "seaborn>=0.13",
 ]
 
 [project.scripts]
-reader = "reader.main:cli"
+reader = "reader.core.cli:app"
 
-# uv-specific section
+# src/ layout mapping (robust with editable installs)
+[tool.setuptools.package-dir]
+"" = "src"
+
+# discover all reader packages under src/
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["reader*"]
+namespaces = false
+
 [tool.uv]
 dev-dependencies = ["pytest", "ruff"]
 
-# `package = true` is OPTIONAL here.
-
-# Uncomment only if you ever want to *disable* packaging or
-# turn off editable mode via CLI flags, e.g.:
-# package = true        # boolean, not a table
-# no-editable = true    # install as a wheel
-
 [tool.ruff]
-# Match your runtime
 target-version = "py311"
 line-length = 120
 src = ["src"]
 extend-exclude = [".venv", "build", "dist", ".eggs", "*.egg-info"]
 
 [tool.ruff.lint]
-# Core errors + imports (isort), modernizations, bugbear, warnings, pandas rules, etc.
-select = [
-  "E", "F", "W",   # pycodestyle/pyflakes/warnings
-  "I",             # isort (import sorting)
-  "UP",            # pyupgrade
-  "B",             # flake8-bugbear
-  "SIM",           # flake8-simplify
-  "C4",            # flake8-comprehensions
-  "PLC", "PLE",    # pylint (convention/errors - light touch)
-]
-ignore = [
-  # Long lines are handled by formatter; relax if you want Ruff to enforce 100 cols:
-  "E501",
-]
+select = ["E","F","W","I","UP","B","SIM","C4","PLC","PLE"]
+ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests and notebooks often need a bit more flexibility
-"tests/**" = ["S101", "PLR2004", "B011", "SIM*"]
+"tests/**" = ["S101","PLR2004","B011","SIM*"]
 "**/*.ipynb" = ["E402"]
 
 [tool.ruff.format]
-# Ruff formatter settings
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"

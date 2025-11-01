@@ -1,150 +1,268 @@
-##  reader
+## reader
 
-A workbench for turning **raw instrument exports** into **tidy CSVs** and **plots**.
+A workbench for turning instrument exports into tidy tables and plots.
 
-* **Plugin registry** for raw‑data **parsers** and **plotters**
-* One **YAML config per experiment**
-* Low‑friction **CLI** (`reader list / run`)
-* Uses **uv** for deterministic dependency management
+- **Plugin engine**: `ingest → merge → transform → plot`
+- **CLI**: `reader ls | explain | validate | run | artifacts | steps | plugins`
+- **Auditable**: artifacts live next to the config; a manifest tracks revisions.
 
----
+**Example usage**
 
-#### Workflow
+You have an instrument that produces raw files. You add a small parser whose only job is to read that raw format and return a tidy table. From there, you declare a sequence of **transforms** that operate on columns to produce derived values (e.g., ratios) and to apply cleanups (e.g., blank subtraction or overflow handling). Finally, **plots** consume the cleaned/transformed tables and write figures.
 
-```text
-raw_data.xlsx ─┐
-               │   (parser)        (QC + custom params)         (plotters)
-plate_map.csv ─┴─► tidy_raw ─► merged ─► tidy_data.csv ─┬─► distributions.pdf
-                                                        └─► time_series_*.pdf
-```
-
-Stages (see `reader/main.py`):
-
-1. **load\_config** – YAML → `ReaderConfig`
-2. **parse\_raw** – dispatch via registry (`reader.parsers.*`)
-3. **parse\_plate\_map** – CSV/XLSX with `row`,`col` → tidy map
-4. **merge** – inner‑join on `position`
-5. **apply\_custom\_params** – blank subtraction, overflow handling, ratios
-6. **plotting** – each spec in `plots:` is sent to `reader.plotters.*`
+This flow is described once in a YAML spec and executed by the CLI.
 
 ---
 
-#### Project layout
+### Install with `uv`
 
-```
-reader/                    # repo root
-├── src/reader/            # library code
-│   ├── main.py            # CLI & orchestration
-│   ├── config.py          # Pydantic schema helpers
-│   ├── parsers/           # raw‑data parsers (plugin registry)
-│   ├── processors/        # merge, QC, custom parameters
-│   ├── plotters/          # plotting helpers (plugin registry)
-│   └── utils/             # tiny helpers (fs, logging)
-├── experiments/           # one folder per run (git‑ignored)
-│   └── template/          # starter scaffold
-├── tests/                 # pytest suites
-├── uv.toml                # dependency lockfile
-└── pyproject.toml
+```bash
+# install uv (once)
+# macOS/Linux:  curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows:      iwr https://astral.sh/uv/install.ps1 | iex
+
+uv venv
+source .venv/bin/activate                 # Windows: .venv\Scripts\activate
+uv sync
+uv pip install -e .
 ```
 
 ---
 
-#### Installation
+### Architecture
 
 ```bash
-$ python -m venv .venv      # or use your preferred tool
-$ source .venv/bin/activate
-(.venv) $ uv sync           # installs locked deps + dev tools
-(.venv) $ pip install -e .  # editable install of reader itself
+src/reader/
+core/     # engine, registry, contracts, artifacts, cli, errors
+plugins/  # built-ins: ingest/, merge/, transform/, plot/
+io/       # instrument/file helpers (pure funcs: raw → tidy)
+lib/      # domain algorithms & plotting utilities
+utils/    # style helpers, small utilities
 ```
 
-#### Quick start
+- **Core** runs steps, enforces **contracts**, persists artifacts, and logs.
+- **Plugins** are thin orchestration layers with explicit inputs/outputs.
+- **io/** holds pure parsing helpers; **lib/** holds reusable logic.
+
+Quick mental model:
+```bash
+raw/*.xlsx
+└─▶ [ingest]        → tidy.v1
+└─▶ [merge]         → tidy+map.v1
+└─▶ [transforms...] → tidy.v1 / ...
+└─▶ [plots]         → .pdf/.png (flat files)
+````
+
+Artifacts are written under `outputs/artifacts/<stepId.plugin>/__rN/…`.
+`outputs/manifest.json` records the latest `<step_id>/<output_name>` and history.
+
+---
+
+### Usage
 
 ```bash
-# 1. scaffold a new experiment (copies the template folder)
-$ cp -r experiments/template_experiments/001_my_assay
+# scaffold an experiment
+cp -r experiments/template experiments/20250512_my_assay
 
-# 2. take a look
-$ tree -L 2 experiments/001_my_assay
-.
-├── config.yaml
-├── raw_data/       # your .xlsx / .csv export
-├── plate_map.csv   # well → metadata
-└── outputs/        # created on first run
+# add raw files under experiments/.../(raw|raw_data)/
+# update sample_map.(csv|xlsx) and config.yaml
 
-# 3. run
-$ reader run 001     # or give the full path to config.yaml
-✨ Done – tidy_data.csv and plots are in experiments/001_my_assay/outputs/
+# inspect & run
+reader ls --root ./experiments
+reader explain   experiments/.../config.yaml
+reader validate  experiments/.../config.yaml
+reader run       experiments/.../config.yaml
+
+# inspect results
+reader artifacts experiments/.../config.yaml
+ls experiments/.../outputs/plots
 ```
 
-Need to see what’s available?
+### Commands
 
-```bash
-$ reader list
-001_2025‑05‑12_biosensor_panel_M9_glu …
-```
+* `reader ls --root DIR` — find experiments (`**/config.yaml`) under `DIR`.
+* `reader explain CONFIG` — show the plan with plugin contracts.
+* `reader validate CONFIG` — validate schema and per‑step plugin configs.
+* `reader run CONFIG [--resume-from STEP_ID] [--until STEP_ID] [--dry-run] [--log-level LEVEL]` — execute the plan.
+* `reader artifacts CONFIG [--all]` — list latest artifacts (or revision counts).
+* `reader steps CONFIG` — list step IDs in order.
+* `reader plugins [--category ingest|merge|transform|plot]` — show discovered plugins.
+* `reader run-step` — Execute exactly one step by ID or 1-based index, using existing artifacts for inputs.
 
-#### Minimal config example (`config.yaml`)
+---
+
+### Experiment configuration
+
+A compact ReaderSpec showing Synergy H1 ingest, plate‑map merge, a small transform chain, and two plots.
 
 ```yaml
-author: "Eric South"
-raw_data:    "./raw_data/PlateReader_export.xlsx"
-plate_map:   "./plate_map.csv"
-output_dir:  "./outputs/"
+experiment:
+  id: "20250512_panel_M9_glu_araBAD_pspA_marRAB_umuDC_alaS_phoA"
+  name: "Retrons panel — M9 + glucose"
+  outputs: "./outputs"
+  palette: "colorblind"
 
-# which parser to use (see reader/parsers/)
-data_parser: "synergy_h1_snapshot_and_timeseries"
+runtime:
+  strict: true
+  log_level: "INFO"
 
-# channels (columns) expected in the export
-parameters: [OD600, CFP, YFP]
+steps:
+  # 1) Ingest (auto-discovery if 'raw' is absent)
+  - id: "ingest"
+    uses: "ingest/synergy_h1_snapshot_and_timeseries"
+    with:
+      channels: ["OD600", "CFP", "YFP"]
+      sheet_names: ["Plate 1 - Sheet1"]
+      add_sheet: true
+      auto_roots: ["./raw_data", "./raw"]
+      auto_include: ["*.xlsx", "*.xls"]
+      auto_exclude: ["~$*", "._*", "#*#", "*.tmp"]
+      auto_pick: "single"      # single | latest | merge
 
-time_column: "Elapsed (s)"      # name inside the export
-blank_correction: "avg_blank"   # or 'median_blank' / 'disregard'
-overflow_action:  "max"         # 'max', 'min', 'zero', 'drop'
+  # 2) Enrich with sample metadata
+  - id: "merge_map"
+    uses: "merge/sample_map"
+    reads:
+      df: "ingest/df"
+      sample_map: "file:./sample_map.xlsx"
 
-plots:
-  - name: distributions
-    module: distributions.py
-    params:
-      channels: [OD600, CFP, YFP]
-    fig:
-      seaborn_style: "ticks"
-      palette: "colorblind"
-```
+  # 3) Transforms — flexible sequence based on the experiment
+  - id: "blank"
+    uses: "transform/blank_correction"
+    reads: { df: "merge_map/df" }
+    with:  { method: "disregard", capture_blanks: true }
 
-Anything not specified falls back to defaults (see `ReaderConfig`).
+  - id: "overflow"
+    uses: "transform/overflow_handling"
+    reads: { df: "blank/df" }
+    with:  { action: "max", clip_quantile: 0.999 }
+
+  - id: "ratio_yfp_cfp"
+    uses: "transform/ratio"
+    reads: { df: "overflow/df" }
+    with:  { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
+
+  - id: "ratio_yfp_od600"
+    uses: "transform/ratio"
+    reads: { df: "ratio_yfp_cfp/df" }
+    with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
+
+  # 4) Plots — consume cleaned/transformed tables
+  - id: "plot_time_series"
+    uses: "plot/time_series"
+    reads: { df: "ratio_yfp_od600/df" }
+    with:
+      x: "time"
+      y: ["OD600", "YFP", "YFP/CFP", "YFP/OD600"]
+      hue: "treatment"
+      subplots: "group"
+      groups:
+        - { "AraC-targeting retron": ["araBADp", "araBADp - msd[AraC]"] }
+        - { "PspF-targeting retron": ["pspAp", "pspAp - msd[PspF]"] }
+      add_sheet_line: true
+      fig: { dpi: 300 }
+
+  - id: "plot_snapshot_multi_genotype"
+    uses: "plot/snapshot_multi_genotype"
+    reads: { df: "ratio_yfp_od600/df" }
+    with:
+      x: "genotype"
+      y: ["OD600", "YFP/OD600"]
+      hue: "treatment"
+      time: 14
+      groups:
+        - { "AraC-targeting retron": ["araBADp", "araBADp - msd[AraC]"] }
+        - { "PspF-targeting retron": ["pspAp", "pspAp - msd[PspF]"] }
+      fig: { figsize: [10, 6], dpi: 300 }
+````
+
+**How to read this**
+
+* Steps run in order. `uses:` selects a plugin.
+* `reads:` binds a plugin input to either a prior output (`<step>/<output>`, e.g., `ingest/df`) or a file via `file:<path>`.
+* `with:` holds plugin configuration.
+* Transforms operate on the tidy table to create derived **channels** (e.g., `YFP/CFP`, `YFP/OD600`) or to clean values (e.g., blank handling, overflow clipping).
+* Plot steps take a tidy table and write figures into `outputs/plots/`.
 
 ---
 
-#### Extending the pipeline
+### Extending
 
-##### New raw parser
+#### New ingest (new instrument/file format)
 
-```text
-src/reader/parsers/my_format.py
+Keep parsing logic in **io/**; the plugin just wires it up.
+
+```python
+# src/reader/io/my_format.py
+import pandas as pd
+from pathlib import Path
+
+def parse_my_format(path: str | Path) -> pd.DataFrame:
+    # return tidy: columns = position, time, channel, value
+    ...
+    return df
 ```
 
 ```python
-from reader.parsers.raw import BaseRawParser, register_raw_parser
+# src/reader/plugins/ingest/my_format.py
+from typing import Mapping, Dict, Any
+from reader.core.registry import Plugin, PluginConfig
+from reader.io.my_format import parse_my_format
 
-@register_raw_parser("my_format")
-class MyParser(BaseRawParser):
-    def parse(self) -> pd.DataFrame:
-        # read self.path → tidy DataFrame with columns
-        #   position, time, value, channel  (+ anything else you like)
-        return df
+class MyCfg(PluginConfig): pass
+
+class MyIngest(Plugin):
+    key = "my_format"
+    category = "ingest"
+    ConfigModel = MyCfg
+    @classmethod
+    def input_contracts(cls) -> Mapping[str,str]:  return {"raw": "none"}
+    @classmethod
+    def output_contracts(cls) -> Mapping[str,str]: return {"df": "tidy.v1"}
+    def run(self, ctx, inputs: Dict[str, Any], cfg: MyCfg):
+        return {"df": parse_my_format(inputs["raw"])}
 ```
 
-Use it in YAML with `data_parser: "my_format"`.
-
-##### New plot module
-
-1. Drop a function `plot_whatever(df, blanks, output_dir, **kwargs)` in `src/reader/plotters/whatever.py`.
-2. Add a plot spec in YAML:
+Use it:
 
 ```yaml
-plots:
-  - name: my_plot
-    module: whatever.py
-    params: { x: time, y: OD600, hue: treatment }
+- id: "ingest_custom"
+  uses: "ingest/my_format"
+  reads: { raw: "file:./raw_data/run001.ext" }
 ```
+
+#### New transform (operate on columns to create derived columns)
+
+```python
+# my_pkg/my_transform.py
+from typing import Mapping, Dict, Any
+import pandas as pd
+from reader.core.registry import Plugin, PluginConfig
+
+class Cfg(PluginConfig):
+    factor: float = 2.0
+
+class ScaleValues(Plugin):
+    key = "scale"
+    category = "transform"
+    ConfigModel = Cfg
+    @classmethod
+    def input_contracts(cls) -> Mapping[str,str]:  return {"df": "tidy.v1"}
+    @classmethod
+    def output_contracts(cls) -> Mapping[str,str]: return {"df": "tidy.v1"}
+    def run(self, ctx, inputs: Dict[str, Any], cfg: Cfg):
+        df = inputs["df"].copy()
+        df["value"] = pd.to_numeric(df["value"], errors="coerce") * cfg.factor
+        return {"df": df}
+```
+
+Register via entry point:
+
+```toml
+[project.entry-points."reader.transform"]
+scale = "my_pkg.my_transform:ScaleValues"
+```
+
+---
+
+@e-south
