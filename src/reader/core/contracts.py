@@ -132,6 +132,8 @@ _register(DataFrameContract(
     columns=[
         ColumnRule("genotype","string"),
         ColumnRule("sequence","string", required=False, allow_nan=True),
+        ColumnRule("id","string", required=False, allow_nan=True),
+        ColumnRule("batch","int", required=False, allow_nan=True),
         ColumnRule("r_logic","float", nonnegative=True),
         ColumnRule("v00","float"), ColumnRule("v10","float"),
         ColumnRule("v01","float"), ColumnRule("v11","float"),
@@ -139,7 +141,7 @@ _register(DataFrameContract(
         ColumnRule("y01_star","float"), ColumnRule("y11_star","float"),
         ColumnRule("flat_logic","bool"),
     ],
-    unique_keys=[["genotype"]],
+    unique_keys=[["genotype","batch"]],
 ))
 
 # fold_change.v1
@@ -161,4 +163,41 @@ _register(DataFrameContract(
         ColumnRule("batch", "int", required=False, allow_nan=True),
     ],
     unique_keys=[],   # allow multiple rows per (group,treatment) across report_times or repeats
+))
+
+
+_register(DataFrameContract(
+    id="logic_symmetry.v1",
+    description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
+    columns=[
+        # optional design-by columns (keep flexible)
+        ColumnRule("genotype","string", required=False, allow_nan=True),
+        ColumnRule("strain","string", required=False, allow_nan=True),
+        ColumnRule("design","string", required=False, allow_nan=True),
+        ColumnRule("construct","string", required=False, allow_nan=True),
+        ColumnRule("batch","int", required=False, allow_nan=True),
+        # replicate counts per corner
+        ColumnRule("n00","int"), ColumnRule("n10","int"),
+        ColumnRule("n01","int"), ColumnRule("n11","int"),
+        # means per corner
+        ColumnRule("b00","float"), ColumnRule("b10","float"),
+        ColumnRule("b01","float"), ColumnRule("b11","float"),
+        # sds per corner
+        ColumnRule("sd00","float"), ColumnRule("sd10","float"),
+        ColumnRule("sd01","float"), ColumnRule("sd11","float"),
+        # metrics
+        ColumnRule("r","float"), ColumnRule("log_r","float"),
+        ColumnRule("cv","float"),
+        ColumnRule("u00","float"), ColumnRule("u10","float"),
+        ColumnRule("u01","float"), ColumnRule("u11","float"),
+        ColumnRule("L","float"), ColumnRule("A","float"),
+        # baseline and encodings
+        ColumnRule("baseline_corner","string"),
+        ColumnRule("baseline_value","float"),
+        ColumnRule("size_value","float", required=False, allow_nan=True),
+        ColumnRule("hue_value","string", required=False, allow_nan=True),
+        ColumnRule("alpha_value","float", required=False, allow_nan=True),
+        ColumnRule("shape_value","string", required=False, allow_nan=True),
+    ],
+    unique_keys=[],
 ))

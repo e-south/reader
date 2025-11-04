@@ -44,12 +44,12 @@ class LogicSymmetryPlot(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str,str]:
-        return {"files": "none"}
+        return {"files": "none", "table": "logic_symmetry.v1"}
 
     def run(self, ctx, inputs, cfg: LogicSymCfg):
         from reader.lib.logic_symmetry import plot_logic_symmetry
         df: pd.DataFrame = inputs["df"]
-        plot_logic_symmetry(
+        result = plot_logic_symmetry(
             df=df, blanks=df.iloc[0:0], output_dir=ctx.plots_dir,
             response_channel=cfg.response_channel,
             design_by=cfg.design_by, batch_col=cfg.batch_col, treatment_map=cfg.treatment_map,
@@ -58,4 +58,17 @@ class LogicSymmetryPlot(Plugin):
             visuals=cfg.visuals, output=cfg.output, prep=cfg.prep, fig_kwargs=cfg.fig, filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-        return {"files": None}
+        table = result.table
+        try:
+            gcols = [c for c in (cfg.design_by + [cfg.batch_col]) if c in table.columns]
+            n_groups = (table[gcols].drop_duplicates().shape[0] if gcols else len(table))
+            formats = [str(x).lower() for x in (cfg.output or {}).get("format", ["pdf"])]
+            base = (cfg.filename or "logic_symmetry")
+            ctx.logger.info(
+                "logic_symmetry • wrote plot(s)=[%s] • base=%s • groups=%d • rows=%d • response=%s • design_by=%s • batch_col=%s",
+                ", ".join(formats), base, int(n_groups), int(len(table)),
+                cfg.response_channel, ", ".join(cfg.design_by), cfg.batch_col
+            )
+        except Exception:
+            pass
+        return {"files": None, "table": table}

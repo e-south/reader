@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
 # ------------------------------- helpers -------------------------------
@@ -64,6 +65,18 @@ def _canon(s: str) -> str:
     s0 = re.sub(r"\s+", " ", s0).strip()
     return s0
 
+# --- overflow token detection ---
+_OVERFLOW_PATTERNS = (
+    "overflow", "ovrflw", "ovr", "over", "inf", "infinity", "∞"
+)
+def _is_overflow_token(x: object) -> bool:
+    s = str(x or "").strip()
+    if not s:
+        return False
+    if s.startswith(">"):          # e.g., "> 65000"
+        return True
+    t = s.lower()
+    return any(k in t for k in _OVERFLOW_PATTERNS)
 
 def _normalize_channel_map(channel_map: Optional[Mapping[str, str]]) -> Mapping[str, str]:
     if not channel_map:
@@ -169,7 +182,12 @@ def _tidy_snapshot_block(
                 )
 
     out = pd.DataFrame(rows)
-    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    # Preserve overflow tokens as +inf and mark them.
+    rawv = out["value"].astype(str)
+    over_mask = rawv.map(_is_overflow_token)
+    out["overflow"] = over_mask
+    out["value"] = pd.to_numeric(rawv, errors="coerce")
+    out.loc[over_mask, "value"] = np.inf
     out = out.dropna(subset=["value"]).reset_index(drop=True)
     return out
 
@@ -193,8 +211,26 @@ def _tidy_kinetic_blocks(
     def _row_has(df: pd.DataFrame, idx: int, pat: str) -> bool:
         return df.iloc[idx].astype(str).str.contains(pat, case=False, na=False).any()
 
-    label_rows = [i for i, r in kin.iterrows() if isinstance(r.iat[0], str) and ":" in str(r.iat[0])]
-    _require(label_rows, "No kinetic blocks found (expected channel label rows containing ':')")
+    # --- tolerant label row detection (keeps legacy ':' behavior) ---
+    def _looks_like_label(cell0: object) -> bool:
+        s = str(cell0 or "").strip()
+        if not s or s.lower() == "nan":
+            return False
+        if ":" in s:
+            return True  # legacy exports: "OD600: …"
+        # Newer exports: plain channel name in col A (e.g., "OD600", "RFP")
+        try:
+            _ = _resolve_channel(s, channels=channels, channel_map_ci=channel_map_ci)
+            return True
+        except Exception:
+            return False
+
+    label_rows = [i for i, r in kin.iterrows() if _looks_like_label(r.iat[0])]
+    _require(
+        label_rows,
+        "No kinetic blocks found: expected a channel label in column A "
+        "(e.g., 'OD600' or 'OD600: …') preceding a 'Time' header row."
+    )
 
     parts: list[pd.DataFrame] = []
     for idx, start in enumerate(label_rows):
@@ -251,7 +287,11 @@ def _tidy_kinetic_blocks(
         parts.append(melted)
 
     out = pd.concat(parts, ignore_index=True)
-    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    rawv = out["value"].astype(str)
+    over_mask = rawv.map(_is_overflow_token)
+    out["overflow"] = over_mask
+    out["value"] = pd.to_numeric(rawv, errors="coerce")
+    out.loc[over_mask, "value"] = np.inf
     out = out.dropna(subset=["value"]).reset_index(drop=True)
 
     # Emit the mapping once per call (sheet‑scoped)

@@ -20,6 +20,7 @@ dependencies = [
   "pyarrow>=15.0",
   "openpyxl>=3.1",
   "seaborn>=0.13",
+  "pillow>=10.0",
 ]
 
 [project.scripts]
@@ -58,3 +59,24 @@ indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
 docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = [
+  "src/reader/tests",
+  "tests"
+]
+
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*", "*Tests"]
+python_functions = ["test_*"]
+
+addopts = [
+  "--strict-config",
+  "--strict-markers",
+  "-ra"
+]
+
+norecursedirs = [
+  ".venv", "build", "dist", ".eggs", "*.egg-info",
+  "outputs", "plots", "raw_data", "_scratch"
+]

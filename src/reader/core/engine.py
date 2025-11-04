@@ -144,6 +144,11 @@ def run_job(
     spec = ReaderSpec.load(spec_path)
     exp = spec.experiment
     out_dir = Path(exp["outputs"]).resolve()
+    # Normalize outputs relative to the experiment root if still relative
+    out_dir = Path(exp["outputs"])
+    if not out_dir.is_absolute():
+        out_dir = Path(exp["root"]) / out_dir
+    out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     # logging
     logger = logging.getLogger("reader")

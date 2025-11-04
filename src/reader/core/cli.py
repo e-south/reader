@@ -10,7 +10,7 @@ Author(s): Eric J. South
 import re  # used for friendly error parsing in run-step
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich import box
@@ -79,19 +79,49 @@ def _find_nearest_experiments_dir(start: Path) -> Path:
 
 def _infer_job_path(job: Optional[str]) -> Path:
     """
-    Resolve CONFIG argument with convenient defaults:
-      - If provided and points to a directory, assume <dir>/config.yaml
-      - If provided and points to a file, use it as-is
-      - If omitted, search for the nearest 'config.yaml' in CWD or any parent
+    Resolve CONFIG argument with explicit, assertive rules:
+      • If CONFIG exists and is a directory => <dir>/config.yaml (if present) else error
+      • If CONFIG exists and is a file     => use it as-is
+      • If CONFIG is a pure integer string => treat as 1-based index into nearest experiments/
+      • If CONFIG is omitted               => search for nearest 'config.yaml' upward from CWD
+    No silent fallbacks.
     """
     if job:
-        p = Path(job)
-        if p.is_dir():
-            candidate = p / "config.yaml"
-            if candidate.exists():
-                return candidate.resolve()
-            # allow explicit dir even if it doesn't have config.yaml; fall back to p
-        return p.resolve()
+        s = str(job).strip()
+        p = Path(s)
+        if p.exists():
+            if p.is_dir():
+                candidate = p / "config.yaml"
+                if candidate.exists():
+                    return candidate.resolve()
+                raise typer.BadParameter(
+                    f"CONFIG directory {p!s} has no 'config.yaml'. "
+                    "Pass a file path, an experiment directory that contains config.yaml, or a numeric index (see 'reader ls')."
+                )
+            # existing file
+            return p.resolve()
+
+        # Numeric index: resolve against the nearest experiments/ root (same order as `reader ls`)
+        if s.isdigit():
+            idx = int(s)
+            root_path = _find_nearest_experiments_dir(Path.cwd())
+            jobs = _find_jobs(root_path)
+            if not jobs:
+                raise typer.BadParameter(
+                    f"No experiments found under {root_path}. Use 'reader ls' first."
+                )
+            if idx < 1 or idx > len(jobs):
+                raise typer.BadParameter(
+                    f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path}). "
+                    "Use 'reader ls' to see the index numbers."
+                )
+            return jobs[idx - 1]
+
+        # Not an existing path, not a numeric index → explicit error
+        raise typer.BadParameter(
+            f"CONFIG not found: {job!r}. Pass a path to a config.yaml, an experiment directory, "
+            "or a numeric experiment index from 'reader ls'."
+        )
 
     cwd = Path.cwd()
     # current dir first
@@ -183,13 +213,15 @@ def ls(
 
 @app.command(
     help=(
-        "Render the execution plan for a config.yaml: step order, plugins, and input/output contracts. "
-        "This does not run the pipeline."
+        "Render the execution plan for a config.yaml (or experiment dir, or numeric index from 'reader ls'): "
+        "step order, plugins, and input/output contracts. This does not run the pipeline."
     )
 )
 def explain(
     job: Optional[str] = typer.Argument(
-        None, metavar="[CONFIG]", help="Path to config.yaml or an experiment directory (defaults to nearest ./config.yaml)"
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     )
 ):
     job_path = _infer_job_path(job)
@@ -200,13 +232,15 @@ def explain(
 
 @app.command(
     help=(
-        "Validate a config.yaml: schema, plugin availability, and each plugin's configuration. "
-        "No steps are executed."
+        "Validate a config.yaml (or experiment dir, or numeric index): schema, plugin availability, "
+        "and each plugin's configuration. No steps are executed."
     )
 )
 def validate(
     job: Optional[str] = typer.Argument(
-        None, metavar="[CONFIG]", help="Path to config.yaml or an experiment directory (defaults to nearest ./config.yaml)"
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     )
 ):
     job_path = _infer_job_path(job)
@@ -217,13 +251,38 @@ def validate(
 
 @app.command(
     help=(
-        "Execute a pipeline described by config.yaml. Use --dry-run to print the plan without running. "
-        "Use --resume-from/--until to run a slice of steps. Logs go to outputs/reader.log."
+        "Execute a pipeline described by config.yaml (or experiment dir, or numeric index from 'reader ls'). "
+        "Use --dry-run to print the plan without running. Use --resume-from/--until to run a slice of steps, "
+        "or the convenient --step/STEP shorthand to run exactly one step (accepts id or 1-based index). "
+        "Examples: 'reader run 14 --step 11', 'reader run 14 11', 'reader run 14 step 11'. "
+        "Logs go to outputs/reader.log."
     )
 )
 def run(
     job: Optional[str] = typer.Argument(
-        None, metavar="[CONFIG]", help="Path to config.yaml or an experiment directory (defaults to nearest ./config.yaml)"
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+    ),
+    step: Optional[str] = typer.Option(
+        None,
+        "--step",
+        "-s",
+        metavar="STEP",
+        help="Run exactly this step by id or 1-based index (sugar for --resume-from/--until).",
+    ),
+    step_pos: Optional[str] = typer.Argument(
+        None,
+        metavar="[STEP]",
+        help="(optional) Step id or 1-based index. You can also write: 'reader run 14 step 11'.",
+    ),
+    extra: Optional[List[str]] = typer.Argument(
+        None,
+        metavar="[EXTRA]...",
+        help=(
+            "Optional tokens for the 'step N' form. "
+            "Note: variadic positional arguments cannot have defaults (Click restriction)."
+        ),
     ),
     resume_from: Optional[str] = typer.Option(
         None,
@@ -249,8 +308,56 @@ def run(
         help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
     ),
 ):
+    # Normalize args & support sugar: 'reader run 14 11' and 'reader run 14 step 11'
     job_path = _infer_job_path(job)
     parts = ["reader run", str(job_path)]
+
+    # Interpret trailing STEP tokens if provided
+    selected_step: Optional[str] = None
+    if step is not None:
+        selected_step = step
+    else:
+        # Build tokens explicitly; 'extra' can be None for a variadic positional.
+        tokens: List[str] = []
+        if step_pos:
+            tokens.append(step_pos)
+        if extra:
+            tokens.extend(extra)
+        tokens = [t for t in tokens if t]
+        if tokens:
+            # accept: "11" • "sfxi_vec8" • "step 11"
+            if tokens[0].lower() == "step" and len(tokens) >= 2:
+                selected_step = tokens[1]
+            elif len(tokens) == 1:
+                selected_step = tokens[0]
+            elif len(tokens) == 2 and tokens[0].lower() == "step":
+                selected_step = tokens[1]
+            else:
+                raise typer.BadParameter(f"Unexpected extra arguments: {' '.join(tokens)}")
+
+    if selected_step and (resume_from or until):
+        raise typer.BadParameter("--step/STEP cannot be combined with --resume-from/--until")
+
+    if selected_step:
+        # Convert possibly-numeric STEP into a concrete id
+        spec = ReaderSpec.load(job_path)
+        step_id = _resolve_step_id(spec, selected_step)
+        parts += ["step", selected_step]
+        if dry_run:
+            parts += ["--dry-run"]
+        if log_level and log_level != "INFO":
+            parts += ["--log-level", log_level]
+        _append_journal(job_path, " ".join(parts))
+        run_job(job_path, resume_from=step_id, until=step_id, dry_run=dry_run, log_level=log_level, console=console)
+        return
+
+    # Accept numeric indices for --resume-from/--until as well
+    if resume_from and resume_from.isdigit():
+        spec = ReaderSpec.load(job_path)
+        resume_from = _resolve_step_id(spec, resume_from)
+    if until and until.isdigit():
+        spec = ReaderSpec.load(job_path)
+        until = _resolve_step_id(spec, until)
     if resume_from:
         parts += ["--resume-from", resume_from]
     if until:
@@ -272,7 +379,9 @@ def run(
 )
 def artifacts(
     job: Optional[str] = typer.Argument(
-        None, metavar="[CONFIG]", help="Path to config.yaml or an experiment directory (defaults to nearest ./config.yaml)"
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
     all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
 ):
@@ -298,7 +407,9 @@ def artifacts(
 @app.command(help="Show the steps declared in a config.yaml (index, id, plugin key).")
 def steps(
     job: Optional[str] = typer.Argument(
-        None, metavar="[CONFIG]", help="Path to config.yaml or an experiment directory (defaults to nearest ./config.yaml)"
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     )
 ):
     spec = ReaderSpec.load(_infer_job_path(job))
@@ -439,7 +550,7 @@ def run_step(
         "--config",
         "-c",
         metavar="CONFIG",
-        help="Path to config.yaml or an experiment dir (defaults to nearest ./config.yaml).",
+        help="Path to config.yaml • experiment dir • or numeric index from 'reader ls' (defaults to nearest ./config.yaml).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan only: validate and print the plan slice without executing."),
     log_level: str = typer.Option("INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR."),

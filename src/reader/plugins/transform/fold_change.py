@@ -44,18 +44,18 @@ def _synonyms_for(col: str) -> list[str]:
 
 def _pick_alias(df: pd.DataFrame, base: Optional[str]) -> Optional[str]:
     """
-    Deterministic column resolver:
-      • Prefer '<base>_alias' when present
-      • Else use '<base>' when present
+    Deterministic column resolver (programmatic-first):
+      • Prefer the raw '<base>' column
+      • Else use '<base>_alias' when present
       • Else return None (assertive; let caller decide)
     """
     if not base:
         return None
     alias = f"{base}_alias"
-    if alias in df.columns:
-        return alias
     if base in df.columns:
         return base
+    if alias in df.columns:
+        return alias
     return None
 
 
@@ -218,6 +218,11 @@ class FoldChange(Plugin):
 
             # Aggregate replicates per (group_by..., treatment)
             group_cols = [c for c in gcols + [tcol]]
+            extra_aggs = {}
+            if "treatment" in snapped.columns:
+                extra_aggs["__treatment_raw"] = ("treatment", "first")
+            if "treatment_alias" in snapped.columns:
+                extra_aggs["__treatment_alias"] = ("treatment_alias", "first")
             grouped = (
                 snapped
                 .assign(time_used=pd.to_numeric(snapped["time"], errors="coerce"))
@@ -226,6 +231,7 @@ class FoldChange(Plugin):
                     val=("value", cfg.agg),
                     n=("value", "count"),
                     time_used=("time_used", "median"),
+                    **extra_aggs,
                 )
                 .reset_index()
             )
@@ -252,6 +258,12 @@ class FoldChange(Plugin):
 
                 # locate baseline row within this group's aggregated table
                 bl = sub[sub[tcol].astype(str) == str(baseline_label)] if baseline_label is not None else pd.DataFrame()
+                # Accept baseline labels written in raw or alias form (whichever matches).
+                if bl.empty and baseline_label is not None:
+                    if "__treatment_raw" in sub.columns:
+                        bl = sub[sub["__treatment_raw"].astype(str) == str(baseline_label)]
+                    if bl.empty and "__treatment_alias" in sub.columns:
+                        bl = sub[sub["__treatment_alias"].astype(str) == str(baseline_label)]
 
                 # If an override was chosen but not present at this time, try the global baseline as a clear fallback.
                 if bl.empty and cfg.use_global_baseline and cfg.global_baseline_value is not None \
@@ -300,14 +312,22 @@ class FoldChange(Plugin):
                         fc = v / base_val
                     log2fc = (float(np.log2(fc)) if (np.isfinite(fc) and fc > 0) else float("nan"))
 
+                    # Emit raw programmatic treatment label when available
+                    trt_out = str(r.get("__treatment_raw", r[tcol]))
+                    # Emit raw baseline label when available; otherwise echo provided label
+                    base_label_out = (
+                        str(bl["__treatment_raw"].iloc[0])
+                        if ("__treatment_raw" in bl.columns and not bl.empty and pd.notna(bl["__treatment_raw"].iloc[0]))
+                        else (str(baseline_label) if baseline_label is not None else "")
+                    )
                     row: Dict[str, Any] = {
                         "target": target,
                         "time": float(t),
-                        "treatment": str(r[tcol]),
+                        "treatment": trt_out,
                         cfg.fc_column: fc,
                         cfg.log2fc_column: log2fc,
                         "n": int(r["n"]),
-                        "baseline_value": (str(baseline_label) if baseline_label is not None else ""),
+                        "baseline_value": base_label_out,
                         "baseline_n": int(base_n),
                         "baseline_time": base_time,
                     }

@@ -37,7 +37,6 @@ core/     # engine, registry, contracts, artifacts, cli, errors
 plugins/  # built-ins: ingest/, merge/, transform/, plot/
 io/       # instrument/file helpers (pure funcs: raw → tidy)
 lib/      # domain algorithms & plotting utilities
-utils/    # style helpers, small utilities
 ```
 
 - **Core** runs steps, enforces **contracts**, persists artifacts, and logs.
@@ -88,6 +87,23 @@ ls experiments/.../outputs/plots
 * `reader steps CONFIG` — list step IDs in order.
 * `reader plugins [--category ingest|merge|transform|plot]` — show discovered plugins.
 * `reader run-step` — Execute exactly one step by ID or 1-based index, using existing artifacts for inputs.
+
+For example:
+```bash
+# From anywhere inside the repo:
+reader ls
+
+# Run the 7th experiment (20250620_sensor_panel_crosstalk) by index:
+reader explain 7
+reader validate 7
+reader run 7
+
+# Run a single step of that experiment by index:
+reader run-step 1 --config 7     # runs the 'ingest' step only
+
+# Show artifacts for the 7th experiment:
+reader artifacts 7
+```
 
 ---
 
@@ -264,5 +280,19 @@ scale = "my_pkg.my_transform:ScaleValues"
 ```
 
 ---
+
+**Sequence design panel (baserender) — setup & usage**
+
+This plot depends on [`dnadesign.baserender`](./dnadesign/baserender), installed in **editable mode** into the same env as `reader`.
+
+### 1) Install
+
+```bash
+git clone https://github.com/e-south/dnadesign.git
+cd dnadesign
+uv pip install -e .[dev]
+```
+---
+
 
 @e-south

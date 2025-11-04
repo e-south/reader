@@ -59,6 +59,11 @@ class ReaderSpec(BaseModel):
         data.setdefault("experiment", {})
         data["experiment"]["root"] = str(root.resolve())
         data["experiment"].setdefault("name", root.name)
+        # Normalize experiment.outputs relative to config directory
+        if "outputs" in data["experiment"]:
+            outp = Path(str(data["experiment"]["outputs"]))
+            if not outp.is_absolute():
+                data["experiment"]["outputs"] = str((root / outp).resolve())
         if "io" in data:
             data["io"] = _norm_io(data["io"])
         for s in data.get("steps", []):
