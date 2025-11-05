@@ -164,20 +164,22 @@ def run_job(
     logger.addHandler(sh)
 
     palette = exp.get("palette", "colorblind")
-    # Import plotting style lazily; do not depend on legacy utils and do not fail
-    # unless a palette is explicitly requested.
     from importlib import import_module
-    try:
-        PaletteBook = import_module("reader.lib.microplates.style").PaletteBook
-    except Exception as e:
-        if palette is not None:
-            # Explicit, assertive failure: no legacy fallbacks.
-            raise ExecutionError(
-                "Palette support requested (experiment.palette is set) but "
-                "'reader.lib.microplates.style.PaletteBook' is unavailable. "
-                "Either install the plotting components or set experiment.palette: null."
-            ) from e
-        PaletteBook = None
+    PaletteBook = None
+    if palette is not None:
+        try:
+            mod = import_module("reader.lib.microplates.style")
+            PaletteBook = getattr(mod, "PaletteBook", None)
+            if PaletteBook is None:
+                raise ImportError("PaletteBook not found in style module")
+        except Exception as e:
+            logger.warning(
+                "Plot palette disabled: could not import reader.lib.microplates.style (%s). "
+                "Continuing without a palette; plots will use Matplotlib rcParams. "
+                "To re‑enable, install plotting extras or set experiment.palette: null. ",
+                e.__class__.__name__,
+            )
+            PaletteBook = None
 
     # Where should plots go?
     plots_cfg = exp.get("plots_dir", "plots")  # set to None to flatten into outputs/
