@@ -7,11 +7,12 @@ name = "reader"
 version = "1.0.0"
 description = "Lab instrumentation data pipeline (plugin engine)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 authors = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
 
-# <-- MOVE dependencies HERE (was accidentally under tool.setuptools.packages.find)
+
 dependencies = [
+  "dnadesign",
   "pandas>=2.1",
   "pydantic>=2.6",
   "pyyaml>=6.0.2",
@@ -26,21 +27,33 @@ dependencies = [
 [project.scripts]
 reader = "reader.core.cli:app"
 
-# src/ layout mapping (robust with editable installs)
 [tool.setuptools.package-dir]
 "" = "src"
 
-# discover all reader packages under src/
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["reader*"]
 namespaces = false
 
+[dependency-groups]
+dev = [
+  "pytest>=8.2",
+  "ruff>=0.4",
+  "pre-commit>=3.7",
+]
+
+notebooks = [
+  "marimo>=0.18.4",
+]
+
 [tool.uv]
-dev-dependencies = ["pytest", "ruff"]
+required-version = ">=0.9.18,<0.10"
+
+[tool.uv.sources]
+dnadesign = { git = "https://github.com/e-south/dnadesign", branch = "main" }
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120
 src = ["src"]
 extend-exclude = [".venv", "build", "dist", ".eggs", "*.egg-info"]

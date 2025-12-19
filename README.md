@@ -1,298 +1,251 @@
 ## reader
 
-A workbench for turning instrument exports into tidy tables and plots.
+**reader** is a workbench for experimental data, where the unit of work is an **experimental directory**: you put raw inputs there, keep notebooks next to them, and write (`outputs/`) in the same place. **reader** includes a plugin-based pipeline runner (see [`docs/pipeline.md`](./docs/pipeline.md) and [`docs/plugins.md`](./docs/plugins.md)), but more broadly these workspaces are where you can iterate on one experiment with a mix of:
 
-- **Plugin engine**: `ingest → merge → transform → plot`
-- **CLI**: `reader ls | explain | validate | run | artifacts | steps | plugins`
-- **Auditable**: artifacts live next to the config; a manifest tracks revisions.
+- **lightweight utilities** (`ls`, `run`, …)
+- **repeatable steps** (via `config.yaml` + CLI)
+- **exploratory work** (via marimo notebooks)
 
-**Example usage**
+### Contents
 
-You have an instrument that produces raw files. You add a small parser whose only job is to read that raw format and return a tidy table. From there, you declare a sequence of **transforms** that operate on columns to produce derived values (e.g., ratios) and to apply cleanups (e.g., blank subtraction or overflow handling). Finally, **plots** consume the cleaned/transformed tables and write figures.
-
-This flow is described once in a YAML spec and executed by the CLI.
+- [Repo layout](#repo-layout)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [CLI workbench commands](#cli-workbench-commands)
+- [Running notebooks](#running-notebooks)
+- [Maintaining dependencies](#maintaining-dependencies)
 
 ---
 
-### Install with `uv`
+### Repo layout
+
+**reader** is basically two things: a place for experiments, and a library/CLI that helps you analyze them.
 
 ```bash
-# install uv (once)
-# macOS/Linux:  curl -LsSf https://astral.sh/uv/install.sh | sh
-# Windows:      iwr https://astral.sh/uv/install.ps1 | iex
-
-uv venv
-source .venv/bin/activate                 # Windows: .venv\Scripts\activate
-uv sync
-uv pip install -e .
+reader/
+├─ experiments/             # experiment workbench (configs + data + results)
+│  └─ exp_001/
+│     ├─ config.yaml        # pipeline spec (steps: ingest→merge→transform→plot)
+│     ├─ raw_data/          # instrument exports (or raw/)
+│     ├─ notebooks/         # optional: marimo notebooks for this experiment
+│     └─ outputs/           # generated: artifacts/, plots/, manifest.json, reader.log
+│
+└─ src/
+   └─ reader/               # optional: library for running config.yaml-driven workflows across experiments
+      ├─ core/              # shared commands: run/explain/validate/ls/artifacts
+      ├─ io/                # implement an instrument parser once (raw → tidy), reuse it across experiments
+      ├─ plugins/           # thin adapters that expose io/lib operations to config.yaml steps
+      │  ├─ ingest/         # raw → tidy artifacts (canonical tables)
+      │  ├─ merge/          # tidy + metadata/table joins
+      │  ├─ transform/      # reusable cleanups + derived columns/channels
+      │  ├─ plot/           # optional shared plotting steps
+      │  └─ validator/      # optional schema gates / normalizers (coercion, shape checks)
+      ├─ lib/               # reusable domain helpers (imported by plugins + notebooks)
+      └─ tests/
 ```
 
 ---
 
-### Architecture
+### Installation
+
+This repo is managed with [**uv**](https://docs.astral.sh/uv/):
+
+- `pyproject.toml` declares dependencies (runtime + optional extras).
+- `uv.lock` is the fully pinned dependency graph.
+- `.venv/` is the project virtual environment.
+
+**Two key commands:**
+
+- `uv sync` installs everything from the lockfile into `.venv`.
+- `uv run <cmd>` runs commands inside the project environment without requiring `source .venv/bin/activate`.
+
+ 1. Install uv. Below is for macOS/Linux (for other OSs see [here](https://docs.astral.sh/uv/getting-started/installation/)).
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # ensure your uv bin dir is on PATH
+    ```
+
+2. Clone repo
+
+    ```bash
+    git clone https://github.com/e-south/reader.git
+    cd reader
+    ```
+
+3. Create/sync the environment from the committed lockfile:
+
+      ```bash
+      uv sync --locked
+      ```
+
+4. Sanity checks:
+
+      ```bash
+      uv run python -c "import reader, pandas, pyarrow; print('ok')"
+      ```
+
+5. Dev tooling is opt-in via a dependency group.
+
+    ```bash
+    uv sync --locked --group dev --group notebooks
+    uv run ruff --version
+    uv run ruff check .
+    uv run pytest -q
+    ```
+
+##### This project defines console scripts, which you can run via:
+
+Option A: no `.venv` activation — use `uv run`
 
 ```bash
-src/reader/
-core/     # engine, registry, contracts, artifacts, cli, errors
-plugins/  # built-ins: ingest/, merge/, transform/, plot/
-io/       # instrument/file helpers (pure funcs: raw → tidy)
-lib/      # domain algorithms & plotting utilities
+uv run reader --help
+uv run reader ls
 ```
 
-- **Core** runs steps, enforces **contracts**, persists artifacts, and logs.
-- **Plugins** are thin orchestration layers with explicit inputs/outputs.
-- **io/** holds pure parsing helpers; **lib/** holds reusable logic.
-
-Quick mental model:
-```bash
-raw/*.xlsx
-└─▶ [ingest]        → tidy.v1
-└─▶ [merge]         → tidy+map.v1
-└─▶ [transforms...] → tidy.v1 / ...
-└─▶ [plots]         → .pdf/.png (flat files)
-````
-
-Artifacts are written under `outputs/artifacts/<stepId.plugin>/__rN/…`.
-`outputs/manifest.json` records the latest `<step_id>/<output_name>` and history.
-
----
-
-### Usage
+Option B: traditional — activate `.venv`
 
 ```bash
-# scaffold an experiment
-cp -r experiments/template experiments/20250512_my_assay
-
-# add raw files under experiments/.../(raw|raw_data)/
-# update sample_map.(csv|xlsx) and config.yaml
-
-# inspect & run
-reader ls --root ./experiments
-reader explain   experiments/.../config.yaml
-reader validate  experiments/.../config.yaml
-reader run       experiments/.../config.yaml
-
-# inspect results
-reader artifacts experiments/.../config.yaml
-ls experiments/.../outputs/plots
-```
-
-### Commands
-
-* `reader ls --root DIR` — find experiments (`**/config.yaml`) under `DIR`.
-* `reader explain CONFIG` — show the plan with plugin contracts.
-* `reader validate CONFIG` — validate schema and per‑step plugin configs.
-* `reader run CONFIG [--resume-from STEP_ID] [--until STEP_ID] [--dry-run] [--log-level LEVEL]` — execute the plan.
-* `reader artifacts CONFIG [--all]` — list latest artifacts (or revision counts).
-* `reader steps CONFIG` — list step IDs in order.
-* `reader plugins [--category ingest|merge|transform|plot]` — show discovered plugins.
-* `reader run-step` — Execute exactly one step by ID or 1-based index, using existing artifacts for inputs.
-
-For example:
-```bash
-# From anywhere inside the repo:
+source .venv/bin/activate
+reader --help
 reader ls
-
-# Run the 7th experiment (20250620_sensor_panel_crosstalk) by index:
-reader explain 7
-reader validate 7
-reader run 7
-
-# Run a single step of that experiment by index:
-reader run-step 1 --config 7     # runs the 'ingest' step only
-
-# Show artifacts for the 7th experiment:
-reader artifacts 7
+deactivate
 ```
 
 ---
 
-### Experiment configuration
+#### Quickstart
 
-A compact ReaderSpec showing Synergy H1 ingest, plate‑map merge, a small transform chain, and two plots.
-
-```yaml
-experiment:
-  id: "20250512_panel_M9_glu_araBAD_pspA_marRAB_umuDC_alaS_phoA"
-  name: "Retrons panel — M9 + glucose"
-  outputs: "./outputs"
-  palette: "colorblind"
-
-runtime:
-  strict: true
-  log_level: "INFO"
-
-steps:
-  # 1) Ingest (auto-discovery if 'raw' is absent)
-  - id: "ingest"
-    uses: "ingest/synergy_h1_snapshot_and_timeseries"
-    with:
-      channels: ["OD600", "CFP", "YFP"]
-      sheet_names: ["Plate 1 - Sheet1"]
-      add_sheet: true
-      auto_roots: ["./raw_data", "./raw"]
-      auto_include: ["*.xlsx", "*.xls"]
-      auto_exclude: ["~$*", "._*", "#*#", "*.tmp"]
-      auto_pick: "single"      # single | latest | merge
-
-  # 2) Enrich with sample metadata
-  - id: "merge_map"
-    uses: "merge/sample_map"
-    reads:
-      df: "ingest/df"
-      sample_map: "file:./sample_map.xlsx"
-
-  # 3) Transforms — flexible sequence based on the experiment
-  - id: "blank"
-    uses: "transform/blank_correction"
-    reads: { df: "merge_map/df" }
-    with:  { method: "disregard", capture_blanks: true }
-
-  - id: "overflow"
-    uses: "transform/overflow_handling"
-    reads: { df: "blank/df" }
-    with:  { action: "max", clip_quantile: 0.999 }
-
-  - id: "ratio_yfp_cfp"
-    uses: "transform/ratio"
-    reads: { df: "overflow/df" }
-    with:  { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
-
-  - id: "ratio_yfp_od600"
-    uses: "transform/ratio"
-    reads: { df: "ratio_yfp_cfp/df" }
-    with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
-
-  # 4) Plots — consume cleaned/transformed tables
-  - id: "plot_time_series"
-    uses: "plot/time_series"
-    reads: { df: "ratio_yfp_od600/df" }
-    with:
-      x: "time"
-      y: ["OD600", "YFP", "YFP/CFP", "YFP/OD600"]
-      hue: "treatment"
-      subplots: "group"
-      groups:
-        - { "AraC-targeting retron": ["araBADp", "araBADp - msd[AraC]"] }
-        - { "PspF-targeting retron": ["pspAp", "pspAp - msd[PspF]"] }
-      add_sheet_line: true
-      fig: { dpi: 300 }
-
-  - id: "plot_snapshot_multi_genotype"
-    uses: "plot/snapshot_multi_genotype"
-    reads: { df: "ratio_yfp_od600/df" }
-    with:
-      x: "genotype"
-      y: ["OD600", "YFP/OD600"]
-      hue: "treatment"
-      time: 14
-      groups:
-        - { "AraC-targeting retron": ["araBADp", "araBADp - msd[AraC]"] }
-        - { "PspF-targeting retron": ["pspAp", "pspAp - msd[PspF]"] }
-      fig: { figsize: [10, 6], dpi: 300 }
-````
-
-**How to read this**
-
-* Steps run in order. `uses:` selects a plugin.
-* `reads:` binds a plugin input to either a prior output (`<step>/<output>`, e.g., `ingest/df`) or a file via `file:<path>`.
-* `with:` holds plugin configuration.
-* Transforms operate on the tidy table to create derived **channels** (e.g., `YFP/CFP`, `YFP/OD600`) or to clean values (e.g., blank handling, overflow clipping).
-* Plot steps take a tidy table and write figures into `outputs/plots/`.
-
----
-
-### Extending
-
-#### New ingest (new instrument/file format)
-
-Keep parsing logic in **io/**; the plugin just wires it up.
-
-```python
-# src/reader/io/my_format.py
-import pandas as pd
-from pathlib import Path
-
-def parse_my_format(path: str | Path) -> pd.DataFrame:
-    # return tidy: columns = position, time, channel, value
-    ...
-    return df
-```
-
-```python
-# src/reader/plugins/ingest/my_format.py
-from typing import Mapping, Dict, Any
-from reader.core.registry import Plugin, PluginConfig
-from reader.io.my_format import parse_my_format
-
-class MyCfg(PluginConfig): pass
-
-class MyIngest(Plugin):
-    key = "my_format"
-    category = "ingest"
-    ConfigModel = MyCfg
-    @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:  return {"raw": "none"}
-    @classmethod
-    def output_contracts(cls) -> Mapping[str,str]: return {"df": "tidy.v1"}
-    def run(self, ctx, inputs: Dict[str, Any], cfg: MyCfg):
-        return {"df": parse_my_format(inputs["raw"])}
-```
-
-Use it:
-
-```yaml
-- id: "ingest_custom"
-  uses: "ingest/my_format"
-  reads: { raw: "file:./raw_data/run001.ext" }
-```
-
-#### New transform (operate on columns to create derived columns)
-
-```python
-# my_pkg/my_transform.py
-from typing import Mapping, Dict, Any
-import pandas as pd
-from reader.core.registry import Plugin, PluginConfig
-
-class Cfg(PluginConfig):
-    factor: float = 2.0
-
-class ScaleValues(Plugin):
-    key = "scale"
-    category = "transform"
-    ConfigModel = Cfg
-    @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:  return {"df": "tidy.v1"}
-    @classmethod
-    def output_contracts(cls) -> Mapping[str,str]: return {"df": "tidy.v1"}
-    def run(self, ctx, inputs: Dict[str, Any], cfg: Cfg):
-        df = inputs["df"].copy()
-        df["value"] = pd.to_numeric(df["value"], errors="coerce") * cfg.factor
-        return {"df": df}
-```
-
-Register via entry point:
-
-```toml
-[project.entry-points."reader.transform"]
-scale = "my_pkg.my_transform:ScaleValues"
-```
-
----
-
-**Sequence design panel (baserender) — setup & usage**
-
-This plot depends on [`dnadesign.baserender`](./dnadesign/baserender), installed in **editable mode** into the same env as `reader`.
-
-### 1) Install
+##### 1. If you have a template, copy it. Otherwise create a folder manually.
 
 ```bash
-git clone https://github.com/e-south/dnadesign.git
-cd dnadesign
-uv pip install -e .[dev]
+mkdir -p experiments/my_experiment/{raw_data,notebooks,outputs}
 ```
+
+Drop experimental data into `raw_data/`.
+
+##### 2. Run CLI steps (optional, repeatable)
+
+If the experiment has a `config.yaml`:
+```bash
+uv run reader explain experiments/my_experiment/config.yaml
+uv run reader run     experiments/my_experiment/config.yaml
+```
+
 ---
 
+#### CLI workbench commands
+
+The CLI is a set of helpers for the workspace.
+
+```bash
+reader ls --root experiments
+reader plugins
+reader steps <CONFIG or INDEX>
+reader artifacts <CONFIG or INDEX>
+```
+
+Common workflow helpers:
+
+- `reader ls [--root DIR]` — list experiments (finds `**/config.yaml`).
+- `reader explain CONFIG|DIR|INDEX` — show the plan (what would run).
+- `reader validate CONFIG|DIR|INDEX` — validate the config + plugin configs.
+- `reader run CONFIG|DIR|INDEX [--step STEP] [--resume-from ID] [--until ID]` — execute (sliceable).
+- `reader run-step STEP --config CONFIG|DIR|INDEX` — run exactly one step using existing artifacts.
+- `reader artifacts CONFIG|DIR|INDEX` — list the latest artifact locations (manifest-backed).
+- `reader plugins` — show discovered plugins (built-ins + entry points).
+
+**Note:** `ls` only lists experiments that have a `config.yaml`. Notebooks can exist without configs,
+but then they won’t be discoverable via ls.
+
+---
+
+#### Running notebooks
+
+There are two practical modes:
+
+##### 1. Install marimo into the project
+
+```bash
+uv sync --locked --group notebooks
+uv run marimo edit notebook.py
+```
+
+This runs marimo inside your project environment, so it can import `reader` and anything in `uv.lock`.
+
+##### 2. Sandboxed / self-contained marimo notebooks (inline dependencies)
+
+Marimo can manage per-notebook sandbox environments using inline metadata. This is great for sharable notebooks.
+
+1. Create/edit a sandbox notebook (marimo installed temporarily via uvx).
+
+      ```bash
+      uvx marimo edit --sandbox notebook.py
+      ```
+
+2. Run a sandbox notebook as a script.
+
+      ```bash
+      uv run notebook.py
+      ```
+
+3. Make the sandbox notebook use your local `reader` repo in editable mode.
+
+      From the repo root:
+
+      ```bash
+      uv add --script path/to/notebook.py . --editable
+      ```
+
+      This writes inline metadata into the notebook so its sandbox can install **reader** from your local checkout in editable mode.
+
+4. Add/remove sandbox dependencies (only affects the notebook file)
+
+      ```bash
+      uv add    --script notebook.py numpy
+      uv remove --script notebook.py numpy
+      ```
+
+> **Note:** You can also run claude code/codex in the terminal and ask it to edit a marimo notebook on your behalf. Make sure that you run your notebook with the [watch](https://docs.marimo.io/api/watch/) flag turned on, like `marimo edit --watch notebook.py`, to see updates appear live whenever agents makes a change.
+
+---
+
+#### Maintaining dependencies
+
+If you want to change dependencies, prefer `uv add` / `uv remove`:
+
+- Add a runtime dependency:
+
+  ```bash
+  uv add <package>
+  ```
+
+- Add to a dependency group:
+
+  ```bash
+  uv add --group dev <package>
+  ```
+
+- Remove:
+
+  ```bash
+  uv remove <package>
+  ```
+
+Then commit `pyproject.toml` + `uv.lock`.
+
+If you edit `pyproject.toml` by hand, regenerate `uv.lock`:
+
+```bash
+uv lock
+```
+
+New users should then run:
+
+```bash
+uv sync --locked
+```
+
+---
 
 @e-south

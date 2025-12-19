@@ -1,0 +1,80 @@
+experiment:
+  id: "001"
+  name: "biosensor_panel_M9_glu"
+  outputs: "./experiments/001/outputs"
+
+runtime:
+  strict: true
+  log_level: "INFO"
+
+steps:
+  - id: "01_ingest"
+    uses: "ingest/synergy_h1_snapshot_and_timeseries"
+    with:
+      channels: ["OD600","CFP","YFP"]
+      add_sheet: true
+    writes: { df: "raw/df" }
+
+  - id: "02_merge_map"
+    uses: "merge/plate_map_generic"
+    reads:
+      df: "raw/df"
+      plate_map: "file:./experiments/001/plate_map.csv"
+    writes: { df: "merged/df" }
+
+  - id: "03_ratio"
+    uses: "transform/ratio"
+    reads: { df: "merged/df" }
+    with: { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
+    writes: { df: "ratio/df" }
+
+  - id: "04_blank"
+    uses: "transform/blank_correction"
+    reads: { df: "ratio/df" }
+    with: { method: "subtract", capture_blanks: true }
+    writes: { df: "corrected/df", blanks: "corrected/blanks" }
+
+  - id: "05_overflow"
+    uses: "transform/overflow_handling"
+    reads: { df: "corrected/df" }
+    with: { action: "max", clip_quantile: 0.999 }
+    writes: { df: "final/df" }
+
+  - id: "06_sfxi"
+    uses: "transform/sfxi"
+    reads: { df: "final/df" }
+    with:
+      response: { logic_channel: "YFP/CFP", intensity_channel: "YFP/OD600" }
+      design_by: ["genotype"]
+      batch_col: "batch"
+      time_mode: "nearest"
+      target_time_h: 10
+      time_tolerance_h: 0.5
+      treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
+      reference: { genotype: "REF", scope: "batch", stat: "mean" }
+    writes: { vec8: "sfxi/vec8" }
+
+  - id: "90_plot_ts"
+    uses: "plot/time_series"
+    reads: { df: "final/df", blanks: "corrected/blanks" }
+    with:
+      x: "time"
+      y: ["OD600","CFP","YFP"]
+      hue: "treatment"
+      subplots: "group"
+      groups: [{ "Group A": ["g1","g2"] }, { "Group B": ["g3"] }]
+      fig: { seaborn_style: "ticks", dpi: 300 }
+    writes: { files: "plots" }   # flat under outputs/plots/
+
+  - id: "91_logic"
+    uses: "plot/logic_symmetry"
+    reads: { df: "final/df" }
+    with:
+      response_channel: "YFP/CFP"
+      design_by: ["genotype"]
+      batch_col: "batch"
+      treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
+      aggregation: { replicate_stat: "mean", uncertainty: "halo" }
+      encodings: { size_by: "log_r", hue: null, alpha_by: "batch" }
+      output: { format: ["pdf"], dpi: 300, figsize: [7,6] }
+    writes: { files: "plots" }
