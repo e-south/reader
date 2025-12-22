@@ -63,7 +63,7 @@ select = ["E","F","W","I","UP","B","SIM","C4","PLC","PLE"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101","PLR2004","B011","SIM*"]
+"tests/**" = ["S101","PLR2004","B011"]
 "**/*.ipynb" = ["E402"]
 
 [tool.ruff.format]

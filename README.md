@@ -14,6 +14,7 @@
 - [CLI workbench commands](#cli-workbench-commands)
 - [Running notebooks](#running-notebooks)
 - [Maintaining dependencies](#maintaining-dependencies)
+- [Upgrading dependencies](#upgrading-dependencies)
 
 ---
 
@@ -245,6 +246,20 @@ New users should then run:
 ```bash
 uv sync --locked
 ```
+
+---
+
+#### Upgrading dependencies
+
+`dnadesign` is pulled from GitHub and pinned to a specific commit in `uv.lock`. If `dnadesign/main` changes, a plain `uv sync` will keep using the locked commit until you explicitly upgrade it (see [Astral Docs](https://docs.astral.sh/uv/concepts/projects/sync/)).
+
+To pull the latest `dnadesign` and refresh your environment:
+
+```bash
+uv sync --upgrade-package dnadesign
+```
+
+This will update `uv.lock`** (bumping the pinned commit SHA for `dnadesign`) and then re-sync `.venv` to match. Commit the updated `uv.lock` so everyone gets the same version.
 
 ---
 
