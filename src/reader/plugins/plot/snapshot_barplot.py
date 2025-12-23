@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -19,19 +20,19 @@ from reader.core.registry import Plugin, PluginConfig
 
 class SnapshotBarCfg(PluginConfig):
     x: str
-    y: List[str] | str
-    hue: Optional[str] = None
-    group_on: Optional[str] = None
-    pool_sets: Optional[Union[str, List[Dict[str, List[str]]]]] = None
+    y: list[str] | str
+    hue: str | None = None
+    group_on: str | None = None
+    pool_sets: str | list[dict[str, list[str]]] | None = None
     time: float = 0.0
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    filename: Optional[str] = None
-    agg: str = "mean"          # median|mean
-    err: str = "sem"             # iqr|sem|none
+    fig: dict[str, Any] = Field(default_factory=dict)
+    filename: str | None = None
+    agg: str = "mean"  # median|mean
+    err: str = "sem"  # iqr|sem|none
     time_tolerance: float = 0.51
     panel_by: Literal["channel", "x", "group"] = "channel"
-    channel_select: Optional[str] = None
+    channel_select: str | None = None
     file_by: Literal["auto", "group", "channel", "x"] = "auto"
     show_legend: bool = False
     legend_loc: str = "upper right"
@@ -52,9 +53,11 @@ class SnapshotBarplot(Plugin):
 
     def run(self, ctx, inputs, cfg: SnapshotBarCfg):
         from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot
+
         df: pd.DataFrame = inputs["df"]
+
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: Optional[str]):
+        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
             if pool_sets is None:
                 return None
             if isinstance(pool_sets, list):

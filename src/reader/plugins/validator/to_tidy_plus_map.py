@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import List, Mapping
+from collections.abc import Mapping
+from contextlib import suppress
 
 import pandas as pd
 from pydantic import Field
@@ -19,13 +20,14 @@ from reader.core.registry import Plugin, PluginConfig
 
 
 class PromoteCfg(PluginConfig):
-    require_columns: List[str] = Field(default_factory=lambda: ["treatment","genotype","batch"])
+    require_columns: list[str] = Field(default_factory=lambda: ["treatment", "genotype", "batch"])
     require_non_null: bool = True  # be strict when promoting
     # Only promote a subset of rows (e.g., samples). If provided, we require the column to exist.
     type_column: str = "type"
-    include_types: List[str] = Field(default_factory=list)  # e.g., ["SAMPLE"]
+    include_types: list[str] = Field(default_factory=list)  # e.g., ["SAMPLE"]
     # Deterministically drop rows with NULL in these columns before assertions.
-    drop_where_null_in: List[str] = Field(default_factory=list)
+    drop_where_null_in: list[str] = Field(default_factory=list)
+
 
 class PromoteToTidyPlusMap(Plugin):
     key = "to_tidy_plus_map"
@@ -33,12 +35,12 @@ class PromoteToTidyPlusMap(Plugin):
     ConfigModel = PromoteCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:
+    def input_contracts(cls) -> Mapping[str, str]:
         # Accept a tidy table with extra metadata columns present
         return {"df": "tidy.v1"}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str,str]:
+    def output_contracts(cls) -> Mapping[str, str]:
         # Emit the strict tidy+map contract
         return {"df": "tidy+map.v1"}
 
@@ -54,13 +56,14 @@ class PromoteToTidyPlusMap(Plugin):
             keep = {str(x).casefold() for x in cfg.include_types}
             before = len(df)
             df = df[df[cfg.type_column].astype(str).str.casefold().isin(keep)].copy()
-            try:
+            with suppress(Exception):
                 ctx.logger.info(
                     "to_tidy_plus_map: filtered rows by %r ∈ %s → kept %d/%d",
-                    cfg.type_column, sorted(cfg.include_types), len(df), before
+                    cfg.type_column,
+                    sorted(cfg.include_types),
+                    len(df),
+                    before,
                 )
-            except Exception:
-                pass
             if df.empty:
                 raise ExecutionError(
                     f"to_tidy_plus_map: no rows remain after filtering by {cfg.type_column} ∈ {cfg.include_types}"
@@ -70,27 +73,22 @@ class PromoteToTidyPlusMap(Plugin):
         if cfg.drop_where_null_in:
             missing_cols = [c for c in cfg.drop_where_null_in if c not in df.columns]
             if missing_cols:
-                raise ExecutionError(
-                    f"to_tidy_plus_map: drop_where_null_in refers to missing columns: {missing_cols}"
-                )
+                raise ExecutionError(f"to_tidy_plus_map: drop_where_null_in refers to missing columns: {missing_cols}")
             before = len(df)
             df = df.dropna(subset=list(cfg.drop_where_null_in)).copy()
-            try:
+            with suppress(Exception):
                 ctx.logger.info(
                     "to_tidy_plus_map: dropped %d row(s) with NULL in %s",
-                    before - len(df), list(cfg.drop_where_null_in)
+                    before - len(df),
+                    list(cfg.drop_where_null_in),
                 )
-            except Exception:
-                pass
 
         # ---- Make 'batch' optional: synthesize a single-batch when absent or partially missing.
         if "batch" not in df.columns or df["batch"].isna().all():
             df = df.copy()
             df["batch"] = 0
-            try:
+            with suppress(Exception):
                 ctx.logger.info("to_tidy_plus_map: 'batch' missing → added constant 0 for all rows")
-            except Exception:
-                pass
         elif df["batch"].isna().any():
             df["batch"] = df["batch"].fillna(0)
         missing = [c for c in cfg.require_columns if c not in df.columns]

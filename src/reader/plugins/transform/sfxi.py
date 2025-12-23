@@ -8,9 +8,10 @@ SFXI: setpoint_fidelity_x_intensity → vec8
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
+
 from __future__ import annotations
 
-from typing import Dict, List, Mapping, Optional
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
@@ -20,14 +21,16 @@ from reader.core.registry import Plugin, PluginConfig
 
 
 class SFXICfg(PluginConfig):
-    response: Dict[str, str]            # {"logic_channel":..., "intensity_channel":...}
-    design_by: List[str] = Field(default_factory=lambda: ["genotype"])
+    response: dict[str, str]  # {"logic_channel":..., "intensity_channel":...}
+    design_by: list[str] = Field(default_factory=lambda: ["genotype"])
     batch_col: str = "batch"
-    time_mode: str = "nearest"          # nearest|last_before|first_after|exact
-    target_time_h: Optional[float] = None
+    time_mode: str = "nearest"  # nearest|last_before|first_after|exact
+    target_time_h: float | None = None
     time_tolerance_h: float = 0.5
-    treatment_map: Dict[str, str]
-    reference: Dict[str, str | None] = Field(default_factory=lambda: {"genotype": None, "scope": "batch", "stat": "mean"})
+    treatment_map: dict[str, str]
+    reference: dict[str, str | None] = Field(
+        default_factory=lambda: {"genotype": None, "scope": "batch", "stat": "mean"}
+    )
     treatment_case_sensitive: bool = True
     require_all_corners_per_design: bool = True
     eps_ratio: float = 1e-9
@@ -37,7 +40,7 @@ class SFXICfg(PluginConfig):
     ref_add_alpha: float = 0.0
     log2_offset_delta: float = 0.0
     exclude_reference_from_output: bool = True
-    carry_metadata: List[str] = Field(default_factory=lambda: ["sequence","id"])
+    carry_metadata: list[str] = Field(default_factory=lambda: ["sequence", "id"])
 
 
 class SFXITransform(Plugin):
@@ -61,7 +64,7 @@ class SFXITransform(Plugin):
 
         df: pd.DataFrame = inputs["df"].copy()
         label_col = cfg.design_by[0] if cfg.design_by else "genotype"
-        idx_cols  = [c for c in (cfg.design_by + [cfg.batch_col]) if c]
+        idx_cols = [c for c in (cfg.design_by + [cfg.batch_col]) if c]
 
         # ---------- selection (logic channel) ----------
         sel_logic = cornerize_and_aggregate(
@@ -104,7 +107,10 @@ class SFXITransform(Plugin):
             for b in chosen_a:
                 ta, tb = float(chosen_a[b]), float(chosen_b[b])
                 if not np.isclose(ta, tb, rtol=0, atol=1e-9):
-                    raise ValueError(f"sfxi: logic and intensity selected different times for batch={b!r}: {ta} vs {tb}")
+                    raise ValueError(
+                        f"sfxi: logic and intensity selected different times for batch={b!r}: {ta} vs {tb}"
+                    )
+
         _assert_same_times(sel_logic.chosen_times, sel_int.chosen_times)
 
         # ---------- resolve & assert reference genotype (to RAW label) ----------
@@ -114,10 +120,9 @@ class SFXITransform(Plugin):
             ref_rows = sel_int.per_corner[sel_int.per_corner[label_col].astype(str) == str(ref_geno)]
             if ref_rows.empty:
                 raise ValueError(
-                    "sfxi: reference genotype %r (resolved from %r) is not present in the INTENSITY channel "
-                    "at the chosen time(s); cannot anchor absolute intensity. "
+                    f"sfxi: reference genotype {ref_geno!r} (resolved from {provided_ref!r}) is not present in the "
+                    "INTENSITY channel at the chosen time(s); cannot anchor absolute intensity. "
                     "Ensure a reference strain is included or adjust 'reference.genotype'."
-                    % (ref_geno, provided_ref)
                 )
 
         # ---------- compute vec8 ----------
@@ -130,21 +135,19 @@ class SFXITransform(Plugin):
             reference_genotype=ref_geno,
             reference_scope=(cfg.reference.get("scope") if cfg.reference else "batch"),
             reference_stat=(cfg.reference.get("stat") if cfg.reference else "mean"),
-            eps_ratio=cfg.eps_ratio, eps_range=cfg.eps_range,
-            eps_ref=cfg.eps_ref, eps_abs=cfg.eps_abs,
+            eps_ratio=cfg.eps_ratio,
+            eps_range=cfg.eps_range,
+            eps_ref=cfg.eps_ref,
+            eps_abs=cfg.eps_abs,
             ref_add_alpha=cfg.ref_add_alpha,
             log2_offset_delta=cfg.log2_offset_delta,
         )
 
         # ---- attach selected metadata columns (e.g., sequence, id) if present ----
         base = inputs["df"]
-        for col in (cfg.carry_metadata or []):
+        for col in cfg.carry_metadata or []:
             if col in base.columns and col not in vec8.columns:
-                meta = (
-                    base[idx_cols + [col]]
-                    .dropna(subset=[col])
-                    .drop_duplicates(subset=idx_cols, keep="first")
-                )
+                meta = base[idx_cols + [col]].dropna(subset=[col]).drop_duplicates(subset=idx_cols, keep="first")
                 vec8 = vec8.merge(meta, on=idx_cols, how="left", validate="m:1")
 
         # rename primary label to 'genotype' for output consistency
@@ -157,14 +160,22 @@ class SFXITransform(Plugin):
 
         # standard column preference (keep extra metadata too)
         cols = [
-            "genotype","sequence","r_logic",
-            "v00","v10","v01","v11",
-            "y00_star","y10_star","y01_star","y11_star",
+            "genotype",
+            "sequence",
+            "r_logic",
+            "v00",
+            "v10",
+            "v01",
+            "v11",
+            "y00_star",
+            "y10_star",
+            "y01_star",
+            "y11_star",
             "flat_logic",
         ]
         front = [c for c in cols if c in vec8.columns]
-        rest  = [c for c in vec8.columns if c not in front]
-        vec8  = vec8[front + rest].copy()
+        rest = [c for c in vec8.columns if c not in front]
+        vec8 = vec8[front + rest].copy()
 
         # Final type normalization for contract compliance.
         if "flat_logic" in vec8.columns:
@@ -180,7 +191,8 @@ class SFXITransform(Plugin):
             # 1) transform semantics + one-shot summary
             ctx.logger.info(
                 "sfxi • inputs: [accent]logic[/accent]=%s → v00..v11  |  [accent]intensity[/accent]=%s → y*00..y*11",
-                cfg.response["logic_channel"], cfg.response["intensity_channel"]
+                cfg.response["logic_channel"],
+                cfg.response["intensity_channel"],
             )
             ctx.logger.info(
                 "sfxi • transform semantics:"
@@ -189,8 +201,12 @@ class SFXITransform(Plugin):
             )
             ctx.logger.info(
                 "sfxi • knobs: eps_ratio=%.1e eps_range=%.1e eps_ref=%.1e eps_abs=%.1e  |  alpha=%.3g delta=%.3g",
-                float(cfg.eps_ratio), float(cfg.eps_range), float(cfg.eps_ref), float(cfg.eps_abs),
-                float(cfg.ref_add_alpha), float(cfg.log2_offset_delta),
+                float(cfg.eps_ratio),
+                float(cfg.eps_range),
+                float(cfg.eps_ref),
+                float(cfg.eps_abs),
+                float(cfg.ref_add_alpha),
+                float(cfg.log2_offset_delta),
             )
             ctx.logger.info(
                 "sfxi • r_logic definition: per (designxbatch) dynamic range on LOGIC (linear, ε-guarded): max(L_i)/min(L_i)"
@@ -201,13 +217,22 @@ class SFXITransform(Plugin):
                 "   reference: requested=%r → raw=%r • scope=%s stat=%s • α=%.3g δ=%.3g\n"
                 "   rows: per_corner_logic=%d per_corner_intensity=%d vec8=%d (flat=%d)\n"
                 "   r_logic: median=%.3g iqr=[%.3g, %.3g]",
-                ", ".join(cfg.design_by), int(batches),
-                cfg.time_mode, float(cfg.target_time_h or np.nan), float(cfg.time_tolerance_h),
+                ", ".join(cfg.design_by),
+                int(batches),
+                cfg.time_mode,
+                float(cfg.target_time_h or np.nan),
+                float(cfg.time_tolerance_h),
                 {k: float(v) for k, v in chosen.items()},
-                provided_ref, ref_geno, (cfg.reference or {}).get("scope", "batch"),
+                provided_ref,
+                ref_geno,
+                (cfg.reference or {}).get("scope", "batch"),
                 (cfg.reference or {}).get("stat", "mean"),
-                float(cfg.ref_add_alpha), float(cfg.log2_offset_delta),
-                int(len(sel_logic.per_corner)), int(len(sel_int.per_corner)), int(len(vec8)), int(flats),
+                float(cfg.ref_add_alpha),
+                float(cfg.log2_offset_delta),
+                int(len(sel_logic.per_corner)),
+                int(len(sel_int.per_corner)),
+                int(len(vec8)),
+                int(flats),
                 (float(r_stats["50%"]) if r_stats is not None else float("nan")),
                 (float(r_stats["25%"]) if r_stats is not None else float("nan")),
                 (float(r_stats["75%"]) if r_stats is not None else float("nan")),
@@ -215,11 +240,11 @@ class SFXITransform(Plugin):
 
             # replicate summary per design×batch (logic & intensity)
             try:
-                nL = sel_logic.points.set_index(idx_cols)[["n00","n10","n01","n11"]].rename(
-                    columns={"n00":"n00_L","n10":"n10_L","n01":"n01_L","n11":"n11_L"}
+                nL = sel_logic.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
+                    columns={"n00": "n00_L", "n10": "n10_L", "n01": "n01_L", "n11": "n11_L"}
                 )
-                nI = sel_int.points.set_index(idx_cols)[["n00","n10","n01","n11"]].rename(
-                    columns={"n00":"n00_I","n10":"n10_I","n01":"n01_I","n11":"n11_I"}
+                nI = sel_int.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
+                    columns={"n00": "n00_I", "n10": "n10_I", "n01": "n01_I", "n11": "n11_I"}
                 )
                 n_join = nL.join(nI, how="outer").reset_index()
                 # pretty lines
@@ -227,11 +252,19 @@ class SFXITransform(Plugin):
                 n_join = n_join.sort_values(idx_cols)
                 for _, rr in n_join.iterrows():
                     key = " | ".join(f"{c}={rr[c]}" for c in cfg.design_by + [cfg.batch_col] if c in rr.index)
-                    L = [int(rr.get("n00_L", 0) or 0), int(rr.get("n10_L", 0) or 0),
-                         int(rr.get("n01_L", 0) or 0), int(rr.get("n11_L", 0) or 0)]
-                    I = [int(rr.get("n00_I", 0) or 0), int(rr.get("n10_I", 0) or 0),  # noqa
-                         int(rr.get("n01_I", 0) or 0), int(rr.get("n11_I", 0) or 0)]
-                    preview_lines.append(f"   • {key}: replicates (logic)={L}  (intensity)={I}")
+                    L = [
+                        int(rr.get("n00_L", 0) or 0),
+                        int(rr.get("n10_L", 0) or 0),
+                        int(rr.get("n01_L", 0) or 0),
+                        int(rr.get("n11_L", 0) or 0),
+                    ]
+                    I_counts = [
+                        int(rr.get("n00_I", 0) or 0),
+                        int(rr.get("n10_I", 0) or 0),  # noqa
+                        int(rr.get("n01_I", 0) or 0),
+                        int(rr.get("n11_I", 0) or 0),
+                    ]
+                    preview_lines.append(f"   • {key}: replicates (logic)={L}  (intensity)={I_counts}")
 
             except Exception:
                 pass
@@ -241,7 +274,9 @@ class SFXITransform(Plugin):
                 # map replicate counts for convenience (logic only)
                 rep_map = {}
                 if not nL.empty:
-                    for k, vals in nL.reset_index().set_index(idx_cols)[["n00_L","n10_L","n01_L","n11_L"]].iterrows():
+                    for k, vals in (
+                        nL.reset_index().set_index(idx_cols)[["n00_L", "n10_L", "n01_L", "n11_L"]].iterrows()
+                    ):
                         rep_map[k] = tuple(int(x) for x in vals.to_list())
                 gcol = "genotype" if "genotype" in vec8.columns else label_col
                 sort_cols = [c for c in [gcol, cfg.batch_col] if c in vec8.columns]
@@ -261,23 +296,22 @@ class SFXITransform(Plugin):
                     rep_key = tuple(r[c] for c in idx_cols if c in vec8.columns)
                     reps = rep_map.get(rep_key)
                     rep_txt = "" if reps is None else f"  n={list(reps)}"
+                    v_txt = [f"{x:.3f}" for x in v]
+                    y_txt = [f"{x:.3f}" for x in y]
                     lines.append(
-                        "   • %s: v=%s | y*=%s | r_logic=%.3g (max/min=%.3g/%.3g; corners %s/%s; span_log2=%.3g)%s"
-                        % (
-                            key,
-                            ['%.3f' % x for x in v],
-                            ['%.3f' % x for x in y],
-                            rlog, float(rmax), float(rmin), cmax, cmin, float(span),
-                            rep_txt,
-                        )
+                        f"   • {key}: v={v_txt} | y*={y_txt} | r_logic={rlog:.3g} "
+                        f"(max/min={float(rmax):.3g}/{float(rmin):.3g}; corners {cmax}/{cmin}; "
+                        f"span_log2={float(span):.3g}){rep_txt}"
                     )
                 if lines:
-                    more = "" if len(lines) <= 12 else f"\n   … (+{len(lines)-12} more)"
+                    more = "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"
                     ctx.logger.info(
                         "sfxi • vec8 per designxbatch  "
                         "[muted](v from log2(%s) min-max; y* is log2 of anchor-normalized %s)[/muted]\n%s%s",
-                        cfg.response["logic_channel"], cfg.response["intensity_channel"],
-                        "\n".join(lines[:12]), more
+                        cfg.response["logic_channel"],
+                        cfg.response["intensity_channel"],
+                        "\n".join(lines[:12]),
+                        more,
                     )
             except Exception:
                 pass

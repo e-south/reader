@@ -10,13 +10,14 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional
+from typing import Literal
 
 import pandas as pd
 
 from reader.core.errors import ContractError
 
-DType = Literal["string","int","float","bool","category","datetime"]
+DType = Literal["string", "int", "float", "bool", "category", "datetime"]
+
 
 @dataclass(frozen=True)
 class ColumnRule:
@@ -26,16 +27,17 @@ class ColumnRule:
     allow_nan: bool = False
     monotone_non_decreasing: bool = False
     nonnegative: bool = False
-    allowed_values: Optional[List[str]] = None
+    allowed_values: list[str] | None = None
+
 
 @dataclass(frozen=True)
 class DataFrameContract:
     id: str
     description: str
-    columns: List[ColumnRule]
-    unique_keys: List[List[str]]  # optional candidates; [] means "not enforced"
-    primary_index: Optional[List[str]] = None
-    notes: Optional[str] = None
+    columns: list[ColumnRule]
+    unique_keys: list[list[str]]  # optional candidates; [] means "not enforced"
+    primary_index: list[str] | None = None
+    notes: str | None = None
 
 
 def _is_dtype(series: pd.Series, want: DType) -> bool:
@@ -69,15 +71,21 @@ def validate_df(df: pd.DataFrame, contract: DataFrameContract, *, where: str) ->
             continue
         s = df[rule.name]
         if not _is_dtype(s, rule.dtype):
-            raise ContractError(f"[{where}] contract {contract.id}: column '{rule.name}' has dtype {s.dtype} but expected {rule.dtype}")
+            raise ContractError(
+                f"[{where}] contract {contract.id}: column '{rule.name}' has dtype {s.dtype} but expected {rule.dtype}"
+            )
         if not rule.allow_nan and s.isna().any():
-            raise ContractError(f"[{where}] contract {contract.id}: column '{rule.name}' contains NaN but allow_nan=false")
+            raise ContractError(
+                f"[{where}] contract {contract.id}: column '{rule.name}' contains NaN but allow_nan=false"
+            )
         if rule.nonnegative and (pd.to_numeric(s, errors="coerce") < 0).any():
             raise ContractError(f"[{where}] contract {contract.id}: column '{rule.name}' must be nonnegative")
         if rule.allowed_values is not None:
             bad = sorted(set(map(str, s.dropna().astype(str))) - set(map(str, rule.allowed_values)))
             if bad:
-                raise ContractError(f"[{where}] contract {contract.id}: column '{rule.name}' contains values outside allowed set: {bad[:5]}")
+                raise ContractError(
+                    f"[{where}] contract {contract.id}: column '{rule.name}' contains values outside allowed set: {bad[:5]}"
+                )
 
     # unique keys (if declared)
     for key in contract.unique_keys:
@@ -89,115 +97,141 @@ def validate_df(df: pd.DataFrame, contract: DataFrameContract, *, where: str) ->
 
 # ---------------------- Built-in contracts ----------------------
 
-BUILTIN: Dict[str, DataFrameContract] = {}
+BUILTIN: dict[str, DataFrameContract] = {}
+
 
 def _register(c: DataFrameContract) -> None:
     if c.id in BUILTIN:
         raise RuntimeError(f"duplicate contract id {c.id}")
     BUILTIN[c.id] = c
 
+
 # tidy.v1
-_register(DataFrameContract(
-    id="tidy.v1",
-    description="Tidy long table: position,str | time,float | channel,str | value,float",
-    columns=[
-        ColumnRule("position","string"),
-        ColumnRule("time","float", nonnegative=True),
-        ColumnRule("channel","string"),
-        ColumnRule("value","float"),
-    ],
-    unique_keys=[],
-))
+_register(
+    DataFrameContract(
+        id="tidy.v1",
+        description="Tidy long table: position,str | time,float | channel,str | value,float",
+        columns=[
+            ColumnRule("position", "string"),
+            ColumnRule("time", "float", nonnegative=True),
+            ColumnRule("channel", "string"),
+            ColumnRule("value", "float"),
+        ],
+        unique_keys=[],
+    )
+)
 
 # tidy+map.v1
-_register(DataFrameContract(
-    id="tidy+map.v1",
-    description="Tidy+metadata: tidy.v1 + treatment,str | genotype,str | batch,int",
-    columns=[
-        ColumnRule("position","string"),
-        ColumnRule("time","float", nonnegative=True),
-        ColumnRule("channel","string"),
-        ColumnRule("value","float"),
-        ColumnRule("treatment","string"),
-        ColumnRule("genotype","string"),
-        ColumnRule("batch","int"),
-    ],
-    unique_keys=[],
-))
+_register(
+    DataFrameContract(
+        id="tidy+map.v1",
+        description="Tidy+metadata: tidy.v1 + treatment,str | genotype,str | batch,int",
+        columns=[
+            ColumnRule("position", "string"),
+            ColumnRule("time", "float", nonnegative=True),
+            ColumnRule("channel", "string"),
+            ColumnRule("value", "float"),
+            ColumnRule("treatment", "string"),
+            ColumnRule("genotype", "string"),
+            ColumnRule("batch", "int"),
+        ],
+        unique_keys=[],
+    )
+)
 
 # sfxi.vec8.v1
-_register(DataFrameContract(
-    id="sfxi.vec8.v1",
-    description="Per design×batch vec8 table with logic shape and anchor-normalized intensity",
-    columns=[
-        ColumnRule("genotype","string"),
-        ColumnRule("sequence","string", required=False, allow_nan=True),
-        ColumnRule("id","string", required=False, allow_nan=True),
-        ColumnRule("batch","int", required=False, allow_nan=True),
-        ColumnRule("r_logic","float", nonnegative=True),
-        ColumnRule("v00","float"), ColumnRule("v10","float"),
-        ColumnRule("v01","float"), ColumnRule("v11","float"),
-        ColumnRule("y00_star","float"), ColumnRule("y10_star","float"),
-        ColumnRule("y01_star","float"), ColumnRule("y11_star","float"),
-        ColumnRule("flat_logic","bool"),
-    ],
-    unique_keys=[["genotype","batch"]],
-))
+_register(
+    DataFrameContract(
+        id="sfxi.vec8.v1",
+        description="Per design×batch vec8 table with logic shape and anchor-normalized intensity",
+        columns=[
+            ColumnRule("genotype", "string"),
+            ColumnRule("sequence", "string", required=False, allow_nan=True),
+            ColumnRule("id", "string", required=False, allow_nan=True),
+            ColumnRule("batch", "int", required=False, allow_nan=True),
+            ColumnRule("r_logic", "float", nonnegative=True),
+            ColumnRule("v00", "float"),
+            ColumnRule("v10", "float"),
+            ColumnRule("v01", "float"),
+            ColumnRule("v11", "float"),
+            ColumnRule("y00_star", "float"),
+            ColumnRule("y10_star", "float"),
+            ColumnRule("y01_star", "float"),
+            ColumnRule("y11_star", "float"),
+            ColumnRule("flat_logic", "bool"),
+        ],
+        unique_keys=[["genotype", "batch"]],
+    )
+)
 
 # fold_change.v1
-_register(DataFrameContract(
-    id="fold_change.v1",
-    description="Fold-change summary table per (group..., treatment, time, target).",
-    columns=[
-        ColumnRule("target", "string"),
-        ColumnRule("time", "float", nonnegative=True),
-        ColumnRule("treatment", "string"),
-        ColumnRule("FC", "float", required=True, allow_nan=True),         # default name; validated even if NaN
-        ColumnRule("log2FC", "float", required=True, allow_nan=True),
-        ColumnRule("n", "int", required=True, allow_nan=False),
-        ColumnRule("baseline_value", "string", required=True, allow_nan=True),
-        ColumnRule("baseline_n", "int", required=True, allow_nan=True),
-        ColumnRule("baseline_time", "float", required=True, allow_nan=True),
-        # common group keys (optional if present)
-        ColumnRule("genotype", "string", required=False, allow_nan=True),
-        ColumnRule("batch", "int", required=False, allow_nan=True),
-    ],
-    unique_keys=[],   # allow multiple rows per (group,treatment) across report_times or repeats
-))
+_register(
+    DataFrameContract(
+        id="fold_change.v1",
+        description="Fold-change summary table per (group..., treatment, time, target).",
+        columns=[
+            ColumnRule("target", "string"),
+            ColumnRule("time", "float", nonnegative=True),
+            ColumnRule("treatment", "string"),
+            ColumnRule("FC", "float", required=True, allow_nan=True),  # default name; validated even if NaN
+            ColumnRule("log2FC", "float", required=True, allow_nan=True),
+            ColumnRule("n", "int", required=True, allow_nan=False),
+            ColumnRule("baseline_value", "string", required=True, allow_nan=True),
+            ColumnRule("baseline_n", "int", required=True, allow_nan=True),
+            ColumnRule("baseline_time", "float", required=True, allow_nan=True),
+            # common group keys (optional if present)
+            ColumnRule("genotype", "string", required=False, allow_nan=True),
+            ColumnRule("batch", "int", required=False, allow_nan=True),
+        ],
+        unique_keys=[],  # allow multiple rows per (group,treatment) across report_times or repeats
+    )
+)
 
 
-_register(DataFrameContract(
-    id="logic_symmetry.v1",
-    description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
-    columns=[
-        # optional design-by columns (keep flexible)
-        ColumnRule("genotype","string", required=False, allow_nan=True),
-        ColumnRule("strain","string", required=False, allow_nan=True),
-        ColumnRule("design","string", required=False, allow_nan=True),
-        ColumnRule("construct","string", required=False, allow_nan=True),
-        ColumnRule("batch","int", required=False, allow_nan=True),
-        # replicate counts per corner
-        ColumnRule("n00","int"), ColumnRule("n10","int"),
-        ColumnRule("n01","int"), ColumnRule("n11","int"),
-        # means per corner
-        ColumnRule("b00","float"), ColumnRule("b10","float"),
-        ColumnRule("b01","float"), ColumnRule("b11","float"),
-        # sds per corner
-        ColumnRule("sd00","float"), ColumnRule("sd10","float"),
-        ColumnRule("sd01","float"), ColumnRule("sd11","float"),
-        # metrics
-        ColumnRule("r","float"), ColumnRule("log_r","float"),
-        ColumnRule("cv","float"),
-        ColumnRule("u00","float"), ColumnRule("u10","float"),
-        ColumnRule("u01","float"), ColumnRule("u11","float"),
-        ColumnRule("L","float"), ColumnRule("A","float"),
-        # baseline and encodings
-        ColumnRule("baseline_corner","string"),
-        ColumnRule("baseline_value","float"),
-        ColumnRule("size_value","float", required=False, allow_nan=True),
-        ColumnRule("hue_value","string", required=False, allow_nan=True),
-        ColumnRule("alpha_value","float", required=False, allow_nan=True),
-        ColumnRule("shape_value","string", required=False, allow_nan=True),
-    ],
-    unique_keys=[],
-))
+_register(
+    DataFrameContract(
+        id="logic_symmetry.v1",
+        description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
+        columns=[
+            # optional design-by columns (keep flexible)
+            ColumnRule("genotype", "string", required=False, allow_nan=True),
+            ColumnRule("strain", "string", required=False, allow_nan=True),
+            ColumnRule("design", "string", required=False, allow_nan=True),
+            ColumnRule("construct", "string", required=False, allow_nan=True),
+            ColumnRule("batch", "int", required=False, allow_nan=True),
+            # replicate counts per corner
+            ColumnRule("n00", "int"),
+            ColumnRule("n10", "int"),
+            ColumnRule("n01", "int"),
+            ColumnRule("n11", "int"),
+            # means per corner
+            ColumnRule("b00", "float"),
+            ColumnRule("b10", "float"),
+            ColumnRule("b01", "float"),
+            ColumnRule("b11", "float"),
+            # sds per corner
+            ColumnRule("sd00", "float"),
+            ColumnRule("sd10", "float"),
+            ColumnRule("sd01", "float"),
+            ColumnRule("sd11", "float"),
+            # metrics
+            ColumnRule("r", "float"),
+            ColumnRule("log_r", "float"),
+            ColumnRule("cv", "float"),
+            ColumnRule("u00", "float"),
+            ColumnRule("u10", "float"),
+            ColumnRule("u01", "float"),
+            ColumnRule("u11", "float"),
+            ColumnRule("L", "float"),
+            ColumnRule("A", "float"),
+            # baseline and encodings
+            ColumnRule("baseline_corner", "string"),
+            ColumnRule("baseline_value", "float"),
+            ColumnRule("size_value", "float", required=False, allow_nan=True),
+            ColumnRule("hue_value", "string", required=False, allow_nan=True),
+            ColumnRule("alpha_value", "float", required=False, allow_nan=True),
+            ColumnRule("shape_value", "string", required=False, allow_nan=True),
+        ],
+        unique_keys=[],
+    )
+)

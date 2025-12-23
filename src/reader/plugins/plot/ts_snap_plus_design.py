@@ -8,10 +8,12 @@ Compound plot: ts+snap (top) + baserender design panel (bottom).
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Union
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -26,12 +28,12 @@ from reader.lib.microplates.ts_snap_plus_design import (
 
 class DesignBlock(PluginConfig):
     # Provide exactly one of:
-    job_yaml: Optional[str] = None
-    dataset: Optional[Dict[str, Any]] = None  # see baserender README: {path,format,columns,alphabet,annotations}
+    job_yaml: str | None = None
+    dataset: dict[str, Any] | None = None  # see baserender README: {path,format,columns,alphabet,annotations}
     # Optional plugin specs (only when dataset is provided; job_yaml carries its own)
-    plugins: List[Union[str, Dict[str, Any]]] = Field(default_factory=list)
+    plugins: list[str | dict[str, Any]] = Field(default_factory=list)
     # Optional baserender style overrides (merged over job.style)
-    style: Dict[str, Any] = Field(default_factory=dict)
+    style: dict[str, Any] = Field(default_factory=dict)
     select_by: Literal["id", "sequence"] = "id"
     tidy_key_column: str = "id"
     height_px: int = 220
@@ -41,20 +43,20 @@ class DesignBlock(PluginConfig):
 
 class TSSnapPlusDesignCfg(PluginConfig):
     # grouping
-    group_on: Optional[str] = None
-    pool_sets: Optional[Union[str, List[Dict[str, List[str]]]]] = None
+    group_on: str | None = None
+    pool_sets: str | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
 
     # time series (left)
     ts_x: str = "time"
     ts_channel: str
     ts_hue: str
-    ts_time_window: Optional[List[float]] = None
+    ts_time_window: list[float] | None = None
     ts_add_sheet_line: bool = False
-    ts_sheet_line_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    ts_sheet_line_kwargs: dict[str, Any] = Field(default_factory=dict)
     ts_mark_snap_time: bool = False
-    ts_snap_line_kwargs: Dict[str, Any] = Field(default_factory=dict)
-    ts_log_transform: bool | List[str] = False
+    ts_snap_line_kwargs: dict[str, Any] = Field(default_factory=dict)
+    ts_log_transform: bool | list[str] = False
     ts_ci: float = 95.0
     ts_ci_alpha: float = 0.15
     ts_show_replicates: bool = False
@@ -62,8 +64,8 @@ class TSSnapPlusDesignCfg(PluginConfig):
 
     # snapshot (right)
     snap_x: str = "treatment"
-    snap_channel: Optional[str] = None
-    snap_hue: Optional[str] = None
+    snap_channel: str | None = None
+    snap_hue: str | None = None
     snap_time: float = 0.0
     snap_agg: Literal["mean", "median"] = "mean"
     snap_err: Literal["sem", "iqr", "none"] = "sem"
@@ -72,8 +74,8 @@ class TSSnapPlusDesignCfg(PluginConfig):
     snap_legend_loc: str = "upper right"
 
     # figure
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    filename: Optional[str] = None
+    fig: dict[str, Any] = Field(default_factory=dict)
+    filename: str | None = None
 
     # bottom panel
     design: DesignBlock
@@ -96,7 +98,7 @@ class TSSnapPlusDesignPlot(Plugin):
         df: pd.DataFrame = inputs["df"]
 
         # Resolve pool_sets reference (identical policy to ts_and_snap)
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: Optional[str]):
+        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
             if pool_sets is None:
                 return None
             if isinstance(pool_sets, list):
@@ -119,15 +121,14 @@ class TSSnapPlusDesignPlot(Plugin):
                     )
                 return cat[set_name]
             raise ValueError("pool_sets must be a list[...] or '<column>:<set>' string")
+
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
         # Build strict baserender spec
         br = cfg.design
         # Fail fast: exactly one of job_yaml OR dataset must be provided.
         if bool(br.job_yaml) == bool(br.dataset):
-            raise ValueError(
-                "design: provide exactly ONE of 'job_yaml' or 'dataset' (not both / not neither)."
-            )
+            raise ValueError("design: provide exactly ONE of 'job_yaml' or 'dataset' (not both / not neither).")
         spec = BaseRenderDatasetSpec(
             job_yaml=Path(br.job_yaml).expanduser().resolve() if br.job_yaml else None,
             dataset=br.dataset,

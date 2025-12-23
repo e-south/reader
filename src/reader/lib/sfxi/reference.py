@@ -9,7 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import List, Literal
+from typing import Literal
 
 import pandas as pd
 
@@ -24,7 +24,7 @@ def _reduce(series: pd.Series, stat: Literal["mean", "median"]) -> float:
 def resolve_reference_genotype_label(
     df: pd.DataFrame,
     *,
-    design_by: List[str],
+    design_by: list[str],
     ref_label: str | None,
 ) -> str | None:
     """
@@ -36,49 +36,40 @@ def resolve_reference_genotype_label(
     """
     if ref_label is None:
         return None
-    label_col = (design_by[0] if design_by else "genotype")
+    label_col = design_by[0] if design_by else "genotype"
     alias_col = f"{label_col}_alias"
     want = str(ref_label)
 
-    if label_col in df.columns:
-        if df[label_col].astype(str).eq(want).any():
-            return want  # exact raw match
+    if label_col in df.columns and df[label_col].astype(str).eq(want).any():
+        return want  # exact raw match
 
     if alias_col in df.columns:
-        pairs = (
-            df[[label_col, alias_col]]
-            .dropna()
-            .astype(str)
-            .drop_duplicates()
-        )
+        pairs = df[[label_col, alias_col]].dropna().astype(str).drop_duplicates()
         matches = pairs.loc[pairs[alias_col] == want, label_col].unique()
         if len(matches) == 1:
             return str(matches[0])  # unique alias→raw mapping
         if len(matches) > 1:
             raise ValueError(
-                "sfxi: reference.genotype %r resolves via %r to multiple %r values: %r"
-                % (want, alias_col, label_col, sorted(map(str, matches)))
+                f"sfxi: reference.genotype {want!r} resolves via {alias_col!r} to multiple {label_col!r} values: "
+                f"{sorted(map(str, matches))!r}"
             )
 
     # diagnostics (short previews)
-    raw_vals = (df[label_col].astype(str).unique().tolist()
-                if label_col in df.columns else [])
-    alias_vals = (df[alias_col].astype(str).unique().tolist()
-                  if alias_col in df.columns else [])
+    raw_vals = df[label_col].astype(str).unique().tolist() if label_col in df.columns else []
+    alias_vals = df[alias_col].astype(str).unique().tolist() if alias_col in df.columns else []
     raw_prev = ", ".join(sorted(raw_vals)[:8]) + (" …" if len(raw_vals) > 8 else "")
-    alias_prev = (", ".join(sorted(alias_vals)[:8]) + (" …" if len(alias_vals) > 8 else ""))
+    alias_prev = ", ".join(sorted(alias_vals)[:8]) + (" …" if len(alias_vals) > 8 else "")
     raise ValueError(
-        "sfxi: reference.genotype %r not found under %r or %r.\n"
-        "   available raw:   [%s]\n"
-        "   available alias: [%s]"
-        % (want, label_col, alias_col, raw_prev, (alias_prev or "—"))
+        f"sfxi: reference.genotype {want!r} not found under {label_col!r} or {alias_col!r}.\n"
+        f"   available raw:   [{raw_prev}]\n"
+        f"   available alias: [{alias_prev or '—'}]"
     )
 
 
 def compute_reference_table(
     per_corner: pd.DataFrame,
     *,
-    design_by: List[str],
+    design_by: list[str],
     batch_col: str,
     ref_genotype: str,
     scope: Literal["batch", "global"] = "batch",

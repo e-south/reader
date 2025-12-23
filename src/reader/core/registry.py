@@ -13,7 +13,8 @@ import importlib
 import inspect
 import pkgutil
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Mapping, Type
+from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -26,8 +27,9 @@ class PluginConfig(BaseModel):
 
 class Plugin(ABC):
     """Contract-driven plugin interface."""
-    key: str                # short unique key within category
-    category: str           # ingest|merge|transform|plot|validator
+
+    key: str  # short unique key within category
+    category: str  # ingest|merge|transform|plot|validator
 
     ConfigModel = PluginConfig
 
@@ -42,26 +44,31 @@ class Plugin(ABC):
         """Label -> contract id."""
 
     @abstractmethod
-    def run(self, ctx, inputs: Dict[str, Any], cfg: PluginConfig) -> Dict[str, Any]:
+    def run(self, ctx, inputs: dict[str, Any], cfg: PluginConfig) -> dict[str, Any]:
         """Execute and return dict of outputs by label."""
 
 
 class Registry:
     """Entry-point based registry; no module scanning fallbacks."""
+
     def __init__(self) -> None:
-        self._by_category: Dict[str, Dict[str, Type[Plugin]]] = {
-            "ingest": {}, "merge": {}, "transform": {}, "plot": {}, "validator": {}
+        self._by_category: dict[str, dict[str, type[Plugin]]] = {
+            "ingest": {},
+            "merge": {},
+            "transform": {},
+            "plot": {},
+            "validator": {},
         }
 
-    def register(self, category: str, key: str, cls: Type[Plugin]) -> None:
+    def register(self, category: str, key: str, cls: type[Plugin]) -> None:
         if key in self._by_category.get(category, {}):
             raise RegistryError(f"Duplicate plugin key '{category}/{key}'")
         self._by_category[category][key] = cls
 
-    def categories(self) -> Mapping[str, Mapping[str, Type[Plugin]]]:
+    def categories(self) -> Mapping[str, Mapping[str, type[Plugin]]]:
         return self._by_category
 
-    def resolve(self, uses: str) -> Type[Plugin]:
+    def resolve(self, uses: str) -> type[Plugin]:
         try:
             category, key = uses.split("/", 1)
         except ValueError as e:
@@ -69,13 +76,14 @@ class Registry:
         try:
             return self._by_category[category][key]
         except KeyError:
-            available = ", ".join(f"{cat}/{k}" for cat, m in self._by_category.items() for k in m.keys())
-            raise RegistryError(f"Unknown plugin '{uses}'. Installed: {available}")
+            available = ", ".join(f"{cat}/{k}" for cat, m in self._by_category.items() for k in m)
+            raise RegistryError(f"Unknown plugin '{uses}'. Installed: {available}") from None
 
 
 def load_entry_points() -> Registry:
     """Register built-in plugins by scanning the package, then load external ones via entry points."""
     import importlib.metadata as md
+
     reg = Registry()
 
     # 1) Built-ins: scan reader.plugins.*
@@ -92,7 +100,7 @@ def load_entry_points() -> Registry:
         module = importlib.import_module(modinfo.name)
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Plugin) and obj is not Plugin:
-                reg.register(getattr(obj, "category"), getattr(obj, "key"), obj)
+                reg.register(obj.category, obj.key, obj)
                 discovered += 1
     if discovered == 0:
         raise RegistryError(
@@ -107,7 +115,7 @@ def load_entry_points() -> Registry:
             cls = ep.load()
             if not issubclass(cls, Plugin):
                 raise RegistryError(f"Entry point {ep.name} in {group} is not a Plugin subclass")
-            reg.register(category, getattr(cls, "key"), cls)
+            reg.register(category, cls.key, cls)
 
     for category in ("ingest", "merge", "transform", "plot"):
         _load(f"reader.{category}", category)

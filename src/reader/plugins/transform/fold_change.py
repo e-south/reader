@@ -12,10 +12,12 @@ Fold-change report:
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
+
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Literal, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -28,6 +30,7 @@ from reader.lib.microplates.base import (
 )
 
 # ----------------------------- small helpers -----------------------------
+
 
 def _synonyms_for(col: str) -> list[str]:
     """
@@ -42,7 +45,7 @@ def _synonyms_for(col: str) -> list[str]:
     return names
 
 
-def _pick_alias(df: pd.DataFrame, base: Optional[str]) -> Optional[str]:
+def _pick_alias(df: pd.DataFrame, base: str | None) -> str | None:
     """
     Deterministic column resolver (programmatic-first):
       • Prefer the raw '<base>' column
@@ -61,31 +64,32 @@ def _pick_alias(df: pd.DataFrame, base: Optional[str]) -> Optional[str]:
 
 # ----------------------------- config model -----------------------------
 
+
 class FoldChangeCfg(PluginConfig):
     # What to compute
-    target: str                                  # e.g., "YFP/CFP" or "YFP/OD600"
-    report_times: List[float]                    # e.g., [8.0, 14.0]
-    time_tolerance: float = 0.51                 # nearest-time selection tolerance (h)
-    agg: Literal["median", "mean"] = "median"    # replicate aggregator
+    target: str  # e.g., "YFP/CFP" or "YFP/OD600"
+    report_times: list[float]  # e.g., [8.0, 14.0]
+    time_tolerance: float = 0.51  # nearest-time selection tolerance (h)
+    agg: Literal["median", "mean"] = "median"  # replicate aggregator
 
     # Grouping and labels
-    treatment_column: str = "treatment"          # we will prefer '<col>_alias' when present
-    group_by: List[str] = Field(default_factory=lambda: ["genotype"])
+    treatment_column: str = "treatment"  # we will prefer '<col>_alias' when present
+    group_by: list[str] = Field(default_factory=lambda: ["genotype"])
 
     # Baseline policy
     use_global_baseline: bool = False
-    global_baseline_value: Optional[str] = None  # used when use_global_baseline==True
+    global_baseline_value: str | None = None  # used when use_global_baseline==True
     # overrides: list of maps; any keys matching group_by columns define a match; each must
     # include 'baseline_value'. Example:
     #   - { genotype: "araBADp", baseline_value: "0 uM arabinose" }
-    overrides: List[Dict[str, Any]] = Field(default_factory=list)
+    overrides: list[dict[str, Any]] = Field(default_factory=list)
 
     # Output columns (names)
     fc_column: str = "FC"
     log2fc_column: str = "log2FC"
 
     # Attach extra metadata columns if present (won't be required by contract, just carried through)
-    attach_metadata: List[str] = Field(default_factory=lambda: ["batch"])
+    attach_metadata: list[str] = Field(default_factory=lambda: ["batch"])
 
     # ----- helpers kept here for cohesion (stateless static methods) -----
 
@@ -94,11 +98,11 @@ class FoldChangeCfg(PluginConfig):
         row_like: Mapping[str, Any],
         *,
         use_global: bool,
-        global_value: Optional[str],
-        overrides: List[Dict[str, Any]],
-        group_by_cols: List[str],
+        global_value: str | None,
+        overrides: list[dict[str, Any]],
+        group_by_cols: list[str],
         logger=None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Resolve baseline with **override-first** precedence, then global:
           1) If a rule in `overrides` matches the group, return its `baseline_value`.
@@ -108,7 +112,7 @@ class FoldChangeCfg(PluginConfig):
         Matching considers BOTH raw and alias keys (e.g., 'genotype' and 'genotype_alias').
         """
         # 1) Try overrides first
-        syn_view: Dict[str, Any] = {}
+        syn_view: dict[str, Any] = {}
         for g in group_by_cols:
             val = row_like.get(g, None)
             for k in _synonyms_for(g):
@@ -133,22 +137,37 @@ class FoldChangeCfg(PluginConfig):
         try:
             if logger is not None and overrides:
                 keys = ", ".join(group_by_cols)
-                logger.debug("fold_change: no override matched for {%s}=%s", keys, [row_like.get(k) for k in group_by_cols])
+                logger.debug(
+                    "fold_change: no override matched for {%s}=%s", keys, [row_like.get(k) for k in group_by_cols]
+                )
         except Exception:
             pass
         return None
 
     @staticmethod
     def _log_summary(
-        ctx, *, cfg: "FoldChangeCfg", target: str, t: float, stats: pd.DataFrame,
-        gcols: List[str], tcol: str, rows_emitted: int, missing_baseline_groups: int
+        ctx,
+        *,
+        cfg: FoldChangeCfg,
+        target: str,
+        t: float,
+        stats: pd.DataFrame,
+        gcols: list[str],
+        tcol: str,
+        rows_emitted: int,
+        missing_baseline_groups: int,
     ) -> None:
         try:
             n_groups = int(stats[gcols].drop_duplicates().shape[0])
             n_treat = int(stats[tcol].nunique())
             ctx.logger.info(
                 "fold_change • target=[accent]%s[/accent] • t≈%.2f h • groups=%d • treatments=%d • rows=%d • missing_baseline=%d",
-                target, float(t), n_groups, n_treat, rows_emitted, missing_baseline_groups
+                target,
+                float(t),
+                n_groups,
+                n_treat,
+                rows_emitted,
+                missing_baseline_groups,
             )
         except Exception:
             pass
@@ -156,8 +175,10 @@ class FoldChangeCfg(PluginConfig):
 
 # ----------------------------- plugin class -----------------------------
 
+
 class FoldChange(Plugin):
     """Contract-driven transform that emits a fold_change.v1 table."""
+
     key = "fold_change"
     category = "transform"
     ConfigModel = FoldChangeCfg
@@ -192,24 +213,31 @@ class FoldChange(Plugin):
         base = df[df["channel"].astype(str) == target].copy()
         if base.empty:
             ctx.logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
-            cols = ["target","time","treatment", cfg.fc_column, cfg.log2fc_column, "n",
-                    "baseline_value","baseline_n","baseline_time"]
+            cols = [
+                "target",
+                "time",
+                "treatment",
+                cfg.fc_column,
+                cfg.log2fc_column,
+                "n",
+                "baseline_value",
+                "baseline_n",
+                "baseline_time",
+            ]
             for c in gcols:
                 cols.append(c)
             empty = pd.DataFrame(columns=cols)
             return {"table": empty}
 
         # We will compute per time point, then concat
-        out_rows: List[Dict[str, Any]] = []
+        out_rows: list[dict[str, Any]] = []
 
         # "Keys" used to pick nearest-time replicates per (group, treatment, position)
-        nearest_keys: List[str] = [c for c in (gcols + [tcol, "position"]) if c in base.columns]
+        nearest_keys: list[str] = [c for c in (gcols + [tcol, "position"]) if c in base.columns]
 
         # Iterate times
         for t in [float(x) for x in cfg.report_times]:
-            snapped = nearest_time_per_key(
-                base, target_time=float(t), keys=nearest_keys, tol=float(cfg.time_tolerance)
-            )
+            snapped = nearest_time_per_key(base, target_time=float(t), keys=nearest_keys, tol=float(cfg.time_tolerance))
             if snapped.empty:
                 ctx.logger.warning(
                     "fold_change: t≈%.2f h: no rows within ±%.3g h for target=%s", t, cfg.time_tolerance, target
@@ -217,15 +245,14 @@ class FoldChange(Plugin):
                 continue
 
             # Aggregate replicates per (group_by..., treatment)
-            group_cols = [c for c in gcols + [tcol]]
+            group_cols = [*gcols, tcol]
             extra_aggs = {}
             if "treatment" in snapped.columns:
                 extra_aggs["__treatment_raw"] = ("treatment", "first")
             if "treatment_alias" in snapped.columns:
                 extra_aggs["__treatment_alias"] = ("treatment_alias", "first")
             grouped = (
-                snapped
-                .assign(time_used=pd.to_numeric(snapped["time"], errors="coerce"))
+                snapped.assign(time_used=pd.to_numeric(snapped["time"], errors="coerce"))
                 .groupby(group_cols, dropna=False)
                 .agg(
                     val=("value", cfg.agg),
@@ -266,15 +293,27 @@ class FoldChange(Plugin):
                         bl = sub[sub["__treatment_alias"].astype(str) == str(baseline_label)]
 
                 # If an override was chosen but not present at this time, try the global baseline as a clear fallback.
-                if bl.empty and cfg.use_global_baseline and cfg.global_baseline_value is not None \
-                   and (baseline_label is not None) and (str(baseline_label) != str(cfg.global_baseline_value)):
-                    bl_global = sub[sub[tcol].astype[str] == str(cfg.global_baseline_value)] if not sub.empty else pd.DataFrame()
+                if (
+                    bl.empty
+                    and cfg.use_global_baseline
+                    and cfg.global_baseline_value is not None
+                    and (baseline_label is not None)
+                    and (str(baseline_label) != str(cfg.global_baseline_value))
+                ):
+                    bl_global = (
+                        sub[sub[tcol].astype[str] == str(cfg.global_baseline_value)]
+                        if not sub.empty
+                        else pd.DataFrame()
+                    )
                     if not bl_global.empty:
                         try:
                             grp_desc = " | ".join(f"{c}={grp_map.get(c)}" for c in gcols)
                             ctx.logger.info(
                                 "fold_change • t≈%.2f h • %s: override baseline %r not found → using global %r",
-                                float(t), grp_desc, str(baseline_label), str(cfg.global_baseline_value)
+                                float(t),
+                                grp_desc,
+                                str(baseline_label),
+                                str(cfg.global_baseline_value),
                             )
                         except Exception:
                             pass
@@ -291,7 +330,10 @@ class FoldChange(Plugin):
                             ctx.logger.warning(
                                 "[warn]fold_change[/warn] • t≈%.2f h • %s: baseline not present "
                                 "(override=%r, global=%r) — FC set to NaN",
-                                float(t), grp_desc, str(baseline_label), str(cfg.global_baseline_value)
+                                float(t),
+                                grp_desc,
+                                str(baseline_label),
+                                str(cfg.global_baseline_value),
                             )
                     except Exception:
                         pass
@@ -306,21 +348,20 @@ class FoldChange(Plugin):
                 # Emit per treatment
                 for _, r in sub.iterrows():
                     v = float(r["val"])
-                    if not (np.isfinite(base_val) and base_val != 0):
-                        fc = float("nan")
-                    else:
-                        fc = v / base_val
-                    log2fc = (float(np.log2(fc)) if (np.isfinite(fc) and fc > 0) else float("nan"))
+                    fc = float("nan") if not (np.isfinite(base_val) and base_val != 0) else v / base_val
+                    log2fc = float(np.log2(fc)) if (np.isfinite(fc) and fc > 0) else float("nan")
 
                     # Emit raw programmatic treatment label when available
                     trt_out = str(r.get("__treatment_raw", r[tcol]))
                     # Emit raw baseline label when available; otherwise echo provided label
                     base_label_out = (
                         str(bl["__treatment_raw"].iloc[0])
-                        if ("__treatment_raw" in bl.columns and not bl.empty and pd.notna(bl["__treatment_raw"].iloc[0]))
+                        if (
+                            "__treatment_raw" in bl.columns and not bl.empty and pd.notna(bl["__treatment_raw"].iloc[0])
+                        )
                         else (str(baseline_label) if baseline_label is not None else "")
                     )
-                    row: Dict[str, Any] = {
+                    row: dict[str, Any] = {
                         "target": target,
                         "time": float(t),
                         "treatment": trt_out,
@@ -337,23 +378,38 @@ class FoldChange(Plugin):
                     out_rows.append(row)
 
             FoldChangeCfg._log_summary(
-                ctx, cfg=cfg, target=target, t=t, stats=grouped,
-                gcols=gcols, tcol=tcol,
+                ctx,
+                cfg=cfg,
+                target=target,
+                t=t,
+                stats=grouped,
+                gcols=gcols,
+                tcol=tcol,
                 rows_emitted=(len(out_rows) - rows_before),
-                missing_baseline_groups=missing_baseline_groups
+                missing_baseline_groups=missing_baseline_groups,
             )
             try:
                 if fallbacks_used:
-                    ctx.logger.info("fold_change • t≈%.2f h • override→global fallbacks: %d",
-                                    float(t), int(fallbacks_used))
+                    ctx.logger.info(
+                        "fold_change • t≈%.2f h • override→global fallbacks: %d", float(t), int(fallbacks_used)
+                    )
             except Exception:
                 pass
 
         # Build final table
         if not out_rows:
             # produce a typed empty frame with required columns
-            cols = ["target", "time", "treatment", cfg.fc_column, cfg.log2fc_column, "n",
-                    "baseline_value", "baseline_n", "baseline_time"]
+            cols = [
+                "target",
+                "time",
+                "treatment",
+                cfg.fc_column,
+                cfg.log2fc_column,
+                "n",
+                "baseline_value",
+                "baseline_n",
+                "baseline_time",
+            ]
             for c in gcols:
                 cols.append(c)
             out = pd.DataFrame(columns=cols)
@@ -361,12 +417,11 @@ class FoldChange(Plugin):
             out = pd.DataFrame(out_rows)
 
         # (Optional) carry-through extra metadata if they are constant per (group,treatment) — best effort.
-        for mcol in (cfg.attach_metadata or []):
+        for mcol in cfg.attach_metadata or []:
             if mcol in df.columns and mcol not in out.columns:
                 try:
                     base_meta = (
-                        base
-                        .groupby(gcols + [tcol], dropna=False)[mcol]
+                        base.groupby(gcols + [tcol], dropna=False)[mcol]
                         .agg(lambda s: s.dropna().iloc[0] if s.dropna().nunique() == 1 else np.nan)
                         .reset_index()
                     )
@@ -394,7 +449,7 @@ class FoldChange(Plugin):
                 target,
                 ", ".join(f"{float(x):.2f}" for x in cfg.report_times),
                 gpreview or "—",
-                ", ".join(treat_levels[:10]) + (" …" if len(treat_levels) > 10 else "")
+                ", ".join(treat_levels[:10]) + (" …" if len(treat_levels) > 10 else ""),
             )
         except Exception:
             pass
@@ -412,6 +467,7 @@ class FoldChange(Plugin):
                             continue
                         sub["__abs_l2fc"] = sub[cfg.log2fc_column].abs()
                         top = sub.sort_values("__abs_l2fc", ascending=False).head(5)
+
                         def _desc(row) -> str:
                             grp = " | ".join(f"{c}={row[c]}" for c in gcols if c in row.index)
                             base_lbl = str(row.get("baseline_value", "")) or "—"
@@ -420,6 +476,7 @@ class FoldChange(Plugin):
                                 f"→ {row[cfg.fc_column]:.3g}x (log2FC={row[cfg.log2fc_column]:.2f}; "
                                 f"baseline={base_lbl})"
                             )
+
                         lines = "\n".join(_desc(r) for _, r in top.iterrows())
                         ctx.logger.info("fold_change • t≈%.2f h • strongest changes:\n%s", float(tt), lines or "   —")
                     # Per‑primary-group succinct readout (top 3 by |log2FC|)
@@ -432,10 +489,13 @@ class FoldChange(Plugin):
                             ctx.logger.info("fold_change • t=%.2f h • per-%s top changes:", float(tt), gkey)
                             for gv, ss in sub.groupby(gkey, dropna=False):
                                 ssg = ss.sort_values("__abs_l2fc", ascending=False).head(3)
-                                items = ", ".join(
-                                    f"treatment={r['treatment']}: {r[cfg.fc_column]:.3g}x (l2FC={r[cfg.log2fc_column]:.2f})"
-                                    for _, r in ssg.iterrows()
-                                ) or "—"
+                                items = (
+                                    ", ".join(
+                                        f"treatment={r['treatment']}: {r[cfg.fc_column]:.3g}x (l2FC={r[cfg.log2fc_column]:.2f})"
+                                        for _, r in ssg.iterrows()
+                                    )
+                                    or "—"
+                                )
                                 ctx.logger.info("   • %s → %s", str(gv), items)
         except Exception:
             # logging must never break the pipeline

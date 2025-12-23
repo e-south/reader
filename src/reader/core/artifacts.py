@@ -12,9 +12,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -32,11 +32,11 @@ def _json_dumps(obj: Any) -> str:
 
 @dataclass(frozen=True)
 class Artifact:
-    label: str                  # logical label ("merged/df")
-    contract_id: str            # e.g., "tidy+map.v1" or "none"
-    path: Path                  # data path
-    meta_path: Path             # meta.json path
-    meta: Dict[str, Any]        # loaded meta json
+    label: str  # logical label ("merged/df")
+    contract_id: str  # e.g., "tidy+map.v1" or "none"
+    path: Path  # data path
+    meta_path: Path  # meta.json path
+    meta: dict[str, Any]  # loaded meta json
 
     def load_dataframe(self) -> pd.DataFrame:
         if self.path.suffix.lower() == ".parquet":
@@ -60,7 +60,8 @@ class ArtifactStore:
     - Manifest tracks latest and historical versions for (step_id, output_name)
     - When config digest changes, a new revision directory __rN is created
     """
-    def __init__(self, outputs_dir: Path, *, plots_subdir: Optional[str] = "plots") -> None:
+
+    def __init__(self, outputs_dir: Path, *, plots_subdir: str | None = "plots") -> None:
         self.root = outputs_dir
         self.artifacts_dir = self.root / "artifacts"
         # flatten when plots_subdir is None / "" / "."; otherwise use given subdir
@@ -76,10 +77,10 @@ class ArtifactStore:
             self._write_manifest({"artifacts": {}, "history": {}})
 
     # -------------- manifest --------------
-    def _read_manifest(self) -> Dict[str, Any]:
+    def _read_manifest(self) -> dict[str, Any]:
         return json.loads(self.manifest_path.read_text(encoding="utf-8"))
 
-    def _write_manifest(self, payload: Dict[str, Any]) -> None:
+    def _write_manifest(self, payload: dict[str, Any]) -> None:
         self.manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
     # -------------- helpers --------------
@@ -96,14 +97,14 @@ class ArtifactStore:
         return step_dir / f"{out_name}.parquet"
 
     # -------------- public API --------------
-    def latest(self, label: str) -> Optional[Artifact]:
+    def latest(self, label: str) -> Artifact | None:
         m = self._read_manifest()
         entry = m["artifacts"].get(label)
         if not entry:
             return None
         return self._materialize(label, entry)
 
-    def _materialize(self, label: str, entry: Dict[str, Any]) -> Artifact:
+    def _materialize(self, label: str, entry: dict[str, Any]) -> Artifact:
         step_dir = self.artifacts_dir / entry["step_dir"]
         path = step_dir / entry["filename"]
         meta_path = step_dir / "meta.json"
@@ -124,9 +125,9 @@ class ArtifactStore:
         out_name: str,
         df: pd.DataFrame,
         contract_id: str,
-        inputs: List[str],
+        inputs: list[str],
         config_digest: str,
-        code_digest: Optional[str] = None,
+        code_digest: str | None = None,
     ) -> Artifact:
         # Choose base step directory; new revision when prior config differs
         base = f"{step_id}.{plugin_key}"
@@ -162,7 +163,7 @@ class ArtifactStore:
             "artifact_id": f"{base}/{out_name}",
             "contract": contract_id,
             "schema_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "producer": {"step_id": step_id, "plugin": plugin_key},
             "inputs": inputs,
             "config_digest": config_digest,
@@ -182,7 +183,9 @@ class ArtifactStore:
         man["history"].setdefault(label, []).append(meta)
         self._write_manifest(man)
 
-        return Artifact(label=label, contract_id=contract_id, path=data_path, meta_path=step_dir / "meta.json", meta=meta)
+        return Artifact(
+            label=label, contract_id=contract_id, path=data_path, meta_path=step_dir / "meta.json", meta=meta
+        )
 
     # ---- flat plots handling (not listed as dataframe artifacts) ----
     def plots_directory(self) -> Path:

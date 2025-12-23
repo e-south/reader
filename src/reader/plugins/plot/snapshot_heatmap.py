@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 import pandas as pd
 from pydantic import Field
@@ -22,15 +23,16 @@ class HeatmapCfg(PluginConfig):
     time: float
     x: str = "treatment"
     y: str = "genotype"
-    order_x: Optional[list[str]] = None
-    order_y: Optional[list[str]] = None
+    order_x: list[str] | None = None
+    order_y: list[str] | None = None
     square: bool = True
-    vmin: Optional[float] = None
-    vmax: Optional[float] = None
-    value_transform: Optional[str] = "none"   # "none" | "log2" | "log10"
+    vmin: float | None = None
+    vmax: float | None = None
+    value_transform: str | None = "none"  # "none" | "log2" | "log10"
     time_tolerance: float = 0.51
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    filename: Optional[str] = None
+    fig: dict[str, Any] = Field(default_factory=dict)
+    filename: str | None = None
+
 
 class SnapshotHeatmapPlot(Plugin):
     key = "snapshot_heatmap"
@@ -38,20 +40,21 @@ class SnapshotHeatmapPlot(Plugin):
     ConfigModel = HeatmapCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:
+    def input_contracts(cls) -> Mapping[str, str]:
         # Both are optional; we derive what we need at runtime.
         # - df? : tidy.v1    (OD600, YFP, YFP/OD600, YFP/CFP, …)
         # - fc? : fold_change.v1  (FC/log2FC for specific targets like YFP/CFP)
         return {"df?": "tidy.v1", "fc?": "fold_change.v1"}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str,str]:
+    def output_contracts(cls) -> Mapping[str, str]:
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: HeatmapCfg):
         import numpy as np
 
         from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap
+
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
 
@@ -62,7 +65,7 @@ class SnapshotHeatmapPlot(Plugin):
         fig_kwargs = dict(cfg.fig or {})
         fig_kwargs.setdefault("time_tolerance", cfg.time_tolerance)
 
-        def _auto_cbar_label(ch: str, value_transform: Optional[str]) -> str:
+        def _auto_cbar_label(ch: str, value_transform: str | None) -> str:
             vtx = (value_transform or "none").lower()
             if ch.startswith("log2FC_"):
                 return f"log2FC ({ch.split('_', 1)[1]})"
@@ -96,7 +99,9 @@ class SnapshotHeatmapPlot(Plugin):
                 # INFO (not WARNING) per request; clearly highlight in styling.
                 ctx.logger.info(
                     "[warn]snapshot_heatmap[/warn] • requested t=%.2f h; nearest available t=%.2f h (Δ=%.2f h) — using nearest",
-                    float(cfg.time), float(tsel), float(deltas[j])
+                    float(cfg.time),
+                    float(tsel),
+                    float(deltas[j]),
                 )
             sub = tab[pd.to_numeric(tab["time"], errors="coerce") == tsel].copy()
             # Build a tidy-like dataframe that plot_snapshot_heatmap expects:
@@ -127,13 +132,17 @@ class SnapshotHeatmapPlot(Plugin):
             fig_kwargs.setdefault("cbar_label", _auto_cbar_label(channel, cfg.value_transform))
         plot_snapshot_heatmap(
             df=df,
-            blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time","channel","value"]),
+            blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time", "channel", "value"]),
             output_dir=ctx.plots_dir,
             channel=channel,
             time=cfg.time,
-            x=cfg.x, y=cfg.y,
-            order_x=cfg.order_x, order_y=cfg.order_y,
-            square=cfg.square, vmin=cfg.vmin, vmax=cfg.vmax,
+            x=cfg.x,
+            y=cfg.y,
+            order_x=cfg.order_x,
+            order_y=cfg.order_y,
+            square=cfg.square,
+            vmin=cfg.vmin,
+            vmax=cfg.vmax,
             fig_kwargs=fig_kwargs,
             filename=filename,
         )

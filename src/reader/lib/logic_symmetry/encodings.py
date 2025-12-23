@@ -10,7 +10,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -24,15 +23,15 @@ except Exception:  # pragma: no cover
 
 @dataclass(frozen=True)
 class EncodingConfig:
-    size_by: str           # "log_r" | "cv" | "fixed"
+    size_by: str  # "log_r" | "cv" | "fixed"
     size_fixed: float
-    hue: Optional[str]     # None | column name
-    alpha_by: Optional[str]
+    hue: str | None  # None | column name
+    alpha_by: str | None
     alpha_min: float
     alpha_max: float
-    shape_by: Optional[str]
-    shape_cycle: List[str]
-    shape_max_categories: Optional[int]
+    shape_by: str | None
+    shape_cycle: list[str]
+    shape_max_categories: int | None
 
 
 def _scale_to_range(values: pd.Series, vmin: float, vmax: float, lo: float, hi: float) -> pd.Series:
@@ -89,20 +88,21 @@ def _compute_shape(df: pd.DataFrame, cfg: EncodingConfig) -> pd.Series:
     cats = pd.Categorical(df[col].astype(str))
     ncat = int(len(cats.categories))
     if cfg.shape_max_categories is not None and ncat > int(cfg.shape_max_categories):
-        raise ValueError(f"shape_by={col!r} has {ncat} categories, exceeding shape_max_categories={cfg.shape_max_categories}")
+        raise ValueError(
+            f"shape_by={col!r} has {ncat} categories, exceeding shape_max_categories={cfg.shape_max_categories}"
+        )
     if ncat > len(cfg.shape_cycle):
-        raise ValueError(f"Not enough markers in shape_cycle ({len(cfg.shape_cycle)}) for {ncat} categories; extend the cycle or lower categories.")
+        raise ValueError(
+            f"Not enough markers in shape_cycle ({len(cfg.shape_cycle)}) for {ncat} categories; extend the cycle or lower categories."
+        )
     mapping = {cat: cfg.shape_cycle[i] for i, cat in enumerate(cats.categories)}
     return pd.Series([mapping[str(v)] for v in cats.astype(str)], index=df.index, dtype=object)
 
 
-def apply_encodings(
-    df_points: pd.DataFrame,
-    cfg: EncodingConfig
-) -> pd.DataFrame:
+def apply_encodings(df_points: pd.DataFrame, cfg: EncodingConfig) -> pd.DataFrame:
     out = df_points.copy()
     out["size_value"] = _compute_size(out, cfg)
     out["alpha_value"] = _compute_alpha(out, cfg)
-    out["hue_value"] = (out[cfg.hue] if cfg.hue else pd.Series([None]*len(out), index=out.index)).astype(object)
+    out["hue_value"] = (out[cfg.hue] if cfg.hue else pd.Series([None] * len(out), index=out.index)).astype(object)
     out["shape_value"] = _compute_shape(out, cfg)
     return out

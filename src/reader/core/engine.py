@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pandas as pd
 from rich import box
@@ -49,8 +49,8 @@ def _digest_cfg(plugin_cfg: Any) -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
-def _resolve_inputs(store: ArtifactStore, reads: Dict[str, str]) -> Dict[str, Any]:
-    inputs: Dict[str, Any] = {}
+def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
     for label, target in reads.items():
         if isinstance(target, str) and target.startswith("file:"):
             # pass through file path; plugin validates
@@ -61,7 +61,7 @@ def _resolve_inputs(store: ArtifactStore, reads: Dict[str, str]) -> Dict[str, An
     return inputs
 
 
-def _assert_input_contracts(plugin: Plugin, inputs: Dict[str, Any], *, where: str) -> None:
+def _assert_input_contracts(plugin: Plugin, inputs: dict[str, Any], *, where: str) -> None:
     req = plugin.input_contracts()
     for raw_name, contract_id in req.items():
         optional = raw_name.endswith("?")
@@ -79,7 +79,7 @@ def _assert_input_contracts(plugin: Plugin, inputs: Dict[str, Any], *, where: st
             )
 
 
-def _assert_output_contracts(plugin: Plugin, outputs: Dict[str, Any], *, where: str) -> None:
+def _assert_output_contracts(plugin: Plugin, outputs: dict[str, Any], *, where: str) -> None:
     exp = plugin.output_contracts()
     # Exactly the declared outputs must be present
     if set(outputs.keys()) != set(exp.keys()):
@@ -113,7 +113,9 @@ def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
         inp = ", ".join(f"{k}:{v}" for k, v in P.input_contracts().items())
         out = ", ".join(f"{k}:{v}" for k, v in P.output_contracts().items())
         table.add_row(str(i), step.id, step.uses, inp, out)
-    console.print(Panel(table, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(spec.steps)} steps[/muted]"))
+    console.print(
+        Panel(table, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(spec.steps)} steps[/muted]")
+    )
 
 
 def validate(spec: ReaderSpec, *, console: Console) -> None:
@@ -135,11 +137,11 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
 def run_job(
     spec_path: Path,
     *,
-    resume_from: Optional[str] = None,
-    until: Optional[str] = None,
+    resume_from: str | None = None,
+    until: str | None = None,
     dry_run: bool = False,
     log_level: str = "INFO",
-    console: Optional[Console] = None,
+    console: Console | None = None,
 ) -> None:
     spec = ReaderSpec.load(spec_path)
     exp = spec.experiment
@@ -159,12 +161,15 @@ def run_job(
     fh.setFormatter(fmt_file)
     # Pretty console logs with Rich (integrates with progress bars)
     console = console or Console()
-    sh = RichHandler(console=console, markup=True, rich_tracebacks=True, show_level=True, show_time=False, show_path=False)
+    sh = RichHandler(
+        console=console, markup=True, rich_tracebacks=True, show_level=True, show_time=False, show_path=False
+    )
     logger.addHandler(fh)
     logger.addHandler(sh)
 
     palette = exp.get("palette", "colorblind")
     from importlib import import_module
+
     PaletteBook = None
     if palette is not None:
         try:
@@ -183,10 +188,7 @@ def run_job(
 
     # Where should plots go?
     plots_cfg = exp.get("plots_dir", "plots")  # set to None to flatten into outputs/
-    if plots_cfg in (None, "", ".", "./"):
-        plots_dir = out_dir
-    else:
-        plots_dir = out_dir / plots_cfg
+    plots_dir = out_dir if plots_cfg in (None, "", ".", "./") else out_dir / plots_cfg
 
     ctx = RunContext(
         exp_dir=Path(exp["root"]),
@@ -210,13 +212,13 @@ def run_job(
             idx = next(i for i, s in enumerate(steps) if s.id == resume_from)
             steps = steps[idx:]
         except StopIteration:
-            raise ConfigError(f"--resume-from: step id '{resume_from}' not found")
+            raise ConfigError(f"--resume-from: step id '{resume_from}' not found") from None
     if until:
         try:
             idx = next(i for i, s in enumerate(steps) if s.id == until)
             steps = steps[: idx + 1]
         except StopIteration:
-            raise ConfigError(f"--until: step id '{until}' not found")
+            raise ConfigError(f"--until: step id '{until}' not found") from None
 
     if dry_run:
         console.print(Panel.fit("DRY RUN — printing plan", border_style="warn", box=box.ROUNDED))
@@ -245,7 +247,7 @@ def run_job(
             _assert_input_contracts(plugin, inputs, where=f"{step.id}")
 
             # adapt artifacts -> dataframes/files for plugin
-            plug_inputs: Dict[str, Any] = {}
+            plug_inputs: dict[str, Any] = {}
             for k, v in inputs.items():
                 if hasattr(v, "load_dataframe"):
                     plug_inputs[k] = v.load_dataframe()
@@ -273,7 +275,10 @@ def run_job(
                         out_name=out_name,
                         df=obj,
                         contract_id=cid,
-                        inputs=[inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in step.reads.keys()],
+                        inputs=[
+                            inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n])
+                            for n in (step.reads or {})
+                        ],
                         config_digest=_digest_cfg(cfg),
                     )
                 elif cid == "none":

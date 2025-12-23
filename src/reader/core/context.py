@@ -10,9 +10,10 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     # Only imported for type checking; never executed at runtime.
@@ -27,7 +28,6 @@ class RunContext:
     plots_dir: Path
     manifest_path: Path
     logger: logging.Logger
-    palette_book: Optional[PaletteBook]
+    palette_book: PaletteBook | None
     strict: bool = True
     collections: Mapping[str, Any] | None = None
-

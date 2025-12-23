@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,7 +35,8 @@ from .style import PaletteBook, use_style
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
 
-def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
+
+def _colors_for(n: int, palette_book: PaletteBook | None) -> list[str]:
     if palette_book:
         if n == 1:
             pal = palette_book.colors(2)
@@ -49,7 +49,8 @@ def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
         return [cyc[1]]
     return cyc[:n]
 
-def _order_levels(levels: List[str]) -> List[str]:
+
+def _order_levels(levels: list[str]) -> list[str]:
     try:
         return sorted(levels, key=smart_grouped_dose_key)
     except Exception:
@@ -58,42 +59,43 @@ def _order_levels(levels: List[str]) -> List[str]:
 
 # -------------------------------- main API --------------------------------
 
+
 def plot_ts_and_snap(
     *,
     df: pd.DataFrame,
     output_dir: Path | str,
     # grouping
-    group_on: Optional[str],
-    pool_sets: Optional[List[Dict[str, List[str]]]],
+    group_on: str | None,
+    pool_sets: list[dict[str, list[str]]] | None,
     pool_match: GroupMatch = "exact",
     # time series (left)
     ts_x: str = "time",
     ts_channel: str,
     ts_hue: str,
-    ts_time_window: Optional[List[float]] = None,
+    ts_time_window: list[float] | None = None,
     ts_add_sheet_line: bool = False,
-    ts_sheet_line_kwargs: Optional[dict] = None,
+    ts_sheet_line_kwargs: dict | None = None,
     ts_mark_snap_time: bool = False,
-    ts_snap_line_kwargs: Optional[dict] = None,
-    ts_log_transform: bool | List[str] = False,
+    ts_snap_line_kwargs: dict | None = None,
+    ts_log_transform: bool | list[str] = False,
     ts_ci: float = 95.0,
     ts_ci_alpha: float = 0.15,
     ts_show_replicates: bool = False,
     ts_legend_loc: str = "upper right",
     # snapshot (right)
     snap_x: str = "treatment",
-    snap_channel: Optional[str] = None,          # defaults to ts_channel
-    snap_hue: Optional[str] = None,              # defaults to None (gray bars, white dots)
+    snap_channel: str | None = None,  # defaults to ts_channel
+    snap_hue: str | None = None,  # defaults to None (gray bars, white dots)
     snap_time: float = 0.0,
-    snap_agg: str = "mean",                      # "mean" | "median"
-    snap_err: str = "sem",                       # "sem" | "iqr" | "none"
+    snap_agg: str = "mean",  # "mean" | "median"
+    snap_err: str = "sem",  # "sem" | "iqr" | "none"
     snap_time_tolerance: float = 0.51,
     snap_show_legend: bool = False,
     snap_legend_loc: str = "upper right",
     # figure/style
-    fig_kwargs: Optional[dict] = None,
-    filename: Optional[str] = None,
-    palette_book: Optional[PaletteBook] = None,
+    fig_kwargs: dict | None = None,
+    filename: str | None = None,
+    palette_book: PaletteBook | None = None,
 ) -> None:
     """
     Render one figure per group value (if group_on is set), each with two subplots:
@@ -139,7 +141,9 @@ def plot_ts_and_snap(
     # Figure iteration over groups
     if group_col:
         universe = work[group_col].astype(str).unique().tolist()
-        fig_groups = resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        fig_groups = (
+            resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        )
     else:
         fig_groups = [("all", [None])]
 
@@ -157,9 +161,13 @@ def plot_ts_and_snap(
         color_map = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels_ts)}
 
         # If snapshot uses the same hue column, reuse colors; otherwise compute locally on demand
-        def _snapshot_colors(hue_levels_snap: Sequence[str]) -> Dict[str, str]:
+        def _snap_color_map(
+            hue_levels_snap: list[str],
+            *,
+            color_map=color_map,
+            colors=colors,
+        ) -> dict[str, str]:
             if snap_hue_col and snap_hue_col == ts_hue_col:
-                # inherit (subset safely)
                 return {h: color_map.get(h, colors[i % len(colors)]) for i, h in enumerate(hue_levels_snap)}
             snap_colors = _colors_for(len(hue_levels_snap), palette_book)
             return {h: snap_colors[i % len(snap_colors)] for i, h in enumerate(hue_levels_snap)}
@@ -170,6 +178,7 @@ def plot_ts_and_snap(
             if "figsize" not in fkw:
                 # Use the base height and double the width
                 from .style import _DEFAULT_RC as _RC
+
                 base_w, base_h = _RC["figure_figsize"]
                 fkw["figsize"] = (base_w * 2.0, base_h)
 
@@ -190,22 +199,37 @@ def plot_ts_and_snap(
                     for h in hue_levels_ts:
                         rr = ts[ts[ts_hue_col].astype(str) == h]
                         ax.scatter(
-                            rr[ts_x_col], rr["value"],
-                            s=18, alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),
-                            zorder=3, linewidths=0.0, edgecolors="none",
-                            marker=marker_map[h], c=color_map[h]
+                            rr[ts_x_col],
+                            rr["value"],
+                            s=18,
+                            alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),
+                            zorder=3,
+                            linewidths=0.0,
+                            edgecolors="none",
+                            marker=marker_map[h],
+                            c=color_map[h],
                         )
 
                 # Mean line + CI band
                 import seaborn as sns
+
                 sns.lineplot(
-                    data=ts, x=ts_x_col, y="value", hue=ts_hue_col, hue_order=hue_levels_ts,
-                    estimator="mean", errorbar=("ci", float(ts_ci)), err_style="band",
+                    data=ts,
+                    x=ts_x_col,
+                    y="value",
+                    hue=ts_hue_col,
+                    hue_order=hue_levels_ts,
+                    estimator="mean",
+                    errorbar=("ci", float(ts_ci)),
+                    err_style="band",
                     err_kws={"alpha": float(ts_ci_alpha)},
-                    lw=1.8, alpha=float(fig_kwargs.get("line_alpha", 0.85)),
-                    legend=False, ax=ax,
+                    lw=1.8,
+                    alpha=float(fig_kwargs.get("line_alpha", 0.85)),
+                    legend=False,
+                    ax=ax,
                     palette=[color_map[h] for h in hue_levels_ts],
-                    marker=None, zorder=1,
+                    marker=None,
+                    zorder=1,
                 )
 
                 # Mean points (accent)
@@ -213,10 +237,15 @@ def plot_ts_and_snap(
                 for h in hue_levels_ts:
                     mm = means[means[ts_hue_col].astype(str) == h]
                     ax.scatter(
-                        mm[ts_x_col], mm["value"],
-                        s=36, zorder=2.5, marker=marker_map[h],
+                        mm[ts_x_col],
+                        mm["value"],
+                        s=36,
+                        zorder=2.5,
+                        marker=marker_map[h],
                         alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
-                        edgecolors="none", linewidths=0.0, c=color_map[h]
+                        edgecolors="none",
+                        linewidths=0.0,
+                        c=color_map[h],
                     )
 
                 # Sheet change markers (optional)
@@ -246,14 +275,17 @@ def plot_ts_and_snap(
 
                 # Legend on left only
                 handles = [
-                    Line2D([0], [0],
+                    Line2D(
+                        [0],
+                        [0],
                         color=color_map[h],
                         marker=marker_map[h],
                         markersize=7,
                         linestyle="-",
                         linewidth=1.8,
                         alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
-                        label=str(h))
+                        label=str(h),
+                    )
                     for h in hue_levels_ts
                 ]
                 ax.legend(handles=handles, loc=str(ts_legend_loc), title=None)
@@ -262,7 +294,9 @@ def plot_ts_and_snap(
             snap = d.copy()
             # Pick nearest-time replicate per key at snap_time
             key_cols = [c for c in [group_col, snap_x_col, snap_hue_col, "channel", "position"] if c]
-            snapped = nearest_time_per_key(snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance))
+            snapped = nearest_time_per_key(
+                snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance)
+            )
             snapped = snapped[snapped["channel"].astype(str) == ch_snap].copy()
             if snapped.empty:
                 log = logging.getLogger("reader")
@@ -270,30 +304,37 @@ def plot_ts_and_snap(
                 snapped = fb[fb["channel"].astype(str) == ch_snap].copy()
                 if not snapped.empty:
                     uniq = sorted(pd.to_numeric(snapped["time"], errors="coerce").dropna().unique().tolist())
-                    t_rep = (uniq[0] if len(uniq) == 1 else float(pd.Series(uniq).median()))
+                    t_rep = uniq[0] if len(uniq) == 1 else float(pd.Series(uniq).median())
                     delta = abs(float(t_rep) - float(snap_time))
                     preview = ", ".join(f"{t:.2f}" for t in uniq[:6]) + (" …" if len(uniq) > 6 else "")
                     log.info(
                         "[warn]ts_and_snap:snapshot[/warn] • requested t=%.2f h; no rows within ±%.2f h — "
                         "using nearest available per key (times=%s; Δ≈%.2f h)",
-                        float(snap_time), float(snap_time_tolerance), preview, float(delta)
+                        float(snap_time),
+                        float(snap_time_tolerance),
+                        preview,
+                        float(delta),
                     )
             if not snapped.empty:
                 ax = ax_snap
 
                 # aggregate to bar heights + errors
-                base_group_cols: List[str] = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
+                base_group_cols: list[str] = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
                 stats = (
-                    snapped
-                    .groupby(base_group_cols, dropna=False)["value"]
+                    snapped.groupby(base_group_cols, dropna=False)["value"]
                     .agg(n="count", mean="mean", median="median", std="std", sem="sem")
                     .reset_index()
                 )
 
                 # IQR if requested
                 if snap_err == "iqr":
-                    q = snapped.groupby(base_group_cols, dropna=False)["value"].quantile([0.25, 0.75]) \
-                               .unstack(-1).reset_index().rename(columns={0.25: "q1", 0.75: "q3"})
+                    q = (
+                        snapped.groupby(base_group_cols, dropna=False)["value"]
+                        .quantile([0.25, 0.75])
+                        .unstack(-1)
+                        .reset_index()
+                        .rename(columns={0.25: "q1", 0.75: "q3"})
+                    )
                     stats = stats.merge(q, on=base_group_cols, how="left")
 
                 # x ordering + hue levels + colors
@@ -301,9 +342,10 @@ def plot_ts_and_snap(
                 x_order = _order_levels(x_levels)
                 hue_levels_snap = (
                     sorted(stats[snap_hue_col].astype(str).unique().tolist(), key=smart_string_numeric_key)
-                    if snap_hue_col else ["_single"]
+                    if snap_hue_col
+                    else ["_single"]
                 )
-                color_map_snap = _snapshot_colors(hue_levels_snap)
+                color_map_snap = _snap_color_map(hue_levels_snap)
 
                 # layout
                 n_x = len(x_order)
@@ -319,7 +361,7 @@ def plot_ts_and_snap(
                 ax.yaxis.grid(True, which="major")
                 ax.xaxis.grid(False)
 
-                legend_handles: Dict[str, object] = {}
+                legend_handles: dict[str, object] = {}
 
                 # draw bars one x at a time
                 for j, xv in enumerate(x_order):
@@ -352,11 +394,16 @@ def plot_ts_and_snap(
 
                         error_kw = {"capsize": 3, "elinewidth": 1.0, "alpha": 0.9} if yerr is not None else None
                         xpos = x_center + offsets[hue_index[h]]
-                        bar_color = (color_map_snap[h] if snap_hue_col else "#D9D9D9")
+                        bar_color = color_map_snap[h] if snap_hue_col else "#D9D9D9"
                         bars = ax.bar(
-                            [xpos], [height], width=width,
-                            color=bar_color, edgecolor="#C0C0C0",
-                            zorder=1, yerr=yerr, **({"error_kw": error_kw} if error_kw else {}),
+                            [xpos],
+                            [height],
+                            width=width,
+                            color=bar_color,
+                            edgecolor="#C0C0C0",
+                            zorder=1,
+                            yerr=yerr,
+                            **({"error_kw": error_kw} if error_kw else {}),
                             label=(str(h) if (snap_show_legend and h not in legend_handles) else None),
                         )
                         if snap_show_legend and h not in legend_handles and len(bars.patches) > 0:
@@ -371,8 +418,13 @@ def plot_ts_and_snap(
                             jitter = float(width) * (0.08 if has_hue else 0.12)
                             xj = xpos + (rng.random(len(rr)) - 0.5) * (2.0 * jitter)
                             ax.scatter(
-                                xj, rr["value"], s=34, zorder=3,
-                                facecolors="#FFFFFF", edgecolors="#C0C0C0", linewidths=0.7,
+                                xj,
+                                rr["value"],
+                                s=34,
+                                zorder=3,
+                                facecolors="#FFFFFF",
+                                edgecolors="#C0C0C0",
+                                linewidths=0.7,
                                 color=None,
                             )
 
@@ -383,8 +435,12 @@ def plot_ts_and_snap(
                 ax.set_title(f"t≈{float(snap_time):.2f} h", fontweight="normal")
 
                 if snap_show_legend and snap_hue_col and len(hue_levels_snap) > 1 and legend_handles:
-                    ax.legend(handles=list(legend_handles.values()), labels=list(legend_handles.keys()),
-                              loc=str(snap_legend_loc), title=None)
+                    ax.legend(
+                        handles=list(legend_handles.values()),
+                        labels=list(legend_handles.keys()),
+                        loc=str(snap_legend_loc),
+                        title=None,
+                    )
 
             # ---- figure title + save ----
             fig.suptitle(f"{label}", y=float(fig_kwargs.get("suptitle_y", 1.04)))

@@ -10,8 +10,8 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Sequence
 
 DEFAULT_ROOTS = ("./raw", "./raw_data")
 DEFAULT_INCLUDE = ("*.xlsx", "*.xls")
@@ -38,7 +38,7 @@ def discover_files(
     include: Sequence[str] = DEFAULT_INCLUDE,
     exclude: Sequence[str] = DEFAULT_EXCLUDE,
     recursive: bool = False,
-) -> List[Path]:
+) -> list[Path]:
     """
     Return candidate raw files under the given roots (relative to `base` = experiment dir).
     - roots: directories to search (default: ./raw and ./raw_data)

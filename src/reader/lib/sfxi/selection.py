@@ -12,7 +12,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -22,21 +21,22 @@ REQUIRED_COLS = ["position", "time", "channel", "value", "treatment"]
 
 @dataclass(frozen=True)
 class CornerizeResult:
-    per_corner: pd.DataFrame   # one row per (design×batch×corner)
-    points: pd.DataFrame       # wide one row per (design×batch) with b00.., sd00.., n00..
-    chosen_times: Dict[object, float]
-    dropped_batches: List[object]
-    time_warnings: Dict[object, str] = field(default_factory=dict)
+    per_corner: pd.DataFrame  # one row per (design×batch×corner)
+    points: pd.DataFrame  # wide one row per (design×batch) with b00.., sd00.., n00..
+    chosen_times: dict[object, float]
+    dropped_batches: list[object]
+    time_warnings: dict[object, str] = field(default_factory=dict)
 
 
 def _normalize(s: pd.Series) -> pd.Series:
     return s.astype(str).str.strip().str.casefold()
 
 
-def _choose_treatment_column(df: pd.DataFrame, treatment_map: Dict[str, str], *, case_sensitive: bool) -> str:
+def _choose_treatment_column(df: pd.DataFrame, treatment_map: dict[str, str], *, case_sensitive: bool) -> str:
     candidates = [c for c in ("treatment", "treatment_alias") if c in df.columns]
     if not candidates:
         raise ValueError("SFXI: neither 'treatment' nor 'treatment_alias' present in tidy data.")
+
     def _score(col: str) -> int:
         s = df[col].astype(str)
         if case_sensitive:
@@ -45,13 +45,14 @@ def _choose_treatment_column(df: pd.DataFrame, treatment_map: Dict[str, str], *,
             want = {str(v).strip().casefold() for v in treatment_map.values()}
             s = s.str.strip().str.casefold()
         return int(s.isin(list(want)).sum())
+
     scores = {c: _score(c) for c in candidates}
     # Prefer raw 'treatment' on ties — aliases are cosmetic.
     best = max(scores, key=lambda c: (scores[c], c == "treatment"))
     return best
 
 
-def _enforce_columns(df: pd.DataFrame, design_by: List[str], batch_col: str) -> None:
+def _enforce_columns(df: pd.DataFrame, design_by: list[str], batch_col: str) -> None:
     miss = [c for c in REQUIRED_COLS if c not in df.columns]
     if miss:
         raise ValueError(f"SFXI: tidy data missing required columns: {miss}")
@@ -62,7 +63,7 @@ def _enforce_columns(df: pd.DataFrame, design_by: List[str], batch_col: str) -> 
         raise ValueError(f"SFXI: missing batch column '{batch_col}'")
 
 
-def _pick_time_for_batch(times: np.ndarray, target: Optional[float], mode: str) -> Optional[float]:
+def _pick_time_for_batch(times: np.ndarray, target: float | None, mode: str) -> float | None:
     if times.size == 0:
         return None
     times = np.unique(times.astype(float))
@@ -86,15 +87,15 @@ def select_times(
     df: pd.DataFrame,
     *,
     channel: str,
-    treatment_map: Dict[str, str],
+    treatment_map: dict[str, str],
     case_sensitive: bool,
     batch_col: str,
-    target_time_h: Optional[float],
+    target_time_h: float | None,
     time_mode: str,
-    tolerance_h: Optional[float],
+    tolerance_h: float | None,
     per_batch: bool,
     on_missing: str,
-) -> Tuple[pd.DataFrame, Dict[object, float], List[object]]:
+) -> tuple[pd.DataFrame, dict[object, float], list[object]]:
     work = df[df["channel"] == channel].copy()
     # Decide which column to match against (raw preferred; alias tolerated).
     treatment_col = _choose_treatment_column(work, treatment_map, case_sensitive=case_sensitive)
@@ -113,7 +114,8 @@ def select_times(
         present_unfiltered = df[df["channel"] == channel]
         present_vals = (
             present_unfiltered[treatment_col].astype(str).dropna().unique().tolist()
-            if treatment_col in present_unfiltered.columns else []
+            if treatment_col in present_unfiltered.columns
+            else []
         )
         preview_present = ", ".join(map(str, present_vals[:8])) + (" …" if len(present_vals) > 8 else "")
         preview_expected = ", ".join(map(str, list(treatment_map.values())))
@@ -127,8 +129,8 @@ def select_times(
             "match the values in the chosen treatment column."
         )
 
-    chosen: Dict[object, float] = {}
-    dropped: List[object] = []
+    chosen: dict[object, float] = {}
+    dropped: list[object] = []
 
     if per_batch:
         for b, g in work.groupby(batch_col, dropna=False):
@@ -166,15 +168,15 @@ def select_times(
 def cornerize_and_aggregate(
     df: pd.DataFrame,
     *,
-    design_by: List[str],
+    design_by: list[str],
     batch_col: str,
-    treatment_map: Dict[str, str],
+    treatment_map: dict[str, str],
     case_sensitive: bool,
     time_column: str,
     channel: str,
-    target_time_h: Optional[float],
+    target_time_h: float | None,
     time_mode: str,
-    time_tolerance_h: Optional[float],
+    time_tolerance_h: float | None,
     time_per_batch: bool,
     on_missing_time: str,
     require_all_corners_per_design: bool,
@@ -199,7 +201,7 @@ def cornerize_and_aggregate(
         on_missing=on_missing_time,
     )
 
-    time_warnings: Dict[object, str] = {}
+    time_warnings: dict[object, str] = {}
     if time_tolerance_h is not None and target_time_h is not None:
         tol = float(time_tolerance_h)
         tgt = float(target_time_h)
@@ -219,7 +221,7 @@ def cornerize_and_aggregate(
     if snap.empty:
         raise ValueError("SFXI: no rows remain after time selection.")
 
-    rev: Dict[str, str] = {}
+    rev: dict[str, str] = {}
     for k in ("00", "10", "01", "11"):
         v = treatment_map[k]
         key = str(v) if case_sensitive else str(v).strip().casefold()
@@ -255,15 +257,14 @@ def cornerize_and_aggregate(
 
     grp_cols = design_by + [batch_col, "corner"]
     g = snap.groupby(grp_cols, dropna=False)
-    per_corner = g.agg(time=("time", "first"),
-                       y_mean=("value", _agg_mean),
-                       y_sd=("value", _agg_sd),
-                       y_n=("value", _agg_n)).reset_index()
+    per_corner = g.agg(
+        time=("time", "first"), y_mean=("value", _agg_mean), y_sd=("value", _agg_sd), y_n=("value", _agg_n)
+    ).reset_index()
 
     idx_cols = design_by + [batch_col]
     m = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_mean", aggfunc="first")
-    s = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_sd",   aggfunc="first")
-    n = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_n",    aggfunc="first")
+    s = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_sd", aggfunc="first")
+    n = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_n", aggfunc="first")
 
     req = ["00", "10", "01", "11"]
     if require_all_corners_per_design:
@@ -272,15 +273,16 @@ def cornerize_and_aggregate(
             miss = [c for c in req if pd.isna(row.get(c))]
             if miss:
                 key = idx if isinstance(idx, tuple) else (idx,)
-                missing_groups.append(f"{dict(zip(idx_cols, key))} → missing corners {miss}")
+                missing_groups.append(f"{dict(zip(idx_cols, key, strict=False))} → missing corners {miss}")
         if missing_groups:
             raise ValueError("SFXI: incomplete corner sets:\n" + "\n".join(missing_groups[:40]))
 
     points = (
-        m[req].rename(columns={"00":"b00","10":"b10","01":"b01","11":"b11"})
-         .join(s[req].rename(columns={"00":"sd00","10":"sd10","01":"sd01","11":"sd11"}))
-         .join(n[req].rename(columns={"00":"n00", "10":"n10", "01":"n01", "11":"n11"}))
-         .reset_index()
+        m[req]
+        .rename(columns={"00": "b00", "10": "b10", "01": "b01", "11": "b11"})
+        .join(s[req].rename(columns={"00": "sd00", "10": "sd10", "01": "sd01", "11": "sd11"}))
+        .join(n[req].rename(columns={"00": "n00", "10": "n10", "01": "n01", "11": "n11"}))
+        .reset_index()
     )
     return CornerizeResult(
         per_corner=per_corner,

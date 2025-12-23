@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -26,16 +25,18 @@ from .render import VisualConfig, draw_scatter
 
 LOG = logging.getLogger(__name__)
 
+
 @dataclass(frozen=True)
 class LogicSymmetryResult:
     """Pure result of plot_logic_symmetry (no CSV read-back)."""
-    table: pd.DataFrame                 # typed metrics/encodings table (logic_symmetry.v1)
-    fig: object                         # matplotlib Figure
-    plot_paths: List[Path]              # written plot files
-    csv_path: Optional[Path] = None     # optional companion CSV when enabled
+
+    table: pd.DataFrame  # typed metrics/encodings table (logic_symmetry.v1)
+    fig: object  # matplotlib Figure
+    plot_paths: list[Path]  # written plot files
+    csv_path: Path | None = None  # optional companion CSV when enabled
 
 
-def _dget(d: Optional[dict], key: str, default):
+def _dget(d: dict | None, key: str, default):
     if d is None:
         return default
     if key in d and d[key] is not None:
@@ -59,18 +60,16 @@ def plot_logic_symmetry(
     output_dir: str | Path,
     *,
     response_channel: str,
-    design_by: List[str] = None,
+    design_by: list[str] = None,
     batch_col: str = "batch",
-    treatment_map: Dict[str, str] = None,
+    treatment_map: dict[str, str] = None,
     treatment_case_sensitive: bool = True,
-
     aggregation: dict | None = None,
     encodings: dict | None = None,
     ideals_overlay: dict | None = None,
     visuals: dict | None = None,
     output: dict | None = None,
     prep: dict | None = None,
-
     fig_kwargs: dict | None = None,
     filename: str | None = None,
     subplots: str | None = None,
@@ -81,7 +80,9 @@ def plot_logic_symmetry(
     if design_by is None:
         design_by = ["genotype"]
     if treatment_map is None or set(treatment_map.keys()) != {"00", "10", "01", "11"}:
-        raise ValueError("treatment_map must be provided with keys {'00','10','01','11'} and single exact labels as values")
+        raise ValueError(
+            "treatment_map must be provided with keys {'00','10','01','11'} and single exact labels as values"
+        )
 
     replicate_stat = _dget(aggregation, "replicate_stat", "mean")
     if replicate_stat not in ("mean", "median"):
@@ -152,14 +153,25 @@ def plot_logic_symmetry(
     LOG.info("logic_symmetry: starting")
     LOG.info("• response_channel=%s | design_by=%s | batch_col=%s", response_channel, design_by, batch_col)
     LOG.info("• replicate_stat=%s | uncertainty=%s", replicate_stat, uncertainty_mode)
-    LOG.info("• treatment_map: 00=%r | 10=%r | 01=%r | 11=%r (case_sensitive=%s)",
-             treatment_map['00'], treatment_map['10'], treatment_map['01'], treatment_map['11'],
-             bool(treatment_case_sensitive))
+    LOG.info(
+        "• treatment_map: 00=%r | 10=%r | 01=%r | 11=%r (case_sensitive=%s)",
+        treatment_map["00"],
+        treatment_map["10"],
+        treatment_map["01"],
+        treatment_map["11"],
+        bool(treatment_case_sensitive),
+    )
 
     if prep and bool(prep.get("enable", False)):
-        LOG.info("• prep: enable=True, mode=%s, target_time=%s, tol=±%s h, align_corners=%s",
-                 prep.get("mode", "last"), prep.get("target_time"), prep.get("tolerance", 0.51), prep.get("align_corners", False))
+        LOG.info(
+            "• prep: enable=True, mode=%s, target_time=%s, tol=±%s h, align_corners=%s",
+            prep.get("mode", "last"),
+            prep.get("target_time"),
+            prep.get("tolerance", 0.51),
+            prep.get("align_corners", False),
+        )
         from .prep import prepare_for_logic_symmetry
+
         df = prepare_for_logic_symmetry(
             df,
             response_channel=response_channel,
@@ -191,9 +203,18 @@ def plot_logic_symmetry(
     metrics_rows = []
     for _, r in points.iterrows():
         cs = CornerStats(
-            b00=float(r["b00"]), b10=float(r["b10"]), b01=float(r["b01"]), b11=float(r["b11"]),
-            n00=int(r["n00"]), n10=int(r["n10"]), n01=int(r["n01"]), n11=int(r["n11"]),
-            sd00=float(r["sd00"]), sd10=float(r["sd10"]), sd01=float(r["sd01"]), sd11=float(r["sd11"])
+            b00=float(r["b00"]),
+            b10=float(r["b10"]),
+            b01=float(r["b01"]),
+            b11=float(r["b11"]),
+            n00=int(r["n00"]),
+            n10=int(r["n10"]),
+            n01=int(r["n01"]),
+            n11=int(r["n11"]),
+            sd00=float(r["sd00"]),
+            sd10=float(r["sd10"]),
+            sd01=float(r["sd01"]),
+            sd11=float(r["sd11"]),
         )
         met = compute_metrics(cs)
         metrics_rows.append(met)
@@ -227,7 +248,7 @@ def plot_logic_symmetry(
     for col in {enc_cfg.hue, enc_cfg.alpha_by, enc_cfg.shape_by} - {None}:
         if col not in points_full.columns and col in df.columns:
             keys = design_by + [batch_col]
-            rep = (df.groupby(keys)[col].first().reset_index())
+            rep = df.groupby(keys)[col].first().reset_index()
             points_full = points_full.merge(rep, on=keys, how="left")
 
     encoded = apply_encodings(points_full, enc_cfg)
@@ -246,13 +267,33 @@ def plot_logic_symmetry(
     )
 
     csv_cols = (
-        design_by + [batch_col] +
-        ["n00", "n10", "n01", "n11",
-         "b00", "b10", "b01", "b11",
-         "sd00", "sd10", "sd01", "sd11",
-         "r", "log_r", "cv", "u00", "u10", "u01", "u11", "L", "A",
-         "baseline_corner", "baseline_value",
-         ]
+        design_by
+        + [batch_col]
+        + [
+            "n00",
+            "n10",
+            "n01",
+            "n11",
+            "b00",
+            "b10",
+            "b01",
+            "b11",
+            "sd00",
+            "sd10",
+            "sd01",
+            "sd11",
+            "r",
+            "log_r",
+            "cv",
+            "u00",
+            "u10",
+            "u01",
+            "u11",
+            "L",
+            "A",
+            "baseline_corner",
+            "baseline_value",
+        ]
     )
     encoded_cols = ["size_value", "hue_value", "alpha_value", "shape_value"]
     csv_out = encoded[csv_cols + encoded_cols].copy()
@@ -276,6 +317,7 @@ def plot_logic_symmetry(
     out_dir = Path(output_dir)
     base = f"{base_name}"
     from .io import save_plot, write_csv
+
     plot_paths = save_plot(fig, out_dir, base, out_formats, dpi)
 
     # Optional companion CSV for human inspection (off by default to avoid duplication)
@@ -288,7 +330,7 @@ def plot_logic_symmetry(
         "✓ logic_symmetry wrote: %s.[%s]%s",
         str(out_dir / base),
         ",".join(out_formats),
-        (" and " + (out_dir / f"{base}.csv").name) if write_csv_flag else ""
+        (" and " + (out_dir / f"{base}.csv").name) if write_csv_flag else "",
     )
 
     return LogicSymmetryResult(table=csv_out, fig=fig, plot_paths=plot_paths, csv_path=csv_path)

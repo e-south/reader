@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import List, Mapping
+from collections.abc import Mapping
+from contextlib import suppress
 
 import pandas as pd
 from pydantic import Field
@@ -21,7 +22,7 @@ class RatioCfg(PluginConfig):
     name: str
     numerator: str
     denominator: str
-    align_on: List[str] = Field(default_factory=lambda: ["position", "time"])
+    align_on: list[str] = Field(default_factory=lambda: ["position", "time"])
 
 
 class RatioTransform(Plugin):
@@ -63,8 +64,7 @@ class RatioTransform(Plugin):
         dropped = int((~ok).sum())
         if dropped:
             ctx.logger.warning(
-                "[warn]ratio[/warn] • %s: dropped %d row(s) due to missing/zero denominator",
-                cfg.name, dropped
+                "[warn]ratio[/warn] • %s: dropped %d row(s) due to missing/zero denominator", cfg.name, dropped
             )
 
         merged = merged.loc[ok].copy()
@@ -76,12 +76,14 @@ class RatioTransform(Plugin):
 
         out = pd.concat([df, derived], ignore_index=True)
 
-        try:
+        with suppress(Exception):
             ctx.logger.info(
                 "ratio • [accent]%s[/accent] = %s / %s • +%d row(s) • keys=%s",
-                cfg.name, cfg.numerator, cfg.denominator, len(derived), key
+                cfg.name,
+                cfg.numerator,
+                cfg.denominator,
+                len(derived),
+                key,
             )
-        except Exception:
-            pass
 
         return {"df": out}

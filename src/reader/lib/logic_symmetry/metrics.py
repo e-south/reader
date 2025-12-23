@@ -10,7 +10,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
 
 import numpy as np
 
@@ -20,6 +19,7 @@ EPS_DEFAULT = 1e-9
 @dataclass(frozen=True)
 class CornerStats:
     """Aggregated per-corner numbers for a single (design..., batch)."""
+
     b00: float
     b10: float
     b01: float
@@ -38,8 +38,7 @@ def safe_log(x: np.ndarray | float, eps: float = EPS_DEFAULT) -> np.ndarray | fl
     return np.log(np.maximum(x, eps))
 
 
-def normalize_u(b00: float, b10: float, b01: float, b11: float, eps: float = EPS_DEFAULT
-                ) -> Tuple[np.ndarray, float]:
+def normalize_u(b00: float, b10: float, b01: float, b11: float, eps: float = EPS_DEFAULT) -> tuple[np.ndarray, float]:
     """
     Returns:
         u: np.array([u00,u10,u01,u11]) in [0,1]
@@ -61,7 +60,7 @@ def normalize_u(b00: float, b10: float, b01: float, b11: float, eps: float = EPS
     return u, r
 
 
-def logic_asym(u: np.ndarray) -> Tuple[float, float]:
+def logic_asym(u: np.ndarray) -> tuple[float, float]:
     """
     L = u11 - 0.5*(u10+u01)
     A = u10 - u01
@@ -73,8 +72,7 @@ def logic_asym(u: np.ndarray) -> Tuple[float, float]:
 
 
 def cv_corners(
-    sd00: float, sd10: float, sd01: float, sd11: float,
-    b00: float,  b10: float,  b01: float,  b11: float
+    sd00: float, sd10: float, sd01: float, sd11: float, b00: float, b10: float, b01: float, b11: float
 ) -> float:
     """
     Mean CV across corners using per-corner SD / mean, ignoring corners with n<2 or mean<=0.
@@ -89,19 +87,19 @@ def cv_corners(
     return float(np.mean(cvs))
 
 
-def compute_metrics(cs: CornerStats, eps: float = EPS_DEFAULT) -> Dict[str, float]:
+def compute_metrics(cs: CornerStats, eps: float = EPS_DEFAULT) -> dict[str, float]:
     u, r = normalize_u(cs.b00, cs.b10, cs.b01, cs.b11, eps=eps)
     L, A = logic_asym(u)
     cv = cv_corners(cs.sd00, cs.sd10, cs.sd01, cs.sd11, cs.b00, cs.b10, cs.b01, cs.b11)
-    out = dict(
-        r=float(r),
-        log_r=float(0.0 if r <= 1.0 else safe_log(r)),
-        L=float(L),
-        A=float(A),
-        u00=float(u[0]),
-        u10=float(u[1]),
-        u01=float(u[2]),
-        u11=float(u[3]),
-        cv=float(max(cv, 0.0)),
-    )
+    out = {
+        "r": float(r),
+        "log_r": float(0.0 if r <= 1.0 else safe_log(r)),
+        "L": float(L),
+        "A": float(A),
+        "u00": float(u[0]),
+        "u10": float(u[1]),
+        "u01": float(u[2]),
+        "u11": float(u[3]),
+        "cv": float(max(cv, 0.0)),
+    }
     return out

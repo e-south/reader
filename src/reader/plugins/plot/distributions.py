@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -19,18 +20,18 @@ from reader.core.registry import Plugin, PluginConfig
 
 class DistributionsCfg(PluginConfig):
     # what to draw
-    channels: List[str]
+    channels: list[str]
     # modern grouping
-    group_on: Optional[str] = "genotype"
-    pool_sets: Optional[Union[str, List[str], List[Dict[str, List[str]]]]] = None
+    group_on: str | None = "genotype"
+    pool_sets: str | list[str] | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
     # layout
-    panel_by: Literal["channel", "group"] = "channel"   # default: per-channel panels
-    hue: Optional[str] = None
-    legend_loc: Literal["upper left","upper right","lower left","lower right","center","best"] = "upper left"
+    panel_by: Literal["channel", "group"] = "channel"  # default: per-channel panels
+    hue: str | None = None
+    legend_loc: Literal["upper left", "upper right", "lower left", "lower right", "center", "best"] = "upper left"
     # style/output
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    filename: Optional[str] = None
+    fig: dict[str, Any] = Field(default_factory=dict)
+    filename: str | None = None
 
 
 class DistributionsPlot(Plugin):
@@ -49,6 +50,7 @@ class DistributionsPlot(Plugin):
 
     def run(self, ctx, inputs, cfg: DistributionsCfg):
         from reader.lib.microplates.distributions import plot_distributions
+
         df: pd.DataFrame = inputs["df"]
         blanks: pd.DataFrame = inputs.get("blanks", df.iloc[0:0])
 
@@ -57,14 +59,14 @@ class DistributionsPlot(Plugin):
         #   • inline list[dict]                       (pass-through)
         #   • "col:set"                               (single reference)
         #   • list[str] of references ["col:set", ...] (union/concatenate)
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: Optional[str]):
+        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
             if pool_sets is None:
                 return None
             # already a concrete list of dicts
             if isinstance(pool_sets, list) and pool_sets and isinstance(pool_sets[0], dict):
                 return pool_sets  # type: ignore[return-value]
             # a single string or a list of strings → look up in ctx.collections
-            refs: List[str]
+            refs: list[str]
             if isinstance(pool_sets, str):
                 refs = [pool_sets]
             elif isinstance(pool_sets, list):
@@ -72,7 +74,7 @@ class DistributionsPlot(Plugin):
             else:
                 raise ValueError("pool_sets must be a list[dict], a 'col:set' string, or list[str] of references")
 
-            out: List[Dict[str, List[str]]] = []
+            out: list[dict[str, list[str]]] = []
             for ref in refs:
                 if ":" in ref:
                     col, set_name = [s.strip() for s in ref.split(":", 1)]

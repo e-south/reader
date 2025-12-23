@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -19,21 +20,22 @@ from reader.core.registry import Plugin, PluginConfig
 
 class TimeSeriesCfg(PluginConfig):
     x: str = "time"
-    y: Optional[List[str]] = None
+    y: list[str] | None = None
     hue: str = "treatment"
-    group_on: Optional[str] = None
-    pool_sets: Optional[Union[str, List[Dict[str, List[str]]]]] = None
+    group_on: str | None = None
+    pool_sets: str | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    channels: Optional[List[str]] = None
+    fig: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] | None = None
     add_sheet_line: bool = False
-    sheet_line_kwargs: Dict[str, Any] = Field(default_factory=dict)
-    log_transform: bool | List[str] = False
-    time_window: Optional[List[float]] = None
+    sheet_line_kwargs: dict[str, Any] = Field(default_factory=dict)
+    log_transform: bool | list[str] = False
+    time_window: list[float] | None = None
     ci: float = 95.0
     ci_alpha: float = 0.15
     legend_loc: str = "upper left"
     show_replicates: bool = False
+
 
 class TimeSeriesPlot(Plugin):
     key = "time_series"
@@ -41,19 +43,21 @@ class TimeSeriesPlot(Plugin):
     ConfigModel = TimeSeriesCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:
+    def input_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1", "blanks?": "tidy.v1"}  # '?' is human hint; engine passes only present keys
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str,str]:
+    def output_contracts(cls) -> Mapping[str, str]:
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: TimeSeriesCfg):
         from reader.lib.microplates.time_series import plot_time_series
+
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
+
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: Optional[str]):
+        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
             if pool_sets is None:
                 return None
             if isinstance(pool_sets, list):
@@ -83,7 +87,9 @@ class TimeSeriesPlot(Plugin):
             df=df,
             blanks=blanks,
             output_dir=ctx.plots_dir,
-            x=cfg.x, y=cfg.y, hue=cfg.hue,
+            x=cfg.x,
+            y=cfg.y,
+            hue=cfg.hue,
             channels=cfg.channels,
             subplots=None,
             group_on=cfg.group_on,

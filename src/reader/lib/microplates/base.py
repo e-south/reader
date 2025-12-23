@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
+from typing import Literal
 
 import pandas as pd
 
@@ -42,7 +43,8 @@ def save_figure(fig, output_dir: Path, filename_stub: str, ext: str = "pdf") -> 
 
 # -------------------- alias helpers --------------------
 
-def alias_column(df: pd.DataFrame, name: Optional[str], suffix: str = "_alias") -> Optional[str]:
+
+def alias_column(df: pd.DataFrame, name: str | None, suffix: str = "_alias") -> str | None:
     """
     Prefer '<name>_alias' when present; otherwise return 'name' unchanged.
     If name is None, return None. This is a deterministic preference, not a fallback.
@@ -52,11 +54,13 @@ def alias_column(df: pd.DataFrame, name: Optional[str], suffix: str = "_alias") 
     cand = f"{str(name)}{suffix}"
     return cand if cand in df.columns else name
 
+
 def pretty_name(name: str, suffix: str = "_alias") -> str:
     """Strip a trailing alias suffix from a label for display purposes."""
     if name.endswith(suffix):
         return name[: -len(suffix)]
     return name
+
 
 def _match_value(val: str, needle: str, mode: GroupMatch) -> bool:
     v = str(val)
@@ -75,10 +79,8 @@ def _match_value(val: str, needle: str, mode: GroupMatch) -> bool:
 
 
 def resolve_groups(
-    universe: Iterable[str],
-    groups: Optional[List[Dict[str, List[str]]]],
-    match: GroupMatch
-) -> List[Tuple[str, List[str]]]:
+    universe: Iterable[str], groups: list[dict[str, list[str]]] | None, match: GroupMatch
+) -> list[tuple[str, list[str]]]:
     """
     Expand a list like:
       - { "Group A": ["foo", "bar"] }
@@ -96,12 +98,12 @@ def resolve_groups(
     if not groups:
         # single pass-through group
         return [("all", values)]
-    resolved: List[Tuple[str, List[str]]] = []
+    resolved: list[tuple[str, list[str]]] = []
     for item in groups:
         if not isinstance(item, dict) or len(item) != 1:
             raise ValueError("groups must be list of single-key dicts")
         label, needles = next(iter(item.items()))
-        picked: List[str] = []
+        picked: list[str] = []
         for n in needles:
             for v in values:
                 if _match_value(v, n, match) and v not in picked:
@@ -134,6 +136,7 @@ def nearest_time_per_key(
 
 # -------------------- subplot layout + smart string ordering --------------------
 
+
 def best_subplot_grid(n: int) -> tuple[int, int]:
     """
     Choose near-square grid for n panels.
@@ -146,9 +149,11 @@ def best_subplot_grid(n: int) -> tuple[int, int]:
 
 _NUM_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
-def _extract_first_number(s: str) -> Optional[float]:
+
+def _extract_first_number(s: str) -> float | None:
     m = _NUM_RE.search(str(s))
     return float(m.group(0)) if m else None
+
 
 def _unit_scale_to_uM(s: str) -> float:
     """
@@ -166,6 +171,7 @@ def _unit_scale_to_uM(s: str) -> float:
     if re.search(r"\b(?<![a-z])m\b", t):
         return 1e6
     return 1.0
+
 
 def smart_string_numeric_key(s: str) -> tuple[int, float, str]:
     """
@@ -192,6 +198,7 @@ def _prefix_before_number(s: str) -> str:
     # normalize whitespace only; keep punctuation (e.g., '+' in 'x + y')
     prefix = re.sub(r"\s+", " ", prefix).strip().lower()
     return prefix
+
 
 def smart_grouped_dose_key(s: str) -> tuple[str, int, float, str]:
     """
