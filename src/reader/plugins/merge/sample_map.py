@@ -12,10 +12,11 @@ Then merges many:1 on 'position'.
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import List, Mapping
 
 import pandas as pd
 from pydantic import Field
@@ -30,7 +31,8 @@ class SampleMapCfg(PluginConfig):
     - require_columns: metadata columns that MUST exist after merge (presence-only by default).
     - require_non_null: if true, also assert these columns are non-null for all merged rows.
     """
-    require_columns: List[str] = Field(default_factory=list)
+
+    require_columns: list[str] = Field(default_factory=list)
     require_non_null: bool = False
 
 
@@ -83,9 +85,7 @@ class SampleMapMerge(Plugin):
                 raise MergeError("Plate map has no usable metadata rows after cleaning")
 
             # (legacy parity) Drop raw rows for positions that carried no metadata.
-            removed_positions = sorted(
-                set(sm_raw["position"].astype(str)) - set(sm["position"].astype(str))
-            )
+            removed_positions = sorted(set(sm_raw["position"].astype(str)) - set(sm["position"].astype(str)))
             if removed_positions:
                 before = len(df)
                 df = df[~df["position"].astype(str).isin(removed_positions)].copy()
@@ -106,7 +106,9 @@ class SampleMapMerge(Plugin):
                         approx_time_slices = round(avg_rows_per_pos / max(chans, 1))
                         ctx.logger.info(
                             "sample_map: consistency hint • removed_positions=%d • channels=%d • ~time_slices_per_channel=%d",
-                            len(removed_positions), chans, approx_time_slices
+                            len(removed_positions),
+                            chans,
+                            approx_time_slices,
                         )
                     except Exception:
                         pass
@@ -118,7 +120,9 @@ class SampleMapMerge(Plugin):
             map_positions = set(sm["position"].astype(str).unique())
             missing = sorted(raw_positions - map_positions)
             if missing:
-                raise MergeError(f"Plate map missing entries for positions: {missing[:40]}{'…' if len(missing)>40 else ''}")
+                raise MergeError(
+                    f"Plate map missing entries for positions: {missing[:40]}{'…' if len(missing) > 40 else ''}"
+                )
 
             merged = df.merge(sm, on="position", how="left", validate="m:1")
 
@@ -144,8 +148,11 @@ class SampleMapMerge(Plugin):
                 added_cols = [c for c in merged.columns if c not in df.columns]
                 ctx.logger.info(
                     "sample_map • positions: raw=%d • map=%d • intersect=%d • added_cols=%d [%s]",
-                    len(raw_positions), len(map_positions), len(raw_positions & map_positions),
-                    len(added_cols), ", ".join(added_cols[:6]) + (" …" if len(added_cols) > 6 else "")
+                    len(raw_positions),
+                    len(map_positions),
+                    len(raw_positions & map_positions),
+                    len(added_cols),
+                    ", ".join(added_cols[:6]) + (" …" if len(added_cols) > 6 else ""),
                 )
             except Exception:
                 pass

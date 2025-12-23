@@ -10,7 +10,6 @@ Author(s): Eric J. South
 import re  # used for friendly error parsing in run-step
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 import typer
 from rich import box
@@ -28,15 +27,17 @@ from reader.core.engine import validate as validate_job
 from reader.core.errors import ExecutionError
 from reader.core.registry import load_entry_points
 
-THEME = Theme({
-    "title":  "bold cyan",
-    "accent": "cyan",
-    "ok":     "bold green",
-    "warn":   "bold yellow",
-    "error":  "bold red",
-    "muted":  "dim",
-    "path":   "magenta",
-})
+THEME = Theme(
+    {
+        "title": "bold cyan",
+        "accent": "cyan",
+        "ok": "bold green",
+        "warn": "bold yellow",
+        "error": "bold red",
+        "muted": "dim",
+        "path": "magenta",
+    }
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -49,6 +50,15 @@ app = typer.Typer(
 )
 console = Console(theme=THEME)
 rich_tracebacks(show_locals=False)
+
+_RUN_EXTRA_ARG = typer.Argument(
+    None,
+    metavar="[EXTRA]...",
+    help=(
+        "Optional tokens for the 'step N' form. "
+        "Note: variadic positional arguments cannot have defaults (Click restriction)."
+    ),
+)
 
 
 def _checkmark(cond: bool) -> str:
@@ -66,18 +76,20 @@ def _table(title: str) -> Table:
         show_edge=True,
     )
 
+
 def _find_nearest_experiments_dir(start: Path) -> Path:
     """
     Walk up from 'start' to find the closest 'experiments/' directory.
     Falls back to ./experiments under the current working directory.
     """
     for base in [start] + list(start.parents):
-        cand = (base / "experiments")
+        cand = base / "experiments"
         if cand.exists() and cand.is_dir():
             return cand.resolve()
     return (start / "experiments").resolve()
 
-def _infer_job_path(job: Optional[str]) -> Path:
+
+def _infer_job_path(job: str | None) -> Path:
     """
     Resolve CONFIG argument with explicit, assertive rules:
       • If CONFIG exists and is a directory => <dir>/config.yaml (if present) else error
@@ -107,9 +119,7 @@ def _infer_job_path(job: Optional[str]) -> Path:
             root_path = _find_nearest_experiments_dir(Path.cwd())
             jobs = _find_jobs(root_path)
             if not jobs:
-                raise typer.BadParameter(
-                    f"No experiments found under {root_path}. Use 'reader ls' first."
-                )
+                raise typer.BadParameter(f"No experiments found under {root_path}. Use 'reader ls' first.")
             if idx < 1 or idx > len(jobs):
                 raise typer.BadParameter(
                     f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path}). "
@@ -150,9 +160,7 @@ def _append_journal(job_path: Path, command_line: str) -> None:
     exp_dir = job_path.parent
     # Prefer JOURNAL.md if it exists; otherwise create it (uppercase by default)
     journal = exp_dir / (
-        "JOURNAL.md"
-        if (exp_dir / "JOURNAL.md").exists() or not (exp_dir / "journal.md").exists()
-        else "journal.md"
+        "JOURNAL.md" if (exp_dir / "JOURNAL.md").exists() or not (exp_dir / "journal.md").exists() else "journal.md"
     )
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = "" if journal.exists() else "# Experiment Journal\n\n"
@@ -175,7 +183,7 @@ def ls(
         "--root",
         metavar="DIR",
         help="Directory to search recursively for **/config.yaml.",
-    )
+    ),
 ):
     # If user didn't override --root, auto-detect nearest experiments/ so this
     # works from anywhere inside the repository.
@@ -218,11 +226,11 @@ def ls(
     )
 )
 def explain(
-    job: Optional[str] = typer.Argument(
+    job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
-    )
+    ),
 ):
     job_path = _infer_job_path(job)
     _append_journal(job_path, f"reader explain {job_path}")
@@ -237,11 +245,11 @@ def explain(
     )
 )
 def validate(
-    job: Optional[str] = typer.Argument(
+    job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
-    )
+    ),
 ):
     job_path = _infer_job_path(job)
     _append_journal(job_path, f"reader validate {job_path}")
@@ -259,38 +267,31 @@ def validate(
     )
 )
 def run(
-    job: Optional[str] = typer.Argument(
+    job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
-    step: Optional[str] = typer.Option(
+    step: str | None = typer.Option(
         None,
         "--step",
         "-s",
         metavar="STEP",
         help="Run exactly this step by id or 1-based index (sugar for --resume-from/--until).",
     ),
-    step_pos: Optional[str] = typer.Argument(
+    step_pos: str | None = typer.Argument(
         None,
         metavar="[STEP]",
         help="(optional) Step id or 1-based index. You can also write: 'reader run 14 step 11'.",
     ),
-    extra: Optional[List[str]] = typer.Argument(
-        None,
-        metavar="[EXTRA]...",
-        help=(
-            "Optional tokens for the 'step N' form. "
-            "Note: variadic positional arguments cannot have defaults (Click restriction)."
-        ),
-    ),
-    resume_from: Optional[str] = typer.Option(
+    extra: list[str] | None = _RUN_EXTRA_ARG,
+    resume_from: str | None = typer.Option(
         None,
         "--resume-from",
         metavar="STEP_ID",
         help="Start from this step (inclusive). Use an exact id as declared in the config.",
     ),
-    until: Optional[str] = typer.Option(
+    until: str | None = typer.Option(
         None,
         "--until",
         metavar="STEP_ID",
@@ -313,12 +314,12 @@ def run(
     parts = ["reader run", str(job_path)]
 
     # Interpret trailing STEP tokens if provided
-    selected_step: Optional[str] = None
+    selected_step: str | None = None
     if step is not None:
         selected_step = step
     else:
         # Build tokens explicitly; 'extra' can be None for a variadic positional.
-        tokens: List[str] = []
+        tokens: list[str] = []
         if step_pos:
             tokens.append(step_pos)
         if extra:
@@ -378,7 +379,7 @@ def run(
     )
 )
 def artifacts(
-    job: Optional[str] = typer.Argument(
+    job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
@@ -406,11 +407,11 @@ def artifacts(
 
 @app.command(help="Show the steps declared in a config.yaml (index, id, plugin key).")
 def steps(
-    job: Optional[str] = typer.Argument(
+    job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
-    )
+    ),
 ):
     spec = ReaderSpec.load(_infer_job_path(job))
     t = _table("Steps")
@@ -429,12 +430,12 @@ def steps(
     )
 )
 def plugins(
-    category: Optional[str] = typer.Option(
+    category: str | None = typer.Option(
         None,
         "--category",
         metavar="NAME",
         help="Filter by category: ingest | merge | transform | plot",
-    )
+    ),
 ):
     reg = load_entry_points()
     cats = reg.categories()
@@ -461,6 +462,7 @@ def plugins(
 
 # --------------------------- run one step ---------------------------
 
+
 def _resolve_step_id(spec: ReaderSpec, which: str) -> str:
     """
     Accept either a step id or a 1-based index string; return the step id.
@@ -478,12 +480,12 @@ def _resolve_step_id(spec: ReaderSpec, which: str) -> str:
         options = ", ".join(s.id for s in spec.steps[:12])
         raise typer.BadParameter(
             f"Unknown step id '{which_str}'. Tip: use 'reader steps' to list ids "
-            f"(first few: {options}{' …' if len(spec.steps)>12 else ''})."
-        )
+            f"(first few: {options}{' …' if len(spec.steps) > 12 else ''})."
+        ) from None
     return which_str
 
 
-def _run_one_step_cli(which: str, job: Optional[str], *, dry_run: bool, log_level: str) -> None:
+def _run_one_step_cli(which: str, job: str | None, *, dry_run: bool, log_level: str) -> None:
     job_path = _infer_job_path(job)
     spec = ReaderSpec.load(job_path)
     step_id = _resolve_step_id(spec, which)
@@ -495,9 +497,8 @@ def _run_one_step_cli(which: str, job: Optional[str], *, dry_run: bool, log_leve
     selected = next(s for s in spec.steps if s.id == step_id)
     missing = []
     for _, target in (selected.reads or {}).items():
-        if isinstance(target, str) and not target.startswith("file:"):
-            if store.latest(target) is None:
-                missing.append(target)
+        if isinstance(target, str) and not target.startswith("file:") and store.latest(target) is None:
+            missing.append(target)
     if missing and not dry_run:
         lines = []
         for lab in missing:
@@ -507,7 +508,7 @@ def _run_one_step_cli(which: str, job: Optional[str], *, dry_run: bool, log_leve
             f"[error]✗ Cannot run step “{step_id}”: missing upstream artifact(s)[/error]\n"
             + "\n".join(lines)
             + "\n[muted]Tip: materialize prerequisites with:[/muted]\n"
-            f"   [accent]reader run --until {missing[0].split('/',1)[0]}[/accent]\n"
+            f"   [accent]reader run --until {missing[0].split('/', 1)[0]}[/accent]\n"
             "[muted]Then re-run just this step with:[/muted]\n"
             f"   [accent]reader run-step {step_id}[/accent]"
         )
@@ -532,7 +533,7 @@ def _run_one_step_cli(which: str, job: Optional[str], *, dry_run: bool, log_leve
                 f"   [accent]reader run-step {step_id}[/accent]"
             )
             console.print(Panel.fit(msg, border_style="error", box=box.ROUNDED))
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
         raise
 
 
@@ -545,15 +546,19 @@ def _run_one_step_cli(which: str, job: Optional[str], *, dry_run: bool, log_leve
 )
 def run_step(
     which: str = typer.Argument(..., metavar="STEP", help="Step id (e.g. 'ingest') or 1-based index (e.g. '1')."),
-    config: Optional[str] = typer.Option(
+    config: str | None = typer.Option(
         None,
         "--config",
         "-c",
         metavar="CONFIG",
         help="Path to config.yaml • experiment dir • or numeric index from 'reader ls' (defaults to nearest ./config.yaml).",
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only: validate and print the plan slice without executing."),
-    log_level: str = typer.Option("INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Plan only: validate and print the plan slice without executing."
+    ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR."
+    ),
 ):
     _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
 
@@ -561,7 +566,7 @@ def run_step(
 @app.command(name="step", help="[alias] Same as 'run-step'. Run exactly one step by ID or index.")
 def step_alias(
     which: str = typer.Argument(..., metavar="STEP"),
-    config: Optional[str] = typer.Option(None, "--config", "-c", metavar="CONFIG"),
+    config: str | None = typer.Option(None, "--config", "-c", metavar="CONFIG"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     log_level: str = typer.Option("INFO", "--log-level", metavar="LEVEL"),
 ):

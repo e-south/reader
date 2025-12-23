@@ -8,13 +8,15 @@ Compound plot: (top) time series + snapshot, (bottom) baserender design panel.
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
+
 from __future__ import annotations
 
 import logging
 import warnings
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,11 +38,12 @@ from .style import PaletteBook, use_style
 
 # ---------- baserender adapter (strict & decoupled) ---------------------------
 
+
 @dataclass(frozen=True)
 class BaseRenderDatasetSpec:
     # Exactly one of job_yaml OR dataset must be provided
-    job_yaml: Optional[Path] = None
-    dataset: Optional[Mapping[str, Any]] = None  # {"path", "format", "columns", "alphabet", "annotations"}
+    job_yaml: Path | None = None
+    dataset: Mapping[str, Any] | None = None  # {"path", "format", "columns", "alphabet", "annotations"}
     plugins: Sequence[Mapping[str, Any] | str] = ()
     style: Mapping[str, Any] = None  # optional overrides merged over job.style
     select_by: Literal["id", "sequence"] = "id"
@@ -56,6 +59,7 @@ class _BaseRenderProvider:
     Lazy, cached adapter around dnadesign.baserender to render one record by id/sequence.
     Errors are assertive, never silent.
     """
+
     def __init__(self, spec: BaseRenderDatasetSpec):
         try:
             # Strict import: do not hide missing dependency
@@ -202,6 +206,7 @@ class _BaseRenderProvider:
         if h != target_h:
             scale = target_h / float(h)
             from PIL import Image
+
             img = Image.fromarray(arr)
             new_w = max(1, int(round(w * scale)))
             img = img.resize((new_w, target_h), resample=Image.Resampling.LANCZOS)
@@ -214,7 +219,8 @@ class _BaseRenderProvider:
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
 
-def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
+
+def _colors_for(n: int, palette_book: PaletteBook | None) -> list[str]:
     if palette_book:
         if n == 1:
             pal = palette_book.colors(2)
@@ -227,7 +233,8 @@ def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
         return [cyc[1]]
     return cyc[:n]
 
-def _order_levels(levels: List[str]) -> List[str]:
+
+def _order_levels(levels: list[str]) -> list[str]:
     try:
         return sorted(levels, key=smart_grouped_dose_key)
     except Exception:
@@ -236,32 +243,33 @@ def _order_levels(levels: List[str]) -> List[str]:
 
 # ---------- main entry --------------------------------------------------------
 
+
 def plot_ts_snap_plus_design(
     *,
     df: pd.DataFrame,
     output_dir: Path | str,
     # grouping
-    group_on: Optional[str],
-    pool_sets: Optional[List[Dict[str, List[str]]]],
+    group_on: str | None,
+    pool_sets: list[dict[str, list[str]]] | None,
     pool_match: GroupMatch = "exact",
     # time series (left)
     ts_x: str = "time",
     ts_channel: str,
     ts_hue: str,
-    ts_time_window: Optional[List[float]] = None,
+    ts_time_window: list[float] | None = None,
     ts_add_sheet_line: bool = False,
-    ts_sheet_line_kwargs: Optional[dict] = None,
+    ts_sheet_line_kwargs: dict | None = None,
     ts_mark_snap_time: bool = False,
-    ts_snap_line_kwargs: Optional[dict] = None,
-    ts_log_transform: bool | List[str] = False,
+    ts_snap_line_kwargs: dict | None = None,
+    ts_log_transform: bool | list[str] = False,
     ts_ci: float = 95.0,
     ts_ci_alpha: float = 0.15,
     ts_show_replicates: bool = False,
     ts_legend_loc: str = "upper right",
     # snapshot (right)
     snap_x: str = "treatment",
-    snap_channel: Optional[str] = None,
-    snap_hue: Optional[str] = None,
+    snap_channel: str | None = None,
+    snap_hue: str | None = None,
     snap_time: float = 0.0,
     snap_agg: str = "mean",
     snap_err: str = "sem",
@@ -272,9 +280,9 @@ def plot_ts_snap_plus_design(
     design_key_column: str,
     design_provider: _BaseRenderProvider,
     # figure/style
-    fig_kwargs: Optional[dict] = None,
-    filename: Optional[str] = None,
-    palette_book: Optional[PaletteBook] = None,
+    fig_kwargs: dict | None = None,
+    filename: str | None = None,
+    palette_book: PaletteBook | None = None,
 ) -> None:
     """
     Top: time series + snapshot (same semantics as plot_ts_and_snap)
@@ -295,9 +303,9 @@ def plot_ts_snap_plus_design(
     snap_x_col = alias_column(df, snap_x)
     snap_hue_col = alias_column(df, snap_hue) if snap_hue else None
     # --- Robust design key selection: prefer requested → 'id' → 'sequence'
-    tried: List[str] = []
-    chosen_key_col: Optional[str] = None
-    chosen_key_name: Optional[str] = None
+    tried: list[str] = []
+    chosen_key_col: str | None = None
+    chosen_key_name: str | None = None
     for candidate in [design_key_column, "id", "sequence"]:
         if candidate is None:
             continue
@@ -331,7 +339,9 @@ def plot_ts_snap_plus_design(
     # Figure iteration over groups
     if group_col:
         universe = work[group_col].astype(str).unique().tolist()
-        fig_groups = resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        fig_groups = (
+            resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        )
     else:
         fig_groups = [("all", [None])]
 
@@ -343,7 +353,7 @@ def plot_ts_snap_plus_design(
             continue
 
         # Determine the single design key for this figure (assertive when possible).
-        design_key: Optional[str] = None
+        design_key: str | None = None
         if chosen_key_col:
             keys = d[chosen_key_col].dropna().astype(str).unique().tolist()
             if len(keys) != 1:
@@ -355,19 +365,21 @@ def plot_ts_snap_plus_design(
         else:
             warnings.warn(
                 "Design panel disabled: none of the key columns are available with values in this tidy data. "
-                f"Tried: {tried or ['<none>']}. Top panels will still be rendered."
+                f"Tried: {tried or ['<none>']}. Top panels will still be rendered.",
+                stacklevel=2,
             )
 
         # -------------------- Layout & axes
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
             # Default base size; widen for 2 columns
             from .style import _DEFAULT_RC as _RC
+
             base_w, base_h = _RC["figure_figsize"]
             if "figsize" not in fig_kwargs:
                 fig_kwargs["figsize"] = (base_w * 2.0, base_h * 1.35)  # slightly taller for the bottom panel
             fig = plt.figure(**{k: v for k, v in fig_kwargs.items() if k not in {"rc", "ext"}})
             gs = GridSpec(nrows=2, ncols=2, height_ratios=[3.0, 1.4], hspace=0.30, wspace=0.25, figure=fig)
-            ax_ts   = fig.add_subplot(gs[0, 0])  # top-left
+            ax_ts = fig.add_subplot(gs[0, 0])  # top-left
             ax_snap = fig.add_subplot(gs[0, 1])  # top-right
             ax_design = fig.add_subplot(gs[1, :])  # bottom (span both)
 
@@ -388,31 +400,51 @@ def plot_ts_snap_plus_design(
                     for h in hue_levels_ts:
                         rr = ts[ts[ts_hue_col].astype(str) == h]
                         ax.scatter(
-                            rr[ts_x_col], rr["value"],
-                            s=18, alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),
-                            zorder=3, linewidths=0.0, edgecolors="none",
-                            marker=marker_map[h], c=color_map[h]
+                            rr[ts_x_col],
+                            rr["value"],
+                            s=18,
+                            alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),
+                            zorder=3,
+                            linewidths=0.0,
+                            edgecolors="none",
+                            marker=marker_map[h],
+                            c=color_map[h],
                         )
 
                 import seaborn as sns
+
                 sns.lineplot(
-                    data=ts, x=ts_x_col, y="value", hue=ts_hue_col, hue_order=hue_levels_ts,
-                    estimator="mean", errorbar=("ci", float(ts_ci)), err_style="band",
+                    data=ts,
+                    x=ts_x_col,
+                    y="value",
+                    hue=ts_hue_col,
+                    hue_order=hue_levels_ts,
+                    estimator="mean",
+                    errorbar=("ci", float(ts_ci)),
+                    err_style="band",
                     err_kws={"alpha": float(ts_ci_alpha)},
-                    lw=1.8, alpha=float(fig_kwargs.get("line_alpha", 0.85)),
-                    legend=False, ax=ax,
+                    lw=1.8,
+                    alpha=float(fig_kwargs.get("line_alpha", 0.85)),
+                    legend=False,
+                    ax=ax,
                     palette=[color_map[h] for h in hue_levels_ts],
-                    marker=None, zorder=1,
+                    marker=None,
+                    zorder=1,
                 )
 
                 means = ts.groupby([ts_hue_col, ts_x_col], dropna=False)["value"].mean().reset_index()
                 for h in hue_levels_ts:
                     mm = means[means[ts_hue_col].astype(str) == h]
                     ax.scatter(
-                        mm[ts_x_col], mm["value"],
-                        s=36, zorder=2.5, marker=marker_map[h],
+                        mm[ts_x_col],
+                        mm["value"],
+                        s=36,
+                        zorder=2.5,
+                        marker=marker_map[h],
                         alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
-                        edgecolors="none", linewidths=0.0, c=color_map[h]
+                        edgecolors="none",
+                        linewidths=0.0,
+                        c=color_map[h],
                     )
 
                 if ts_add_sheet_line and "sheet_index" in ts.columns:
@@ -438,9 +470,17 @@ def plot_ts_snap_plus_design(
                 ax.set_ylabel(ch_ts)
 
                 handles = [
-                    Line2D([0], [0], color=color_map[h], marker=marker_map[h], markersize=7,
-                           linestyle="-", linewidth=1.8, alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
-                           label=str(h))
+                    Line2D(
+                        [0],
+                        [0],
+                        color=color_map[h],
+                        marker=marker_map[h],
+                        markersize=7,
+                        linestyle="-",
+                        linewidth=1.8,
+                        alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
+                        label=str(h),
+                    )
                     for h in hue_levels_ts
                 ]
                 ax.legend(handles=handles, loc=str(ts_legend_loc), title=None)
@@ -448,7 +488,9 @@ def plot_ts_snap_plus_design(
             # -------------------- Top-right: snapshot
             snap = d.copy()
             key_cols = [c for c in [group_col, snap_x_col, snap_hue_col, "channel", "position"] if c]
-            snapped = nearest_time_per_key(snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance))
+            snapped = nearest_time_per_key(
+                snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance)
+            )
             snapped = snapped[snapped["channel"].astype(str) == ch_snap].copy()
             if snapped.empty:
                 log = logging.getLogger("reader")
@@ -456,28 +498,43 @@ def plot_ts_snap_plus_design(
                 snapped = fb[fb["channel"].astype(str) == ch_snap].copy()
                 if not snapped.empty:
                     uniq = sorted(pd.to_numeric(snapped["time"], errors="coerce").dropna().unique().tolist())
-                    t_rep = (uniq[0] if len(uniq) == 1 else float(pd.Series(uniq).median()))
+                    t_rep = uniq[0] if len(uniq) == 1 else float(pd.Series(uniq).median())
                     delta = abs(float(t_rep) - float(snap_time))
                     preview = ", ".join(f"{t:.2f}" for t in uniq[:6]) + (" …" if len(uniq) > 6 else "")
                     log.info(
                         "[warn]ts_snap_plus_design:snapshot[/warn] • requested t=%.2f h; no rows within ±%.2f h — "
                         "using nearest available per key (times=%s; Δ≈%.2f h)",
-                        float(snap_time), float(snap_time_tolerance), preview, float(delta)
+                        float(snap_time),
+                        float(snap_time_tolerance),
+                        preview,
+                        float(delta),
                     )
             if not snapped.empty:
                 ax = ax_snap
-                base_group_cols: List[str] = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
-                stats = snapped.groupby(base_group_cols, dropna=False)["value"].agg(n="count", mean="mean", median="median", std="std", sem="sem").reset_index()
+                base_group_cols: list[str] = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
+                stats = (
+                    snapped.groupby(base_group_cols, dropna=False)["value"]
+                    .agg(n="count", mean="mean", median="median", std="std", sem="sem")
+                    .reset_index()
+                )
 
                 if snap_err == "iqr":
-                    q = snapped.groupby(base_group_cols, dropna=False)["value"].quantile([0.25, 0.75]) \
-                               .unstack(-1).reset_index().rename(columns={0.25: "q1", 0.75: "q3"})
+                    q = (
+                        snapped.groupby(base_group_cols, dropna=False)["value"]
+                        .quantile([0.25, 0.75])
+                        .unstack(-1)
+                        .reset_index()
+                        .rename(columns={0.25: "q1", 0.75: "q3"})
+                    )
                     stats = stats.merge(q, on=base_group_cols, how="left")
 
                 x_levels = stats[snap_x_col].astype(str).unique().tolist()
                 x_order = _order_levels(x_levels)
-                hue_levels_snap = (sorted(stats[snap_hue_col].astype(str).unique().tolist(), key=smart_string_numeric_key)
-                                   if snap_hue_col else ["_single"])
+                hue_levels_snap = (
+                    sorted(stats[snap_hue_col].astype(str).unique().tolist(), key=smart_string_numeric_key)
+                    if snap_hue_col
+                    else ["_single"]
+                )
                 colors = _colors_for(len(hue_levels_snap), palette_book)
                 color_map_snap = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels_snap)}
                 n_x = len(x_order)
@@ -491,7 +548,7 @@ def plot_ts_snap_plus_design(
                 ax.grid(False)
                 ax.yaxis.grid(True, which="major")
                 ax.xaxis.grid(False)
-                legend_handles: Dict[str, object] = {}
+                legend_handles: dict[str, object] = {}
 
                 for j, xv in enumerate(x_order):
                     x_center = base_pos[j]
@@ -522,11 +579,18 @@ def plot_ts_snap_plus_design(
 
                         error_kw = {"capsize": 3, "elinewidth": 1.0, "alpha": 0.9} if yerr is not None else None
                         xpos = x_center + offsets[hue_index[h]]
-                        bar_color = (color_map_snap[h] if snap_hue_col else "#D9D9D9")
-                        bars = ax.bar([xpos], [height], width=width,
-                                      color=bar_color, edgecolor="#C0C0C0",
-                                      zorder=1, yerr=yerr, **({"error_kw": error_kw} if error_kw else {}),
-                                      label=(str(h) if (snap_show_legend and h not in legend_handles) else None))
+                        bar_color = color_map_snap[h] if snap_hue_col else "#D9D9D9"
+                        bars = ax.bar(
+                            [xpos],
+                            [height],
+                            width=width,
+                            color=bar_color,
+                            edgecolor="#C0C0C0",
+                            zorder=1,
+                            yerr=yerr,
+                            **({"error_kw": error_kw} if error_kw else {}),
+                            label=(str(h) if (snap_show_legend and h not in legend_handles) else None),
+                        )
                         if snap_show_legend and h not in legend_handles and len(bars.patches) > 0:
                             legend_handles[h] = bars.patches[0]
 
@@ -537,8 +601,16 @@ def plot_ts_snap_plus_design(
                             rng = np.random.default_rng()
                             jitter = float(width) * (0.08 if has_hue else 0.12)
                             xj = xpos + (rng.random(len(rr)) - 0.5) * (2.0 * jitter)
-                            ax.scatter(xj, rr["value"], s=34, zorder=3, facecolors="#FFFFFF",
-                                       edgecolors="#C0C0C0", linewidths=0.7, color=None)
+                            ax.scatter(
+                                xj,
+                                rr["value"],
+                                s=34,
+                                zorder=3,
+                                facecolors="#FFFFFF",
+                                edgecolors="#C0C0C0",
+                                linewidths=0.7,
+                                color=None,
+                            )
 
                 ax.set_xticks(base_pos)
                 ax.set_xticklabels(x_order, rotation=45, ha="right")
@@ -546,8 +618,12 @@ def plot_ts_snap_plus_design(
                 ax.set_ylabel(ch_snap)
                 ax.set_title(f"t≈{float(snap_time):.2f} h", fontweight="normal")
                 if snap_show_legend and snap_hue_col and len(hue_levels_snap) > 1 and legend_handles:
-                    ax.legend(handles=list(legend_handles.values()), labels=list(legend_handles.keys()),
-                              loc=str(snap_legend_loc), title=None)
+                    ax.legend(
+                        handles=list(legend_handles.values()),
+                        labels=list(legend_handles.keys()),
+                        loc=str(snap_legend_loc),
+                        title=None,
+                    )
 
             # -------------------- Bottom: baserender panel
             if design_key is not None:
@@ -557,21 +633,29 @@ def plot_ts_snap_plus_design(
                     ax_design.set_axis_off()
                     ax_design.set_title(f"Design: {design_key}", fontsize=10, loc="left")
                 except KeyError as e:
-                    warnings.warn(f"Design panel skipped for key={design_key!r}: {e}")
+                    warnings.warn(f"Design panel skipped for key={design_key!r}: {e}", stacklevel=2)
                     ax_design.set_axis_off()
                     ax_design.text(
-                        0.01, 0.50,
+                        0.01,
+                        0.50,
                         f"Design unavailable for key: {design_key}",
                         transform=ax_design.transAxes,
-                        ha="left", va="center", fontsize=10, alpha=0.9
+                        ha="left",
+                        va="center",
+                        fontsize=10,
+                        alpha=0.9,
                     )
             else:
                 ax_design.set_axis_off()
                 ax_design.text(
-                    0.01, 0.50,
+                    0.01,
+                    0.50,
                     "Design panel disabled (no id/sequence column).",
                     transform=ax_design.transAxes,
-                    ha="left", va="center", fontsize=10, alpha=0.9
+                    ha="left",
+                    va="center",
+                    fontsize=10,
+                    alpha=0.9,
                 )
 
             # -------------------- Title + save

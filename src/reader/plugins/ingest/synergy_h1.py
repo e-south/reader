@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import List, Literal, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Literal
 
 import pandas as pd
 
@@ -29,15 +30,15 @@ class SynergyH1UnifiedCfg(PluginConfig):
     mode: Literal["auto", "snapshot_only", "kinetic_only", "mixed"] = "auto"
 
     # parsing knobs
-    channels: Optional[List[str]] = None
-    channel_map: Optional[Mapping[str, str]] = None
-    sheet_names: Optional[Sequence[str]] = None
+    channels: list[str] | None = None
+    channel_map: Mapping[str, str] | None = None
+    sheet_names: Sequence[str] | None = None
     add_sheet: bool = False
 
     # auto-discovery knobs
-    auto_roots: Optional[List[str]] = None
-    auto_include: List[str] = list(DEFAULT_INCLUDE)
-    auto_exclude: List[str] = list(DEFAULT_EXCLUDE)
+    auto_roots: list[str] | None = None
+    auto_include: list[str] = list(DEFAULT_INCLUDE)
+    auto_exclude: list[str] = list(DEFAULT_EXCLUDE)
     auto_pick: str = "single"  # single | latest | merge
     auto_recursive: bool = False
 
@@ -51,6 +52,7 @@ class SynergyH1UnifiedCfg(PluginConfig):
 
 class SynergyH1(Plugin):
     """Unified Synergy H1 ingest (snapshot-only, kinetic-only, or mixed)."""
+
     key = "synergy_h1"
     category = "ingest"
     ConfigModel = SynergyH1UnifiedCfg
@@ -70,7 +72,8 @@ class SynergyH1(Plugin):
             if len(files) != 1:
                 raise ParseError(
                     "Auto-discovery expected exactly one workbook, found "
-                    f"{len(files)}:\n- " + "\n- ".join(str(p) for p in files)
+                    f"{len(files)}:\n- "
+                    + "\n- ".join(str(p) for p in files)
                     + "\nHint: set auto_pick: latest or auto_pick: merge, or pass reads.raw explicitly."
                 )
             return files[0]
@@ -97,7 +100,7 @@ class SynergyH1(Plugin):
             return files
         raise ParseError(f"Unknown auto_pick mode {cfg.auto_pick!r} (expected: single|latest|merge)")
 
-    def _log_file_overview(self, ctx, path, sheet_names: Optional[Sequence[str]]):
+    def _log_file_overview(self, ctx, path, sheet_names: Sequence[str] | None):
         try:
             xl = pd.ExcelFile(path)
             total = len(xl.sheet_names)

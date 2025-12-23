@@ -9,7 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Literal, Mapping, Optional
+from collections.abc import Mapping
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -18,14 +19,15 @@ from reader.core.registry import Plugin, PluginConfig
 
 
 class OverflowCfg(PluginConfig):
-    action: Literal["max","drop","nan","none"] = "max"
+    action: Literal["max", "drop", "nan", "none"] = "max"
     clip_quantile: float = 0.999
     # New: explicit capping strategy
-    cap_strategy: Literal["provided","infer","quantile"] = "quantile"
-    per_channel_caps: Optional[Mapping[str, float]] = None
+    cap_strategy: Literal["provided", "infer", "quantile"] = "quantile"
+    per_channel_caps: Mapping[str, float] | None = None
     # New: how to detect overflow rows
     flag_column: str = "overflow"
     treat_inf_as_overflow: bool = True
+
 
 class OverflowHandling(Plugin):
     key = "overflow_handling"
@@ -33,11 +35,11 @@ class OverflowHandling(Plugin):
     ConfigModel = OverflowCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str,str]:
+    def input_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str,str]:
+    def output_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}
 
     def run(self, ctx, inputs, cfg: OverflowCfg):
@@ -90,7 +92,9 @@ class OverflowHandling(Plugin):
                 counts = out.groupby("channel")[flagged].sum()
                 ctx.logger.info(
                     "overflow_handling • strategy=%s • capped_rows=%d • by_channel=%s",
-                    cfg.cap_strategy, int(flagged.sum()), dict(counts[counts > 0])
+                    cfg.cap_strategy,
+                    int(flagged.sum()),
+                    dict(counts[counts > 0]),
                 )
             except Exception:
                 pass

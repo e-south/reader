@@ -11,8 +11,9 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Mapping, Optional
+from typing import Any, Literal
 
 
 def _get(obj: Any, key: str, default=None):
@@ -37,24 +38,20 @@ def _sub(obj: Any, key: str) -> dict:
     if hasattr(v, "model_dump"):
         return dict(v.model_dump())
     # last resort: collect public attrs
-    return {
-        k: getattr(v, k)
-        for k in dir(v)
-        if not k.startswith("_") and not callable(getattr(v, k))
-    }
+    return {k: getattr(v, k) for k in dir(v) if not k.startswith("_") and not callable(getattr(v, k))}
 
 
 @dataclass(frozen=True)
 class SFXIResponseCfg:
     # What to use for the 4-state logic shape
-    logic_channel: str        # e.g. "YFP/CFP"
+    logic_channel: str  # e.g. "YFP/CFP"
     # What to use for absolute intensity & reference anchor
-    intensity_channel: str    # e.g. "YFP/OD600"
+    intensity_channel: str  # e.g. "YFP/OD600"
 
 
 @dataclass(frozen=True)
 class SFXIReferenceCfg:
-    genotype: Optional[str] = None        # name of reference genotype in tidy data
+    genotype: str | None = None  # name of reference genotype in tidy data
     scope: Literal["batch", "global"] = "batch"
     stat: Literal["mean", "median"] = "mean"
     on_missing: Literal["error", "skip"] = "error"
@@ -63,7 +60,7 @@ class SFXIReferenceCfg:
 @dataclass(frozen=True)
 class SFXIConfig:
     # experiment structure
-    design_by: List[str]
+    design_by: list[str]
     batch_col: str
     time_column: str
 
@@ -71,13 +68,13 @@ class SFXIConfig:
     response: SFXIResponseCfg
 
     # mapping
-    treatment_map: Dict[str, str]              # keys = {"00","10","01","11"}
+    treatment_map: dict[str, str]  # keys = {"00","10","01","11"}
     treatment_case_sensitive: bool = True
 
     # snapshot/time picking
-    target_time_h: Optional[float] = None
+    target_time_h: float | None = None
     time_mode: Literal["nearest", "last_before", "first_after", "exact"] = "nearest"
-    time_tolerance_h: Optional[float] = 0.51
+    time_tolerance_h: float | None = 0.51
     time_per_batch: bool = True
     on_missing_time: Literal["error", "skip-batch", "drop-all"] = "error"
 
@@ -88,14 +85,14 @@ class SFXIConfig:
     reference: SFXIReferenceCfg = SFXIReferenceCfg()
 
     # intensity math knobs (spec §1.1b)
-    ref_add_alpha: float = 0.0        # α: additive to A_i in denominator
-    log2_offset_delta: float = 0.0    # δ: additive inside log2(y_linear + δ)
+    ref_add_alpha: float = 0.0  # α: additive to A_i in denominator
+    log2_offset_delta: float = 0.0  # δ: additive inside log2(y_linear + δ)
 
     # numerical guards
-    eps_ratio: float = 1e-9   # ratio/log guard for logic & intensity
+    eps_ratio: float = 1e-9  # ratio/log guard for logic & intensity
     eps_range: float = 1e-12  # min range for min-max (logic)
-    eps_ref: float = 1e-9     # reference denom guard
-    eps_abs: float = 0.0      # tiny add in numerator for intensity
+    eps_ref: float = 1e-9  # reference denom guard
+    eps_abs: float = 0.0  # tiny add in numerator for intensity
 
     # output
     output_subdir: str = "sfxi"
@@ -104,10 +101,11 @@ class SFXIConfig:
 
     # optional cosmetics
     name: str = "sfxi"
-    filename_prefix: Optional[str] = None
+    filename_prefix: str | None = None
     # output/metadata policy
     exclude_reference_from_output: bool = True
-    carry_metadata: List[str] = None  # e.g., ["sequence","id"]
+    carry_metadata: list[str] = None  # e.g., ["sequence","id"]
+
 
 def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
     """
@@ -162,18 +160,18 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
     # eps / output
     eps_ratio = float(_get(xform_cfg, "eps_ratio", 1e-9))
     eps_range = float(_get(xform_cfg, "eps_range", 1e-12))
-    eps_ref   = float(_get(xform_cfg, "eps_ref", 1e-9))
-    eps_abs   = float(_get(xform_cfg, "eps_abs", 0.0))
+    eps_ref = float(_get(xform_cfg, "eps_ref", 1e-9))
+    eps_abs = float(_get(xform_cfg, "eps_abs", 0.0))
 
-    output_subdir   = str(_get(xform_cfg, "output_subdir", "sfxi"))
-    vec8_filename   = str(_get(xform_cfg, "vec8_filename", "vec8.csv"))
-    log_filename    = str(_get(xform_cfg, "log_filename", "sfxi_log.json"))
-    name            = str(_get(xform_cfg, "name", "sfxi"))
+    output_subdir = str(_get(xform_cfg, "output_subdir", "sfxi"))
+    vec8_filename = str(_get(xform_cfg, "vec8_filename", "vec8.csv"))
+    log_filename = str(_get(xform_cfg, "log_filename", "sfxi_log.json"))
+    name = str(_get(xform_cfg, "name", "sfxi"))
     filename_prefix = _get(xform_cfg, "filename_prefix", None)
-    ref_add_alpha   = float(_get(xform_cfg, "ref_add_alpha", 0.0))
+    ref_add_alpha = float(_get(xform_cfg, "ref_add_alpha", 0.0))
     log2_offset_delta = float(_get(xform_cfg, "log2_offset_delta", 0.0))
-    exclude_ref     = bool(_get(xform_cfg, "exclude_reference_from_output", True))
-    carry_metadata  = list(_get(xform_cfg, "carry_metadata", ["sequence","id"]))
+    exclude_ref = bool(_get(xform_cfg, "exclude_reference_from_output", True))
+    carry_metadata = list(_get(xform_cfg, "carry_metadata", ["sequence", "id"]))
     if filename_prefix is not None:
         filename_prefix = str(filename_prefix)
 
@@ -185,14 +183,23 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
         treatment_map=tmap,
         treatment_case_sensitive=tcase,
         target_time_h=(float(target_time_h) if target_time_h is not None else None),
-        time_mode=time_mode, time_tolerance_h=(float(tol) if tol is not None else None),
-        time_per_batch=time_per_batch, on_missing_time=on_missing_time,
+        time_mode=time_mode,
+        time_tolerance_h=(float(tol) if tol is not None else None),
+        time_per_batch=time_per_batch,
+        on_missing_time=on_missing_time,
         require_all_corners_per_design=require_all,
         reference=reference,
-        eps_ratio=eps_ratio, eps_range=eps_range, eps_ref=eps_ref, eps_abs=eps_abs,
-        output_subdir=output_subdir, vec8_filename=vec8_filename, log_filename=log_filename,
-        name=name, filename_prefix=filename_prefix,
-        ref_add_alpha=ref_add_alpha, log2_offset_delta=log2_offset_delta,
+        eps_ratio=eps_ratio,
+        eps_range=eps_range,
+        eps_ref=eps_ref,
+        eps_abs=eps_abs,
+        output_subdir=output_subdir,
+        vec8_filename=vec8_filename,
+        log_filename=log_filename,
+        name=name,
+        filename_prefix=filename_prefix,
+        ref_add_alpha=ref_add_alpha,
+        log2_offset_delta=log2_offset_delta,
         exclude_reference_from_output=exclude_ref,
         carry_metadata=carry_metadata,
     )

@@ -26,8 +26,6 @@ Author(s): Eric J. South (updated)
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
 
@@ -37,11 +35,8 @@ def _safe_log2(x: np.ndarray | float, eps: float) -> np.ndarray | float:
 
 
 def _logic_minmax_from_four(
-    vals: Tuple[float, float, float, float],
-    *,
-    eps_ratio: float,
-    eps_range: float
-) -> Tuple[np.ndarray, float, bool, float, float, float, str, str]:
+    vals: tuple[float, float, float, float], *, eps_ratio: float, eps_range: float
+) -> tuple[np.ndarray, float, bool, float, float, float, str, str]:
     a = np.array(vals, dtype=float)
     # ε‑guarded linear values (used for r_logic = max/min)
     a_guard = np.maximum(a, eps_ratio)
@@ -65,29 +60,27 @@ def _logic_minmax_from_four(
 
 def compute_vec8(
     *,
-    points_logic: pd.DataFrame,           # b00..b11 from LOGIC channel
-    points_intensity: pd.DataFrame,       # b00..b11 from INTENSITY channel
-    per_corner_intensity: pd.DataFrame,   # per-corner table for anchors
-    design_by: List[str],
+    points_logic: pd.DataFrame,  # b00..b11 from LOGIC channel
+    points_intensity: pd.DataFrame,  # b00..b11 from INTENSITY channel
+    per_corner_intensity: pd.DataFrame,  # per-corner table for anchors
+    design_by: list[str],
     batch_col: str,
-    reference_genotype: Optional[str],
+    reference_genotype: str | None,
     reference_scope: str,
     reference_stat: str,
     eps_ratio: float,
     eps_range: float,
-    eps_ref: float,                         # hard lower bound for (A + α)
-    eps_abs: float,                         # small add to numerator b_i (absolute intensity)
-    ref_add_alpha: float,                   # α
-    log2_offset_delta: float                # δ
+    eps_ref: float,  # hard lower bound for (A + α)
+    eps_abs: float,  # small add to numerator b_i (absolute intensity)
+    ref_add_alpha: float,  # α
+    log2_offset_delta: float,  # δ
 ) -> pd.DataFrame:
     label_col = design_by[0]
 
     # anchors from INTENSITY per-corner table for the reference genotype
-    ref_tab: Optional[pd.DataFrame] = None
+    ref_tab: pd.DataFrame | None = None
     if reference_genotype:
-        ref_rows = per_corner_intensity[
-            per_corner_intensity[label_col].astype(str) == str(reference_genotype)
-        ].copy()
+        ref_rows = per_corner_intensity[per_corner_intensity[label_col].astype(str) == str(reference_genotype)].copy()
         if not ref_rows.empty:
             grp = [batch_col, "corner"] if reference_scope == "batch" else ["corner"]
             agg_fun = "median" if reference_stat == "median" else "mean"
@@ -98,23 +91,23 @@ def compute_vec8(
     idx_cols = design_by + [batch_col]
     L = points_logic.set_index(idx_cols)
     I_vec = points_intensity.set_index(idx_cols)
-    merged = L[["b00","b10","b01","b11"]].join(
-        I_vec[["b00","b10","b01","b11"]], how="inner", lsuffix="_logic", rsuffix="_intensity"
-    ).reset_index()
+    merged = (
+        L[["b00", "b10", "b01", "b11"]]
+        .join(I_vec[["b00", "b10", "b01", "b11"]], how="inner", lsuffix="_logic", rsuffix="_intensity")
+        .reset_index()
+    )
 
     out_rows: list[dict[str, object]] = []
     for _, row in merged.iterrows():
         v, r_logic, flat, rmax, rmin, span_log2, cmax, cmin = _logic_minmax_from_four(
             (float(row["b00_logic"]), float(row["b10_logic"]), float(row["b01_logic"]), float(row["b11_logic"])),
-            eps_ratio=eps_ratio, eps_range=eps_range,
+            eps_ratio=eps_ratio,
+            eps_range=eps_range,
         )
 
-        anchors: Dict[str, float] = {"00": np.nan, "10": np.nan, "01": np.nan, "11": np.nan}
+        anchors: dict[str, float] = {"00": np.nan, "10": np.nan, "01": np.nan, "11": np.nan}
         if ref_tab is not None and not ref_tab.empty:
-            if reference_scope == "batch":
-                sub = ref_tab[ref_tab[batch_col] == row[batch_col]]
-            else:
-                sub = ref_tab
+            sub = ref_tab[ref_tab[batch_col] == row[batch_col]] if reference_scope == "batch" else ref_tab
             for _, rr in sub.iterrows():
                 anchors[str(rr["corner"])] = float(rr["anchor_mean"])
 
@@ -138,15 +131,24 @@ def compute_vec8(
         y01 = ystar(float(row["b01_intensity"]), anchors["01"])
         y11 = ystar(float(row["b11_intensity"]), anchors["11"])
 
-        rec: Dict[str, object] = {c: row[c] for c in idx_cols}
+        rec: dict[str, object] = {c: row[c] for c in idx_cols}
         rec.update(
-            v00=float(v[0]), v10=float(v[1]), v01=float(v[2]), v11=float(v[3]),
-            y00_star=y00, y10_star=y10, y01_star=y01, y11_star=y11,
-            r_logic=r_logic, flat_logic=flat,
+            v00=float(v[0]),
+            v10=float(v[1]),
+            v01=float(v[2]),
+            v11=float(v[3]),
+            y00_star=y00,
+            y10_star=y10,
+            y01_star=y01,
+            y11_star=y11,
+            r_logic=r_logic,
+            flat_logic=flat,
             # Self-describing diagnostics for r_logic:
-            r_logic_min=float(rmin), r_logic_max=float(rmax),
+            r_logic_min=float(rmin),
+            r_logic_max=float(rmax),
             logic_span_log2=float(span_log2),
-            r_logic_corner_min=cmin, r_logic_corner_max=cmax,
+            r_logic_corner_min=cmin,
+            r_logic_corner_max=cmax,
         )
         out_rows.append(rec)
 
@@ -154,9 +156,18 @@ def compute_vec8(
 
     # Keep numerics as float for stability and downstream math.
     float_cols = [
-        "v00", "v10", "v01", "v11",
-        "y00_star", "y10_star", "y01_star", "y11_star",
-        "r_logic", "r_logic_min", "r_logic_max", "logic_span_log2",
+        "v00",
+        "v10",
+        "v01",
+        "v11",
+        "y00_star",
+        "y10_star",
+        "y01_star",
+        "y11_star",
+        "r_logic",
+        "r_logic_min",
+        "r_logic_max",
+        "logic_span_log2",
     ]
     for c in float_cols:
         if c in df.columns:
@@ -167,6 +178,7 @@ def compute_vec8(
         df["flat_logic"] = df["flat_logic"].astype(bool)
         # Assertive programming: fail fast if someone reintroduces a wrong dtype later.
         from pandas.api.types import is_bool_dtype
+
         if not is_bool_dtype(df["flat_logic"]):
             raise TypeError(
                 f"SFXI internal error: expected boolean dtype for 'flat_logic', got {df['flat_logic'].dtype!r}"

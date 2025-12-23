@@ -11,7 +11,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -21,20 +22,20 @@ from reader.core.registry import Plugin, PluginConfig
 
 class TSAndSnapCfg(PluginConfig):
     # grouping
-    group_on: Optional[str] = None
-    pool_sets: Optional[Union[str, List[Dict[str, List[str]]]]] = None
+    group_on: str | None = None
+    pool_sets: str | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
 
     # time series (left)
     ts_x: str = "time"
     ts_channel: str
     ts_hue: str
-    ts_time_window: Optional[List[float]] = None
+    ts_time_window: list[float] | None = None
     ts_add_sheet_line: bool = False
-    ts_sheet_line_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    ts_sheet_line_kwargs: dict[str, Any] = Field(default_factory=dict)
     ts_mark_snap_time: bool = False
-    ts_snap_line_kwargs: Dict[str, Any] = Field(default_factory=dict)
-    ts_log_transform: bool | List[str] = False
+    ts_snap_line_kwargs: dict[str, Any] = Field(default_factory=dict)
+    ts_log_transform: bool | list[str] = False
     ts_ci: float = 95.0
     ts_ci_alpha: float = 0.15
     ts_show_replicates: bool = False
@@ -42,8 +43,8 @@ class TSAndSnapCfg(PluginConfig):
 
     # snapshot (right)
     snap_x: str = "treatment"
-    snap_channel: Optional[str] = None
-    snap_hue: Optional[str] = None
+    snap_channel: str | None = None
+    snap_hue: str | None = None
     snap_time: float = 0.0
     snap_agg: Literal["mean", "median"] = "mean"
     snap_err: Literal["sem", "iqr", "none"] = "sem"
@@ -52,8 +53,8 @@ class TSAndSnapCfg(PluginConfig):
     snap_legend_loc: str = "upper right"
 
     # figure
-    fig: Dict[str, Any] = Field(default_factory=dict)
-    filename: Optional[str] = None
+    fig: dict[str, Any] = Field(default_factory=dict)
+    filename: str | None = None
 
 
 class TSAndSnapPlot(Plugin):
@@ -63,7 +64,7 @@ class TSAndSnapPlot(Plugin):
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}   # blanks not required here
+        return {"df": "tidy.v1"}  # blanks not required here
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
@@ -71,10 +72,11 @@ class TSAndSnapPlot(Plugin):
 
     def run(self, ctx, inputs, cfg: TSAndSnapCfg):
         from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
+
         df: pd.DataFrame = inputs["df"]
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: Optional[str]):
+        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
             if pool_sets is None:
                 return None
             if isinstance(pool_sets, list):

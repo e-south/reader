@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 
@@ -25,12 +25,12 @@ def _ensure_dir(p: Path) -> None:
 def write_outputs(
     *,
     vec8: pd.DataFrame,
-    log: Dict[str, Any],
+    log: dict[str, Any],
     out_dir: Path | str,
     subdir: str,
     vec8_filename: str,
     log_filename: str,
-) -> Dict[str, Path]:
+) -> dict[str, Path]:
     out_root = Path(out_dir) / subdir
     _ensure_dir(out_root)
 

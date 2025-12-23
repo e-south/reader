@@ -10,7 +10,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,7 +27,7 @@ from .base import (
 from .style import PaletteBook, use_style
 
 
-def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
+def _colors_for(n: int, palette_book: PaletteBook | None) -> list[str]:
     if palette_book:
         pal = palette_book.colors(max(2, n))
         # avoid pure black as the only color in single‑trace figures
@@ -46,10 +45,10 @@ def _colors_for(n: int, palette_book: Optional[PaletteBook]) -> List[str]:
 def _figure_groups(
     *,
     df: pd.DataFrame,
-    group_on: Optional[str],
-    pool_sets: Optional[List[Dict[str, List[str]]]],
+    group_on: str | None,
+    pool_sets: list[dict[str, list[str]]] | None,
     pool_match: GroupMatch,
-) -> List[Tuple[str, List[str]]]:
+) -> list[tuple[str, list[str]]]:
     """
     Return a list of (figure_label, [member_values]) to iterate files.
     - When pool_sets is provided, each declared set label becomes a file label,
@@ -72,19 +71,19 @@ def plot_distributions(
     df: pd.DataFrame,
     blanks: pd.DataFrame,
     output_dir: Path | str,
-    channels: List[str],
+    channels: list[str],
     # modern grouping knobs
-    group_on: Optional[str] = "genotype",
-    pool_sets: Optional[List[Dict[str, List[str]]]] = None,
+    group_on: str | None = "genotype",
+    pool_sets: list[dict[str, list[str]]] | None = None,
     pool_match: GroupMatch = "exact",
     # layout
     panel_by: str = "channel",  # "channel" (default) | "group"
-    hue: Optional[str] = None,
+    hue: str | None = None,
     legend_loc: str = "upper left",
     # style / output
-    fig_kwargs: Optional[Dict] = None,
-    filename: Optional[str] = None,
-    palette_book: Optional[PaletteBook] = None,
+    fig_kwargs: dict | None = None,
+    filename: str | None = None,
+    palette_book: PaletteBook | None = None,
 ) -> None:
     """
     Distribution histograms with modern semantics:
@@ -154,12 +153,16 @@ def plot_distributions(
                             if dd.empty:
                                 continue
                             sns.kdeplot(
-                                data=dd, x="value",
-                                ax=ax, lw=1.8, fill=True, alpha=fill_alpha,
+                                data=dd,
+                                x="value",
+                                ax=ax,
+                                lw=1.8,
+                                fill=True,
+                                alpha=fill_alpha,
                                 common_norm=False,
                                 # Only the legend host needs labeled artists.
                                 label=(str(h) if place_legend_here else None),
-                                color=cmap[h]
+                                color=cmap[h],
                             )
                         if place_legend_here:
                             ax.legend(loc=legend_loc, title=None)
@@ -175,8 +178,8 @@ def plot_distributions(
                             med = float(pd.to_numeric(b["value"], errors="coerce").median())
                             ax.axvline(med, ls="--", lw=1.0, alpha=0.6)
 
-                    ax.set_xlabel(str(ch))     # more informative than "value"
-                    ax.set_ylabel("density")   # not "count"
+                    ax.set_xlabel(str(ch))  # more informative than "value"
+                    ax.set_ylabel("density")  # not "count"
 
                 # hide extras if grid > panels
                 for k in range(len(ch_list), len(axes)):
@@ -184,10 +187,7 @@ def plot_distributions(
 
                 ext = str(fig_kwargs.get("ext", "pdf")).lower()
                 # Ensure user-specified filename remains unique per file
-                if filename:
-                    stub = f"{filename}__{(str(gcol) + '=' if gcol else '')}{label}"
-                else:
-                    stub = f"distrib__{label}"
+                stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
                 save_figure(fig, Path(output_dir), stub, ext=ext)
                 plt.close(fig)
 
@@ -200,7 +200,7 @@ def plot_distributions(
             raise ValueError("panel_by='group' expects exactly one channel in 'channels'")
         ch = ch_list[0]
         # flatten members across all figure groups into a unique, ordered panel list
-        members_union: List[str] = []
+        members_union: list[str] = []
         seen: set[str] = set()
         for _, members in fig_groups:
             for v in members:
@@ -240,9 +240,6 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             ext = str(fig_kwargs.get("ext", "pdf")).lower()
-            if filename:
-                stub = f"{filename}__{ch}"
-            else:
-                stub = f"distrib__{ch}"
+            stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
             save_figure(fig, Path(output_dir), stub, ext=ext)
             plt.close(fig)

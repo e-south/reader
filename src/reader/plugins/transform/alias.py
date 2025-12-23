@@ -12,7 +12,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import pandas as pd
 
@@ -28,6 +28,7 @@ class AliasCfg(PluginConfig):
     in_place:      if true, mutate <column_name> directly; else create <column_name>_alias
     case_insensitive: map using casefold() on incoming values (keys in 'aliases' are matched case-insensitively)
     """
+
     aliases: Mapping[str, Mapping[str, str]]
     in_place: bool = False
     case_insensitive: bool = True
@@ -41,7 +42,7 @@ class AliasTransform(Plugin):
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}   # works equally well on tidy+map
+        return {"df": "tidy.v1"}  # works equally well on tidy+map
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
@@ -74,10 +75,7 @@ class AliasTransform(Plugin):
     ) -> None:
         # Pretty, indented INFO block with newlines (Rich handler preserves formatting)
         ex_block = "\n".join(f"      • {s}" for s in examples) if examples else "      —"
-        unused_block = (
-            "\n".join(f"      • {s}" for s in unused_rules_preview)
-            if unused_rules_preview else "      —"
-        )
+        unused_block = "\n".join(f"      • {s}" for s in unused_rules_preview) if unused_rules_preview else "      —"
         ctx.logger.info(
             (
                 "alias • [accent]%s[/accent] → %s\n"
@@ -85,7 +83,14 @@ class AliasTransform(Plugin):
                 "   examples:\n%s\n"
                 "   unused_rule_keys:\n%s"
             ),
-            col, out_col, rules_total, used_rules, changed_rows, uniq_vals, ex_block, unused_block
+            col,
+            out_col,
+            rules_total,
+            used_rules,
+            changed_rows,
+            uniq_vals,
+            ex_block,
+            unused_block,
         )
 
     # ---------------- main ----------------
@@ -108,8 +113,8 @@ class AliasTransform(Plugin):
             before_norm = before.str.casefold() if cfg.case_insensitive else before
 
             # vectorized mapping: map normalized values → alias; keep original when not mapped
-            mapped = before_norm.map(norm_map)                 # Series[str or NaN]
-            after_series = mapped.fillna(before)               # keep original where no rule
+            mapped = before_norm.map(norm_map)  # Series[str or NaN]
+            after_series = mapped.fillna(before)  # keep original where no rule
 
             # write output column
             out_col = col if cfg.in_place else f"{col}{cfg.suffix}"

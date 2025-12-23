@@ -11,8 +11,6 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 import numpy as np
 import pandas as pd
 
@@ -21,7 +19,7 @@ def _norm_case(s: pd.Series) -> pd.Series:
     return s.astype(str).str.strip().str.casefold()
 
 
-def _choose_time(times: np.ndarray, *, mode: str, target: Optional[float], tol: float) -> float:
+def _choose_time(times: np.ndarray, *, mode: str, target: float | None, tol: float) -> float:
     times = np.asarray(sorted(times), dtype=float)
     if times.size == 0:
         raise ValueError("No times available in group")
@@ -53,11 +51,11 @@ def prepare_for_logic_symmetry(
     df: pd.DataFrame,
     *,
     response_channel: str,
-    design_by: List[str],
+    design_by: list[str],
     batch_col: str,
-    treatment_map: Dict[str, str],
+    treatment_map: dict[str, str],
     mode: str = "last",
-    target_time: Optional[float] = None,
+    target_time: float | None = None,
     tolerance: float = 0.51,
     align_corners: bool = False,
     case_sensitive: bool = True,
@@ -84,8 +82,8 @@ def prepare_for_logic_symmetry(
 
     try:
         pd.to_numeric(work[batch_col])
-    except Exception:
-        raise ValueError(f"Batch column '{batch_col}' must be numeric (0,1,2,...)")
+    except Exception as err:
+        raise ValueError(f"Batch column '{batch_col}' must be numeric (0,1,2,...)") from err
 
     keys_db = design_by + [batch_col]
     keys_dbt = keys_db + ["_corner"]
@@ -98,7 +96,7 @@ def prepare_for_logic_symmetry(
             try:
                 anchor = _choose_time(all_times, mode=mode, target=target_time, tol=tolerance)
             except Exception as exc:
-                failures.append(f"{dict(zip(keys_db, keys))} → {exc}")
+                failures.append(f"{dict(zip(keys_db, keys, strict=False))} → {exc}")
                 continue
             ok = True
             for _, g in gdb.groupby("_corner", dropna=False):
@@ -113,7 +111,9 @@ def prepare_for_logic_symmetry(
                 pick_time = float(tvals[diffs.argmin()])
                 selected_rows.append(g.loc[g[time_column] == pick_time].iloc[0])
             if not ok:
-                failures.append(f"{dict(zip(keys_db, keys))} → no per-corner time within ±{tolerance} h of anchor={anchor}")
+                failures.append(
+                    f"{dict(zip(keys_db, keys, strict=False))} → no per-corner time within ±{tolerance} h of anchor={anchor}"
+                )
         if failures:
             raise ValueError("logic_symmetry_prep align_corners failed:\n  " + "\n  ".join(failures[:50]))
         return pd.DataFrame(selected_rows).drop(columns=["_t_norm"], errors="ignore")
@@ -125,7 +125,7 @@ def prepare_for_logic_symmetry(
         try:
             tsel = _choose_time(times, mode=mode, target=target_time, tol=tolerance)
         except Exception as exc:
-            failures.append(f"{dict(zip(keys_dbt, keys))} → {exc}")
+            failures.append(f"{dict(zip(keys_dbt, keys, strict=False))} → {exc}")
             continue
         chosen.append((keys, tsel))
 
@@ -133,7 +133,7 @@ def prepare_for_logic_symmetry(
         raise ValueError("logic_symmetry_prep failed:\n  " + "\n  ".join(failures[:50]))
 
     keep = pd.Series(False, index=work.index)
-    for (keys, tsel) in chosen:
+    for keys, tsel in chosen:
         mask = (work[keys_dbt] == pd.Series(keys, index=keys_dbt)).all(axis=1) & (
             work[time_column].astype(float) == float(tsel)
         )

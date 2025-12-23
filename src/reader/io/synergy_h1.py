@@ -13,14 +13,15 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 # ------------------------------- helpers -------------------------------
+
 
 def _require(cond: bool, msg: str) -> None:
     if not cond:
@@ -58,6 +59,7 @@ def _extract_sheet_datetime(xl: pd.ExcelFile, sheet: str) -> datetime:
 
 # ---- channel canonicalization tolerant to "OD600 B", trailing letters, spaces, colons
 
+
 def _canon(s: str) -> str:
     s0 = str(s or "").strip()
     s0 = s0.split(":", 1)[0]  # drop trailing colon sections
@@ -65,20 +67,22 @@ def _canon(s: str) -> str:
     s0 = re.sub(r"\s+", " ", s0).strip()
     return s0
 
+
 # --- overflow token detection ---
-_OVERFLOW_PATTERNS = (
-    "overflow", "ovrflw", "ovr", "over", "inf", "infinity", "∞"
-)
+_OVERFLOW_PATTERNS = ("overflow", "ovrflw", "ovr", "over", "inf", "infinity", "∞")
+
+
 def _is_overflow_token(x: object) -> bool:
     s = str(x or "").strip()
     if not s:
         return False
-    if s.startswith(">"):          # e.g., "> 65000"
+    if s.startswith(">"):  # e.g., "> 65000"
         return True
     t = s.lower()
     return any(k in t for k in _OVERFLOW_PATTERNS)
 
-def _normalize_channel_map(channel_map: Optional[Mapping[str, str]]) -> Mapping[str, str]:
+
+def _normalize_channel_map(channel_map: Mapping[str, str] | None) -> Mapping[str, str]:
     if not channel_map:
         return {}
     # match on canonicalized, case-insensitive keys; keep user-provided canonical names as values
@@ -86,8 +90,8 @@ def _normalize_channel_map(channel_map: Optional[Mapping[str, str]]) -> Mapping[
 
 
 def _resolve_channel(
-    raw_label: str, *, channels: Optional[Sequence[str]], channel_map_ci: Mapping[str, str]
-) -> Optional[str]:
+    raw_label: str, *, channels: Sequence[str] | None, channel_map_ci: Mapping[str, str]
+) -> str | None:
     rl = _canon(raw_label).lower()
 
     # 1) mapping takes precedence (substring on canonicalized lower)
@@ -125,6 +129,7 @@ def _well_headers(header: Iterable[str]) -> list[str]:
 
 
 # ---------------------------- snapshot tidy ----------------------------
+
 
 def _tidy_snapshot_block(
     snap: pd.DataFrame,
@@ -167,7 +172,7 @@ def _tidy_snapshot_block(
 
         for ci, chan in enumerate(channels):
             vals = block.iloc[ci, well_cols].tolist()
-            for w, v in zip(well_nums, vals):
+            for w, v in zip(well_nums, vals, strict=False):
                 rows.append(
                     {
                         "position": f"{row_letter}{w}",
@@ -194,13 +199,14 @@ def _tidy_snapshot_block(
 
 # ----------------------------- kinetic tidy -----------------------------
 
+
 def _tidy_kinetic_blocks(
     kin: pd.DataFrame,
     *,
     elapsed_h: float,
     sheet_idx: int,
     sheet_name: str,
-    channels: Optional[Sequence[str]],
+    channels: Sequence[str] | None,
     channel_map_ci: Mapping[str, str],
     add_sheet: bool,
 ) -> pd.DataFrame:
@@ -229,7 +235,7 @@ def _tidy_kinetic_blocks(
     _require(
         label_rows,
         "No kinetic blocks found: expected a channel label in column A "
-        "(e.g., 'OD600' or 'OD600: …') preceding a 'Time' header row."
+        "(e.g., 'OD600' or 'OD600: …') preceding a 'Time' header row.",
     )
 
     parts: list[pd.DataFrame] = []
@@ -296,7 +302,9 @@ def _tidy_kinetic_blocks(
 
     # Emit the mapping once per call (sheet‑scoped)
     if raw_to_resolved:
-        pairs = [f"{raw!r} → {raw_to_canon.get(raw, '?')!r} → {raw_to_resolved[raw]!r}" for raw in sorted(raw_to_resolved)]
+        pairs = [
+            f"{raw!r} → {raw_to_canon.get(raw, '?')!r} → {raw_to_resolved[raw]!r}" for raw in sorted(raw_to_resolved)
+        ]
         log.info("channel normalization (kinetic, sheet %s): %s", sheet_name, "; ".join(pairs))
 
     return out
@@ -304,12 +312,13 @@ def _tidy_kinetic_blocks(
 
 # ----------------------------- public API ------------------------------
 
+
 def parse_snapshot_and_timeseries(
     path: str | Path,
     *,
-    channels: Optional[Sequence[str]] = None,
-    channel_map: Optional[Mapping[str, str]] = None,
-    sheet_names: Optional[Sequence[str]] = None,
+    channels: Sequence[str] | None = None,
+    channel_map: Mapping[str, str] | None = None,
+    sheet_names: Sequence[str] | None = None,
     add_sheet: bool = False,
     include_snapshot: bool = True,
     include_kinetic: bool = True,
@@ -335,7 +344,7 @@ def parse_snapshot_and_timeseries(
         _require(s in xl.sheet_names, f"Sheet {s!r} not found in workbook")
 
     frames: list[pd.DataFrame] = []
-    t0: Optional[datetime] = None
+    t0: datetime | None = None
 
     def _split_snapshot_vs_kinetic(df: pd.DataFrame) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         def _row_has(idx: int, keyword: str) -> bool:
@@ -423,9 +432,9 @@ def parse_snapshot_and_timeseries(
 def parse_kinetic_only(
     path: str | Path,
     *,
-    channels: Optional[Sequence[str]] = None,
-    channel_map: Optional[Mapping[str, str]] = None,
-    sheet_names: Optional[Sequence[str]] = None,
+    channels: Sequence[str] | None = None,
+    channel_map: Mapping[str, str] | None = None,
+    sheet_names: Sequence[str] | None = None,
     add_sheet: bool = False,
 ) -> pd.DataFrame:
     p = Path(path)
@@ -440,9 +449,9 @@ def parse_kinetic_only(
         _require(s in xl.sheet_names, f"Sheet {s!r} not found in workbook")
 
     frames: list[pd.DataFrame] = []
-    t0: Optional[datetime] = None
+    t0: datetime | None = None
 
-    def _find_kinetic_section(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    def _find_kinetic_section(df: pd.DataFrame) -> pd.DataFrame | None:
         for i in df.index:
             cell = str(df.iat[i, 0]).strip()
             if not cell:

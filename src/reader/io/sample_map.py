@@ -27,10 +27,7 @@ def parse_sample_map(path: str) -> pd.DataFrame:
     suffix = p.suffix.lower()
 
     # Load file
-    if suffix in {".xls", ".xlsx"}:
-        df = pd.read_excel(p)
-    else:
-        df = pd.read_csv(p)
+    df = pd.read_excel(p) if suffix in {".xls", ".xlsx"} else pd.read_csv(p)
 
     cols = {c.lower(): c for c in df.columns}
     if "position" in cols:

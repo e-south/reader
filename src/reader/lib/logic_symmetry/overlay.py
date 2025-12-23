@@ -14,7 +14,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -48,65 +47,65 @@ class OverlayStyle:
 
 
 # Base gate sets (u = [u00,u10,u01,u11])
-_GATESETS: Dict[str, Dict[str, List[float]]] = {
+_GATESETS: dict[str, dict[str, list[float]]] = {
     "core": {
-        "AND":   [0, 0, 0, 1],
-        "OR":    [0, 1, 1, 1],
-        "XOR":   [0, 1, 1, 0],
+        "AND": [0, 0, 0, 1],
+        "OR": [0, 1, 1, 1],
+        "XOR": [0, 1, 1, 0],
         "SLOPE": [0, 0.5, 0.5, 1.0],
         "SIG-A": [0, 1, 0, 1],
         "SIG-B": [0, 0, 1, 1],
     },
     "logic_family": {
-        "AND":   [0, 0, 0, 1],
-        "OR":    [0, 1, 1, 1],
-        "XOR":   [0, 1, 1, 0],
-        "NAND":  [1, 1, 1, 0],
-        "NOR":   [1, 0, 0, 0],
-        "XNOR":  [1, 0, 0, 1],
+        "AND": [0, 0, 0, 1],
+        "OR": [0, 1, 1, 1],
+        "XOR": [0, 1, 1, 0],
+        "NAND": [1, 1, 1, 0],
+        "NOR": [1, 0, 0, 0],
+        "XNOR": [1, 0, 0, 1],
         "SIG-A": [0, 1, 0, 1],
         "SIG-B": [0, 0, 1, 1],
         "SLOPE": [0, 0.5, 0.5, 1.0],
     },
     "full16": {
         "FALSE": [0, 0, 0, 0],
-        "TRUE":  [1, 1, 1, 1],
-        "AND":   [0, 0, 0, 1],
-        "OR":    [0, 1, 1, 1],
-        "XOR":   [0, 1, 1, 0],
-        "XNOR":  [1, 0, 0, 1],
-        "NAND":  [1, 1, 1, 0],
-        "NOR":   [1, 0, 0, 0],
-        "A":     [0, 1, 0, 1],
+        "TRUE": [1, 1, 1, 1],
+        "AND": [0, 0, 0, 1],
+        "OR": [0, 1, 1, 1],
+        "XOR": [0, 1, 1, 0],
+        "XNOR": [1, 0, 0, 1],
+        "NAND": [1, 1, 1, 0],
+        "NOR": [1, 0, 0, 0],
+        "A": [0, 1, 0, 1],
         "NOT A": [1, 0, 1, 0],
-        "B":     [0, 0, 1, 1],
+        "B": [0, 0, 1, 1],
         "NOT B": [1, 1, 0, 0],
         "A AND NOT B": [0, 1, 0, 0],
         "NOT A AND B": [0, 0, 1, 0],
-        "A->B":  [1, 1, 0, 1],
-        "B->A":  [1, 0, 1, 1],
+        "A->B": [1, 1, 0, 1],
+        "B->A": [1, 0, 1, 1],
     },
 }
 
 
-def _invert_u(u: List[float]) -> List[float]:
+def _invert_u(u: list[float]) -> list[float]:
     return [float(1.0 - float(x)) for x in u]
 
 
-def _tiles_dual_set() -> Dict[str, List[float]]:
+def _tiles_dual_set() -> dict[str, list[float]]:
     """OR/NOR, XNOR/AND, SIG-A/NOT A, SIG-B/NOT B, SLOPE/SLOPE− (antagonistic)."""
     base = {
-        "OR":    [0, 1, 1, 1],
-        "NOR":   [1, 0, 0, 0],
-        "XNOR":  [1, 0, 0, 1],
-        "AND":   [0, 0, 0, 1],
+        "OR": [0, 1, 1, 1],
+        "NOR": [1, 0, 0, 0],
+        "XNOR": [1, 0, 0, 1],
+        "AND": [0, 0, 0, 1],
         "SIG-A": [0, 1, 0, 1],
         "SIG-B": [0, 0, 1, 1],
         "SLOPE": [0, 0.5, 0.5, 1.0],
     }
     dual = {
-        "NAND":  [1, 1, 1, 0],
-        "XOR":   [0, 1, 1, 0],
+        "NAND": [1, 1, 1, 0],
+        "XOR": [0, 1, 1, 0],
         "NOT A": [1, 0, 1, 0],
         "NOT B": [1, 1, 0, 0],
         "SLOPE−": _invert_u(base["SLOPE"]),
@@ -128,9 +127,9 @@ def generate_overlay_points(gate_set: str) -> pd.DataFrame:
             raise ValueError(f"Unknown gate_set '{gate_set}'. Choose from {valid}")
         src = _GATESETS[gate_set]
 
-    rows: List[Dict[str, object]] = []
+    rows: list[dict[str, object]] = []
     for label, u in src.items():
         uu = [float(x) for x in u]
         L, A = logic_asym(np.array(uu, dtype=float))
-        rows.append(dict(label=label, L=L, A=A, u=uu))
+        rows.append({"label": label, "L": L, "A": A, "u": uu})
     return pd.DataFrame.from_records(rows)

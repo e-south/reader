@@ -1,3 +1,5 @@
+[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
+
 ## reader
 
 **reader** is a workbench for experimental data, where the unit of work is an **experimental directory**: you put raw inputs there, keep notebooks next to them, and write (`outputs/`) in the same place. **reader** includes a plugin-based pipeline runner (see [`docs/pipeline.md`](./docs/pipeline.md) and [`docs/plugins.md`](./docs/plugins.md)), but more broadly these workspaces are where you can iterate on one experiment with a mix of:

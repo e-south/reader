@@ -9,8 +9,8 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,19 +45,19 @@ def plot_time_series(
     blanks: pd.DataFrame,
     output_dir,
     x: str,
-    y: Optional[List[str]],
+    y: list[str] | None,
     hue: str,
-    channels: Optional[List[str]],
-    subplots: Optional[str] = None,           # kept for API parity (ignored: always subplots per channel)
-    group_on: Optional[str],
-    pool_sets: Optional[List[Dict[str, List[str]]]],
+    channels: list[str] | None,
+    subplots: str | None = None,  # kept for API parity (ignored: always subplots per channel)
+    group_on: str | None,
+    pool_sets: list[dict[str, list[str]]] | None,
     pool_match: GroupMatch,
-    fig_kwargs: Optional[dict],
+    fig_kwargs: dict | None,
     add_sheet_line: bool,
-    sheet_line_kwargs: Optional[dict],
-    log_transform: bool | List[str],
-    time_window: Optional[List[float]],
-    palette_book: Optional[PaletteBook],
+    sheet_line_kwargs: dict | None,
+    log_transform: bool | list[str],
+    time_window: list[float] | None,
+    palette_book: PaletteBook | None,
     ci: float = 95.0,
     ci_alpha: float = 0.15,
     legend_loc: str = "upper right",
@@ -69,10 +69,11 @@ def plot_time_series(
     grid bands* behind the time axis (alternating between tick intervals).
     """
     import seaborn as sns
+
     xcol = alias_column(df, x)
-    line_alpha         = float((fig_kwargs or {}).get("line_alpha", 0.85))
-    mean_marker_alpha  = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
-    replicate_alpha    = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
+    line_alpha = float((fig_kwargs or {}).get("line_alpha", 0.85))
+    mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
+    replicate_alpha = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
 
     # Channel roster
     y_feats = (list(y) if y else list(channels or [])) or sorted(df["channel"].astype(str).unique().tolist())
@@ -83,8 +84,7 @@ def plot_time_series(
     if time_window:
         lo, hi = float(time_window[0]), float(time_window[1])
         base = base[
-            (pd.to_numeric(base[xcol], errors="coerce") >= lo)
-            & (pd.to_numeric(base[xcol], errors="coerce") <= hi)
+            (pd.to_numeric(base[xcol], errors="coerce") >= lo) & (pd.to_numeric(base[xcol], errors="coerce") <= hi)
         ].copy()
     if base.empty:
         return
@@ -99,7 +99,9 @@ def plot_time_series(
         base = base.loc[mask].copy()
     if group_col:
         universe = base[group_col].astype(str).unique().tolist()
-        fig_groups = resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        fig_groups = (
+            resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
+        )
     else:
         fig_groups = [("all", [None])]
 
@@ -111,7 +113,7 @@ def plot_time_series(
         sheet_lines = starts[1:] if len(starts) > 1 else []
 
     # Colors for hue
-    def _colors(n: int) -> List[str]:
+    def _colors(n: int) -> list[str]:
         if palette_book:
             if n == 1:
                 pal = palette_book.colors(2)
@@ -140,7 +142,7 @@ def plot_time_series(
         rows, cols = best_subplot_grid(len(y_feats))
 
         with use_style(rc=(fig_kwargs or {}).get("rc"), color_cycle=colors):
-            fig, axes = plt.subplots(rows, cols, figsize=(cols*5, rows*5), constrained_layout=True)
+            fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), constrained_layout=True)
             axes = np.atleast_1d(axes).ravel()
 
             # Optional rasterization threshold for heavy artists (replicate dots)
@@ -168,38 +170,53 @@ def plot_time_series(
                     for h in hue_levels:
                         rr = sub[sub[hue_col].astype(str) == h]
                         ax.scatter(
-                            rr[xcol], rr["value"],
-                            s=18, alpha=replicate_alpha, zorder=3,  # zorder=3 to rasterize if rz > 2
+                            rr[xcol],
+                            rr["value"],
+                            s=18,
+                            alpha=replicate_alpha,
+                            zorder=3,  # zorder=3 to rasterize if rz > 2
                             linewidths=0.0,
-                            edgecolors="none",           # ← no marker edge
+                            edgecolors="none",  # ← no marker edge
                             marker=marker_map[h],
-                            c=color_map[h]
+                            c=color_map[h],
                         )
 
                 # Mean line + CI band (Seaborn)
                 import seaborn as sns  # localized import kept for clarity
+
                 sns.lineplot(
-                    data=sub, x=xcol, y="value", hue=hue_col, hue_order=hue_levels,
-                    estimator="mean", errorbar=("ci", float(ci)), err_style="band",
+                    data=sub,
+                    x=xcol,
+                    y="value",
+                    hue=hue_col,
+                    hue_order=hue_levels,
+                    estimator="mean",
+                    errorbar=("ci", float(ci)),
+                    err_style="band",
                     err_kws={"alpha": float(ci_alpha)},
-                    lw=1.8, alpha=line_alpha, legend=False, ax=ax,
+                    lw=1.8,
+                    alpha=line_alpha,
+                    legend=False,
+                    ax=ax,
                     palette=[color_map[h] for h in hue_levels],
                     marker=None,
                     zorder=1,
                 )
 
                 # Mean points (bold)
-                means = (sub
-                         .groupby([hue_col, xcol], dropna=False)["value"]
-                         .mean().reset_index())
+                means = sub.groupby([hue_col, xcol], dropna=False)["value"].mean().reset_index()
                 for h in hue_levels:
                     mm = means[means[hue_col].astype(str) == h]
                     ax.scatter(
-                        mm[xcol], mm["value"],
-                        s=36, zorder=2.5, marker=marker_map[h],
+                        mm[xcol],
+                        mm["value"],
+                        s=36,
+                        zorder=2.5,
+                        marker=marker_map[h],
                         alpha=mean_marker_alpha,
-                        edgecolors="none", linewidths=0.0,  # ← remove white edge
-                        c=color_map[h]
+                        edgecolors="none",
+                        linewidths=0.0,  # ← remove white edge
+                        c=color_map[h],
                     )
 
                 # Sheet markers
@@ -218,22 +235,23 @@ def plot_time_series(
                 # Labels & legend
                 ax.set_xlabel("Time (h)" if str(x).lower() == "time" else pretty_name(str(xcol)))
                 ax.set_ylabel(str(ch))
-                try:
+                with suppress(Exception):
                     ax.set_box_aspect(1.0)
-                except Exception:
-                    pass
 
                 # Custom legend — place it on the first subplot only
                 if idx == 0:
                     handles = [
-                        Line2D([0], [0],
-                               color=color_map[h],
-                               marker=marker_map[h],
-                               markersize=7,
-                               linestyle="-",
-                               linewidth=1.8,
-                               alpha=mean_marker_alpha,
-                               label=str(h))
+                        Line2D(
+                            [0],
+                            [0],
+                            color=color_map[h],
+                            marker=marker_map[h],
+                            markersize=7,
+                            linestyle="-",
+                            linewidth=1.8,
+                            alpha=mean_marker_alpha,
+                            label=str(h),
+                        )
                         for h in hue_levels
                     ]
                     ax.legend(handles=handles, loc=legend_loc, title=None)

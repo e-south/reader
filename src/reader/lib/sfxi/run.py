@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -25,16 +25,21 @@ from .selection import cornerize_and_aggregate
 from .writer import write_outputs
 
 
-def _assert_same_times(chosen_a: Dict[object, float], chosen_b: Dict[object, float]) -> None:
+def _assert_same_times(chosen_a: dict[object, float], chosen_b: dict[object, float]) -> None:
     if set(chosen_a.keys()) != set(chosen_b.keys()):
         raise ValueError("SFXI: logic and intensity selections produced different batch sets.")
-    for k in chosen_a:
-        ta, tb = float(chosen_a[k]), float(chosen_b[k])
+    for k, ta in chosen_a.items():
+        tb = float(chosen_b[k])
+        ta = float(ta)
         if not np.isclose(ta, tb, rtol=0, atol=1e-9):
-            raise ValueError(f"SFXI: logic and intensity channels selected different times for batch={k!r}: {ta} vs {tb}")
+            raise ValueError(
+                f"SFXI: logic and intensity channels selected different times for batch={k!r}: {ta} vs {tb}"
+            )
 
 
-def _attach_sequence(vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: List[str], batch_col: str) -> pd.DataFrame:
+def _attach_sequence(
+    vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: list[str], batch_col: str
+) -> pd.DataFrame:
     # If vec8 already has a usable 'sequence' column, keep it.
     if "sequence" in vec8.columns and vec8["sequence"].notna().any():
         return vec8
@@ -64,7 +69,9 @@ def _attach_sequence(vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: Li
     return merged
 
 
-def _reorder_and_filter(vec8: pd.DataFrame, *, design_by: List[str], batch_col: str, ref_genotype: str | None) -> pd.DataFrame:
+def _reorder_and_filter(
+    vec8: pd.DataFrame, *, design_by: list[str], batch_col: str, ref_genotype: str | None
+) -> pd.DataFrame:
     """
     Apply user-requested:
       - drop REF genotype rows
@@ -96,8 +103,14 @@ def _reorder_and_filter(vec8: pd.DataFrame, *, design_by: List[str], batch_col: 
         "genotype",
         "sequence",
         "r_logic",
-        "v00", "v10", "v01", "v11",
-        "y00_star", "y10_star", "y01_star", "y11_star",
+        "v00",
+        "v10",
+        "v01",
+        "v11",
+        "y00_star",
+        "y10_star",
+        "y01_star",
+        "y11_star",
         "flat_logic",
     ]
 
@@ -155,24 +168,25 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
     _assert_same_times(sel_logic.chosen_times, sel_int.chosen_times)
 
     # 3b) Emit soft warnings (once, from logic selection)
-    tol_notes: Dict[object, str] = getattr(sel_logic, "time_warnings", {}) or {}
+    tol_notes: dict[object, str] = getattr(sel_logic, "time_warnings", {}) or {}
     for _k, _msg in tol_notes.items():
-        warnings.warn(f"SFXI: { _msg }")
+        warnings.warn(f"SFXI: {_msg}", stacklevel=2)
 
     # 4) Compute vec8 (logic from logic channel, y* from intensity channel + anchors)
-    ref_raw = resolve_reference_genotype_label(
-        tidy_df, design_by=cfg.design_by, ref_label=cfg.reference.genotype
-    )
+    ref_raw = resolve_reference_genotype_label(tidy_df, design_by=cfg.design_by, ref_label=cfg.reference.genotype)
     vec8 = compute_vec8(
         points_logic=sel_logic.points,
         points_intensity=sel_int.points,
         per_corner_intensity=sel_int.per_corner,
-        design_by=cfg.design_by, batch_col=cfg.batch_col,
+        design_by=cfg.design_by,
+        batch_col=cfg.batch_col,
         reference_genotype=ref_raw,
         reference_scope=cfg.reference.scope,
         reference_stat=cfg.reference.stat,
-        eps_ratio=cfg.eps_ratio, eps_range=cfg.eps_range,
-        eps_ref=cfg.eps_ref, eps_abs=cfg.eps_abs,
+        eps_ratio=cfg.eps_ratio,
+        eps_range=cfg.eps_range,
+        eps_ref=cfg.eps_ref,
+        eps_abs=cfg.eps_abs,
         ref_add_alpha=cfg.ref_add_alpha,
         log2_offset_delta=cfg.log2_offset_delta,
     )
@@ -190,9 +204,9 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
 
     # 5) Compose a log payload (unchanged)
     # Compute r_logic distribution for quick provenance metrics
-    r_desc = (vec8_out["r_logic"].describe().to_dict() if "r_logic" in vec8_out.columns else {})
+    r_desc = vec8_out["r_logic"].describe().to_dict() if "r_logic" in vec8_out.columns else {}
 
-    log_payload: Dict[str, Any] = {
+    log_payload: dict[str, Any] = {
         "name": cfg.name,
         "design_by": cfg.design_by,
         "batch_col": cfg.batch_col,
@@ -220,8 +234,10 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
             "stat": cfg.reference.stat,
         },
         "eps": {
-            "ratio": cfg.eps_ratio, "range": cfg.eps_range,
-            "ref": cfg.eps_ref, "abs": cfg.eps_abs,
+            "ratio": cfg.eps_ratio,
+            "range": cfg.eps_range,
+            "ref": cfg.eps_ref,
+            "abs": cfg.eps_abs,
         },
         "semantics": {
             "v": {
@@ -253,7 +269,8 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
 
     # 6) Write
     write_outputs(
-        vec8=vec8_out, log=log_payload,
+        vec8=vec8_out,
+        log=log_payload,
         out_dir=out_dir,
         subdir=cfg.output_subdir,
         vec8_filename=(f"{cfg.filename_prefix}_{cfg.vec8_filename}" if cfg.filename_prefix else cfg.vec8_filename),

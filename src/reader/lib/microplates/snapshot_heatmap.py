@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -26,12 +27,13 @@ from .base import alias_column, pretty_name, save_figure
 from .style import new_fig_ax, use_style
 
 
-def _ensure(df: pd.DataFrame, cols: List[str]) -> None:
+def _ensure(df: pd.DataFrame, cols: list[str]) -> None:
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise ValueError(f"snapshot_heatmap: required columns missing: {missing}")
 
-def _resolve_cmap(spec: Any) -> Optional[Colormap]:
+
+def _resolve_cmap(spec: Any) -> Colormap | None:
     """
     Accept a matplotlib/seaborn colormap name, a single color name, a list of colors,
     or a Colormap object. Returns a Colormap or None (caller may rely on MPL default).
@@ -42,7 +44,7 @@ def _resolve_cmap(spec: Any) -> Optional[Colormap]:
     if isinstance(spec, mcolors.Colormap):
         return spec
     # List/tuple of colors → make a segmented map
-    if isinstance(spec, (list, tuple)):
+    if isinstance(spec, list | tuple):
         return LinearSegmentedColormap.from_list("custom", list(spec))
     # String: try colormap name first; else treat as a single color
     if isinstance(spec, str):
@@ -53,9 +55,7 @@ def _resolve_cmap(spec: Any) -> Optional[Colormap]:
             return LinearSegmentedColormap.from_list("custom", ["#FFFFFF", spec])
 
 
-def _choose_time(
-    times: np.ndarray, target: float, tol: Optional[float]
-) -> float:
+def _choose_time(times: np.ndarray, target: float, tol: float | None) -> float:
     times = np.asarray(sorted(times), dtype=float)
     if times.size == 0:
         raise ValueError("snapshot_heatmap: dataframe has no time values")
@@ -65,7 +65,9 @@ def _choose_time(
         # Pragmatic behavior: inform (do not fail) and proceed with the nearest.
         logging.getLogger("reader").info(
             "[warn]snapshot_heatmap[/warn] • requested t=%.2f h; nearest available t=%.2f h (Δ=%.2f h) — using nearest",
-            float(target), float(times[j]), float(diffs[j])
+            float(target),
+            float(times[j]),
+            float(diffs[j]),
         )
     return float(times[j])
 
@@ -73,19 +75,19 @@ def _choose_time(
 def plot_snapshot_heatmap(
     *,
     df: pd.DataFrame,
-    blanks: pd.DataFrame,                 # accepted for API parity; not used here
+    blanks: pd.DataFrame,  # accepted for API parity; not used here
     output_dir: Path | str,
     channel: str,
     time: float,
     x: str = "treatment",
     y: str = "genotype",
-    order_x: Optional[List[str]] = None,
-    order_y: Optional[List[str]] = None,
+    order_x: list[str] | None = None,
+    order_y: list[str] | None = None,
     square: bool = True,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
-    fig_kwargs: Dict[str, Any],
-    filename: Optional[str],
+    vmin: float | None = None,
+    vmax: float | None = None,
+    fig_kwargs: dict[str, Any],
+    filename: str | None,
 ) -> None:
     """
     Render a heatmap for a single channel at the snapshot time nearest to `time`.
@@ -117,11 +119,7 @@ def plot_snapshot_heatmap(
         raise ValueError("snapshot_heatmap: no rows after (channel,time) selection")
 
     # aggregate to a dense pivot (median is robust)
-    pivot = (
-        snap.groupby([y_col, x_col], dropna=False)["value"]
-            .median()
-            .unstack(x_col)
-    )
+    pivot = snap.groupby([y_col, x_col], dropna=False)["value"].median().unstack(x_col)
 
     # ordering
     if order_x:
@@ -151,10 +149,8 @@ def plot_snapshot_heatmap(
         )
 
         ax.grid(False)
-        try:
+        with suppress(Exception):
             ax.set_facecolor("white")
-        except Exception:
-            pass
 
         # axis ticks and labels
         ax.set_xticks(range(arr.shape[1]))
@@ -176,7 +172,7 @@ def plot_snapshot_heatmap(
 
         # colorbar
         shrink = float((fig_kwargs or {}).get("cbar_shrink", 1.0))
-        cbar_label: Optional[str] = (fig_kwargs or {}).get("cbar_label")
+        cbar_label: str | None = (fig_kwargs or {}).get("cbar_label")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, shrink=shrink, label=cbar_label)
 
         # ---------- collision‑resistant filename ----------
@@ -186,25 +182,31 @@ def plot_snapshot_heatmap(
         # Genotype roster (y-axis)
         y_levels = list(map(str, pivot.index))
         n_geno = len(y_levels)
+
         def _short_id(s: str) -> str:
             return hashlib.blake2b(s.encode("utf-8"), digest_size=4).hexdigest()
+
         geno_id = _short_id("|".join(sorted(y_levels)))
 
         # Fingerprint settings that change the visual: x/y levels, time used, cmap, vmin/vmax, square, tol
         x_levels = list(map(str, pivot.columns))
-        cmap_name = (cmap.name if isinstance(cmap, Colormap) and hasattr(cmap, "name") else "custom" if cmap else "default")
+        cmap_name = (
+            cmap.name if isinstance(cmap, Colormap) and hasattr(cmap, "name") else "custom" if cmap else "default"
+        )
         tol = (fig_kwargs or {}).get("time_tolerance", None)
-        fp_payload = "|".join([
-            f"ch={channel}",
-            f"t={tsel:g}",
-            "x=" + ",".join(x_levels),
-            "y=" + ",".join(y_levels),
-            f"cmap={cmap_name}",
-            f"vmin={'nan' if vmin is None else float(vmin)}",
-            f"vmax={'nan' if vmax is None else float(vmax)}",
-            f"square={bool(square)}",
-            f"tol={'' if tol is None else float(tol)}",
-        ])
+        fp_payload = "|".join(
+            [
+                f"ch={channel}",
+                f"t={tsel:g}",
+                "x=" + ",".join(x_levels),
+                "y=" + ",".join(y_levels),
+                f"cmap={cmap_name}",
+                f"vmin={'nan' if vmin is None else float(vmin)}",
+                f"vmax={'nan' if vmax is None else float(vmax)}",
+                f"square={bool(square)}",
+                f"tol={'' if tol is None else float(tol)}",
+            ]
+        )
         fp_id = _short_id(fp_payload)
 
         # Always append concise tags so tuning doesn’t overwrite previous files
