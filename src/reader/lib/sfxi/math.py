@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_bool_dtype
 
 
 def _safe_log2(x: np.ndarray | float, eps: float) -> np.ndarray | float:
@@ -176,9 +177,6 @@ def compute_vec8(
     # Contract compliance: flat_logic must be a proper boolean dtype.
     if "flat_logic" in df.columns:
         df["flat_logic"] = df["flat_logic"].astype(bool)
-        # Assertive programming: fail fast if someone reintroduces a wrong dtype later.
-        from pandas.api.types import is_bool_dtype
-
         if not is_bool_dtype(df["flat_logic"]):
             raise TypeError(
                 f"SFXI internal error: expected boolean dtype for 'flat_logic', got {df['flat_logic'].dtype!r}"

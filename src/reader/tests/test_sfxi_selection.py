@@ -13,6 +13,7 @@ Author(s): Eric J. South
 import numpy as np
 import pandas as pd
 
+from reader.lib.sfxi.math import compute_vec8
 from reader.lib.sfxi.selection import cornerize_and_aggregate
 
 
@@ -92,10 +93,6 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
 
 
 def test_missing_reference_genotype_raises_in_compute_vec8():
-    import pandas as pd
-
-    from reader.lib.sfxi.math import compute_vec8
-
     # a single design×batch with four corners for logic & intensity
     pts_logic = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
     pts_int = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])

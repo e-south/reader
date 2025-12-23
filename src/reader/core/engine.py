@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -168,7 +169,6 @@ def run_job(
     logger.addHandler(sh)
 
     palette = exp.get("palette", "colorblind")
-    from importlib import import_module
 
     PaletteBook = None
     if palette is not None:

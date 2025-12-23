@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.logic_symmetry import plot_logic_symmetry
 
 
 class LogicSymCfg(PluginConfig):
@@ -49,8 +50,6 @@ class LogicSymmetryPlot(Plugin):
         return {"files": "none", "table": "logic_symmetry.v1"}
 
     def run(self, ctx, inputs, cfg: LogicSymCfg):
-        from reader.lib.logic_symmetry import plot_logic_symmetry
-
         df: pd.DataFrame = inputs["df"]
         result = plot_logic_symmetry(
             df=df,

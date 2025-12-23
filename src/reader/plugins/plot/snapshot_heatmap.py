@@ -12,10 +12,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap
 
 
 class HeatmapCfg(PluginConfig):
@@ -51,10 +53,6 @@ class SnapshotHeatmapPlot(Plugin):
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: HeatmapCfg):
-        import numpy as np
-
-        from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap
-
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
 

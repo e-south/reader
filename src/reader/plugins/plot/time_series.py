@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.microplates.time_series import plot_time_series
 
 
 class TimeSeriesCfg(PluginConfig):
@@ -51,8 +52,6 @@ class TimeSeriesPlot(Plugin):
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: TimeSeriesCfg):
-        from reader.lib.microplates.time_series import plot_time_series
-
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
 

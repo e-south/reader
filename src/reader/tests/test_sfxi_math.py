@@ -13,6 +13,7 @@ import math
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_bool_dtype, is_float_dtype, is_integer_dtype
 
 from reader.lib.sfxi.math import compute_vec8
 
@@ -540,9 +541,6 @@ def test_compute_vec8_applies_eps_and_alpha():
 
 
 def test_flat_logic_is_boolean_dtype():
-    import pandas as pd
-    from pandas.api.types import is_bool_dtype
-
     pts_logic = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
     pts_int = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
     per_corner = pd.DataFrame(
@@ -570,9 +568,6 @@ def test_flat_logic_is_boolean_dtype():
 
 
 def test_vec8_contract_critical_dtypes_are_numeric():
-    import pandas as pd
-    from pandas.api.types import is_float_dtype, is_integer_dtype
-
     pts_logic = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
     pts_int = pd.DataFrame([{"genotype": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
     per_corner = pd.DataFrame(

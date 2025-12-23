@@ -18,6 +18,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
 
 
 class TSAndSnapCfg(PluginConfig):
@@ -71,8 +72,6 @@ class TSAndSnapPlot(Plugin):
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: TSAndSnapCfg):
-        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
-
         df: pd.DataFrame = inputs["df"]
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---

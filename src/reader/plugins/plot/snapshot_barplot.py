@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot
 
 
 class SnapshotBarCfg(PluginConfig):
@@ -52,8 +53,6 @@ class SnapshotBarplot(Plugin):
         return {"files": "none"}
 
     def run(self, ctx, inputs, cfg: SnapshotBarCfg):
-        from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot
-
         df: pd.DataFrame = inputs["df"]
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---

@@ -21,8 +21,12 @@ from typing import Any, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
+from dnadesign.baserender.src import api as br_api
+from dnadesign.baserender.src.presets.loader import load_job as br_load_job
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
+from PIL import Image
 
 # reuse existing helpers to keep behavior identical to ts_and_snap
 from .base import (
@@ -34,6 +38,7 @@ from .base import (
     smart_grouped_dose_key,
     smart_string_numeric_key,
 )
+from .style import _DEFAULT_RC as _RC
 from .style import PaletteBook, use_style
 
 # ---------- baserender adapter (strict & decoupled) ---------------------------
@@ -61,15 +66,6 @@ class _BaseRenderProvider:
     """
 
     def __init__(self, spec: BaseRenderDatasetSpec):
-        try:
-            # Strict import: do not hide missing dependency
-            from dnadesign.baserender.src import api as br_api
-            from dnadesign.baserender.src.presets.loader import load_job as br_load_job
-        except Exception as e:
-            raise RuntimeError(
-                "dnadesign.baserender is not importable. Install it in the same env:\n"
-                "  pip install -e /absolute/path/to/dnadesign"
-            ) from e
         self._api = br_api
         self._load_job = br_load_job
         self._spec = spec
@@ -205,8 +201,6 @@ class _BaseRenderProvider:
         h, w = arr.shape[:2]
         if h != target_h:
             scale = target_h / float(h)
-            from PIL import Image
-
             img = Image.fromarray(arr)
             new_w = max(1, int(round(w * scale)))
             img = img.resize((new_w, target_h), resample=Image.Resampling.LANCZOS)
@@ -372,8 +366,6 @@ def plot_ts_snap_plus_design(
         # -------------------- Layout & axes
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
             # Default base size; widen for 2 columns
-            from .style import _DEFAULT_RC as _RC
-
             base_w, base_h = _RC["figure_figsize"]
             if "figsize" not in fig_kwargs:
                 fig_kwargs["figsize"] = (base_w * 2.0, base_h * 1.35)  # slightly taller for the bottom panel
@@ -410,8 +402,6 @@ def plot_ts_snap_plus_design(
                             marker=marker_map[h],
                             c=color_map[h],
                         )
-
-                import seaborn as sns
 
                 sns.lineplot(
                     data=ts,

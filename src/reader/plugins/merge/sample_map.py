@@ -23,6 +23,7 @@ from pydantic import Field
 
 from reader.core.errors import MergeError
 from reader.core.registry import Plugin, PluginConfig
+from reader.io.sample_map import parse_sample_map
 
 
 class SampleMapCfg(PluginConfig):
@@ -73,8 +74,6 @@ class SampleMapMerge(Plugin):
         return pm
 
     def run(self, ctx, inputs, cfg: SampleMapCfg):
-        from reader.io.sample_map import parse_sample_map
-
         df: pd.DataFrame = inputs["df"]
         sm_path: Path = inputs["sample_map"]
 

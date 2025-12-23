@@ -18,6 +18,9 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.lib.sfxi.math import compute_vec8
+from reader.lib.sfxi.reference import resolve_reference_genotype_label
+from reader.lib.sfxi.selection import cornerize_and_aggregate
 
 
 class SFXICfg(PluginConfig):
@@ -57,11 +60,6 @@ class SFXITransform(Plugin):
         return {"vec8": "sfxi.vec8.v1"}
 
     def run(self, ctx, inputs, cfg: SFXICfg):
-        # Use the new lib location (no legacy processors/)
-        from reader.lib.sfxi.math import compute_vec8
-        from reader.lib.sfxi.reference import resolve_reference_genotype_label
-        from reader.lib.sfxi.selection import cornerize_and_aggregate
-
         df: pd.DataFrame = inputs["df"].copy()
         label_col = cfg.design_by[0] if cfg.design_by else "genotype"
         idx_cols = [c for c in (cfg.design_by + [cfg.batch_col]) if c]

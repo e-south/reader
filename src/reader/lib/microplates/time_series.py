@@ -15,6 +15,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib.lines import Line2D
 
 from .base import (
@@ -68,8 +69,6 @@ def plot_time_series(
     subplots across channels, mean lines with CI bands, and *vertical gray background
     grid bands* behind the time axis (alternating between tick intervals).
     """
-    import seaborn as sns
-
     xcol = alias_column(df, x)
     line_alpha = float((fig_kwargs or {}).get("line_alpha", 0.85))
     mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
@@ -180,9 +179,6 @@ def plot_time_series(
                             marker=marker_map[h],
                             c=color_map[h],
                         )
-
-                # Mean line + CI band (Seaborn)
-                import seaborn as sns  # localized import kept for clarity
 
                 sns.lineplot(
                     data=sub,

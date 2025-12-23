@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.colors import to_hex
+from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
 from .overlay import OverlayStyle, generate_overlay_points
@@ -307,7 +308,6 @@ def draw_scatter(
     first_legend = None
     if cmap is not None:
         handles = []
-        from matplotlib.lines import Line2D
 
         for cat, col in cmap.items():
             handles.append(
@@ -328,8 +328,6 @@ def draw_scatter(
             frame.set_alpha(0)
 
     if points["shape_value"].nunique() > 1:
-        from matplotlib.lines import Line2D
-
         sh_handles = []
         for marker in points["shape_value"].unique().tolist():
             sh_handles.append(

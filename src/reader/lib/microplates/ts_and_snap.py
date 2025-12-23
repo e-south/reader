@@ -18,6 +18,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib.lines import Line2D
 
 from .base import (
@@ -29,6 +30,7 @@ from .base import (
     smart_grouped_dose_key,
     smart_string_numeric_key,
 )
+from .style import _DEFAULT_RC as _RC
 from .style import PaletteBook, use_style
 
 # -------- small helpers (kept local to avoid cross-module imports) --------
@@ -177,8 +179,6 @@ def plot_ts_and_snap(
             fkw = dict(fig_kwargs)
             if "figsize" not in fkw:
                 # Use the base height and double the width
-                from .style import _DEFAULT_RC as _RC
-
                 base_w, base_h = _RC["figure_figsize"]
                 fkw["figsize"] = (base_w * 2.0, base_h)
 
@@ -211,8 +211,6 @@ def plot_ts_and_snap(
                         )
 
                 # Mean line + CI band
-                import seaborn as sns
-
                 sns.lineplot(
                     data=ts,
                     x=ts_x_col,

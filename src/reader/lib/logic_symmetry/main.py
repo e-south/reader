@@ -19,8 +19,10 @@ import pandas as pd
 
 from .encodings import EncodingConfig, apply_encodings
 from .extract_corners import MappingConfig, resolve_and_aggregate
+from .io import save_plot, write_csv
 from .metrics import CornerStats, compute_metrics
 from .overlay import OverlayStyle
+from .prep import prepare_for_logic_symmetry
 from .render import VisualConfig, draw_scatter
 
 LOG = logging.getLogger(__name__)
@@ -170,7 +172,6 @@ def plot_logic_symmetry(
             prep.get("tolerance", 0.51),
             prep.get("align_corners", False),
         )
-        from .prep import prepare_for_logic_symmetry
 
         df = prepare_for_logic_symmetry(
             df,
@@ -316,7 +317,6 @@ def plot_logic_symmetry(
 
     out_dir = Path(output_dir)
     base = f"{base_name}"
-    from .io import save_plot, write_csv
 
     plot_paths = save_plot(fig, out_dir, base, out_formats, dpi)
 

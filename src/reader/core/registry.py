@@ -10,6 +10,7 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import importlib
+import importlib.metadata as md
 import inspect
 import pkgutil
 from abc import ABC, abstractmethod
@@ -18,6 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+import reader.plugins as pkg
 from reader.core.errors import RegistryError
 
 
@@ -82,18 +84,7 @@ class Registry:
 
 def load_entry_points() -> Registry:
     """Register built-in plugins by scanning the package, then load external ones via entry points."""
-    import importlib.metadata as md
-
     reg = Registry()
-
-    # 1) Built-ins: scan reader.plugins.*
-    try:
-        import reader.plugins as pkg
-    except Exception as e:
-        raise RegistryError(
-            "Failed to import built‑in plugins package 'reader.plugins'. "
-            "Ensure the package is installed and includes the 'plugins' subpackage."
-        ) from e
 
     discovered = 0
     for modinfo in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
@@ -104,7 +95,7 @@ def load_entry_points() -> Registry:
                 discovered += 1
     if discovered == 0:
         raise RegistryError(
-            "No built‑in plugins were discovered under 'reader.plugins'. "
+            "No built-in plugins were discovered under 'reader.plugins'. "
             "This typically means your distribution excludes that subpackage. "
             "Fix your packaging (include reader* from src/) and add __init__.py files."
         )
