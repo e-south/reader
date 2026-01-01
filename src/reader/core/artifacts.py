@@ -226,7 +226,7 @@ class ReportStore:
     ) -> None:
         out_list: list[str] = []
         if files:
-            if isinstance(files, (str, Path)):
+            if isinstance(files, str | Path):
                 out_list = [self._relpath(Path(files))]
             elif isinstance(files, list):
                 out_list = [self._relpath(Path(p)) for p in files]

@@ -273,7 +273,7 @@ def _load_external_contracts() -> None:
         if isinstance(obj, DataFrameContract):
             _register(obj)
             continue
-        if isinstance(obj, (list, tuple, set)):
+        if isinstance(obj, list | tuple | set):
             for c in obj:
                 if not isinstance(c, DataFrameContract):
                     raise RuntimeError(f"reader.contracts entry {ep.name} returned non-contract: {type(c)}")
