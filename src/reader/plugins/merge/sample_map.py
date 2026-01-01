@@ -23,7 +23,7 @@ from pydantic import Field
 
 from reader.core.errors import MergeError
 from reader.core.registry import Plugin, PluginConfig
-from reader.io.sample_map import parse_sample_map
+from reader.parsers.sample_map import parse_sample_map
 
 
 class SampleMapCfg(PluginConfig):
@@ -92,9 +92,8 @@ class SampleMapMerge(Plugin):
                 head = ", ".join(removed_positions[:20])
                 tail = " …" if len(removed_positions) > 20 else ""
                 try:
-                    ctx.logger.info(
-                        f"[muted]sample_map: dropped {before - after} raw rows for positions with no metadata: "
-                        f"{head}{tail}[/muted]"
+                    ctx.logger.warning(
+                        f"sample_map: dropped {before - after} raw rows for positions with no metadata: {head}{tail}"
                     )
                     # Optional arithmetic trace (best-effort; relies on tidy schema)
                     try:
@@ -124,13 +123,6 @@ class SampleMapMerge(Plugin):
                 )
 
             merged = df.merge(sm, on="position", how="left", validate="m:1")
-
-            # Optional dtype normalization for 'batch' when present
-            if "batch" in merged.columns:
-                try:
-                    merged["batch"] = pd.to_numeric(merged["batch"], errors="raise").astype("Int64")
-                except Exception as e:
-                    raise MergeError(f"'batch' must be integer-typed: {e}") from e
 
             # Assert required metadata columns per-experiment (config-driven)
             missing_cols = [c for c in cfg.require_columns if c not in merged.columns]

@@ -16,7 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.time_series import plot_time_series
+from reader.plotting.microplates.time_series import plot_time_series
 
 
 class TimeSeriesCfg(PluginConfig):
@@ -82,7 +82,7 @@ class TimeSeriesPlot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        plot_time_series(
+        files = plot_time_series(
             df=df,
             blanks=blanks,
             output_dir=ctx.plots_dir,
@@ -105,4 +105,6 @@ class TimeSeriesPlot(Plugin):
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/time_series produced no files (empty data after filtering).")
+        return {"files": files}

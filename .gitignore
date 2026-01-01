@@ -69,6 +69,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .nox/
+.cache/
 .coverage
 .coverage.*
 htmlcov/
@@ -138,8 +139,10 @@ archived/
 # Raw instrument dumps and generated outputs (anywhere)
 raw/
 raw_data/
+inputs/
 **/raw/
 **/raw_data/
+**/inputs/
 
 outputs/
 **/outputs/

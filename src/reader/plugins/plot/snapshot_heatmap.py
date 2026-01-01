@@ -17,14 +17,14 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap
+from reader.plotting.microplates.snapshot_heatmap import plot_snapshot_heatmap
 
 
 class HeatmapCfg(PluginConfig):
     channel: str
     time: float
     x: str = "treatment"
-    y: str = "genotype"
+    y: str = "design_id"
     order_x: list[str] | None = None
     order_y: list[str] | None = None
     square: bool = True
@@ -50,7 +50,7 @@ class SnapshotHeatmapPlot(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+        return {"files": "none", "meta": "none"}
 
     def run(self, ctx, inputs, cfg: HeatmapCfg):
         df_in: pd.DataFrame | None = inputs.get("df")
@@ -103,11 +103,11 @@ class SnapshotHeatmapPlot(Plugin):
                 )
             sub = tab[pd.to_numeric(tab["time"], errors="coerce") == tsel].copy()
             # Build a tidy-like dataframe that plot_snapshot_heatmap expects:
-            # time, channel, value, treatment, genotype(,_alias)…
+            # time, channel, value, treatment, design_id(,_alias)…
             sub = sub.rename(columns={use_col: "value"})
             sub["channel"] = channel
             # keep only necessary columns (+ any alias columns)
-            keep = ["time", "channel", "value", "treatment", "genotype", "genotype_alias"]
+            keep = ["time", "channel", "value", "treatment", "design_id", "design_id_alias"]
             df = sub[[c for c in keep if c in sub.columns]].copy()
 
             # Choose a descriptive default filename that includes the time actually used.
@@ -128,7 +128,7 @@ class SnapshotHeatmapPlot(Plugin):
             # For tidy mode, the library time chooser now logs & proceeds as well.
             filename = cfg.filename  # let the library default if not provided
             fig_kwargs.setdefault("cbar_label", _auto_cbar_label(channel, cfg.value_transform))
-        plot_snapshot_heatmap(
+        files, meta = plot_snapshot_heatmap(
             df=df,
             blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time", "channel", "value"]),
             output_dir=ctx.plots_dir,
@@ -144,4 +144,6 @@ class SnapshotHeatmapPlot(Plugin):
             fig_kwargs=fig_kwargs,
             filename=filename,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/snapshot_heatmap produced no files (empty data after filtering).")
+        return {"files": files, "meta": meta}

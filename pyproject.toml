@@ -12,7 +12,6 @@ authors = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
 
 
 dependencies = [
-  "dnadesign",
   "pandas>=2.1",
   "pydantic>=2.6",
   "pyyaml>=6.0.2",
@@ -22,6 +21,12 @@ dependencies = [
   "openpyxl>=3.1",
   "seaborn>=0.13",
   "pillow>=10.0",
+  "flowio>=1.4",
+]
+
+[project.optional-dependencies]
+design = [
+  "dnadesign",
 ]
 
 [project.scripts]
@@ -91,5 +96,5 @@ addopts = [
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
-  "outputs", "plots", "raw_data", "_scratch"
+  "outputs", "plots", "raw_data", "inputs", "_scratch"
 ]

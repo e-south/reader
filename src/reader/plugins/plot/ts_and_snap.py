@@ -18,7 +18,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
+from reader.plotting.microplates.ts_and_snap import plot_ts_and_snap
 
 
 class TSAndSnapCfg(PluginConfig):
@@ -69,7 +69,7 @@ class TSAndSnapPlot(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+        return {"files": "none", "meta": "none"}
 
     def run(self, ctx, inputs, cfg: TSAndSnapCfg):
         df: pd.DataFrame = inputs["df"]
@@ -101,7 +101,7 @@ class TSAndSnapPlot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        plot_ts_and_snap(
+        files, meta = plot_ts_and_snap(
             df=df,
             output_dir=ctx.plots_dir,
             group_on=cfg.group_on,
@@ -136,4 +136,6 @@ class TSAndSnapPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/ts_and_snap produced no files (empty data after filtering).")
+        return {"files": files, "meta": meta}

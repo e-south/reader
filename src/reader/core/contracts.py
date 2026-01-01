@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import importlib.metadata as md
 from dataclasses import dataclass
 from typing import Literal
 
@@ -121,34 +122,49 @@ _register(
     )
 )
 
-# tidy+map.v1
+# tidy+map.v2 (design_id)
 _register(
     DataFrameContract(
-        id="tidy+map.v1",
-        description="Tidy+metadata: tidy.v1 + treatment,str | genotype,str | batch,int",
+        id="tidy+map.v2",
+        description="Tidy+metadata: tidy.v1 + treatment,str | design_id,str",
         columns=[
             ColumnRule("position", "string"),
             ColumnRule("time", "float", nonnegative=True),
             ColumnRule("channel", "string"),
             ColumnRule("value", "float"),
             ColumnRule("treatment", "string"),
-            ColumnRule("genotype", "string"),
-            ColumnRule("batch", "int"),
+            ColumnRule("design_id", "string"),
         ],
         unique_keys=[],
     )
 )
 
-# sfxi.vec8.v1
+# cyto.events.v1
 _register(
     DataFrameContract(
-        id="sfxi.vec8.v1",
-        description="Per design×batch vec8 table with logic shape and anchor-normalized intensity",
+        id="cyto.events.v1",
+        description="Event-level flow cytometry table (tidy long format).",
         columns=[
-            ColumnRule("genotype", "string"),
+            ColumnRule("sample_id", "string"),
+            ColumnRule("label_id", "string", required=False, allow_nan=True),
+            ColumnRule("event_index", "int", nonnegative=True),
+            ColumnRule("channel", "string"),
+            ColumnRule("value", "float"),
+            ColumnRule("source_file", "string", required=False, allow_nan=True),
+        ],
+        unique_keys=[],
+    )
+)
+
+# sfxi.vec8.v2 (design_id)
+_register(
+    DataFrameContract(
+        id="sfxi.vec8.v2",
+        description="Per design vec8 table with logic shape and anchor-normalized intensity",
+        columns=[
+            ColumnRule("design_id", "string"),
             ColumnRule("sequence", "string", required=False, allow_nan=True),
             ColumnRule("id", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
             ColumnRule("r_logic", "float", nonnegative=True),
             ColumnRule("v00", "float"),
             ColumnRule("v10", "float"),
@@ -160,7 +176,7 @@ _register(
             ColumnRule("y11_star", "float"),
             ColumnRule("flat_logic", "bool"),
         ],
-        unique_keys=[["genotype", "batch"]],
+        unique_keys=[["design_id"]],
     )
 )
 
@@ -172,6 +188,7 @@ _register(
         columns=[
             ColumnRule("target", "string"),
             ColumnRule("time", "float", nonnegative=True),
+            ColumnRule("time_selected", "float", required=False, allow_nan=True),
             ColumnRule("treatment", "string"),
             ColumnRule("FC", "float", required=True, allow_nan=True),  # default name; validated even if NaN
             ColumnRule("log2FC", "float", required=True, allow_nan=True),
@@ -180,8 +197,7 @@ _register(
             ColumnRule("baseline_n", "int", required=True, allow_nan=True),
             ColumnRule("baseline_time", "float", required=True, allow_nan=True),
             # common group keys (optional if present)
-            ColumnRule("genotype", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
+            ColumnRule("design_id", "string", required=False, allow_nan=True),
         ],
         unique_keys=[],  # allow multiple rows per (group,treatment) across report_times or repeats
     )
@@ -191,14 +207,13 @@ _register(
 _register(
     DataFrameContract(
         id="logic_symmetry.v1",
-        description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
+        description="Logic-symmetry per design summary (points + metrics + encodings).",
         columns=[
             # optional design-by columns (keep flexible)
-            ColumnRule("genotype", "string", required=False, allow_nan=True),
+            ColumnRule("design_id", "string", required=False, allow_nan=True),
             ColumnRule("strain", "string", required=False, allow_nan=True),
             ColumnRule("design", "string", required=False, allow_nan=True),
             ColumnRule("construct", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
             # replicate counts per corner
             ColumnRule("n00", "int"),
             ColumnRule("n10", "int"),
@@ -235,3 +250,36 @@ _register(
         unique_keys=[],
     )
 )
+
+
+def _load_external_contracts() -> None:
+    """
+    Load optional DataFrameContract definitions from entry points.
+
+    Entry point group: reader.contracts
+    Each entry point may return:
+      • a DataFrameContract
+      • an iterable of DataFrameContract
+      • a callable that returns one of the above
+    """
+    try:
+        eps = md.entry_points(group="reader.contracts")
+    except Exception:
+        return
+    for ep in eps:
+        obj = ep.load()
+        if callable(obj):
+            obj = obj()
+        if isinstance(obj, DataFrameContract):
+            _register(obj)
+            continue
+        if isinstance(obj, list | tuple | set):
+            for c in obj:
+                if not isinstance(c, DataFrameContract):
+                    raise RuntimeError(f"reader.contracts entry {ep.name} returned non-contract: {type(c)}")
+                _register(c)
+            continue
+        raise RuntimeError(f"reader.contracts entry {ep.name} returned invalid object: {type(obj)}")
+
+
+_load_external_contracts()

@@ -20,7 +20,7 @@ from reader.core.registry import Plugin, PluginConfig
 
 
 class PromoteCfg(PluginConfig):
-    require_columns: list[str] = Field(default_factory=lambda: ["treatment", "genotype", "batch"])
+    require_columns: list[str] = Field(default_factory=lambda: ["treatment", "design_id"])
     require_non_null: bool = True  # be strict when promoting
     # Only promote a subset of rows (e.g., samples). If provided, we require the column to exist.
     type_column: str = "type"
@@ -42,7 +42,7 @@ class PromoteToTidyPlusMap(Plugin):
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
         # Emit the strict tidy+map contract
-        return {"df": "tidy+map.v1"}
+        return {"df": "tidy+map.v2"}
 
     def run(self, ctx, inputs, cfg: PromoteCfg):
         df: pd.DataFrame = inputs["df"].copy()
@@ -83,22 +83,11 @@ class PromoteToTidyPlusMap(Plugin):
                     list(cfg.drop_where_null_in),
                 )
 
-        # ---- Make 'batch' optional: synthesize a single-batch when absent or partially missing.
-        if "batch" not in df.columns or df["batch"].isna().all():
-            df = df.copy()
-            df["batch"] = 0
-            with suppress(Exception):
-                ctx.logger.info("to_tidy_plus_map: 'batch' missing → added constant 0 for all rows")
-        elif df["batch"].isna().any():
-            df["batch"] = df["batch"].fillna(0)
         missing = [c for c in cfg.require_columns if c not in df.columns]
         if missing:
-            raise ExecutionError(f"Cannot promote to tidy+map.v1; missing columns: {missing}")
+            raise ExecutionError(f"Cannot promote to tidy+map.v2; missing columns: {missing}")
         if cfg.require_non_null:
             bad = {c: int(df[c].isna().sum()) for c in cfg.require_columns if df[c].isna().any()}
             if bad:
                 raise ExecutionError(f"Cannot promote; required columns contain NaN: {bad}")
-        # dtype normalization for 'batch' (if present)
-        if "batch" in df.columns:
-            df["batch"] = pd.to_numeric(df["batch"], errors="raise").astype("Int64")
         return {"df": df}

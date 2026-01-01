@@ -16,13 +16,13 @@ import pandas as pd
 
 from reader.core.errors import ParseError
 from reader.core.registry import Plugin, PluginConfig
-from reader.io.discovery import (
+from reader.parsers.discovery import (
     DEFAULT_EXCLUDE,
     DEFAULT_INCLUDE,
     DEFAULT_ROOTS,
     discover_files,
 )
-from reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
+from reader.parsers.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
 
 
 class SynergyH1UnifiedCfg(PluginConfig):
@@ -162,12 +162,8 @@ class SynergyH1(Plugin):
     # ---------- run ----------
 
     def run(self, ctx, inputs, cfg: SynergyH1UnifiedCfg):
-        # Back-compat shims depending on plugin key (no silent fallbacks in parse logic)
+        # Use the configured mode directly (no legacy plugin-key shims)
         effective_mode = cfg.mode
-        if getattr(self, "key", "") == "synergy_h1_kinetic" and cfg.mode == "auto":
-            effective_mode = "kinetic_only"
-        if getattr(self, "key", "") == "synergy_h1_snapshot_and_timeseries" and cfg.mode == "auto":
-            effective_mode = "mixed"
 
         try:
             files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
