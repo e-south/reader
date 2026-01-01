@@ -23,7 +23,7 @@ from pydantic import Field
 
 from reader.core.errors import MergeError
 from reader.core.registry import Plugin, PluginConfig
-from reader.io.sample_map import parse_sample_map
+from reader.parsers.sample_map import parse_sample_map
 
 
 class SampleMapCfg(PluginConfig):
@@ -92,9 +92,8 @@ class SampleMapMerge(Plugin):
                 head = ", ".join(removed_positions[:20])
                 tail = " …" if len(removed_positions) > 20 else ""
                 try:
-                    ctx.logger.info(
-                        f"[muted]sample_map: dropped {before - after} raw rows for positions with no metadata: "
-                        f"{head}{tail}[/muted]"
+                    ctx.logger.warning(
+                        f"sample_map: dropped {before - after} raw rows for positions with no metadata: {head}{tail}"
                     )
                     # Optional arithmetic trace (best-effort; relies on tidy schema)
                     try:

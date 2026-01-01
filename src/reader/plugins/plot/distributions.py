@@ -16,14 +16,13 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.distributions import plot_distributions
 
 
 class DistributionsCfg(PluginConfig):
     # what to draw
     channels: list[str]
     # modern grouping
-    group_on: str | None = "genotype"
+    group_on: str | None = "design_id"
     pool_sets: str | list[str] | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
     # layout
@@ -52,6 +51,7 @@ class DistributionsPlot(Plugin):
     def run(self, ctx, inputs, cfg: DistributionsCfg):
         df: pd.DataFrame = inputs["df"]
         blanks: pd.DataFrame = inputs.get("blanks", df.iloc[0:0])
+        from reader.plotting.microplates.distributions import plot_distributions
 
         # --- Resolve pool_sets (DRY via experiment.collections) ----------------
         # Accept:
@@ -98,7 +98,7 @@ class DistributionsPlot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        plot_distributions(
+        files = plot_distributions(
             df=df,
             blanks=blanks,
             output_dir=ctx.plots_dir,
@@ -113,4 +113,6 @@ class DistributionsPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/distributions produced no files (empty data after filtering).")
+        return {"files": files}

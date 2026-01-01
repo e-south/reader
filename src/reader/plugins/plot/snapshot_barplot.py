@@ -16,7 +16,6 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot
 
 
 class SnapshotBarCfg(PluginConfig):
@@ -54,6 +53,7 @@ class SnapshotBarplot(Plugin):
 
     def run(self, ctx, inputs, cfg: SnapshotBarCfg):
         df: pd.DataFrame = inputs["df"]
+        from reader.plotting.microplates.snapshot_barplot import plot_snapshot_barplot
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
@@ -82,7 +82,7 @@ class SnapshotBarplot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        plot_snapshot_barplot(
+        files = plot_snapshot_barplot(
             df=df,
             output_dir=ctx.plots_dir,
             x=cfg.x,
@@ -104,4 +104,6 @@ class SnapshotBarplot(Plugin):
             show_legend=cfg.show_legend,
             legend_loc=cfg.legend_loc,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/snapshot_barplot produced no files (empty data after filtering).")
+        return {"files": files}

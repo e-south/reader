@@ -294,6 +294,15 @@ wheels = [
 ]
 
 [[package]]
+name = "flowio"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/61/5af8df9c7c2c96bd1a2cb758b278d467300e5f4714769ba70e4351da1a4f/flowio-1.4.0.tar.gz", hash = "sha256:c205efcecd1da7da29a1a55c30e09daa7fc132b997cd88910ef06a490755ecf7", size = 19638, upload-time = "2025-05-09T01:28:35.428Z" }
+
+[[package]]
 name = "fonttools"
 version = "4.58.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1375,6 +1384,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "dnadesign" },
+    { name = "flowio" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pillow" },
@@ -1399,6 +1409,7 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "dnadesign", git = "https://github.com/e-south/dnadesign?branch=main" },
+    { name = "flowio", specifier = ">=1.4" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=2.1" },
     { name = "pillow", specifier = ">=10.0" },

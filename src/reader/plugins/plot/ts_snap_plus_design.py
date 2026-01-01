@@ -13,17 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.ts_snap_plus_design import (
-    BaseRenderDatasetSpec,
-    _BaseRenderProvider,
-    plot_ts_snap_plus_design,
-)
+
+if TYPE_CHECKING:
+    from reader.plotting.microplates.ts_snap_plus_design import BaseRenderDatasetSpec, _BaseRenderProvider
 
 
 class DesignBlock(PluginConfig):
@@ -96,6 +94,11 @@ class TSSnapPlusDesignPlot(Plugin):
 
     def run(self, ctx, inputs, cfg: TSSnapPlusDesignCfg):
         df: pd.DataFrame = inputs["df"]
+        from reader.plotting.microplates.ts_snap_plus_design import (
+            BaseRenderDatasetSpec,
+            _BaseRenderProvider,
+            plot_ts_snap_plus_design,
+        )
 
         # Resolve pool_sets reference (identical policy to ts_and_snap)
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
@@ -142,7 +145,7 @@ class TSSnapPlusDesignPlot(Plugin):
         )
         provider = _BaseRenderProvider(spec)
 
-        plot_ts_snap_plus_design(
+        files = plot_ts_snap_plus_design(
             df=df,
             output_dir=ctx.plots_dir,
             # group
@@ -181,4 +184,6 @@ class TSSnapPlusDesignPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-        return {"files": None}
+        if not files:
+            ctx.logger.warning("plot/ts_snap_plus_design produced no files (empty data after filtering).")
+        return {"files": files}

@@ -14,7 +14,7 @@
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [CLI workbench commands](#cli-workbench-commands)
-- [Running notebooks](#running-notebooks)
+- [Docs](#docs)
 - [Maintaining dependencies](#maintaining-dependencies)
 - [Upgrading dependencies](#upgrading-dependencies)
 
@@ -27,23 +27,27 @@
 ```bash
 reader/
 ├─ experiments/             # experiment workbench (configs + data + results)
-│  └─ exp_001/
-│     ├─ config.yaml        # pipeline spec (steps: ingest→merge→transform→plot)
-│     ├─ raw_data/          # instrument exports (or raw/)
+│  └─ 2025/
+│     └─ 20250512_my_experiment/
+│     ├─ config.yaml        # pipeline spec (steps) + optional reports (plots/exports)
+│     ├─ inputs/            # instrument exports (preferred)
+│     ├─ metadata.csv       # optional: per-sample metadata (labels, treatments)
 │     ├─ notebooks/         # optional: marimo notebooks for this experiment
-│     └─ outputs/           # generated: artifacts/, plots/, manifest.json, reader.log
+│     └─ outputs/           # generated: artifacts/, plots/, manifest.json, report_manifest.json, reader.log
 │
 └─ src/
    └─ reader/               # optional: library for running config.yaml-driven workflows across experiments
       ├─ core/              # shared commands: run/explain/validate/ls/artifacts
-      ├─ io/                # implement an instrument parser once (raw → tidy), reuse it across experiments
-      ├─ plugins/           # thin adapters that expose io/lib operations to config.yaml steps
+      ├─ parsers/           # implement instrument parsers once (raw → tidy), reuse across experiments
+      ├─ plugins/           # thin adapters that expose parsers/domain/plotting to config.yaml steps
       │  ├─ ingest/         # raw → tidy artifacts (canonical tables)
       │  ├─ merge/          # tidy + metadata/table joins
       │  ├─ transform/      # reusable cleanups + derived columns/channels
-      │  ├─ plot/           # optional shared plotting steps
+      │  ├─ plot/           # optional shared plotting steps (reports)
+      │  ├─ export/         # report exports (csv/tsv/excel)
       │  └─ validator/      # optional schema gates / normalizers (coercion, shape checks)
-      ├─ lib/               # reusable domain helpers (imported by plugins + notebooks)
+      ├─ domain/            # reusable domain helpers (math + transforms)
+      ├─ plotting/          # plotting helpers used by plot plugins
       └─ tests/
 ```
 
@@ -119,13 +123,50 @@ deactivate
 
 #### Quickstart
 
-##### 1. If you have a template, copy it. Otherwise create a folder manually.
+##### 1. Initialize an experiment directory (recommended)
 
 ```bash
-mkdir -p experiments/my_experiment/{raw_data,notebooks,outputs}
+uv run reader init experiments/2025/20250512_my_experiment --preset plate_reader/basic
 ```
 
-Drop experimental data into `raw_data/`.
+This creates:
+
+```
+config.yaml
+inputs/
+outputs/
+notebooks/
+```
+
+Optionally add a metadata template:
+
+```bash
+uv run reader init experiments/2025/20250512_my_experiment --preset plate_reader/basic --metadata sample_map
+```
+
+Optionally include report presets (plots/exports):
+
+```bash
+uv run reader init experiments/2025/20250512_my_experiment \
+  --preset plate_reader/basic \
+  --report-preset plots/plate_reader_yfp_full
+```
+
+##### 2. Or create a folder manually
+
+```bash
+mkdir -p experiments/2025/20250512_my_experiment/{inputs,notebooks,outputs}
+```
+
+Drop experimental data into `inputs/`.
+
+If a single experiment uses multiple instruments, you may subdivide:
+
+```
+inputs/
+  plate_reader/
+  cytometer/
+```
 
 ##### 2. Run CLI steps (optional, repeatable)
 
@@ -133,6 +174,7 @@ If the experiment has a `config.yaml`:
 ```bash
 uv run reader explain experiments/my_experiment/config.yaml
 uv run reader run     experiments/my_experiment/config.yaml
+uv run reader report  experiments/my_experiment/config.yaml
 ```
 
 ---
@@ -143,73 +185,51 @@ The CLI is a set of helpers for the workspace.
 
 ```bash
 reader ls --root experiments
+reader init <PATH> --preset <NAME>
 reader plugins
+reader presets
+reader contracts
+reader config <CONFIG or INDEX>
 reader steps <CONFIG or INDEX>
 reader artifacts <CONFIG or INDEX>
+reader report <CONFIG or INDEX>
 ```
 
 Common workflow helpers:
 
 - `reader ls [--root DIR]` — list experiments (finds `**/config.yaml`).
+- `reader init PATH --preset NAME` — scaffold a new experiment directory.
 - `reader explain CONFIG|DIR|INDEX` — show the plan (what would run).
 - `reader validate CONFIG|DIR|INDEX` — validate the config + plugin configs.
+- `reader config CONFIG|DIR|INDEX` — print the expanded config (presets + overrides applied).
+- `reader config --schema` — print the JSON schema for config.yaml.
+- `reader presets NAME --write` — emit a minimal config.yaml using a preset.
 - `reader run CONFIG|DIR|INDEX [--step STEP] [--resume-from ID] [--until ID]` — execute (sliceable).
+- `reader run --with-report ...` — run pipeline then reports.
+- `reader report CONFIG|DIR|INDEX [--step STEP]` — run report steps only (plots/exports).
 - `reader run-step STEP --config CONFIG|DIR|INDEX` — run exactly one step using existing artifacts.
 - `reader artifacts CONFIG|DIR|INDEX` — list the latest artifact locations (manifest-backed).
 - `reader plugins` — show discovered plugins (built-ins + entry points).
+- `reader presets [NAME]` — list built-in presets or show expanded steps.
+- `reader contracts [ID]` — list built-in schemas or show details for one.
 
 **Note:** `ls` only lists experiments that have a `config.yaml`. Notebooks can exist without configs,
 but then they won’t be discoverable via ls.
 
+`reader` appends a short command log to `JOURNAL.md` inside each experiment when you run `explain`,
+`validate`, `run`, or `run-step`.
+
 ---
 
-#### Running notebooks
+#### Docs
 
-There are two practical modes:
+Core references:
 
-##### 1. Install marimo into the project
-
-```bash
-uv sync --locked --group notebooks
-uv run marimo edit notebook.py
-```
-
-This runs marimo inside your project environment, so it can import `reader` and anything in `uv.lock`.
-
-##### 2. Sandboxed / self-contained marimo notebooks (inline dependencies)
-
-Marimo can manage per-notebook sandbox environments using inline metadata. This is great for sharable notebooks.
-
-1. Create/edit a sandbox notebook (marimo installed temporarily via uvx).
-
-      ```bash
-      uvx marimo edit --sandbox notebook.py
-      ```
-
-2. Run a sandbox notebook as a script.
-
-      ```bash
-      uv run notebook.py
-      ```
-
-3. Make the sandbox notebook use your local `reader` repo in editable mode.
-
-      From the repo root:
-
-      ```bash
-      uv add --script path/to/notebook.py . --editable
-      ```
-
-      This writes inline metadata into the notebook so its sandbox can install **reader** from your local checkout in editable mode.
-
-4. Add/remove sandbox dependencies (only affects the notebook file)
-
-      ```bash
-      uv add    --script notebook.py numpy
-      uv remove --script notebook.py numpy
-      ```
-
-> **Note:** You can also run claude code/codex in the terminal and ask it to edit a marimo notebook on your behalf. Make sure that you run your notebook with the [watch](https://docs.marimo.io/api/watch/) flag turned on, like `marimo edit --watch notebook.py`, to see updates appear live whenever agents makes a change.
+- `docs/pipeline.md` — configs, steps, and artifact flow
+- `docs/plugins.md` — plugin contracts and extension points
+- `docs/marimo_reference.md` — optional notebook workflow (if you use marimo)
+- `docs/sfxi_vec8.md` — SFXI vec8 label (reader-side)
+- `docs/logic_symmetry.md` — logic-symmetry plot usage
 
 ---
 

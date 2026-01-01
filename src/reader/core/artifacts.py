@@ -33,7 +33,7 @@ def _json_dumps(obj: Any) -> str:
 @dataclass(frozen=True)
 class Artifact:
     label: str  # logical label ("merged/df")
-    contract_id: str  # e.g., "tidy+map.v1" or "none"
+    contract_id: str  # e.g., "tidy+map.v2" or "none"
     path: Path  # data path
     meta_path: Path  # meta.json path
     meta: dict[str, Any]  # loaded meta json
@@ -191,3 +191,54 @@ class ArtifactStore:
     def plots_directory(self) -> Path:
         """Directory where plot steps should write. May be outputs/ or a subdir."""
         return self.plots_dir
+
+
+class ReportStore:
+    """Manifest for report outputs (plots + exports)."""
+
+    def __init__(self, outputs_dir: Path, *, filename: str = "report_manifest.json") -> None:
+        self.root = outputs_dir
+        self.path = outputs_dir / filename
+        if not self.path.exists():
+            self._write({"reports": []})
+
+    def _read(self) -> dict[str, Any]:
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def _write(self, payload: dict[str, Any]) -> None:
+        self.path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _relpath(self, p: Path) -> str:
+        try:
+            return str(p.resolve().relative_to(self.root.resolve()))
+        except Exception:
+            return str(p)
+
+    def persist_files(
+        self,
+        *,
+        step_id: str,
+        plugin_key: str,
+        inputs: list[str],
+        files: Any,
+        config_digest: str,
+    ) -> None:
+        out_list: list[str] = []
+        if files:
+            if isinstance(files, (str, Path)):
+                out_list = [self._relpath(Path(files))]
+            elif isinstance(files, list):
+                out_list = [self._relpath(Path(p)) for p in files]
+        payload = self._read()
+        payload.setdefault("reports", [])
+        payload["reports"].append(
+            {
+                "step_id": step_id,
+                "plugin": plugin_key,
+                "inputs": inputs,
+                "files": out_list,
+                "config_digest": config_digest,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        self._write(payload)

@@ -1,7 +1,7 @@
 ## Extending reader with plugins
 
 Plugins exist so that repeated parsing/transforms/plots can be reused across experiments.
-They should be **thin orchestration**: keep real parsing logic in `io/` and reusable computation in `lib/`.
+They should be **thin orchestration**: keep real parsing logic in `parsers/`, reusable computation in `domain/`, and plot helpers in `plotting/`.
 
 Built-in plugins live under:
 
@@ -9,12 +9,39 @@ Built-in plugins live under:
 src/reader/plugins/<category>/
 ```
 
+Plugins are discovered in two ways:
+
+- built-ins under `reader.plugins.*`
+- optional **entry points**: `reader.ingest`, `reader.merge`, `reader.transform`, `reader.plot`, `reader.validator`
+
+Entry points let external packages add plugins without modifying this repo.
+
+### Flow cytometry ingest (built-in)
+
+```yaml
+steps:
+  - id: "ingest_cytometer"
+    uses: "ingest/flow_cytometer"
+    with:
+      auto_roots: ["./inputs"]
+      channel_name_field: "pns"
+
+  - id: "merge_metadata"
+    uses: "merge/sample_metadata"
+    reads:
+      df: "ingest_cytometer/df"
+      metadata: "file:./metadata.csv"
+    with:
+      require_columns: ["design_id", "treatment"]
+      require_non_null: true
+```
+
 ### New ingest (new instrument/file format)
 
-Keep parsing logic in `io/`:
+Keep parsing logic in `parsers/`:
 
 ```python
-# src/reader/io/my_format.py
+# src/reader/parsers/my_format.py
 import pandas as pd
 from pathlib import Path
 
@@ -31,7 +58,7 @@ Wire it up as a plugin:
 # src/reader/plugins/ingest/my_format.py
 from typing import Mapping, Dict, Any
 from reader.core.registry import Plugin, PluginConfig
-from reader.io.my_format import parse_my_format
+from reader.parsers.my_format import parse_my_format
 
 class MyCfg(PluginConfig):
     pass
@@ -58,8 +85,25 @@ Use it in an experiment:
 ```yaml
 - id: "ingest_custom"
   uses: "ingest/my_format"
-  reads: { raw: "file:./raw_data/run001.ext" }
+  reads: { raw: "file:./inputs/run001.ext" }
 ```
+
+### External plugins (entry points)
+
+If you want a plugin in another package, expose it via entry points:
+
+```toml
+[project.entry-points."reader.ingest"]
+my_ingest = "my_pkg.reader_plugins:MyIngest"
+
+[project.entry-points."reader.validator"]
+my_validator = "my_pkg.reader_plugins:MyValidator"
+
+[project.entry-points."reader.export"]
+my_export = "my_pkg.reader_plugins:MyExport"
+```
+
+Then `reader plugins` will discover it alongside built-ins.
 
 ### New transform (operate on a tidy table)
 
@@ -97,6 +141,25 @@ uv run reader plugins
 uv run reader plugins --category transform
 ```
 
+### Exports (reports)
+
+Exports are report‑only steps that write deliverables (CSV/Excel/TSV) from artifacts:
+
+```yaml
+reports:
+  - id: sfxi_vec8_csv
+    uses: export/csv
+    reads: { df: "sfxi_vec8/df" }
+    with: { path: "exports/sfxi_vec8.csv" }
+```
+
 ---
 
 @e-south
+
+---
+
+See also:
+
+- `docs/pipeline.md`
+- `README.md`

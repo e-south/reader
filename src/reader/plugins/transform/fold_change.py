@@ -24,7 +24,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.base import (
+from reader.plotting.microplates.base import (
     nearest_time_per_key,
     smart_string_numeric_key,
 )
@@ -35,7 +35,7 @@ from reader.lib.microplates.base import (
 def _synonyms_for(col: str) -> list[str]:
     """
     Accept both raw and alias names interchangeably when matching override rules.
-    e.g., 'genotype' ↔ 'genotype_alias'
+    e.g., 'design_id' ↔ 'design_id_alias'
     """
     names = [str(col)]
     if str(col).endswith("_alias"):
@@ -74,14 +74,14 @@ class FoldChangeCfg(PluginConfig):
 
     # Grouping and labels
     treatment_column: str = "treatment"  # we will prefer '<col>_alias' when present
-    group_by: list[str] = Field(default_factory=lambda: ["genotype"])
+    group_by: list[str] = Field(default_factory=lambda: ["design_id"])
 
     # Baseline policy
     use_global_baseline: bool = False
     global_baseline_value: str | None = None  # used when use_global_baseline==True
     # overrides: list of maps; any keys matching group_by columns define a match; each must
     # include 'baseline_value'. Example:
-    #   - { genotype: "araBADp", baseline_value: "0 uM arabinose" }
+    #   - { design_id: "araBADp", baseline_value: "0 uM arabinose" }
     overrides: list[dict[str, Any]] = Field(default_factory=list)
 
     # Output columns (names)
@@ -109,7 +109,7 @@ class FoldChangeCfg(PluginConfig):
           2) Else if `use_global` and `global_value` is provided, return it.
           3) Else return None (baseline missing).
 
-        Matching considers BOTH raw and alias keys (e.g., 'genotype' and 'genotype_alias').
+        Matching considers BOTH raw and alias keys (e.g., 'design_id' and 'design_id_alias').
         """
         # 1) Try overrides first
         syn_view: dict[str, Any] = {}
@@ -364,6 +364,7 @@ class FoldChange(Plugin):
                     row: dict[str, Any] = {
                         "target": target,
                         "time": float(t),
+                        "time_selected": float(r["time_used"]) if pd.notna(r["time_used"]) else float("nan"),
                         "treatment": trt_out,
                         cfg.fc_column: fc,
                         cfg.log2fc_column: log2fc,

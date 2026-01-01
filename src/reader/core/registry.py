@@ -26,12 +26,14 @@ from reader.core.errors import RegistryError
 class PluginConfig(BaseModel):
     """Base class for per-plugin configs (pydantic v2)."""
 
+    model_config = {"extra": "forbid"}
+
 
 class Plugin(ABC):
     """Contract-driven plugin interface."""
 
     key: str  # short unique key within category
-    category: str  # ingest|merge|transform|plot|validator
+    category: str  # ingest|merge|transform|plot|export|validator
 
     ConfigModel = PluginConfig
 
@@ -59,6 +61,7 @@ class Registry:
             "merge": {},
             "transform": {},
             "plot": {},
+            "export": {},
             "validator": {},
         }
 
@@ -108,7 +111,7 @@ def load_entry_points() -> Registry:
                 raise RegistryError(f"Entry point {ep.name} in {group} is not a Plugin subclass")
             reg.register(category, cls.key, cls)
 
-    for category in ("ingest", "merge", "transform", "plot"):
+    for category in ("ingest", "merge", "transform", "plot", "export", "validator"):
         _load(f"reader.{category}", category)
 
     return reg

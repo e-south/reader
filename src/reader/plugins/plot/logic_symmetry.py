@@ -16,13 +16,12 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.logic_symmetry import plot_logic_symmetry
 
 
 class LogicSymCfg(PluginConfig):
     response_channel: str
-    design_by: list[str] = Field(default_factory=lambda: ["genotype"])
-    batch_col: str = "batch"
+    design_by: list[str] = Field(default_factory=lambda: ["design_id"])
+    batch_col: str | None = None
     treatment_map: dict[str, str]
     treatment_case_sensitive: bool = True
     aggregation: dict[str, Any] = Field(default_factory=dict)
@@ -42,8 +41,8 @@ class LogicSymmetryPlot(Plugin):
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        # tidy+map helps ensure design_by & batch present; for leniency accept tidy.v1 in earlier range
-        return {"df": "tidy+map.v1"}
+        # tidy+map ensures design_by/treatment present; batch is optional
+        return {"df": "tidy+map.v2"}
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
@@ -51,6 +50,8 @@ class LogicSymmetryPlot(Plugin):
 
     def run(self, ctx, inputs, cfg: LogicSymCfg):
         df: pd.DataFrame = inputs["df"]
+        from reader.plotting.logic_symmetry import plot_logic_symmetry
+
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],
@@ -71,8 +72,16 @@ class LogicSymmetryPlot(Plugin):
             palette_book=ctx.palette_book,
         )
         table = result.table
+        files = [str(p) for p in (result.plot_paths or [])]
+        if result.csv_path:
+            files.append(str(result.csv_path))
         try:
-            gcols = [c for c in (cfg.design_by + [cfg.batch_col]) if c in table.columns]
+            gcols = [c for c in cfg.design_by if c in table.columns]
+            if cfg.batch_col:
+                if cfg.batch_col in table.columns:
+                    gcols.append(cfg.batch_col)
+            elif "batch" in table.columns:
+                gcols.append("batch")
             n_groups = table[gcols].drop_duplicates().shape[0] if gcols else len(table)
             formats = [str(x).lower() for x in (cfg.output or {}).get("format", ["pdf"])]
             base = cfg.filename or "logic_symmetry"
@@ -88,4 +97,6 @@ class LogicSymmetryPlot(Plugin):
             )
         except Exception:
             pass
-        return {"files": None, "table": table}
+        if not files:
+            ctx.logger.warning("plot/logic_symmetry produced no files (empty data after filtering).")
+        return {"files": files, "table": table}

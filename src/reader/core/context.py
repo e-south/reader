@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     # Only imported for type checking; never executed at runtime.
-    from reader.lib.microplates.style import PaletteBook
+    from reader.plotting.microplates.style import PaletteBook
 
 
 @dataclass(frozen=True)
@@ -29,5 +29,4 @@ class RunContext:
     manifest_path: Path
     logger: logging.Logger
     palette_book: PaletteBook | None
-    strict: bool = True
     collections: Mapping[str, Any] | None = None
