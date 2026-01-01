@@ -1383,7 +1383,6 @@ name = "reader"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "dnadesign" },
     { name = "flowio" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -1394,6 +1393,11 @@ dependencies = [
     { name = "rich" },
     { name = "seaborn" },
     { name = "typer" },
+]
+
+[package.optional-dependencies]
+design = [
+    { name = "dnadesign" },
 ]
 
 [package.dev-dependencies]
@@ -1408,7 +1412,7 @@ notebooks = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dnadesign", git = "https://github.com/e-south/dnadesign?branch=main" },
+    { name = "dnadesign", marker = "extra == 'design'", git = "https://github.com/e-south/dnadesign?branch=main" },
     { name = "flowio", specifier = ">=1.4" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=2.1" },
@@ -1420,6 +1424,7 @@ requires-dist = [
     { name = "seaborn", specifier = ">=0.13" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
+provides-extras = ["design"]
 
 [package.metadata.requires-dev]
 dev = [

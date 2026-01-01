@@ -161,6 +161,7 @@ def plot_distributions(
                                 fill=True,
                                 alpha=fill_alpha,
                                 common_norm=False,
+                                warn_singular=False,
                                 # Only the legend host needs labeled artists.
                                 label=(str(h) if place_legend_here else None),
                                 color=cmap[h],
@@ -170,7 +171,15 @@ def plot_distributions(
                             legend_shown = True
                     else:
                         # Single overall KDE if no hue given
-                        sns.kdeplot(data=dch, x="value", ax=ax, lw=1.8, fill=True, alpha=fill_alpha)
+                        sns.kdeplot(
+                            data=dch,
+                            x="value",
+                            ax=ax,
+                            lw=1.8,
+                            fill=True,
+                            alpha=fill_alpha,
+                            warn_singular=False,
+                        )
 
                     # optional blanks median
                     if not blanks.empty:

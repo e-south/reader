@@ -5,7 +5,7 @@ src/reader/domain/sfxi/math.py
 
 SFXI math: build vec8 from logic/intensity per-corner points.
 
-Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per (design x batch).
+Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per design.
 
 - v* are computed from the LOGIC CHANNEL (e.g., YFP/CFP):
     # r_logic and v computation are derived from the LOGIC channel corner means.
@@ -70,9 +70,7 @@ def compute_vec8(
     points_intensity: pd.DataFrame,  # b00..b11 from INTENSITY channel
     per_corner_intensity: pd.DataFrame,  # per-corner table for anchors
     design_by: list[str],
-    batch_col: str | None,
     reference_design_id: str | None,
-    reference_scope: str,
     reference_stat: str,
     eps_ratio: float,
     eps_range: float,
@@ -82,30 +80,21 @@ def compute_vec8(
     log2_offset_delta: float,  # δ
 ) -> pd.DataFrame:
     label_col = design_by[0]
-    if batch_col is None and "batch" not in per_corner_intensity.columns:
-        per_corner_intensity = per_corner_intensity.copy()
-        per_corner_intensity["batch"] = 0
-    if batch_col is None and "batch" not in points_logic.columns:
-        points_logic = points_logic.copy()
-        points_logic["batch"] = 0
-    if batch_col is None and "batch" not in points_intensity.columns:
-        points_intensity = points_intensity.copy()
-        points_intensity["batch"] = 0
-    if batch_col is None:
-        batch_col = "batch"
 
     # anchors from INTENSITY per-corner table for the reference design_id
     ref_tab: pd.DataFrame | None = None
     if reference_design_id:
         ref_rows = per_corner_intensity[per_corner_intensity[label_col].astype(str) == str(reference_design_id)].copy()
         if not ref_rows.empty:
-            grp = [batch_col, "corner"] if reference_scope == "batch" else ["corner"]
             agg_fun = "median" if reference_stat == "median" else "mean"
             ref_tab = (
-                ref_rows.groupby(grp)["y_mean"].agg(agg_fun).reset_index().rename(columns={"y_mean": "anchor_mean"})
+                ref_rows.groupby(["corner"])["y_mean"]
+                .agg(agg_fun)
+                .reset_index()
+                .rename(columns={"y_mean": "anchor_mean"})
             )
 
-    idx_cols = design_by + [batch_col]
+    idx_cols = design_by
     L = points_logic.set_index(idx_cols)
     I_vec = points_intensity.set_index(idx_cols)
     merged = (
@@ -124,8 +113,7 @@ def compute_vec8(
 
         anchors: dict[str, float] = {"00": np.nan, "10": np.nan, "01": np.nan, "11": np.nan}
         if ref_tab is not None and not ref_tab.empty:
-            sub = ref_tab[ref_tab[batch_col] == row[batch_col]] if reference_scope == "batch" else ref_tab
-            for _, rr in sub.iterrows():
+            for _, rr in ref_tab.iterrows():
                 anchors[str(rr["corner"])] = float(rr["anchor_mean"])
 
         def ystar(b: float, a: float) -> float:

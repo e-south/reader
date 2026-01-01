@@ -18,7 +18,7 @@ EPS_DEFAULT = 1e-9
 
 @dataclass(frozen=True)
 class CornerStats:
-    """Aggregated per-corner numbers for a single (design..., batch)."""
+    """Aggregated per-corner numbers for a single design."""
 
     b00: float
     b10: float

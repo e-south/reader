@@ -22,11 +22,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from dnadesign.baserender.src import api as br_api
-from dnadesign.baserender.src.presets.loader import load_job as br_load_job
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 from PIL import Image
+
+try:
+    from dnadesign.baserender.src import api as br_api
+    from dnadesign.baserender.src.presets.loader import load_job as br_load_job
+except Exception:
+    br_api = None
+    br_load_job = None
 
 # reuse existing helpers to keep behavior identical to ts_and_snap
 from .base import (
@@ -37,6 +42,7 @@ from .base import (
     save_figure,
     smart_grouped_dose_key,
     smart_string_numeric_key,
+    summarize_time_usage,
 )
 from .style import _DEFAULT_RC as _RC
 from .style import PaletteBook, use_style
@@ -66,6 +72,12 @@ class _BaseRenderProvider:
     """
 
     def __init__(self, spec: BaseRenderDatasetSpec):
+        if br_api is None or br_load_job is None:
+            raise ImportError(
+                "dnadesign is required for design rendering. "
+                "Install the optional extra: `uv sync --extra design` or `pip install 'reader[design]'`."
+            )
+
         self._api = br_api
         self._load_job = br_load_job
         self._spec = spec
@@ -277,7 +289,7 @@ def plot_ts_snap_plus_design(
     fig_kwargs: dict | None = None,
     filename: str | None = None,
     palette_book: PaletteBook | None = None,
-) -> list[Path]:
+) -> tuple[list[Path], dict]:
     """
     Top: time series + snapshot (same semantics as plot_ts_and_snap)
     Bottom: one baserender panel resolved via tidy column `design_key_column` (id or sequence).
@@ -328,7 +340,15 @@ def plot_ts_snap_plus_design(
             & (pd.to_numeric(work[ts_x_col], errors="coerce") <= hi)
         ].copy()
     if work.empty:
-        return []
+        meta = {
+            "time_selection": {
+                "requested": float(snap_time),
+                "tolerance": float(snap_time_tolerance),
+                "fallback_used": False,
+                "used": None,
+            }
+        }
+        return [], meta
 
     # Figure iteration over groups
     if group_col:
@@ -340,6 +360,8 @@ def plot_ts_snap_plus_design(
         fig_groups = [("all", [None])]
 
     saved: list[Path] = []
+    used_times: list[float] = []
+    fallback_used_any = False
     for label, members in fig_groups:
         d = work.copy()
         if group_col and members != [None]:
@@ -479,6 +501,7 @@ def plot_ts_snap_plus_design(
             # -------------------- Top-right: snapshot
             snap = d.copy()
             key_cols = [c for c in [group_col, snap_x_col, snap_hue_col, "channel", "position"] if c]
+            fallback_used = False
             snapped = nearest_time_per_key(
                 snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance)
             )
@@ -486,6 +509,7 @@ def plot_ts_snap_plus_design(
             if snapped.empty:
                 log = logging.getLogger("reader")
                 fb = nearest_time_per_key(snap, target_time=float(snap_time), keys=key_cols, tol=float("inf"))
+                fallback_used = True
                 snapped = fb[fb["channel"].astype(str) == ch_snap].copy()
                 if not snapped.empty:
                     uniq = sorted(pd.to_numeric(snapped["time"], errors="coerce").dropna().unique().tolist())
@@ -500,6 +524,10 @@ def plot_ts_snap_plus_design(
                         preview,
                         float(delta),
                     )
+            if fallback_used:
+                fallback_used_any = True
+            if not snapped.empty:
+                used_times.extend(pd.to_numeric(snapped["time"], errors="coerce").dropna().tolist())
             if not snapped.empty:
                 ax = ax_snap
                 base_group_cols: list[str] = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
@@ -663,4 +691,13 @@ def plot_ts_snap_plus_design(
                 stub = f"ts_snap_plus_design__{ch_snap}{group_tag if group_tag else f'__{label}'}"
             saved.append(save_figure(fig, out_dir, stub, ext=ext))
             plt.close(fig)
-    return saved
+    time_meta = summarize_time_usage(pd.DataFrame({"time": used_times})) if used_times else None
+    meta = {
+        "time_selection": {
+            "requested": float(snap_time),
+            "tolerance": float(snap_time_tolerance),
+            "fallback_used": fallback_used_any,
+            "used": time_meta,
+        }
+    }
+    return saved, meta

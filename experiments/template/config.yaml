@@ -23,7 +23,7 @@ overrides:
     with:
       target_time_h: 10.0
       treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
-      reference: { design_id: "REF", scope: "batch", stat: "mean" }
+      reference: { design_id: "REF", stat: "mean" }
 report_overrides:
   plot_time_series:
     with:

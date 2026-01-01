@@ -91,16 +91,7 @@ def _write_minimal_fcs(path: Path) -> None:
     def fmt(n: int) -> str:
         return str(n).rjust(8)
 
-    header = (
-        "FCS3.0"
-        + "    "
-        + fmt(text_start)
-        + fmt(text_end)
-        + fmt(data_start)
-        + fmt(data_end)
-        + fmt(0)
-        + fmt(0)
-    )
+    header = "FCS3.0" + "    " + fmt(text_start) + fmt(text_end) + fmt(data_start) + fmt(data_end) + fmt(0) + fmt(0)
     header_bytes = header.encode("ascii")
     if len(header_bytes) != 58:
         raise AssertionError("Invalid FCS header length")
@@ -117,8 +108,8 @@ def test_pipeline_synergy_h1_minimal(tmp_path: Path) -> None:
     plate = inputs / "plate.xlsx"
     _write_synergy_xlsx(plate)
 
-    meta = tmp_path / "metadata.csv"
-    meta.write_text("position,design_id,treatment\nA1,designA,cond\n", encoding="utf-8")
+    meta = tmp_path / "metadata.xlsx"
+    pd.DataFrame([{"position": "A1", "design_id": "designA", "treatment": "cond"}]).to_excel(meta, index=False)
 
     cfg = {
         "experiment": {"outputs": "./outputs"},
@@ -138,7 +129,7 @@ def test_pipeline_synergy_h1_minimal(tmp_path: Path) -> None:
             {
                 "id": "merge_map",
                 "uses": "merge/sample_map",
-                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.csv"},
+                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
                 "with": {"require_columns": ["design_id", "treatment"], "require_non_null": True},
             },
         ],
@@ -158,8 +149,8 @@ def test_pipeline_flow_cytometer_minimal(tmp_path: Path) -> None:
     fcs_path = inputs / "sample.fcs"
     _write_minimal_fcs(fcs_path)
 
-    meta = tmp_path / "metadata.csv"
-    meta.write_text("sample_id,design_id,treatment\nsample,designA,cond\n", encoding="utf-8")
+    meta = tmp_path / "metadata.xlsx"
+    pd.DataFrame([{"sample_id": "sample", "design_id": "designA", "treatment": "cond"}]).to_excel(meta, index=False)
 
     cfg = {
         "experiment": {"outputs": "./outputs"},
@@ -173,7 +164,7 @@ def test_pipeline_flow_cytometer_minimal(tmp_path: Path) -> None:
             {
                 "id": "merge_metadata",
                 "uses": "merge/sample_metadata",
-                "reads": {"df": "ingest/df", "metadata": "file:./metadata.csv"},
+                "reads": {"df": "ingest/df", "metadata": "file:./metadata.xlsx"},
                 "with": {"require_columns": ["design_id", "treatment"], "require_non_null": True},
             },
         ],

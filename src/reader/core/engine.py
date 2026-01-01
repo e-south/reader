@@ -9,9 +9,13 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import logging
+import os
+import shutil
+import tempfile
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -132,7 +136,7 @@ def explain_steps(*, steps: list, console: Console, registry=None, title: str = 
         box=box.ROUNDED,
         expand=True,
         show_lines=False,
-        )
+    )
     table.add_column("#", justify="right", style="muted")
     table.add_column("Step ID", style="accent")
     table.add_column("Plugin")
@@ -143,9 +147,7 @@ def explain_steps(*, steps: list, console: Console, registry=None, title: str = 
         inp = ", ".join(f"{k}:{v}" for k, v in P.input_contracts().items())
         out = ", ".join(f"{k}:{v}" for k, v in P.output_contracts().items())
         table.add_row(str(i), step.id, step.uses, inp, out)
-    console.print(
-        Panel(table, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(steps)} steps[/muted]")
-    )
+    console.print(Panel(table, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(steps)} steps[/muted]"))
 
 
 def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
@@ -175,6 +177,12 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
         except Exception as e:
             raise ConfigError(f"step {step.id}: {e}") from e
 
+        if getattr(plugin_cls, "category", None) in {"plot", "export"}:
+            raise ConfigError(
+                f"step {step.id}: plugin '{uses}' is category '{plugin_cls.category}'. "
+                "Plots/exports must be declared under reports: (use report_presets/report_overrides)."
+            )
+
         # validate config model
         try:
             plugin_cls.ConfigModel.model_validate(step.with_ or {})
@@ -189,8 +197,8 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
 
         # validate reads: keys + references
         req_inputs = plugin_cls.input_contracts()
-        allowed_input_names = {k.rstrip("?") for k in req_inputs.keys()}
-        for name in step.reads.keys():
+        allowed_input_names = {k.rstrip("?") for k in req_inputs}
+        for name in step.reads:
             if name not in allowed_input_names:
                 raise ConfigError(f"step {step.id}: reads.{name} is not a valid input for {uses}")
 
@@ -210,14 +218,10 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
                     )
                 continue
             if not isinstance(target, str) or "/" not in target:
-                raise ConfigError(
-                    f"step {step.id}: reads.{name} must be '<step_id>/<output>' or file:<path>"
-                )
+                raise ConfigError(f"step {step.id}: reads.{name} must be '<step_id>/<output>' or file:<path>")
             src_id, out_name = target.split("/", 1)
             if src_id not in available_outputs:
-                raise ConfigError(
-                    f"step {step.id}: reads.{name} references '{src_id}', which has not run yet"
-                )
+                raise ConfigError(f"step {step.id}: reads.{name} references '{src_id}', which has not run yet")
             if out_name not in available_outputs[src_id]:
                 raise ConfigError(
                     f"step {step.id}: reads.{name} references '{src_id}/{out_name}', "
@@ -227,7 +231,7 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
         available_outputs[step.id] = set(plugin_cls.output_contracts().keys())
 
     # Validate report steps (optional, must be plot/export and read from pipeline artifacts)
-    for step in (spec.reports or []):
+    for step in spec.reports or []:
         if step.id in seen_ids:
             raise ConfigError(f"duplicate step id '{step.id}' (reports)")
         seen_ids.add(step.id)
@@ -255,12 +259,12 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
             _assert_contract_exists(cid, where=f"report step {step.id} output '{name}'")
 
         req_inputs = plugin_cls.input_contracts()
-        allowed_input_names = {k.rstrip("?") for k in req_inputs.keys()}
-        for name in step.reads.keys():
+        allowed_input_names = {k.rstrip("?") for k in req_inputs}
+        for name in step.reads:
             if name not in allowed_input_names:
                 raise ConfigError(f"report step {step.id}: reads.{name} is not a valid input for {uses}")
 
-        for raw_name, contract_id in req_inputs.items():
+        for raw_name, _contract_id in req_inputs.items():
             optional = raw_name.endswith("?")
             name = raw_name[:-1] if optional else raw_name
             if name not in step.reads:
@@ -270,8 +274,7 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
             target = step.reads.get(name)
             if isinstance(target, str) and target.startswith("file:"):
                 raise ConfigError(
-                    f"report step {step.id}: file: inputs are not allowed in reports; "
-                    "use pipeline artifacts instead."
+                    f"report step {step.id}: file: inputs are not allowed in reports; use pipeline artifacts instead."
                 )
             if not isinstance(target, str) or "/" not in target:
                 raise ConfigError(
@@ -317,6 +320,9 @@ def _init_context(
     logger.addHandler(fh)
     logger.addHandler(sh)
 
+    if include_plot_steps:
+        _ensure_mplconfigdir()
+
     palette = exp.palette
     palette_book = None
     if include_plot_steps and palette is not None:
@@ -359,6 +365,14 @@ def _init_context(
     return ctx, store, registry, out_dir, console
 
 
+def _ensure_mplconfigdir() -> None:
+    if os.environ.get("MPLCONFIGDIR"):
+        return
+    tmp = tempfile.mkdtemp(prefix="reader-mpl-")
+    os.environ["MPLCONFIGDIR"] = tmp
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+
+
 def run_job(
     spec_path: Path,
     *,
@@ -373,6 +387,14 @@ def run_job(
     ctx, store, registry, out_dir, console = _init_context(
         spec, log_level=log_level, console=console, include_plot_steps=has_plot_steps
     )
+    # Enforce pipeline/report separation even if user skips `reader validate`.
+    for step in spec.steps:
+        plugin_cls = registry.resolve(step.uses)
+        if getattr(plugin_cls, "category", None) in {"plot", "export"}:
+            raise ConfigError(
+                f"step {step.id}: plugin '{step.uses}' is category '{plugin_cls.category}'. "
+                "Plots/exports must be declared under reports: (use report_presets/report_overrides)."
+            )
 
     # resume/until slicing
     steps = spec.steps
@@ -458,9 +480,7 @@ def run_job(
 
             progress.advance(task)
 
-    console.print(
-        Panel.fit(f"✓ Done — outputs in [path]{str(out_dir)}[/path]", border_style="green", box=box.ROUNDED)
-    )
+    console.print(Panel.fit(f"✓ Done — outputs in [path]{str(out_dir)}[/path]", border_style="green", box=box.ROUNDED))
 
 
 def run_reports(
@@ -517,9 +537,7 @@ def run_reports(
             # file: reads are not allowed in reports
             for name, target in (step.reads or {}).items():
                 if isinstance(target, str) and target.startswith("file:"):
-                    raise ConfigError(
-                        f"report step {step.id}: reads.{name} is file:... but reports must use artifacts"
-                    )
+                    raise ConfigError(f"report step {step.id}: reads.{name} is file:... but reports must use artifacts")
 
             inputs = _resolve_inputs(store, step.reads or {})
             _assert_input_contracts(plugin, inputs, where=f"{step.id}")
@@ -559,15 +577,14 @@ def run_reports(
 
             # Record report outputs (files)
             files = outputs.get("files") if isinstance(outputs, dict) else None
+            meta = outputs.get("meta") if isinstance(outputs, dict) else None
             report_store.persist_files(
                 step_id=step.id,
                 plugin_key=plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
-                inputs=[
-                    inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n])
-                    for n in (step.reads or {})
-                ],
+                inputs=[inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in (step.reads or {})],
                 files=files,
                 config_digest=_digest_cfg(cfg),
+                meta=meta,
             )
 
             progress.advance(task)

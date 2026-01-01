@@ -33,23 +33,23 @@ def _ctx(tmp_path: Path) -> RunContext:
 
 def test_with_columns_adds_constants(tmp_path: Path):
     df = pd.DataFrame({"position": ["A1"], "value": [1.0]})
-    cfg = WithColumnsCfg(columns={"batch": 0, "note": "x"})
+    cfg = WithColumnsCfg(columns={"replicate": 0, "note": "x"})
     out = WithColumns().run(_ctx(tmp_path), {"df": df}, cfg)["df"]
-    assert "batch" in out.columns
+    assert "replicate" in out.columns
     assert "note" in out.columns
-    assert int(out.loc[0, "batch"]) == 0
+    assert int(out.loc[0, "replicate"]) == 0
     assert out.loc[0, "note"] == "x"
 
 
 def test_with_columns_rejects_existing_by_default(tmp_path: Path):
-    df = pd.DataFrame({"position": ["A1"], "batch": [1]})
-    cfg = WithColumnsCfg(columns={"batch": 0})
+    df = pd.DataFrame({"position": ["A1"], "replicate": [1]})
+    cfg = WithColumnsCfg(columns={"replicate": 0})
     with pytest.raises(TransformError, match="already exists"):
         WithColumns().run(_ctx(tmp_path), {"df": df}, cfg)
 
 
 def test_with_columns_overwrite_mode(tmp_path: Path):
-    df = pd.DataFrame({"position": ["A1"], "batch": [1]})
-    cfg = WithColumnsCfg(columns={"batch": 0}, mode="overwrite")
+    df = pd.DataFrame({"position": ["A1"], "replicate": [1]})
+    cfg = WithColumnsCfg(columns={"replicate": 0}, mode="overwrite")
     out = WithColumns().run(_ctx(tmp_path), {"df": df}, cfg)["df"]
-    assert int(out.loc[0, "batch"]) == 0
+    assert int(out.loc[0, "replicate"]) == 0

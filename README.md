@@ -31,7 +31,7 @@ reader/
 │     └─ 20250512_my_experiment/
 │     ├─ config.yaml        # pipeline spec (steps) + optional reports (plots/exports)
 │     ├─ inputs/            # instrument exports (preferred)
-│     ├─ metadata.csv       # optional: per-sample metadata (labels, treatments)
+│     ├─ metadata.xlsx      # optional: per-sample metadata (labels, treatments)
 │     ├─ notebooks/         # optional: marimo notebooks for this experiment
 │     └─ outputs/           # generated: artifacts/, plots/, manifest.json, report_manifest.json, reader.log
 │
@@ -101,6 +101,12 @@ This repo is managed with [**uv**](https://docs.astral.sh/uv/):
     uv run pytest -q
     ```
 
+6. Optional: design rendering (Baserender via dnadesign).
+
+    ```bash
+    uv sync --locked --extra design
+    ```
+
 ##### This project defines console scripts, which you can run via:
 
 Option A: no `.venv` activation — use `uv run`
@@ -143,6 +149,7 @@ Optionally add a metadata template:
 ```bash
 uv run reader init experiments/2025/20250512_my_experiment --preset plate_reader/basic --metadata sample_map
 ```
+This writes `metadata.xlsx` with the standard columns.
 
 Optionally include report presets (plots/exports):
 
@@ -182,6 +189,7 @@ uv run reader report  experiments/my_experiment/config.yaml
 #### CLI workbench commands
 
 The CLI is a set of helpers for the workspace.
+For the full command list, run `reader --help` (running `reader` with no command shows help).
 
 ```bash
 reader ls --root experiments
@@ -225,6 +233,7 @@ but then they won’t be discoverable via ls.
 
 Core references:
 
+- `docs/index.md` — doc map (start here)
 - `docs/pipeline.md` — configs, steps, and artifact flow
 - `docs/plugins.md` — plugin contracts and extension points
 - `docs/marimo_reference.md` — optional notebook workflow (if you use marimo)
@@ -273,7 +282,7 @@ uv sync --locked
 
 #### Upgrading dependencies
 
-`dnadesign` is pulled from GitHub and pinned to a specific commit in `uv.lock`. If `dnadesign/main` changes, a plain `uv sync` will keep using the locked commit until you explicitly upgrade it (see [Astral Docs](https://docs.astral.sh/uv/concepts/projects/sync/)).
+`dnadesign` (optional; used for design rendering) is pulled from GitHub and pinned to a specific commit in `uv.lock`. If `dnadesign/main` changes, a plain `uv sync` will keep using the locked commit until you explicitly upgrade it (see [Astral Docs](https://docs.astral.sh/uv/concepts/projects/sync/)).
 
 To pull the latest `dnadesign` and refresh your environment:
 

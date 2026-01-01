@@ -28,6 +28,7 @@ from .base import (
     save_figure,
     smart_grouped_dose_key,
     smart_string_numeric_key,
+    summarize_time_usage,
 )
 from .style import PaletteBook, use_style
 
@@ -91,7 +92,7 @@ def plot_snapshot_barplot(
     file_by: _FileBy = "auto",
     show_legend: bool = False,
     legend_loc: str = "upper right",
-) -> list[Path]:
+) -> tuple[list[Path], dict]:
     """
     Snapshot barplot with replicate dots.
 
@@ -129,19 +130,37 @@ def plot_snapshot_barplot(
     if panel_by == "channel":
         work = work[work["channel"].astype(str).isin([str(c) for c in y_list])].copy()
     if work.empty:
-        return []
+        meta = {
+            "time_selection": {
+                "requested": float(time),
+                "tolerance": float(time_tolerance),
+                "fallback_used": False,
+                "used": None,
+            }
+        }
+        return [], meta
 
     # Pick nearest-time replicates per (groupby?, x, hue?, channel, position)
     key_cols: list[str] = [c for c in [group_col, x_col, hue_col, "channel", "position"] if c]
+    fallback_used = False
     snapped = nearest_time_per_key(work, target_time=float(time), keys=key_cols, tol=time_tolerance)
     if snapped.empty:
         log = logging.getLogger("reader")
         # Fall back to the nearest rows per key (no tolerance), with a clear warning.
+        fallback_used = True
         snapped = nearest_time_per_key(work, target_time=float(time), keys=key_cols, tol=float("inf"))
         if snapped.empty:
             # Truly nothing to plot at any time
             log.info("[warn]snapshot_barplot[/warn] • no rows available at any time — skipping figure")
-            return []
+            meta = {
+                "time_selection": {
+                    "requested": float(time),
+                    "tolerance": float(time_tolerance),
+                    "fallback_used": fallback_used,
+                    "used": None,
+                }
+            }
+            return [], meta
         # Summarize what we used
         times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna()
         uniq = sorted(times_used.unique().tolist())
@@ -158,6 +177,16 @@ def plot_snapshot_barplot(
             float(delta),
         )
 
+    time_meta = summarize_time_usage(snapped, time_col="time")
+    meta = {
+        "time_selection": {
+            "requested": float(time),
+            "tolerance": float(time_tolerance),
+            "fallback_used": fallback_used,
+            "used": time_meta,
+        }
+    }
+
     snapped["value"] = pd.to_numeric(snapped["value"], errors="coerce")
 
     # Drop None-like group labels
@@ -167,7 +196,7 @@ def plot_snapshot_barplot(
         )
         snapped = snapped.loc[mask].copy()
         if snapped.empty:
-            return []
+            return [], meta
 
     # -------------- aggregate once: heights + error stats from replicates --------------
 
@@ -593,4 +622,4 @@ def plot_snapshot_barplot(
                     stub = f"snap__x__{selected_channel}__{fig_label}"
             saved.append(save_figure(fig, Path(output_dir), stub, ext=ext))
             plt.close(fig)
-    return saved
+    return saved, meta

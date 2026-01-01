@@ -17,7 +17,7 @@ Use `reader artifacts` to locate the latest path.
 `tidy+map.v2` is a tidy table with at least:
 
 - `position`, `time`, `channel`, `value`
-- `treatment`, `design_id` (and optionally `batch`)
+- `treatment`, `design_id`
 
 `time` is in **hours** (this is what the Synergy H1 parser emits).
 
@@ -36,8 +36,7 @@ steps:
         logic_channel: "YFP/CFP"
         intensity_channel: "YFP/OD600"
       treatment_map: { "00": "...", "10": "...", "01": "...", "11": "..." }
-      reference: { design_id: "REF", scope: "batch", stat: "mean" }
-      batch_col: null          # optional; set to "batch" if present
+      reference: { design_id: "REF", stat: "mean" }
       target_time_h: 10
       time_mode: "nearest"      # nearest | last_before | first_after | exact
       time_tolerance_h: 0.5
@@ -47,8 +46,7 @@ steps:
 
 - `target_time_h` + `time_mode` control how the snapshot time is chosen.
 - If `time_tolerance_h` is set, reader **logs a warning** when the chosen time is farther than the tolerance.
-- Selection is **per batch** only when a `batch` column is present (or `batch_col` is set).  
-  If no batch is provided, reader uses a single implicit batch (`0`).
+- Selection is global across the experiment; chosen time is logged if it differs from the target beyond tolerance.
 
 ## Math knobs (explicit)
 
@@ -65,7 +63,7 @@ All values must be non‑negative floats and are logged at run time.
 
 ## Output columns
 
-`sfxi.vec8.v2` includes (per `design_id × batch`; batch may be a single implicit `0`):
+`sfxi.vec8.v2` includes (per `design_id`):
 
 - `v00, v10, v01, v11` (logic in [0,1])
 - `y00_star, y10_star, y01_star, y11_star` (log2 intensity)
@@ -77,5 +75,5 @@ Optional metadata columns (e.g., `sequence`, `id`) are carried through if config
 
 - `reference.design_id` must resolve to a design in the data (hard error otherwise).
 - `treatment_map` must map exactly the four states `00,10,01,11`.
-- Logic/intensity channels must select the **same** time per batch.
+- Logic/intensity channels must select the **same** time.
 - Flat logic (`v=0.25`) is **explicitly flagged** via `flat_logic` and logged.

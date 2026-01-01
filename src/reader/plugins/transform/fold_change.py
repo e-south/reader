@@ -89,7 +89,7 @@ class FoldChangeCfg(PluginConfig):
     log2fc_column: str = "log2FC"
 
     # Attach extra metadata columns if present (won't be required by contract, just carried through)
-    attach_metadata: list[str] = Field(default_factory=lambda: ["batch"])
+    attach_metadata: list[str] = Field(default_factory=list)
 
     # ----- helpers kept here for cohesion (stateless static methods) -----
 

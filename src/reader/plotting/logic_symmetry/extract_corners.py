@@ -24,7 +24,6 @@ class MappingConfig:
     treatment_map: dict[str, str]  # keys: "00","10","01","11" → exact data labels
     case_sensitive: bool
     design_by: list[str]
-    batch_col: str | None
     response_channel: str
     replicate_stat: str  # "mean" | "median"
 
@@ -36,14 +35,6 @@ def _assert_required_columns(df: pd.DataFrame, cfg: MappingConfig) -> None:
     meta_missing = [c for c in cfg.design_by if c not in df.columns]
     if meta_missing:
         raise ValueError(f"Missing design_by columns: {meta_missing}")
-    if cfg.batch_col:
-        if cfg.batch_col not in df.columns:
-            raise ValueError(f"Missing required batch column '{cfg.batch_col}'")
-        # Batch must be numeric ordinal
-        try:
-            pd.to_numeric(df[cfg.batch_col])
-        except Exception as err:
-            raise ValueError(f"Batch column '{cfg.batch_col}' must be numeric (0,1,2,...)") from err
 
     if cfg.response_channel not in df["channel"].unique().tolist():
         raise ValueError(f"response_channel '{cfg.response_channel}' not present in 'channel' column")
@@ -70,7 +61,7 @@ def _sd(series: pd.Series) -> float:
 
 def _fail_if_multiple_times(df: pd.DataFrame, group_cols: list[str]) -> None:
     """
-    Enforce: exactly ONE time per (design..., batch, treatment).
+    Enforce: exactly ONE time per (design..., treatment).
     If violations exist, raise with the list of offending groups and their times.
     """
     chk = df.groupby(group_cols)["time"].nunique().reset_index(name="n_times")
@@ -82,30 +73,16 @@ def _fail_if_multiple_times(df: pd.DataFrame, group_cols: list[str]) -> None:
             times = sorted(df.loc[filt, "time"].unique().tolist())
             key_str = ", ".join(f"{c}={row[c]!r}" for c in group_cols)
             offenders.append(f"{key_str} → times={times}")
-        msg = "Snapshot violation: more than one 'time' for some (design…, batch, treatment).\n" + "\n".join(
-            offenders[:50]
-        )
+        msg = "Snapshot violation: more than one 'time' for some (design…, treatment).\n" + "\n".join(offenders[:50])
         raise ValueError(msg)
 
 
 def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns:
-        points_df: one row per (design_by…, batch) with corner means, SDs, counts
-        per_corner_df: per (design…, batch, corner) aggregated table
+        points_df: one row per design with corner means, SDs, counts
+        per_corner_df: per (design…, corner) aggregated table
     """
-    if cfg.batch_col is None:
-        if "batch" not in df.columns:
-            df = df.copy()
-            df["batch"] = 0
-        cfg = MappingConfig(
-            treatment_map=cfg.treatment_map,
-            case_sensitive=cfg.case_sensitive,
-            design_by=cfg.design_by,
-            batch_col="batch",
-            response_channel=cfg.response_channel,
-            replicate_stat=cfg.replicate_stat,
-        )
     _assert_required_columns(df, cfg)
 
     # Filter to the channel
@@ -148,8 +125,8 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
     else:
         df["corner"] = _normalize(df["treatment"]).map(lambda x: rev.get(x))
 
-    # Enforce snapshot rule per (design…, batch, treatment/corner)
-    group_cols = cfg.design_by + [cfg.batch_col, "corner"]
+    # Enforce snapshot rule per (design…, treatment/corner)
+    group_cols = cfg.design_by + ["corner"]
     _fail_if_multiple_times(df, group_cols)
 
     # Aggregate replicates per corner at that unique time
@@ -169,10 +146,10 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
         agg_rows.append(record)
 
     per_corner = pd.DataFrame.from_records(agg_rows)
-    LOG.info("• extract: per-corner aggregates = %d rows (design×batch×corner)", len(per_corner))
+    LOG.info("• extract: per-corner aggregates = %d rows (design×corner)", len(per_corner))
 
-    # Pivot to wide per (design…, batch)
-    idx_cols = cfg.design_by + [cfg.batch_col]
+    # Pivot to wide per design
+    idx_cols = cfg.design_by
     pivot_mean = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_mean", aggfunc="first")
     pivot_sd = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_sd", aggfunc="first")
     pivot_n = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_n", aggfunc="first")
@@ -191,7 +168,7 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
         LOG.error("• extract: incomplete corner set for some groups (%d shown):", len(missing_groups))
         for line in missing_groups[:10]:
             LOG.error("    %s", line)
-        msg = "Incomplete corner set: some (design…, batch) groups lack one or more of {00,10,01,11}.\n" + "\n".join(
+        msg = "Incomplete corner set: some (design…) groups lack one or more of {00,10,01,11}.\n" + "\n".join(
             missing_groups[:50]
         )
         raise ValueError(msg)
@@ -202,5 +179,5 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
 
     points = pivot_mean.join(pivot_sd, how="left").join(pivot_n, how="left").reset_index()
 
-    LOG.info("• extract: wide table rows (designxbatch) = %d", len(points))
+    LOG.info("• extract: wide table rows (design) = %d", len(points))
     return points, per_corner

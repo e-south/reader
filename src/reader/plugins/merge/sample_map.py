@@ -124,13 +124,6 @@ class SampleMapMerge(Plugin):
 
             merged = df.merge(sm, on="position", how="left", validate="m:1")
 
-            # Optional dtype normalization for 'batch' when present
-            if "batch" in merged.columns:
-                try:
-                    merged["batch"] = pd.to_numeric(merged["batch"], errors="raise").astype("Int64")
-                except Exception as e:
-                    raise MergeError(f"'batch' must be integer-typed: {e}") from e
-
             # Assert required metadata columns per-experiment (config-driven)
             missing_cols = [c for c in cfg.require_columns if c not in merged.columns]
             if missing_cols:

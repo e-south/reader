@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.microplates.time_series import plot_time_series
 
 
 class TimeSeriesCfg(PluginConfig):
@@ -53,7 +54,6 @@ class TimeSeriesPlot(Plugin):
     def run(self, ctx, inputs, cfg: TimeSeriesCfg):
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
-        from reader.plotting.microplates.time_series import plot_time_series
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):

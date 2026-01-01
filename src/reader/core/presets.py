@@ -9,8 +9,9 @@ Built-in pipeline presets for common experiment workflows.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import Any, Iterable
+from typing import Any
 
 from reader.core.errors import ConfigError
 
@@ -299,7 +300,7 @@ PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "merge_map",
                 "uses": "merge/sample_map",
-                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.csv"},
+                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
                 "with": {"require_columns": ["treatment", "design_id"], "require_non_null": False},
             }
         ],
@@ -323,7 +324,7 @@ PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "merge_map",
                 "uses": "merge/sample_map",
-                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.csv"},
+                "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
                 "with": {"require_columns": ["treatment", "design_id"], "require_non_null": False},
             },
             {
@@ -384,7 +385,7 @@ PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "merge_metadata",
                 "uses": "merge/sample_metadata",
-                "reads": {"df": "ingest/df", "metadata": "file:./metadata.csv"},
+                "reads": {"df": "ingest/df", "metadata": "file:./metadata.xlsx"},
                 "with": {"require_columns": ["design_id", "treatment"], "require_non_null": False},
             },
         ],
@@ -489,7 +490,6 @@ PRESETS: dict[str, dict[str, Any]] = {
                 "with": {
                     "response": {"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
                     "design_by": ["design_id"],
-                    "batch_col": None,
                     "time_mode": "nearest",
                     "target_time_h": 12.0,
                     "time_tolerance_h": 0.25,
@@ -499,7 +499,7 @@ PRESETS: dict[str, dict[str, Any]] = {
                         "01": "EtOH_0_percent_100nM_cipro",
                         "11": "EtOH_3_percent_100nM_cipro",
                     },
-                    "reference": {"design_id": "pDual-10", "scope": "batch", "stat": "mean"},
+                    "reference": {"design_id": "pDual-10", "stat": "mean"},
                     "treatment_case_sensitive": True,
                     "require_all_corners_per_design": True,
                     "eps_ratio": 1e-9,

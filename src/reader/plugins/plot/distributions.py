@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.microplates.distributions import plot_distributions
 
 
 class DistributionsCfg(PluginConfig):
@@ -51,7 +52,6 @@ class DistributionsPlot(Plugin):
     def run(self, ctx, inputs, cfg: DistributionsCfg):
         df: pd.DataFrame = inputs["df"]
         blanks: pd.DataFrame = inputs.get("blanks", df.iloc[0:0])
-        from reader.plotting.microplates.distributions import plot_distributions
 
         # --- Resolve pool_sets (DRY via experiment.collections) ----------------
         # Accept:

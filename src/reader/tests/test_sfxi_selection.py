@@ -22,7 +22,7 @@ def _tidy(rows):
 
 
 def test_cornerize_aggregates_replicates_for_logic_and_intensity():
-    # two replicates per corner at the same time (12.0 h), one design_id, one batch
+    # two replicates per corner at the same time (12.0 h), one design_id
     TMAP = {
         "00": "EtOH_0_percent_0nM_cipro",
         "10": "EtOH_3_percent_0nM_cipro",
@@ -45,7 +45,6 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
                     "value": vals_logic[corner][rep],
                     "treatment": TMAP[corner],
                     "design_id": "G1",
-                    "batch": 0,
                 }
             )
             rows.append(
@@ -56,21 +55,18 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
                     "value": vals_int[corner][rep],
                     "treatment": TMAP[corner],
                     "design_id": "G1",
-                    "batch": 0,
                 }
             )
     df = _tidy(rows)
 
     common = {
         "design_by": ["design_id"],
-        "batch_col": "batch",
         "treatment_map": TMAP,
         "case_sensitive": True,
         "time_column": "time",
         "target_time_h": 12.0,
         "time_mode": "nearest",
         "time_tolerance_h": 0.25,
-        "time_per_batch": True,
         "on_missing_time": "error",
         "require_all_corners_per_design": True,
     }
@@ -93,17 +89,17 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
 
 
 def test_missing_reference_design_id_raises_in_compute_vec8():
-    # a single design×batch with four corners for logic & intensity
-    pts_logic = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
-    pts_int = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    # a single design with four corners for logic & intensity
+    pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
+    pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
 
     # anchors table lacks the requested 'REF' design entirely
     per_corner = pd.DataFrame(
         [
-            {"design_id": "OTHER", "batch": 0, "corner": "00", "y_mean": 5},
-            {"design_id": "OTHER", "batch": 0, "corner": "10", "y_mean": 5},
-            {"design_id": "OTHER", "batch": 0, "corner": "01", "y_mean": 5},
-            {"design_id": "OTHER", "batch": 0, "corner": "11", "y_mean": 5},
+            {"design_id": "OTHER", "corner": "00", "y_mean": 5},
+            {"design_id": "OTHER", "corner": "10", "y_mean": 5},
+            {"design_id": "OTHER", "corner": "01", "y_mean": 5},
+            {"design_id": "OTHER", "corner": "11", "y_mean": 5},
         ]
     )
 
@@ -113,9 +109,7 @@ def test_missing_reference_design_id_raises_in_compute_vec8():
             points_intensity=pts_int,
             per_corner_intensity=per_corner,
             design_by=["design_id"],
-            batch_col="batch",
             reference_design_id="REF",
-            reference_scope="batch",
             reference_stat="mean",
             eps_ratio=1e-12,
             eps_range=1e-12,
@@ -131,13 +125,8 @@ def test_missing_reference_design_id_raises_in_compute_vec8():
 
 
 def test_time_tolerance_warning_is_emitted():
-    # single batch with times at 0.0; target is 0.5 with tol 0.1 -> warning
-    TMAP = {
-        "00": "t0",
-        "10": "t1",
-        "01": "t2",
-        "11": "t3",
-    }
+    # single time at 0.0; target is 0.5 with tol 0.1 -> warning
+    TMAP = {"00": "t0", "10": "t1", "01": "t2", "11": "t3"}
     rows = []
     for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):
         rows.append(
@@ -148,7 +137,6 @@ def test_time_tolerance_warning_is_emitted():
                 "value": 1.0,
                 "treatment": TMAP[corner],
                 "design_id": "G1",
-                "batch": 0,
             }
         )
     df = _tidy(rows)
@@ -156,7 +144,6 @@ def test_time_tolerance_warning_is_emitted():
     res = cornerize_and_aggregate(
         df,
         design_by=["design_id"],
-        batch_col="batch",
         treatment_map=TMAP,
         case_sensitive=True,
         time_column="time",
@@ -164,15 +151,13 @@ def test_time_tolerance_warning_is_emitted():
         target_time_h=0.5,
         time_mode="nearest",
         time_tolerance_h=0.1,
-        time_per_batch=True,
         on_missing_time="error",
         require_all_corners_per_design=True,
     )
-    assert res.time_warnings
-    assert 0 in res.time_warnings
+    assert res.time_warning is not None
 
 
-def test_sfxi_selection_allows_missing_batch():
+def test_sfxi_selection_does_not_inject_unexpected_columns():
     df = _tidy(
         [
             {"position": "A1", "time": 1.0, "channel": "YFP/CFP", "value": 1.0, "treatment": "t00", "design_id": "X"},
@@ -184,7 +169,6 @@ def test_sfxi_selection_allows_missing_batch():
     res = cornerize_and_aggregate(
         df,
         design_by=["design_id"],
-        batch_col=None,
         treatment_map={"00": "t00", "10": "t10", "01": "t01", "11": "t11"},
         case_sensitive=True,
         time_column="time",
@@ -192,9 +176,7 @@ def test_sfxi_selection_allows_missing_batch():
         target_time_h=1.0,
         time_mode="nearest",
         time_tolerance_h=0.1,
-        time_per_batch=False,
         on_missing_time="error",
         require_all_corners_per_design=True,
     )
-    assert "batch" in res.per_corner.columns
-    assert set(res.per_corner["batch"].unique().tolist()) == {0}
+    assert set(res.per_corner.columns) == {"design_id", "corner", "time", "y_mean", "y_sd", "y_n"}

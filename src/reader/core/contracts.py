@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import importlib.metadata as md
 from dataclasses import dataclass
 from typing import Literal
 
@@ -125,7 +126,7 @@ _register(
 _register(
     DataFrameContract(
         id="tidy+map.v2",
-        description="Tidy+metadata: tidy.v1 + treatment,str | design_id,str | batch,int (optional)",
+        description="Tidy+metadata: tidy.v1 + treatment,str | design_id,str",
         columns=[
             ColumnRule("position", "string"),
             ColumnRule("time", "float", nonnegative=True),
@@ -133,7 +134,6 @@ _register(
             ColumnRule("value", "float"),
             ColumnRule("treatment", "string"),
             ColumnRule("design_id", "string"),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
         ],
         unique_keys=[],
     )
@@ -160,12 +160,11 @@ _register(
 _register(
     DataFrameContract(
         id="sfxi.vec8.v2",
-        description="Per design×batch vec8 table with logic shape and anchor-normalized intensity",
+        description="Per design vec8 table with logic shape and anchor-normalized intensity",
         columns=[
             ColumnRule("design_id", "string"),
             ColumnRule("sequence", "string", required=False, allow_nan=True),
             ColumnRule("id", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
             ColumnRule("r_logic", "float", nonnegative=True),
             ColumnRule("v00", "float"),
             ColumnRule("v10", "float"),
@@ -177,7 +176,7 @@ _register(
             ColumnRule("y11_star", "float"),
             ColumnRule("flat_logic", "bool"),
         ],
-        unique_keys=[["design_id", "batch"]],
+        unique_keys=[["design_id"]],
     )
 )
 
@@ -199,7 +198,6 @@ _register(
             ColumnRule("baseline_time", "float", required=True, allow_nan=True),
             # common group keys (optional if present)
             ColumnRule("design_id", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
         ],
         unique_keys=[],  # allow multiple rows per (group,treatment) across report_times or repeats
     )
@@ -209,14 +207,13 @@ _register(
 _register(
     DataFrameContract(
         id="logic_symmetry.v1",
-        description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
+        description="Logic-symmetry per design summary (points + metrics + encodings).",
         columns=[
             # optional design-by columns (keep flexible)
             ColumnRule("design_id", "string", required=False, allow_nan=True),
             ColumnRule("strain", "string", required=False, allow_nan=True),
             ColumnRule("design", "string", required=False, allow_nan=True),
             ColumnRule("construct", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
             # replicate counts per corner
             ColumnRule("n00", "int"),
             ColumnRule("n10", "int"),
@@ -253,3 +250,36 @@ _register(
         unique_keys=[],
     )
 )
+
+
+def _load_external_contracts() -> None:
+    """
+    Load optional DataFrameContract definitions from entry points.
+
+    Entry point group: reader.contracts
+    Each entry point may return:
+      • a DataFrameContract
+      • an iterable of DataFrameContract
+      • a callable that returns one of the above
+    """
+    try:
+        eps = md.entry_points(group="reader.contracts")
+    except Exception:
+        return
+    for ep in eps:
+        obj = ep.load()
+        if callable(obj):
+            obj = obj()
+        if isinstance(obj, DataFrameContract):
+            _register(obj)
+            continue
+        if isinstance(obj, (list, tuple, set)):
+            for c in obj:
+                if not isinstance(c, DataFrameContract):
+                    raise RuntimeError(f"reader.contracts entry {ep.name} returned non-contract: {type(c)}")
+                _register(c)
+            continue
+        raise RuntimeError(f"reader.contracts entry {ep.name} returned invalid object: {type(obj)}")
+
+
+_load_external_contracts()

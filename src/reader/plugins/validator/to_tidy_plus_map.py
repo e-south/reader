@@ -90,7 +90,4 @@ class PromoteToTidyPlusMap(Plugin):
             bad = {c: int(df[c].isna().sum()) for c in cfg.require_columns if df[c].isna().any()}
             if bad:
                 raise ExecutionError(f"Cannot promote; required columns contain NaN: {bad}")
-        # dtype normalization for 'batch' (if present)
-        if "batch" in df.columns:
-            df["batch"] = pd.to_numeric(df["batch"], errors="raise").astype("Int64")
         return {"df": df}

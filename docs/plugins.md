@@ -12,7 +12,7 @@ src/reader/plugins/<category>/
 Plugins are discovered in two ways:
 
 - built-ins under `reader.plugins.*`
-- optional **entry points**: `reader.ingest`, `reader.merge`, `reader.transform`, `reader.plot`, `reader.validator`
+- optional **entry points**: `reader.ingest`, `reader.merge`, `reader.transform`, `reader.plot`, `reader.export`, `reader.validator`
 
 Entry points let external packages add plugins without modifying this repo.
 
@@ -30,7 +30,7 @@ steps:
     uses: "merge/sample_metadata"
     reads:
       df: "ingest_cytometer/df"
-      metadata: "file:./metadata.csv"
+      metadata: "file:./metadata.xlsx"
     with:
       require_columns: ["design_id", "treatment"]
       require_non_null: true
@@ -104,6 +104,17 @@ my_export = "my_pkg.reader_plugins:MyExport"
 ```
 
 Then `reader plugins` will discover it alongside built-ins.
+
+### Custom contracts (optional)
+
+If your external plugin needs a custom DataFrame contract, expose it via entry points:
+
+```toml
+[project.entry-points."reader.contracts"]
+my_contracts = "my_pkg.reader_contracts:CONTRACTS"
+```
+
+`CONTRACTS` can be a single `DataFrameContract`, a list of them, or a function that returns them.
 
 ### New transform (operate on a tidy table)
 

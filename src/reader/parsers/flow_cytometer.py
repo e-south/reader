@@ -18,6 +18,11 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+try:
+    from flowio import FlowData
+except Exception:  # optional dependency; raised when parse is invoked
+    FlowData = None
+
 
 def _require(cond: bool, msg: str) -> None:
     if not cond:
@@ -60,10 +65,8 @@ def parse_fcs_events(
     _require(p.exists(), f"Input file not found: {p}")
     _require(p.suffix.lower() == ".fcs", f"Unsupported file type: {p.suffix}")
 
-    try:
-        from flowio import FlowData  # local import to keep optional dependency lazy
-    except Exception as e:
-        raise ValueError(f"flowio is required to parse FCS files: {e}") from e
+    if FlowData is None:
+        raise ValueError("flowio is required to parse FCS files; install with `uv sync --extra cytometry`.")
 
     fd = FlowData(str(p))
     par = int(fd.text.get("par", 0))

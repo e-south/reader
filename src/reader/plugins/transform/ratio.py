@@ -53,10 +53,7 @@ class RatioTransform(Plugin):
         missing = [c for c in (cfg.numerator, cfg.denominator) if c not in channels]
         if missing:
             preview = ", ".join(sorted(channels)[:8]) + (" …" if len(channels) > 8 else "")
-            raise TransformError(
-                f"ratio • {cfg.name}: missing channel(s) {missing}. "
-                f"Available channels: {preview}"
-            )
+            raise TransformError(f"ratio • {cfg.name}: missing channel(s) {missing}. Available channels: {preview}")
 
         # Partition numerator/denominator; keep ALL metadata on numerator side
         lhs = df[df["channel"] == cfg.numerator].rename(columns={"value": "__num__"}).copy()
@@ -81,10 +78,8 @@ class RatioTransform(Plugin):
         zero_den = int((merged["__den__"] == 0).sum())
         if bad_num or bad_den or zero_den:
             raise TransformError(
-                "ratio • {name}: invalid values (non-numeric or zero denominator). "
-                "bad_num={bad_num} bad_den={bad_den} zero_den={zero_den}".format(
-                    name=cfg.name, bad_num=bad_num, bad_den=bad_den, zero_den=zero_den
-                )
+                f"ratio • {cfg.name}: invalid values (non-numeric or zero denominator). "
+                f"bad_num={bad_num} bad_den={bad_den} zero_den={zero_den}"
             )
 
         merged["value"] = merged["__num__"] / merged["__den__"]
@@ -93,10 +88,7 @@ class RatioTransform(Plugin):
         # Restore original column set in original order (inherits metadata from lhs)
         derived = merged[df.columns].copy()
         if derived.empty:
-            raise TransformError(
-                f"ratio • {cfg.name}: produced zero derived rows. "
-                "Check align_on keys and input data."
-            )
+            raise TransformError(f"ratio • {cfg.name}: produced zero derived rows. Check align_on keys and input data.")
 
         out = pd.concat([df, derived], ignore_index=True)
 

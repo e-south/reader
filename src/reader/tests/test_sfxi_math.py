@@ -13,7 +13,7 @@ import math
 
 import numpy as np
 import pandas as pd
-from pandas.api.types import is_bool_dtype, is_float_dtype, is_integer_dtype
+from pandas.api.types import is_bool_dtype, is_float_dtype
 
 from reader.domain.sfxi.math import compute_vec8
 
@@ -27,20 +27,16 @@ def _mk(df_rows):
 
 def test_logic_minmax_basic_and_r_logic():
     # logic values 1,2,4,8 ⇒ u = 0,1,2,3 ⇒ v = 0, 1/3, 2/3, 1
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
+    pts_int = _mk([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-15,
@@ -61,11 +57,9 @@ def test_logic_minmax_basic_and_r_logic():
 
 def test_logic_minmax_uses_eps_range_in_denominator():
     # With a non-trivial eps_range, v uses (span + eps_range) in the denominator.
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
+    pts_int = _mk([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     # u = [0,1,2,3], span=3, eps_range=1 -> denom=4
     out = compute_vec8(
@@ -73,9 +67,7 @@ def test_logic_minmax_uses_eps_range_in_denominator():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1.0,
@@ -93,22 +85,18 @@ def test_logic_minmax_uses_eps_range_in_denominator():
 
 def test_logic_scale_invariance():
     # Rescale logic by constant factor; v's must be identical
-    base_logic = {"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}
+    base_logic = {"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}
     scaled_logic = {**base_logic, "b00": 10, "b10": 20, "b01": 40, "b11": 80}
 
     pts_logic_a = _mk([base_logic])
     pts_logic_b = _mk([scaled_logic])
 
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    pts_int = _mk([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     kwargs = {
         "design_by": ["design_id"],
-        "batch_col": "batch",
         "reference_design_id": "REF",
-        "reference_scope": "batch",
         "reference_stat": "mean",
         "eps_ratio": 1e-12,
         "eps_range": 1e-15,
@@ -125,20 +113,16 @@ def test_logic_scale_invariance():
 
 
 def test_logic_flat_detection_exact():
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 3, "b10": 3, "b01": 3, "b11": 3}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = _mk([{"design_id": "X", "b00": 3, "b10": 3, "b01": 3, "b11": 3}])
+    pts_int = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-9,
         eps_range=1e-12,
@@ -155,22 +139,16 @@ def test_logic_flat_detection_exact():
 
 def test_logic_flat_detection_within_eps_range():
     # Differences below eps_range → flat
-    pts_logic = _mk(
-        [{"design_id": "X", "batch": 0, "b00": 1.0, "b10": 1.0 * (1 + 1e-13), "b01": 1.0, "b11": 1.0}]
-    )
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = _mk([{"design_id": "X", "b00": 1.0, "b10": 1.0 * (1 + 1e-13), "b01": 1.0, "b11": 1.0}])
+    pts_int = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-10,
@@ -185,20 +163,16 @@ def test_logic_flat_detection_within_eps_range():
 
 def test_logic_zeros_guard_and_expected_mapping():
     # Zeros in logic channel are clamped by eps_ratio before log2
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 0.0, "b10": 5.0, "b01": 0.0, "b11": 5.0}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = _mk([{"design_id": "X", "b00": 0.0, "b10": 5.0, "b01": 0.0, "b11": 5.0}])
+    pts_int = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-3,
         eps_range=1e-12,
@@ -219,10 +193,10 @@ def test_logic_zeros_guard_and_expected_mapping():
 
 
 def test_intensity_alpha_delta_eps_abs_and_log_guard():
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
     # All zero intensity to exercise guards
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 0.0, "b10": 0.0, "b01": 0.0, "b11": 0.0}])
-    per_corner = _mk([{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 1.0} for c in ("00", "10", "01", "11")])
+    pts_int = _mk([{"design_id": "X", "b00": 0.0, "b10": 0.0, "b01": 0.0, "b11": 0.0}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1.0} for c in ("00", "10", "01", "11")])
 
     # Case A: no eps_abs, delta=0 -> log2(max(0, eps_ratio)) = log2(eps_ratio)
     outA = compute_vec8(
@@ -230,9 +204,7 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-9,
         eps_range=1e-12,
@@ -249,9 +221,7 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -268,9 +238,7 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -283,15 +251,13 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
 
     # Case D: alpha increases denominator; with nonzero numerator this would lower y*
     # Use a non‑zero numerator for just one corner to check the effect deterministically
-    pts_int_nonzero = _mk([{"design_id": "X", "batch": 0, "b00": 10.0, "b10": 0.0, "b01": 0.0, "b11": 0.0}])
+    pts_int_nonzero = _mk([{"design_id": "X", "b00": 10.0, "b10": 0.0, "b01": 0.0, "b11": 0.0}])
     outD0 = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int_nonzero,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -305,9 +271,7 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
         points_intensity=pts_int_nonzero,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -320,80 +284,20 @@ def test_intensity_alpha_delta_eps_abs_and_log_guard():
     assert np.isclose(outD1["y00_star"], 0.0, atol=1e-12)
 
 
-def test_intensity_batch_vs_global_reference_scope():
-    # Two batches with different REF anchors; global scope averages them.
-    pts_logic = _mk(
-        [
-            {"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1},
-            {"design_id": "X", "batch": 1, "b00": 1, "b10": 1, "b01": 1, "b11": 1},
-        ]
-    )
-    pts_int = _mk(
-        [
-            {"design_id": "X", "batch": 0, "b00": 3, "b10": 3, "b01": 3, "b11": 3},
-            {"design_id": "X", "batch": 1, "b00": 3, "b10": 3, "b01": 3, "b11": 3},
-        ]
-    )
-    per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 4} for c in ("00", "10", "01", "11")]
-        + [{"design_id": "REF", "batch": 1, "corner": c, "y_mean": 2} for c in ("00", "10", "01", "11")]
-    )
-
-    # Global: anchor=mean(4,2)=3 ⇒ y_linear=3/3=1 ⇒ y*=0
-    out_global = compute_vec8(
-        points_logic=pts_logic,
-        points_intensity=pts_int,
-        per_corner_intensity=per_corner,
-        design_by=["design_id"],
-        batch_col="batch",
-        reference_design_id="REF",
-        reference_scope="global",
-        reference_stat="mean",
-        eps_ratio=1e-12,
-        eps_range=1e-12,
-        eps_ref=1e-12,
-        eps_abs=0.0,
-        ref_add_alpha=0.0,
-        log2_offset_delta=0.0,
-    )
-    assert np.allclose(out_global[["y00_star", "y10_star", "y01_star", "y11_star"]].to_numpy(), 0.0)
-
-    # Batch: batch0 anchor=4 ⇒ y*=log2(3/4)<0; batch1 anchor=2 ⇒ y*=log2(3/2)>0
-    out_batch = compute_vec8(
-        points_logic=pts_logic,
-        points_intensity=pts_int,
-        per_corner_intensity=per_corner,
-        design_by=["design_id"],
-        batch_col="batch",
-        reference_design_id="REF",
-        reference_scope="batch",
-        reference_stat="mean",
-        eps_ratio=1e-12,
-        eps_range=1e-12,
-        eps_ref=1e-12,
-        eps_abs=0.0,
-        ref_add_alpha=0.0,
-        log2_offset_delta=0.0,
-    ).sort_values("batch")
-    y0 = out_batch[out_batch["batch"] == 0]["y00_star"].iloc[0]
-    y1 = out_batch[out_batch["batch"] == 1]["y00_star"].iloc[0]
-    assert y0 < 0 and y1 > 0
-
-
 def test_intensity_reference_stat_mean_vs_median():
-    # Same (batch,corner) repeated for REF to force aggregation difference.
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 2, "b10": 2, "b01": 2, "b11": 2}])
+    # Same corner repeated for REF to force aggregation difference.
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_int = _mk([{"design_id": "X", "b00": 2, "b10": 2, "b01": 2, "b11": 2}])
     # Three rows for the reference anchor at corner 00: 2, 2, 100
     per_corner = _mk(
         [
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 2},
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 2},
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 100},
+            {"design_id": "REF", "corner": "00", "y_mean": 2},
+            {"design_id": "REF", "corner": "00", "y_mean": 2},
+            {"design_id": "REF", "corner": "00", "y_mean": 100},
             # other corners use 2 to keep things simple
-            {"design_id": "REF", "batch": 0, "corner": "10", "y_mean": 2},
-            {"design_id": "REF", "batch": 0, "corner": "01", "y_mean": 2},
-            {"design_id": "REF", "batch": 0, "corner": "11", "y_mean": 2},
+            {"design_id": "REF", "corner": "10", "y_mean": 2},
+            {"design_id": "REF", "corner": "01", "y_mean": 2},
+            {"design_id": "REF", "corner": "11", "y_mean": 2},
         ]
     )
 
@@ -403,9 +307,7 @@ def test_intensity_reference_stat_mean_vs_median():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="median",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -421,9 +323,7 @@ def test_intensity_reference_stat_mean_vs_median():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -438,13 +338,13 @@ def test_intensity_reference_stat_mean_vs_median():
 
 
 def test_missing_anchor_raises():
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_int = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
     per_corner = _mk(
         [
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 1},
-            {"design_id": "REF", "batch": 0, "corner": "10", "y_mean": 1},
-            {"design_id": "REF", "batch": 0, "corner": "01", "y_mean": 1},
+            {"design_id": "REF", "corner": "00", "y_mean": 1},
+            {"design_id": "REF", "corner": "10", "y_mean": 1},
+            {"design_id": "REF", "corner": "01", "y_mean": 1},
             # missing "11"
         ]
     )
@@ -455,9 +355,7 @@ def test_missing_anchor_raises():
             points_intensity=pts_int,
             per_corner_intensity=per_corner,
             design_by=["design_id"],
-            batch_col="batch",
             reference_design_id="REF",
-            reference_scope="batch",
             reference_stat="mean",
             eps_ratio=1e-12,
             eps_range=1e-12,
@@ -473,14 +371,14 @@ def test_missing_anchor_raises():
 
 def test_corner_order_respected_in_y_stars():
     # Different anchors per corner: 1,2,4,8 with fixed sample intensity=8
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 8, "b10": 8, "b01": 8, "b11": 8}])
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_int = _mk([{"design_id": "X", "b00": 8, "b10": 8, "b01": 8, "b11": 8}])
     per_corner = _mk(
         [
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 1},
-            {"design_id": "REF", "batch": 0, "corner": "10", "y_mean": 2},
-            {"design_id": "REF", "batch": 0, "corner": "01", "y_mean": 4},
-            {"design_id": "REF", "batch": 0, "corner": "11", "y_mean": 8},
+            {"design_id": "REF", "corner": "00", "y_mean": 1},
+            {"design_id": "REF", "corner": "10", "y_mean": 2},
+            {"design_id": "REF", "corner": "01", "y_mean": 4},
+            {"design_id": "REF", "corner": "11", "y_mean": 8},
         ]
     )
     out = compute_vec8(
@@ -488,9 +386,7 @@ def test_corner_order_respected_in_y_stars():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -506,22 +402,22 @@ def test_corner_order_respected_in_y_stars():
     assert np.isclose(out["y11_star"], 0.0, atol=1e-12)
 
 
-def test_multiple_designs_and_batches():
+def test_multiple_designs():
     pts_logic = _mk(
         [
-            {"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 3, "b11": 4},
-            {"design_id": "Y", "batch": 1, "b00": 10, "b10": 10, "b01": 10, "b11": 10},  # flat on log scale
+            {"design_id": "X", "b00": 1, "b10": 2, "b01": 3, "b11": 4},
+            {"design_id": "Y", "b00": 10, "b10": 10, "b01": 10, "b11": 10},  # flat on log scale
         ]
     )
     pts_int = _mk(
         [
-            {"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10},
-            {"design_id": "Y", "batch": 1, "b00": 5, "b10": 5, "b01": 5, "b11": 5},
+            {"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10},
+            {"design_id": "Y", "b00": 5, "b10": 5, "b01": 5, "b11": 5},
         ]
     )
     per_corner = _mk(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-        + [{"design_id": "REF", "batch": 1, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
+        [{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
+        + [{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
     )
 
     out = compute_vec8(
@@ -529,9 +425,7 @@ def test_multiple_designs_and_batches():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-12,
         eps_range=1e-12,
@@ -541,27 +435,23 @@ def test_multiple_designs_and_batches():
         log2_offset_delta=0.0,
     )
 
-    # Two rows (X@0 and Y@1); check shapes and flatness flag for Y row.
+    # Two rows (X and Y); check shapes and flatness flag for Y row.
     assert out.shape[0] == 2
-    y_row = out[(out["design_id"] == "Y") & (out["batch"] == 1)].iloc[0]
+    y_row = out[out["design_id"] == "Y"].iloc[0]
     assert bool(y_row["flat_logic"]) is True
     # Intensity normalization: 5/5 => log2(1) = 0 for Y
     assert np.allclose(y_row[["y00_star", "y10_star", "y01_star", "y11_star"]].to_numpy(), 0.0)
 
 
-def _mk(df_rows):
-    return pd.DataFrame(df_rows)
-
-
 def test_compute_vec8_applies_eps_and_alpha():
-    pts_logic = _mk([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
-    pts_int = _mk([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
+    pts_int = _mk([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
     per_corner = _mk(
         [
-            {"design_id": "REF", "batch": 0, "corner": "00", "y_mean": 5},
-            {"design_id": "REF", "batch": 0, "corner": "10", "y_mean": 5},
-            {"design_id": "REF", "batch": 0, "corner": "01", "y_mean": 5},
-            {"design_id": "REF", "batch": 0, "corner": "11", "y_mean": 5},
+            {"design_id": "REF", "corner": "00", "y_mean": 5},
+            {"design_id": "REF", "corner": "10", "y_mean": 5},
+            {"design_id": "REF", "corner": "01", "y_mean": 5},
+            {"design_id": "REF", "corner": "11", "y_mean": 5},
         ]
     )
     out = compute_vec8(
@@ -569,9 +459,7 @@ def test_compute_vec8_applies_eps_and_alpha():
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-9,
         eps_range=1e-12,
@@ -585,20 +473,16 @@ def test_compute_vec8_applies_eps_and_alpha():
 
 
 def test_flat_logic_is_boolean_dtype():
-    pts_logic = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
-    pts_int = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = pd.DataFrame(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
+    pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    per_corner = pd.DataFrame([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-9,
         eps_range=1e-12,
@@ -612,20 +496,16 @@ def test_flat_logic_is_boolean_dtype():
 
 
 def test_vec8_contract_critical_dtypes_are_numeric():
-    pts_logic = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
-    pts_int = pd.DataFrame([{"design_id": "X", "batch": 0, "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = pd.DataFrame(
-        [{"design_id": "REF", "batch": 0, "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
+    pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
+    per_corner = pd.DataFrame([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
         points_intensity=pts_int,
         per_corner_intensity=per_corner,
         design_by=["design_id"],
-        batch_col="batch",
         reference_design_id="REF",
-        reference_scope="batch",
         reference_stat="mean",
         eps_ratio=1e-9,
         eps_range=1e-12,
@@ -634,8 +514,6 @@ def test_vec8_contract_critical_dtypes_are_numeric():
         ref_add_alpha=0.0,
         log2_offset_delta=0.0,
     )
-    # 'batch' should be integer-like
-    assert is_integer_dtype(out["batch"])
     # v*, y* and r_logic should be float-like
     for c in ["v00", "v10", "v01", "v11", "y00_star", "y10_star", "y01_star", "y11_star", "r_logic"]:
         assert is_float_dtype(out[c])

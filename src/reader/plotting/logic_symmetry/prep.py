@@ -3,7 +3,7 @@
 <reader project>
 src/reader/plotting/logic_symmetry_prep.py
 
-Logic-symmetry prep helper: pick one time per (design x batch x treatment).
+Logic-symmetry prep helper: pick one time per (design x treatment).
 
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
@@ -52,7 +52,6 @@ def prepare_for_logic_symmetry(
     *,
     response_channel: str,
     design_by: list[str],
-    batch_col: str | None,
     treatment_map: dict[str, str],
     mode: str = "last",
     target_time: float | None = None,
@@ -61,12 +60,7 @@ def prepare_for_logic_symmetry(
     case_sensitive: bool = True,
     time_column: str = "time",
 ) -> pd.DataFrame:
-    if batch_col is None:
-        if "batch" not in df.columns:
-            df = df.copy()
-            df["batch"] = 0
-        batch_col = "batch"
-    required = set(design_by + [batch_col, "channel", time_column, "treatment", "value"])
+    required = set(design_by + ["channel", time_column, "treatment", "value"])
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Input DataFrame missing required columns: {missing}")
@@ -85,12 +79,7 @@ def prepare_for_logic_symmetry(
     if work.empty:
         raise ValueError("No rows remain after filtering to response_channel and treatment_map labels")
 
-    try:
-        pd.to_numeric(work[batch_col])
-    except Exception as err:
-        raise ValueError(f"Batch column '{batch_col}' must be numeric (0,1,2,...)") from err
-
-    keys_db = design_by + [batch_col]
+    keys_db = design_by
     keys_dbt = keys_db + ["_corner"]
 
     if align_corners:

@@ -29,6 +29,7 @@ from .base import (
     save_figure,
     smart_grouped_dose_key,
     smart_string_numeric_key,
+    summarize_time_usage,
 )
 from .style import _DEFAULT_RC as _RC
 from .style import PaletteBook, use_style
@@ -98,7 +99,7 @@ def plot_ts_and_snap(
     fig_kwargs: dict | None = None,
     filename: str | None = None,
     palette_book: PaletteBook | None = None,
-) -> list[Path]:
+) -> tuple[list[Path], dict]:
     """
     Render one figure per group value (if group_on is set), each with two subplots:
       • Left  = time series (mean ± CI) for `ts_channel`
@@ -138,7 +139,15 @@ def plot_ts_and_snap(
             & (pd.to_numeric(work[ts_x_col], errors="coerce") <= hi)
         ].copy()
     if work.empty:
-        return []
+        meta = {
+            "time_selection": {
+                "requested": float(snap_time),
+                "tolerance": float(snap_time_tolerance),
+                "fallback_used": False,
+                "used": None,
+            }
+        }
+        return [], meta
 
     # Figure iteration over groups
     if group_col:
@@ -150,6 +159,8 @@ def plot_ts_and_snap(
         fig_groups = [("all", [None])]
 
     saved: list[Path] = []
+    used_times: list[float] = []
+    fallback_used_any = False
     for label, members in fig_groups:
         d = work.copy()
         if group_col and members != [None]:
@@ -293,6 +304,7 @@ def plot_ts_and_snap(
             snap = d.copy()
             # Pick nearest-time replicate per key at snap_time
             key_cols = [c for c in [group_col, snap_x_col, snap_hue_col, "channel", "position"] if c]
+            fallback_used = False
             snapped = nearest_time_per_key(
                 snap, target_time=float(snap_time), keys=key_cols, tol=float(snap_time_tolerance)
             )
@@ -300,6 +312,7 @@ def plot_ts_and_snap(
             if snapped.empty:
                 log = logging.getLogger("reader")
                 fb = nearest_time_per_key(snap, target_time=float(snap_time), keys=key_cols, tol=float("inf"))
+                fallback_used = True
                 snapped = fb[fb["channel"].astype(str) == ch_snap].copy()
                 if not snapped.empty:
                     uniq = sorted(pd.to_numeric(snapped["time"], errors="coerce").dropna().unique().tolist())
@@ -314,6 +327,10 @@ def plot_ts_and_snap(
                         preview,
                         float(delta),
                     )
+            if fallback_used:
+                fallback_used_any = True
+            if not snapped.empty:
+                used_times.extend(pd.to_numeric(snapped["time"], errors="coerce").dropna().tolist())
             if not snapped.empty:
                 ax = ax_snap
 
@@ -461,4 +478,13 @@ def plot_ts_and_snap(
                 stub = f"{base}{group_tag}" if group_tag else f"{base}__{label}"
             saved.append(save_figure(fig, out_dir, stub, ext=ext))
             plt.close(fig)
-    return saved
+    time_meta = summarize_time_usage(pd.DataFrame({"time": used_times})) if used_times else None
+    meta = {
+        "time_selection": {
+            "requested": float(snap_time),
+            "tolerance": float(snap_time_tolerance),
+            "fallback_used": fallback_used_any,
+            "used": time_meta,
+        }
+    }
+    return saved, meta

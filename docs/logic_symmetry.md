@@ -16,14 +16,13 @@ This is a visualization tool; it also emits a typed table artifact for reuse.
 ## Config (minimal)
 
 ```yaml
-steps:
+reports:
   - id: "logic_symmetry"
     uses: "plot/logic_symmetry"
     reads: { df: "mapped/df" }
     with:
       response_channel: "YFP/CFP"
       design_by: ["design_id"]
-      batch_col: null
       treatment_map: { "00": "...", "10": "...", "01": "...", "11": "..." }
       aggregation: { replicate_stat: "mean", uncertainty: "halo" }
       output: { format: ["pdf"], dpi: 300 }
@@ -35,4 +34,3 @@ steps:
 - The treatment map must be **exact** for the four corners `00,10,01,11`.
 - If you need a snapshot from time series data, use `prep` in the plugin config.
 - The table artifact can be found via `reader artifacts`.
- - `batch` is optional; if omitted, reader uses a single implicit batch (`0`).

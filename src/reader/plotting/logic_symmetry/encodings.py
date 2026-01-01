@@ -59,7 +59,7 @@ def _compute_alpha(df: pd.DataFrame, cfg: EncodingConfig) -> pd.Series:
     col = cfg.alpha_by
     if col not in df.columns:
         raise ValueError(f"alpha_by refers to missing column '{col}'")
-    # Order categories numerically if possible (batch typically numeric)
+    # Order categories numerically if possible
     series = df[col]
     try:
         order = np.sort(series.astype(float).unique())

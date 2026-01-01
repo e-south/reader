@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import Colormap, LinearSegmentedColormap
 
-from .base import alias_column, pretty_name, save_figure
+from .base import alias_column, pretty_name, save_figure, summarize_time_usage
 from .style import new_fig_ax, use_style
 
 
@@ -88,7 +88,7 @@ def plot_snapshot_heatmap(
     vmax: float | None = None,
     fig_kwargs: dict[str, Any],
     filename: str | None,
-) -> list[Path]:
+) -> tuple[list[Path], dict]:
     """
     Render a heatmap for a single channel at the snapshot time nearest to `time`.
 
@@ -118,6 +118,15 @@ def plot_snapshot_heatmap(
     if snap.empty:
         raise ValueError("snapshot_heatmap: no rows after (channel,time) selection")
 
+    time_meta = summarize_time_usage(snap, time_col="time")
+    meta = {
+        "time_selection": {
+            "requested": float(time),
+            "tolerance": (None if tol is None else float(tol)),
+            "used": time_meta,
+        }
+    }
+
     # aggregate to a dense pivot (median is robust)
     pivot = snap.groupby([y_col, x_col], dropna=False)["value"].median().unstack(x_col)
 
@@ -129,7 +138,7 @@ def plot_snapshot_heatmap(
 
     # nothing to draw?
     if pivot.empty or pivot.shape[0] == 0 or pivot.shape[1] == 0:
-        return []
+        return [], meta
 
     with use_style(rc=(fig_kwargs or {}).get("rc")):
         fig, ax = new_fig_ax(fig_kwargs)
@@ -214,4 +223,4 @@ def plot_snapshot_heatmap(
         ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
         saved = [save_figure(fig, Path(output_dir), stub, ext=ext)]
         plt.close(fig)
-        return saved
+        return saved, meta

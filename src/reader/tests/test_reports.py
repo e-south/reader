@@ -79,3 +79,15 @@ def test_reports_reject_non_report_plugins(tmp_path: Path) -> None:
     spec = ReaderSpec.load(_write_cfg(tmp_path, payload))
     with pytest.raises(ConfigError):
         _validate_spec(spec)
+
+
+def test_pipeline_rejects_plot_plugin(tmp_path: Path) -> None:
+    payload = {
+        "experiment": {"outputs": "./outputs"},
+        "steps": [
+            {"id": "plot_step", "uses": "plot/time_series", "reads": {"df": "ingest/df"}},
+        ],
+    }
+    spec = ReaderSpec.load(_write_cfg(tmp_path, payload))
+    with pytest.raises(ConfigError):
+        _validate_spec(spec)

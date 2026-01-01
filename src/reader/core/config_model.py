@@ -59,14 +59,11 @@ class CollectionsSpec(RootModel[dict[str, dict[str, list[dict[str, list[str]]]]]
                 for item in groups:
                     if not isinstance(item, dict) or len(item) != 1:
                         raise ValueError(
-                            f"collections.{col}.{set_name} entries must be single-key dicts like "
-                            "{'Group': ['A','B']}"
+                            f"collections.{col}.{set_name} entries must be single-key dicts like {{'Group': ['A','B']}}"
                         )
                     _, members = next(iter(item.items()))
                     if not isinstance(members, list) or not all(isinstance(m, str) for m in members):
-                        raise ValueError(
-                            f"collections.{col}.{set_name} entries must map to list[str] values"
-                        )
+                        raise ValueError(f"collections.{col}.{set_name} entries must map to list[str] values")
         return v
 
 

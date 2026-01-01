@@ -13,7 +13,7 @@ import math
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -132,6 +132,26 @@ def nearest_time_per_key(
     idx = w.groupby(list(keys))["__dt__"].idxmin()
     picked = w.loc[idx].copy()
     return picked.loc[picked["__dt__"] <= float(tol)].drop(columns="__dt__")
+
+
+def summarize_time_usage(df: pd.DataFrame, *, time_col: str = "time", max_preview: int = 6) -> dict[str, Any] | None:
+    """
+    Summarize timepoints actually used in a filtered table.
+    Returns None if time_col is missing or empty after coercion.
+    """
+    if time_col not in df.columns:
+        return None
+    times = pd.to_numeric(df[time_col], errors="coerce").dropna()
+    if times.empty:
+        return None
+    uniq = sorted(times.astype(float).unique().tolist())
+    preview = uniq[: max(1, int(max_preview))]
+    return {
+        "min": float(min(uniq)),
+        "max": float(max(uniq)),
+        "unique_preview": [float(x) for x in preview],
+        "unique_count": int(len(uniq)),
+    }
 
 
 # -------------------- subplot layout + smart string ordering --------------------

@@ -11,6 +11,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -55,14 +56,12 @@ class WithColumns(Plugin):
                 raise TransformError(f"with_columns: column already exists: {col!r}")
             df[col] = value
 
-        try:
+        with contextlib.suppress(Exception):
             ctx.logger.info(
                 "with_columns • added=%d • mode=%s • columns=[%s]",
                 len(cfg.columns),
                 cfg.mode,
                 ", ".join(sorted(cfg.columns.keys())),
             )
-        except Exception:
-            pass
 
         return {"df": df}

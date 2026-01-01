@@ -8,15 +8,16 @@ Author(s): Eric J. South
 """
 
 import difflib
-import re  # used for friendly error parsing in run-step
 import json
-import yaml
+import re  # used for friendly error parsing in run-step
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import typer
+import yaml
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -28,8 +29,7 @@ from reader.core.artifacts import ArtifactStore
 from reader.core.config_model import ReaderSpec
 from reader.core.contracts import BUILTIN
 from reader.core.engine import explain as explain_job
-from reader.core.engine import explain_steps
-from reader.core.engine import run_job, run_reports
+from reader.core.engine import explain_steps, run_job, run_reports
 from reader.core.engine import validate as validate_job
 from reader.core.errors import (
     ArtifactError,
@@ -92,6 +92,7 @@ def _main(ctx: typer.Context) -> None:
         typer.echo(ctx.get_help())
         raise typer.Exit()
 
+
 _RUN_EXTRA_ARG = typer.Argument(
     None,
     metavar="[EXTRA]...",
@@ -99,6 +100,39 @@ _RUN_EXTRA_ARG = typer.Argument(
         "Optional tokens for the 'step N' form. "
         "Note: variadic positional arguments cannot have defaults (Click restriction)."
     ),
+)
+
+_INIT_PRESET_OPTION = typer.Option(
+    None,
+    "--preset",
+    "-p",
+    metavar="NAME",
+    help="Preset(s) to include in the config (repeatable).",
+)
+_INIT_REPORT_PRESET_OPTION = typer.Option(
+    None,
+    "--report-preset",
+    metavar="NAME",
+    help="Report preset(s) to include in the config (repeatable).",
+)
+_INIT_METADATA_OPTION = typer.Option(
+    None,
+    "--metadata",
+    metavar="KIND",
+    help="Optional metadata template: sample_map | sample_metadata.",
+)
+_TEMPLATE_PRESET_OPTION = typer.Option(
+    None,
+    "--preset",
+    "-p",
+    metavar="NAME",
+    help="Preset(s) to include when using --template (repeatable).",
+)
+_TEMPLATE_REPORT_PRESET_OPTION = typer.Option(
+    None,
+    "--report-preset",
+    metavar="NAME",
+    help="Report preset(s) to include when using --template (repeatable).",
 )
 
 LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
@@ -130,9 +164,7 @@ ERROR_HINTS: dict[type[Exception], str] = {
 def _normalize_log_level(level: str) -> str:
     lvl = level.strip().upper()
     if lvl not in LOG_LEVELS:
-        raise typer.BadParameter(
-            f"Invalid --log-level '{level}'. Use one of: DEBUG | INFO | WARNING | ERROR."
-        )
+        raise typer.BadParameter(f"Invalid --log-level '{level}'. Use one of: DEBUG | INFO | WARNING | ERROR.")
     return lvl
 
 
@@ -287,10 +319,16 @@ class MetadataKind(str, Enum):
 
 def _write_metadata_template(path: Path, kind: MetadataKind) -> None:
     if kind == MetadataKind.sample_map:
-        header = "position,design_id,treatment\n"
+        columns = ["position", "design_id", "treatment"]
     else:
-        header = "sample_id,design_id,treatment\n"
-    path.write_text(header, encoding="utf-8")
+        columns = ["sample_id", "design_id", "treatment"]
+
+    suffix = path.suffix.lower()
+    if suffix in {".xls", ".xlsx"}:
+        pd.DataFrame(columns=columns).to_excel(path, index=False)
+    else:
+        header = ",".join(columns) + "\n"
+        path.write_text(header, encoding="utf-8")
 
 
 @app.command(help="List built-in presets (or show details for one).")
@@ -354,25 +392,9 @@ def presets(
 )
 def init(
     path: str = typer.Argument(..., metavar="PATH", help="Target experiment directory to create."),
-    preset: list[str] = typer.Option(
-        None,
-        "--preset",
-        "-p",
-        metavar="NAME",
-        help="Preset(s) to include in the config (repeatable).",
-    ),
-    report_preset: list[str] = typer.Option(
-        None,
-        "--report-preset",
-        metavar="NAME",
-        help="Report preset(s) to include in the config (repeatable).",
-    ),
-    metadata: MetadataKind | None = typer.Option(
-        None,
-        "--metadata",
-        metavar="KIND",
-        help="Optional metadata template: sample_map | sample_metadata.",
-    ),
+    preset: list[str] = _INIT_PRESET_OPTION,
+    report_preset: list[str] = _INIT_REPORT_PRESET_OPTION,
+    metadata: MetadataKind | None = _INIT_METADATA_OPTION,
     force: bool = typer.Option(
         False,
         "--force",
@@ -391,9 +413,7 @@ def init(
 
         target = Path(path).resolve()
         if target.exists() and any(target.iterdir()) and not force:
-            raise typer.BadParameter(
-                f"Target directory is not empty: {target}. Use --force to overwrite config files."
-            )
+            raise typer.BadParameter(f"Target directory is not empty: {target}. Use --force to overwrite config files.")
         target.mkdir(parents=True, exist_ok=True)
 
         # Standard subdirs (always safe to create)
@@ -411,7 +431,7 @@ def init(
         cfg_path.write_text(cfg_text, encoding="utf-8")
 
         if metadata is not None:
-            meta_path = target / "metadata.csv"
+            meta_path = target / "metadata.xlsx"
             if meta_path.exists() and not force:
                 raise typer.BadParameter(f"{meta_path} already exists. Use --force to overwrite.")
             _write_metadata_template(meta_path, metadata)
@@ -601,19 +621,8 @@ def config(
         "--template",
         help="Print a minimal config template and exit (requires --preset).",
     ),
-    preset: list[str] = typer.Option(
-        None,
-        "--preset",
-        "-p",
-        metavar="NAME",
-        help="Preset(s) to include when using --template (repeatable).",
-    ),
-    report_preset: list[str] = typer.Option(
-        None,
-        "--report-preset",
-        metavar="NAME",
-        help="Report preset(s) to include when using --template (repeatable).",
-    ),
+    preset: list[str] = _TEMPLATE_PRESET_OPTION,
+    report_preset: list[str] = _TEMPLATE_REPORT_PRESET_OPTION,
 ):
     def _run():
         if schema:
@@ -631,9 +640,7 @@ def config(
                 describe_preset(p)
             for p in report_preset or []:
                 describe_preset(p)
-            typer.echo(
-                _render_config_yaml(presets=list(preset or []), report_presets=list(report_preset or []))
-            )
+            typer.echo(_render_config_yaml(presets=list(preset or []), report_presets=list(report_preset or [])))
             return
 
         job_path = _infer_job_path(_select_job_arg(job, config))
@@ -853,8 +860,7 @@ def report(
 
 @app.command(
     help=(
-        "List artifacts from outputs/manifest.json. "
-        "By default shows the latest revision; use --all for history counts."
+        "List artifacts from outputs/manifest.json. By default shows the latest revision; use --all for history counts."
     )
 )
 def artifacts(
@@ -944,11 +950,7 @@ def steps(
     return _handle_reader_errors(_run)
 
 
-@app.command(
-    help=(
-        "List discovered plugins (built-ins + entry points). Use --category to filter."
-    )
-)
+@app.command(help=("List discovered plugins (built-ins + entry points). Use --category to filter."))
 def plugins(
     category: str | None = typer.Option(
         None,
@@ -992,7 +994,7 @@ def contracts(
         None,
         metavar="[CONTRACT_ID]",
         help="Optional contract id to show full column rules.",
-    )
+    ),
 ):
     def _run():
         if name:

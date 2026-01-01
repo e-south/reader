@@ -113,7 +113,9 @@ class FlowCytometer(Plugin):
         try:
             if "raw" in inputs:
                 raw = inputs["raw"]
-                files = [Path(p) for p in (raw if isinstance(raw, Sequence) and not isinstance(raw, (str, Path)) else [raw])]
+                files = [
+                    Path(p) for p in (raw if isinstance(raw, Sequence) and not isinstance(raw, (str, Path)) else [raw])
+                ]
             else:
                 files = self._discover(ctx, cfg)
 

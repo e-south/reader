@@ -12,7 +12,7 @@ An experiment is a directory. Paths in `reads: file:...` are resolved relative t
 experiments/<year>/<yyyymmdd_shortslug>/
   config.yaml
   inputs/
-  metadata.csv
+  metadata.xlsx
   notebooks/
   outputs/
 ````
@@ -94,7 +94,9 @@ steps:
       case_insensitive: true
   - preset: plate_reader/blank_overflow
   - preset: plate_reader/ratios_yfp_cfp_od600
-  - preset: plots/plate_reader_yfp_full
+
+report_presets:
+  - plots/plate_reader_yfp_full
 ```
 
 ### Reports (optional)
@@ -184,7 +186,7 @@ steps:
     uses: "merge/sample_map"
     reads:
       df: "ingest/df"
-      sample_map: "file:./metadata.csv"
+      sample_map: "file:./metadata.xlsx"
 
   - id: "blank"
     uses: "transform/blank_correction"
@@ -229,8 +231,7 @@ reports:
       fig: { figsize: [10, 6], dpi: 300 }
 ```
 
-**Note:** Steps like `transform/sfxi` and `plot/logic_symmetry` (pipeline or reports) require `design_id` and `treatment`.  
-`batch` is optional; if it isn’t provided, a constant batch of `0` is assumed for grouping.
+**Note:** The `transform/sfxi` step and the `plot/logic_symmetry` report both require `design_id` and `treatment`.
 Use `validator/to_tidy_plus_map` after your metadata merge to emit `tidy+map.v2` before those steps.
 
 ### Collections + pool_sets (grouping helper)

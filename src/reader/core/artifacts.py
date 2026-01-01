@@ -222,6 +222,7 @@ class ReportStore:
         inputs: list[str],
         files: Any,
         config_digest: str,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         out_list: list[str] = []
         if files:
@@ -231,14 +232,15 @@ class ReportStore:
                 out_list = [self._relpath(Path(p)) for p in files]
         payload = self._read()
         payload.setdefault("reports", [])
-        payload["reports"].append(
-            {
-                "step_id": step_id,
-                "plugin": plugin_key,
-                "inputs": inputs,
-                "files": out_list,
-                "config_digest": config_digest,
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-        )
+        entry = {
+            "step_id": step_id,
+            "plugin": plugin_key,
+            "inputs": inputs,
+            "files": out_list,
+            "config_digest": config_digest,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        if meta:
+            entry["meta"] = meta
+        payload["reports"].append(entry)
         self._write(payload)

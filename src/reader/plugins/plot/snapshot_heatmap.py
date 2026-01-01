@@ -17,6 +17,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.microplates.snapshot_heatmap import plot_snapshot_heatmap
 
 
 class HeatmapCfg(PluginConfig):
@@ -49,12 +50,11 @@ class SnapshotHeatmapPlot(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+        return {"files": "none", "meta": "none"}
 
     def run(self, ctx, inputs, cfg: HeatmapCfg):
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
-        from reader.plotting.microplates.snapshot_heatmap import plot_snapshot_heatmap
 
         channel = str(cfg.channel)
         wants_fc = channel.startswith("FC_") or channel.startswith("log2FC_")
@@ -128,7 +128,7 @@ class SnapshotHeatmapPlot(Plugin):
             # For tidy mode, the library time chooser now logs & proceeds as well.
             filename = cfg.filename  # let the library default if not provided
             fig_kwargs.setdefault("cbar_label", _auto_cbar_label(channel, cfg.value_transform))
-        files = plot_snapshot_heatmap(
+        files, meta = plot_snapshot_heatmap(
             df=df,
             blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time", "channel", "value"]),
             output_dir=ctx.plots_dir,
@@ -146,4 +146,4 @@ class SnapshotHeatmapPlot(Plugin):
         )
         if not files:
             ctx.logger.warning("plot/snapshot_heatmap produced no files (empty data after filtering).")
-        return {"files": files}
+        return {"files": files, "meta": meta}

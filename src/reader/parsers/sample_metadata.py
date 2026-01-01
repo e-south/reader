@@ -19,10 +19,7 @@ def parse_sample_metadata(path: str, *, key: str = "sample_id") -> pd.DataFrame:
     """
     p = Path(path)
     suffix = p.suffix.lower()
-    if suffix in {".xls", ".xlsx"}:
-        df = pd.read_excel(p)
-    else:
-        df = pd.read_csv(p)
+    df = pd.read_excel(p) if suffix in {".xls", ".xlsx"} else pd.read_csv(p)
 
     cols = {c.lower(): c for c in df.columns}
     if key.lower() not in cols:
