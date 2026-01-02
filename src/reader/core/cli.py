@@ -7,11 +7,13 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
+import json
 import re  # used for friendly error parsing in run-step
 from datetime import datetime
 from pathlib import Path
 
 import typer
+import yaml
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -24,8 +26,8 @@ from reader.core.config_model import ReaderSpec
 from reader.core.engine import explain as explain_job
 from reader.core.engine import run_job
 from reader.core.engine import validate as validate_job
-from reader.core.errors import ConfigError, ExecutionError
-from reader.core.notebooks import write_experiment_eda_notebook
+from reader.core.errors import ConfigError, ExecutionError, ReaderError
+from reader.core.notebooks import list_notebook_presets, write_experiment_notebook
 from reader.core.presets import describe_preset, list_presets
 from reader.core.registry import _ensure_mpl_cache_dir, load_entry_points
 
@@ -46,8 +48,8 @@ app = typer.Typer(
     invoke_without_command=True,
     help=(
         "reader — experiment pipeline runner.\n\n"
-        "Run pipelines defined by config.yaml (steps + optional reports). "
-        "Use 'reader report' for plots/exports and 'reader explore' for notebooks. "
+        "Run pipelines defined by config.yaml (steps + optional deliverables). "
+        "Use 'reader deliverables' for plots/exports and 'reader explore' for notebooks. "
         "Start with 'reader demo' or 'reader ls'."
     ),
 )
@@ -88,6 +90,15 @@ def _table(title: str) -> Table:
         show_lines=False,
         show_edge=True,
     )
+
+
+def _abort(msg: str, *, code: int = 1) -> None:
+    console.print(Panel.fit(f"[error]✗ {msg}[/error]", border_style="error", box=box.ROUNDED))
+    raise typer.Exit(code=code)
+
+
+def _handle_reader_error(err: ReaderError) -> None:
+    _abort(str(err))
 
 
 @app.command(help="List presets or describe one.")
@@ -132,6 +143,16 @@ def explore(
         "--name",
         help="Notebook filename (created under experiments/<exp>/notebooks).",
     ),
+    preset: str = typer.Option(
+        "eda/basic",
+        "--preset",
+        help="Notebook preset (use --list-presets to see options).",
+    ),
+    list_presets: bool = typer.Option(
+        False,
+        "--list-presets",
+        help="List notebook presets and exit.",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -139,14 +160,26 @@ def explore(
     ),
 ):
     try:
+        if list_presets:
+            table = _table("Notebook presets")
+            table.add_column("Name", style="accent")
+            table.add_column("Description")
+            for preset_name, desc in list_notebook_presets():
+                table.add_row(preset_name, desc)
+            console.print(Panel(table, border_style="accent", box=box.ROUNDED))
+            return
         job_path = _infer_job_path(job)
         exp_dir = job_path.parent
         nb_dir = exp_dir / "notebooks"
         target = nb_dir / name
         has_fcs = any(p.suffix.lower() == ".fcs" for p in exp_dir.rglob("*.fcs"))
-        write_experiment_eda_notebook(target, overwrite=force)
+        write_experiment_notebook(target, preset=preset, overwrite=force)
         console.print(
-            Panel.fit(f"✓ Notebook created: [path]{target}[/path]", border_style="ok", box=box.ROUNDED)
+            Panel.fit(
+                f"✓ Notebook created: [path]{target}[/path]\n[muted]preset[/muted]: {preset}",
+                border_style="ok",
+                box=box.ROUNDED,
+            )
         )
         sync_cmd = "uv sync --locked --group notebooks"
         if has_fcs:
@@ -314,10 +347,13 @@ def explain(
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
 ):
-    job_path = _infer_job_path(job)
-    _append_journal(job_path, f"reader explain {job_path}")
-    spec = ReaderSpec.load(job_path)
-    explain_job(spec, console=console)
+    try:
+        job_path = _infer_job_path(job)
+        _append_journal(job_path, f"reader explain {job_path}")
+        spec = ReaderSpec.load(job_path)
+        explain_job(spec, console=console)
+    except ReaderError as e:
+        _handle_reader_error(e)
 
 
 @app.command(
@@ -330,10 +366,43 @@ def validate(
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
 ):
-    job_path = _infer_job_path(job)
-    _append_journal(job_path, f"reader validate {job_path}")
-    spec = ReaderSpec.load(job_path)
-    validate_job(spec, console=console)
+    try:
+        job_path = _infer_job_path(job)
+        _append_journal(job_path, f"reader validate {job_path}")
+        spec = ReaderSpec.load(job_path)
+        validate_job(spec, console=console)
+    except ReaderError as e:
+        _handle_reader_error(e)
+
+
+@app.command(help="Print the expanded config (presets + overrides applied).")
+def config(
+    job: str | None = typer.Argument(
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+    ),
+    format: str = typer.Option(
+        "yaml",
+        "--format",
+        metavar="FMT",
+        help="Output format: yaml | json (default: yaml).",
+    ),
+):
+    try:
+        job_path = _infer_job_path(job)
+        spec = ReaderSpec.load(job_path)
+    except ReaderError as e:
+        _handle_reader_error(e)
+    fmt = str(format).strip().lower()
+    payload = spec.model_dump(by_alias=True)
+    if fmt == "json":
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    if fmt == "yaml":
+        typer.echo(yaml.safe_dump(payload, sort_keys=False))
+        return
+    raise typer.BadParameter("format must be 'yaml' or 'json'")
 
 
 @app.command(help="Check that file inputs declared in reads: file: exist.")
@@ -344,12 +413,15 @@ def check_inputs(
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
 ):
-    job_path = _infer_job_path(job)
-    spec = ReaderSpec.load(job_path)
+    try:
+        job_path = _infer_job_path(job)
+        spec = ReaderSpec.load(job_path)
+    except ReaderError as e:
+        _handle_reader_error(e)
 
     exp_root = Path(spec.experiment.get("root", job_path.parent))
     entries: list[tuple[str, str, str, Path]] = []
-    for label, items in (("step", spec.steps), ("report", spec.reports or [])):
+    for label, items in (("step", spec.steps), ("deliverable", spec.deliverables or [])):
         for step in items:
             for key, target in (step.reads or {}).items():
                 if isinstance(target, str) and target.startswith("file:"):
@@ -388,7 +460,7 @@ def check_inputs(
 
 
 @app.command(
-    help="Run pipeline. Reports (plots/exports) run by default; use --no-reports for pipeline-only."
+    help="Run pipeline. Deliverables (plots/exports) run by default; use --no-deliverables for pipeline-only."
 )
 def run(
     job: str | None = typer.Argument(
@@ -432,10 +504,10 @@ def run(
         metavar="LEVEL",
         help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
     ),
-    reports: bool | None = typer.Option(
+    deliverables: bool | None = typer.Option(
         None,
-        "--reports/--no-reports",
-        help="Run report steps after the pipeline (default: on for full runs).",
+        "--deliverables/--no-deliverables",
+        help="Run deliverable steps after the pipeline (default: on for full runs).",
     ),
 ):
     # Normalize args & support sugar: 'reader run 14 11' and 'reader run 14 step 11'
@@ -467,37 +539,51 @@ def run(
 
     if selected_step and (resume_from or until):
         raise typer.BadParameter("--step/STEP cannot be combined with --resume-from/--until")
+    if selected_step and deliverables is not None:
+        raise typer.BadParameter("--deliverables/--no-deliverables cannot be used with --step/STEP.")
 
     if selected_step:
         # Convert possibly-numeric STEP into a concrete id
-        spec = ReaderSpec.load(job_path)
+        try:
+            spec = ReaderSpec.load(job_path)
+        except ReaderError as e:
+            _handle_reader_error(e)
         step_id = _resolve_step_id(spec, selected_step)
         parts += ["step", selected_step]
         if dry_run:
             parts += ["--dry-run"]
         if log_level and log_level != "INFO":
             parts += ["--log-level", log_level]
-        if reports is not None:
-            parts += ["--reports" if reports else "--no-reports"]
+        if deliverables is not None:
+            parts += ["--deliverables" if deliverables else "--no-deliverables"]
         _append_journal(job_path, " ".join(parts))
-        run_job(
-            job_path,
-            resume_from=step_id,
-            until=step_id,
-            dry_run=dry_run,
-            log_level=log_level,
-            console=console,
-            include_pipeline=True,
-            include_reports=False,
-        )
+        try:
+            run_job(
+                job_path,
+                resume_from=step_id,
+                until=step_id,
+                dry_run=dry_run,
+                log_level=log_level,
+                console=console,
+                include_pipeline=True,
+                include_deliverables=False,
+            )
+        except ReaderError as e:
+            _handle_reader_error(e)
         return
 
     # Accept numeric indices for --resume-from/--until as well
     if resume_from and resume_from.isdigit():
-        spec = ReaderSpec.load(job_path)
+        try:
+            spec = ReaderSpec.load(job_path)
+        except ReaderError as e:
+            _handle_reader_error(e)
         resume_from = _resolve_step_id(spec, resume_from)
     if until and until.isdigit():
-        spec = ReaderSpec.load(job_path)
+        try:
+            spec = ReaderSpec.load(job_path)
+        except ReaderError as e:
+            _handle_reader_error(e)
         until = _resolve_step_id(spec, until)
     if resume_from:
         parts += ["--resume-from", resume_from]
@@ -507,29 +593,32 @@ def run(
         parts += ["--dry-run"]
     if log_level and log_level != "INFO":
         parts += ["--log-level", log_level]
-    if reports is not None:
-        parts += ["--reports" if reports else "--no-reports"]
+    if deliverables is not None:
+        parts += ["--deliverables" if deliverables else "--no-deliverables"]
     _append_journal(job_path, " ".join(parts))
     # Pass our themed console down so engine can render pretty output & progress
-    include_reports = True if reports is None else reports
-    if reports is None and (resume_from or until):
-        include_reports = False
-    run_job(
-        job_path,
-        resume_from=resume_from,
-        until=until,
-        dry_run=dry_run,
-        log_level=log_level,
-        console=console,
-        include_pipeline=True,
-        include_reports=include_reports,
-    )
+    include_deliverables = True if deliverables is None else deliverables
+    if deliverables is None and (resume_from or until):
+        include_deliverables = False
+    try:
+        run_job(
+            job_path,
+            resume_from=resume_from,
+            until=until,
+            dry_run=dry_run,
+            log_level=log_level,
+            console=console,
+            include_pipeline=True,
+            include_deliverables=include_deliverables,
+        )
+    except ReaderError as e:
+        _handle_reader_error(e)
 
 
 @app.command(
-    help="Render report steps only (static plots/exports) using existing artifacts. Use --list to show steps."
+    help="Render deliverable steps only (static plots/exports) using existing artifacts. Use --list to show steps."
 )
-def report(
+def deliverables(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
@@ -538,12 +627,12 @@ def report(
     list_only: bool = typer.Option(
         False,
         "--list",
-        help="List report steps for this config and exit.",
+        help="List deliverable steps for this config and exit.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Plan only: validate and print the report plan without executing.",
+        help="Plan only: validate and print the deliverables plan without executing.",
     ),
     log_level: str = typer.Option(
         "INFO",
@@ -552,36 +641,51 @@ def report(
         help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
     ),
 ):
-    job_path = _infer_job_path(job)
-    spec = ReaderSpec.load(job_path)
+    try:
+        job_path = _infer_job_path(job)
+        spec = ReaderSpec.load(job_path)
+    except ReaderError as e:
+        _handle_reader_error(e)
     if list_only:
-        if not spec.reports:
-            console.print(Panel.fit("No reports configured.", border_style="warn", box=box.ROUNDED))
+        if not spec.deliverables:
+            console.print(Panel.fit("No deliverables configured.", border_style="warn", box=box.ROUNDED))
             return
-        t = _table("Reports")
+        t = _table("Deliverables")
         t.add_column("#", justify="right", style="muted")
         t.add_column("id", style="accent")
         t.add_column("uses")
-        for i, s in enumerate(spec.reports, 1):
+        for i, s in enumerate(spec.deliverables, 1):
             t.add_row(str(i), s.id, s.uses)
-        console.print(Panel(t, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(spec.reports)} total[/muted]"))
+        console.print(
+            Panel(
+                t,
+                border_style="accent",
+                box=box.ROUNDED,
+                subtitle=f"[muted]{len(spec.deliverables)} total[/muted]",
+            )
+        )
         return
-    if not spec.reports:
-        raise typer.BadParameter("No reports configured in this experiment. Add a reports section or report_presets.")
-    parts = ["reader report", str(job_path)]
+    if not spec.deliverables:
+        raise typer.BadParameter(
+            "No deliverables configured in this experiment. Add a deliverables section or deliverable_presets."
+        )
+    parts = ["reader deliverables", str(job_path)]
     if dry_run:
         parts += ["--dry-run"]
     if log_level and log_level != "INFO":
         parts += ["--log-level", log_level]
     _append_journal(job_path, " ".join(parts))
-    run_job(
-        job_path,
-        dry_run=dry_run,
-        log_level=log_level,
-        console=console,
-        include_pipeline=False,
-        include_reports=True,
-    )
+    try:
+        run_job(
+            job_path,
+            dry_run=dry_run,
+            log_level=log_level,
+            console=console,
+            include_pipeline=False,
+            include_deliverables=True,
+        )
+    except ReaderError as e:
+        _handle_reader_error(e)
 
 
 @app.command(
@@ -595,8 +699,15 @@ def artifacts(
     ),
     all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
 ):
-    spec = ReaderSpec.load(_infer_job_path(job))
-    store = ArtifactStore(Path(spec.experiment["outputs"]))
+    try:
+        spec = ReaderSpec.load(_infer_job_path(job))
+    except ReaderError as e:
+        _handle_reader_error(e)
+    outputs_dir = Path(spec.experiment["outputs"])
+    manifest_path = outputs_dir / "manifest.json"
+    if not manifest_path.exists():
+        _abort("No outputs/manifest.json found. Run 'reader run' first to produce artifacts.")
+    store = ArtifactStore(outputs_dir)
     man = store._read_manifest()
     if all:
         t = _table("Artifacts • history")
@@ -622,7 +733,10 @@ def steps(
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
 ):
-    spec = ReaderSpec.load(_infer_job_path(job))
+    try:
+        spec = ReaderSpec.load(_infer_job_path(job))
+    except ReaderError as e:
+        _handle_reader_error(e)
     t = _table("Steps")
     t.add_column("#", justify="right", style="muted")
     t.add_column("id", style="accent")
@@ -640,10 +754,13 @@ def plugins(
         None,
         "--category",
         metavar="NAME",
-        help="Filter by category: ingest | merge | transform | plot | export",
+        help="Filter by category: ingest | merge | transform | plot | export | validator",
     ),
 ):
-    reg = load_entry_points()
+    try:
+        reg = load_entry_points()
+    except ReaderError as e:
+        _handle_reader_error(e)
     cats = reg.categories()
     if category:
         cats = {category: cats.get(category, {})}
@@ -734,7 +851,7 @@ def _run_one_step_cli(which: str, job: str | None, *, dry_run: bool, log_level: 
             log_level=log_level,
             console=console,
             include_pipeline=True,
-            include_reports=False,
+            include_deliverables=False,
         )
     except ExecutionError as e:
         # Make common “artifact missing” errors friendlier.
@@ -797,7 +914,10 @@ def run_step(
     if not which:
         _print_missing_step_hint("reader run-step")
         raise typer.Exit(code=2)
-    _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
+    try:
+        _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
+    except ReaderError as e:
+        _handle_reader_error(e)
 
 
 @app.command(name="step", help="[alias] Same as 'run-step'. Run exactly one step by ID or index.")
@@ -810,7 +930,10 @@ def step_alias(
     if not which:
         _print_missing_step_hint("reader step")
         raise typer.Exit(code=2)
-    _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
+    try:
+        _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
+    except ReaderError as e:
+        _handle_reader_error(e)
 
 
 @app.command(help="Show a quick guided walkthrough.")
@@ -821,9 +944,9 @@ def demo():
         ("3", "Explain plan", "reader explain 1"),
         ("4", "Validate config", "reader validate 1"),
         ("5", "Check file inputs", "reader check-inputs 1"),
-        ("6", "Run pipeline + reports", "reader run 1"),
-        ("7", "Reports only (plots/exports)", "reader report 1"),
-        ("8", "List report steps", "reader report --list 1"),
+        ("6", "Run pipeline + deliverables", "reader run 1"),
+        ("7", "Deliverables only (plots/exports)", "reader deliverables 1"),
+        ("8", "List deliverable steps", "reader deliverables --list 1"),
         ("9", "Notebook scaffold (marimo)", "reader explore 1"),
         ("10", "See artifacts", "reader artifacts 1"),
     ]

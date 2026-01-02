@@ -1,10 +1,30 @@
-## reader pipelines (config.yaml)
+## Pipelines and deliverables (config.yaml)
 
-A `config.yaml` is the “repeatable” part of the workbench: it encodes steps you want to run the same way each time (parsing, metadata merges, common transforms), plus optional **reports** (plots/exports). Reports are deterministic deliverables; notebooks are for interactive exploration.
+A `config.yaml` is the repeatable part of the workbench: it defines pipeline steps you want to run the same way each time (parsing, metadata merges, common transforms), plus optional **deliverables** (plots/exports). Pipeline steps produce artifacts; deliverables render outputs from those artifacts. Notebooks are for interactive exploration.
 
-### The basics
+**Quick links**
 
-An experiment is a directory. Paths in `reads: file:...` are resolved relative to the config file.
+- [README](../README.md)
+- [CLI reference](./cli.md)
+- [Notebooks](./notebooks.md)
+- [Plugin development](./plugins.md)
+- [Spec / architecture](./spec.md)
+- [Marimo notebook reference](./marimo_reference.md)
+- [End-to-end demo](./demo.md)
+- [Outputs and revisions](#outputs-and-revisions)
+- [Config keys](#config-keys-single-page-glance)
+- [Example config](#example-config)
+
+### Mental model
+
+- An experiment is a directory (inputs + config + outputs).
+- Steps run in order and write versioned artifacts into `outputs/artifacts/`.
+- Deliverables read artifacts and write plots/exports (tracked in `deliverables_manifest.json`).
+- Notebooks are optional and read from the same outputs.
+
+Paths in `reads: file:...` are resolved relative to the config file.
+
+### Directory layout
 
 ```bash
 experiments/<exp>/
@@ -14,22 +34,15 @@ experiments/<exp>/
   outputs/
 ```
 
-Run the pipeline:
+### Where commands live
 
-```bash
-uv run reader demo
-uv run reader explain  experiments/<exp>/config.yaml
-uv run reader validate experiments/<exp>/config.yaml
-uv run reader check-inputs experiments/<exp>/config.yaml   # verify reads: file: inputs exist
-uv run reader run      experiments/<exp>/config.yaml        # runs pipeline + reports
-uv run reader run      experiments/<exp>/config.yaml --no-reports
-uv run reader report   experiments/<exp>/config.yaml        # reports only (uses existing artifacts)
-uv run reader explore  experiments/<exp>/config.yaml        # scaffold marimo notebook for EDA
-```
+Command usage is documented in [docs/cli.md](./cli.md), and an end‑to‑end example lives in
+[docs/demo.md](./demo.md). A typical loop is:
 
-Use `reader report` to render plots/exports from the **reports** section (add `--list` to show report steps),
-and `reader explore` to scaffold a notebook (no execution) for interactive analysis. `reader validate` only checks
-config + plugin params; it does not touch input files or data.
+1) `reader explain` → sanity check the plan  
+2) `reader validate` → config + plugin params  
+3) `reader run` → artifacts + deliverables  
+4) `reader deliverables` → re-render plots/exports
 
 ### Outputs: artifacts + revisions
 
@@ -38,7 +51,7 @@ config + plugin params; it does not touch input files or data.
 ```bash
 outputs/
   manifest.json
-  report_manifest.json
+  deliverables_manifest.json
   reader.log
   artifacts/
     <step_id>.<plugin_key>/        # first revision
@@ -51,11 +64,7 @@ outputs/
   exports/                         # optional; only if export steps write files
 ```
 
-Use:
-
-```bash
-uv run reader artifacts experiments/<exp>/config.yaml
-```
+See [docs/cli.md](./cli.md) for the `reader artifacts` command.
 
 ### Config keys (single-page glance)
 
@@ -68,15 +77,15 @@ uv run reader artifacts experiments/<exp>/config.yaml
 | `experiment.plots_dir` | string/null | no | Subdir for plots under outputs (null/"" = outputs root). |
 | `runtime.strict` | bool | no | Fail on contract/validation errors (default true). |
 | `steps` | list | yes | Pipeline steps (ingest/merge/transform/validate). |
-| `reports` | list | no | Report steps (plots/exports). |
-| `report_presets` | list | no | Preset bundles for reports. |
-| `report_overrides` | map | no | Per-report step overrides by id. |
+| `deliverables` | list | no | Deliverable steps (plots/exports). |
+| `deliverable_presets` | list | no | Preset bundles for deliverables. |
+| `deliverable_overrides` | map | no | Per-deliverable step overrides by id. |
 | `overrides` | map | no | Per-step overrides by id (pipeline steps). |
 | `collections` | map | no | Named groupings (used by some plots). |
 
 ### Example config
 
-Below is an example configuration showing a Synergy H1 ingest, sample-map merge, a small transform chain, and a report preset.
+Below is an example configuration showing a Synergy H1 ingest, sample-map merge, a small transform chain, and a deliverable preset.
 
 How to interpret the configuration:
 
@@ -87,8 +96,9 @@ How to interpret the configuration:
   * a prior output (`<step_id>/<output>`, e.g. `ingest/df`)
   * a file path: `file:./something.xlsx`
 * `with:` is plugin-specific configuration.
+* `writes:` optionally maps plugin outputs to stable artifact labels (decouples downstream steps from step ids). Downstream `reads:` must reference the mapped label.
 * `preset:` expands to one or more steps (use for shared bundles).
-* `overrides:` / `report_overrides:` apply per-step config overrides by id.
+* `overrides:` / `deliverable_overrides:` apply per-step config overrides by id.
 
 ```yaml
 experiment:
@@ -138,42 +148,32 @@ steps:
     reads: { df: "ratio_yfp_cfp/df" }
     with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
 
-report_presets:
+deliverable_presets:
   - plots/plate_reader_yfp_full
 
-reports:
+deliverables:
   - id: export_ratios
     uses: export/csv
     reads: { df: "ratio_yfp_od600/df" }
     with: { path: "exports/ratio_yfp_od600.csv" }
 
-report_overrides:
+deliverable_overrides:
   snapshot_bars_by_channel:
     with:
       time: 14.0
+```
 
 Notes:
 - Snapshot plots require an explicit `time` (and `snap_time` for `plot/ts_and_snap`).
-- Use `reader report --list <config>` to list report steps for a config.
-- `report_presets` is a shortcut for common report bundles; add or override steps under `reports`/`report_overrides`.
+- `deliverable_presets` is a shortcut for common deliverable bundles; add or override steps under `deliverables`/`deliverable_overrides`.
+- `reads` labels must refer to outputs from prior steps (or `file:`). If you use `writes`, make sure downstream steps read the new label.
+- Output labels must be unique across steps; use `writes` to avoid accidental clobbering.
 
-You can list available presets with:
+### Deliverables vs notebooks
 
-```bash
-uv run reader presets
-```
-```
-
-### Running slices
-
-Useful during iteration:
-
-```bash
-uv run reader run <CONFIG> --dry-run
-uv run reader run <CONFIG> --step 1
-uv run reader run <CONFIG> --resume-from ingest --until merge_map
-uv run reader run-step merge_map --config <CONFIG>
-```
+Deliverables are deterministic outputs (plots/exports) that run from existing artifacts. Notebooks are interactive and can
+mix ad-hoc analysis with saved outputs. Use `reader explore` to scaffold a notebook with the right paths and manifest
+lookups for an experiment.
 
 ---
 

@@ -46,10 +46,29 @@ class RatioTransform(Plugin):
         for extra in ("sheet_index", "sheet_name", "source"):
             if extra in df.columns and extra not in key:
                 key.append(extra)
+        if not key:
+            available = sorted(set(df.columns))
+            raise ValueError(
+                "ratio: none of align_on columns are present in the input.\n"
+                f"  align_on: {cfg.align_on}\n"
+                f"  available: {available}"
+            )
 
         # Partition numerator/denominator; keep ALL metadata on numerator side
         lhs = df[df["channel"] == cfg.numerator].rename(columns={"value": "__num__"}).copy()
         rhs = df[df["channel"] == cfg.denominator].rename(columns={"value": "__den__"}).copy()
+        if lhs.empty or rhs.empty:
+            available = sorted(df["channel"].dropna().astype(str).unique().tolist())
+            missing = []
+            if lhs.empty:
+                missing.append(cfg.numerator)
+            if rhs.empty:
+                missing.append(cfg.denominator)
+            raise ValueError(
+                "ratio: requested channel(s) missing from input.\n"
+                f"  missing: {missing}\n"
+                f"  available: {available}"
+            )
 
         # Keep only join keys + denominator on RHS to avoid suffix collisions
         rhs = rhs[key + ["__den__"]]

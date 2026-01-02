@@ -42,7 +42,7 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plate_reader/blank_overflow": {
-        "description": "Blank correction + overflow handling.",
+        "description": "Blank correction + overflow handling (expects aliases/df; override reads if needed).",
         "steps": [
             {"id": "blank", "uses": "transform/blank_correction", "reads": {"df": "aliases/df"}},
             {"id": "overflow", "uses": "transform/overflow_handling", "reads": {"df": "blank/df"}},
@@ -114,7 +114,7 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_yfp_full": {
-        "description": "YFP plate reader report set (time series + snapshots + TS+snap).",
+        "description": "YFP plate reader deliverable set (time series + snapshots + TS+snap).",
         "steps": [
             {
                 "id": "plot_time_series",
@@ -166,7 +166,7 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_yfp_time_series": {
-        "description": "YFP plate reader time-series + distributions report set.",
+        "description": "YFP plate reader time-series + distributions deliverable set.",
         "steps": [
             {
                 "id": "plot_time_series",
@@ -218,7 +218,7 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_rfp_full": {
-        "description": "RFP plate reader report set (time series + snapshots + TS+snap).",
+        "description": "RFP plate reader deliverable set (time series + snapshots + TS+snap).",
         "steps": [
             {
                 "id": "plot_time_series",

@@ -9,6 +9,12 @@ Built-in plugins live under:
 src/reader/plugins/<category>/
 ```
 
+See also:
+- [Pipeline config and deliverables](./pipeline.md)
+- [CLI reference](./cli.md)
+- [Spec / architecture](./spec.md)
+- [Marimo notebook reference](./marimo_reference.md)
+
 ### New ingest (new instrument/file format)
 
 Keep parsing logic in `io/`:
@@ -61,6 +67,38 @@ Use it in an experiment:
   reads: { raw: "file:./inputs/run001.ext" }
 ```
 
+### Built-in cytometry ingest (FCS)
+
+For flow cytometry `.fcs` files, use `ingest/flow_cytometer`. It emits a tidy table with:
+- `sample_id` (from filename) and `position` = `sample_id`
+- `time` set to a constant (default `0.0`, since cytometry is snapshot data)
+- long-form `channel` / `value` pairs per event
+
+Example:
+
+```yaml
+- id: ingest_cytometer
+  uses: ingest/flow_cytometer
+  with:
+    auto_roots: ["./inputs"]
+    channel_name_field: "pns"
+    auto_pick: "merge"
+```
+
+To attach metadata keyed by `sample_id`:
+
+```yaml
+- id: merge_metadata
+  uses: merge/sample_metadata
+  reads:
+    df: "ingest_cytometer/df"
+    metadata: "file:./metadata.csv"
+  with:
+    require_columns: ["design_id", "treatment"]
+```
+
+Note: install cytometry extras with `uv sync --locked --group cytometry`.
+
 ### New transform (operate on a tidy table)
 
 ```python
@@ -90,27 +128,28 @@ class ScaleValues(Plugin):
         return {"df": df}
 ```
 
-### New report (plot/export)
+### New deliverable (plot/export)
 
-Report steps live under `reports:` in config (optionally bundled via
-`report_presets` + `report_overrides`) and are run by `reader report`
-(or automatically after `reader run` unless `--no-reports` is set).
+Deliverable steps live under `deliverables:` in config (optionally bundled via
+`deliverable_presets` + `deliverable_overrides`) and are run by `reader deliverables`
+(or automatically after `reader run` unless `--no-deliverables` is set).
 
 Guidelines:
-- Report plugins should be deterministic and pure: read declared inputs, write files.
+- Deliverable plugins should be deterministic and pure: read declared inputs, write files.
 - Avoid experiment‑specific logic inside plot plugins; keep bespoke logic in `lib/`.
 - Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
 - Plot steps are assertive: missing required columns raise an error; empty selections emit a warning and skip.
-- Report outputs are tracked in `outputs/report_manifest.json`.
+- Deliverable outputs are tracked in `outputs/deliverables_manifest.json`.
 
 Common plot config knobs (shared across most plot plugins):
 - `filename`: override the output filename stub.
 - `fig.ext`: file extension (default `pdf`).
 - `fig.dpi`: raster resolution for PNGs (ignored for vector PDFs).
 
-Inspect plot/export plugins:
+Inspect plugins:
 
 ```bash
+uv run reader plugins
 uv run reader plugins --category plot
 uv run reader plugins --category export
 ```
@@ -122,13 +161,6 @@ Example export step:
   uses: "export/csv"
   reads: { df: "sfxi_vec8/df" }
   with: { path: "exports/sfxi_vec8.csv" }
-```
-
-### Inspect what’s available
-
-```bash
-uv run reader plugins
-uv run reader plugins --category transform
 ```
 
 ---

@@ -70,7 +70,7 @@ class ArtifactStore:
         else:
             self.plots_dir = self.root / plots_subdir
         self.manifest_path = self.root / "manifest.json"
-        self.report_manifest_path = self.root / "report_manifest.json"
+        self.deliverables_manifest_path = self.root / "deliverables_manifest.json"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         if self.plots_dir != self.root:
             self.plots_dir.mkdir(parents=True, exist_ok=True)
@@ -84,21 +84,23 @@ class ArtifactStore:
     def _write_manifest(self, payload: dict[str, Any]) -> None:
         self.manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    # -------------- report manifest --------------
-    def _read_report_manifest(self) -> dict[str, Any]:
-        if not self.report_manifest_path.exists():
-            return {"schema_version": 1, "reports": []}
-        return json.loads(self.report_manifest_path.read_text(encoding="utf-8"))
+    # -------------- deliverables manifest --------------
+    def _read_deliverables_manifest(self) -> dict[str, Any]:
+        if not self.deliverables_manifest_path.exists():
+            return {"schema_version": 1, "deliverables": []}
+        return json.loads(self.deliverables_manifest_path.read_text(encoding="utf-8"))
 
-    def _write_report_manifest(self, payload: dict[str, Any]) -> None:
-        self.report_manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    def _write_deliverables_manifest(self, payload: dict[str, Any]) -> None:
+        self.deliverables_manifest_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
-    def append_report_entry(self, entry: dict[str, Any]) -> None:
-        manifest = self._read_report_manifest()
+    def append_deliverable_entry(self, entry: dict[str, Any]) -> None:
+        manifest = self._read_deliverables_manifest()
         manifest.setdefault("schema_version", 1)
-        manifest.setdefault("reports", [])
-        manifest["reports"].append(entry)
-        self._write_report_manifest(manifest)
+        manifest.setdefault("deliverables", [])
+        manifest["deliverables"].append(entry)
+        self._write_deliverables_manifest(manifest)
 
     # -------------- helpers --------------
     def _revision_dir(self, step_dir: Path) -> Path:
@@ -140,6 +142,7 @@ class ArtifactStore:
         step_id: str,
         plugin_key: str,
         out_name: str,
+        label: str,
         df: pd.DataFrame,
         contract_id: str,
         inputs: list[str],
@@ -150,7 +153,6 @@ class ArtifactStore:
         base = f"{step_id}.{plugin_key}"
         step_dir = self.artifacts_dir / base
         man = self._read_manifest()
-        label = f"{step_id}/{out_name}"
         prev = man["artifacts"].get(label)
 
         if prev:
@@ -178,6 +180,7 @@ class ArtifactStore:
         content_digest = _sha256_bytes(data_path.read_bytes())
         meta = {
             "artifact_id": f"{base}/{out_name}",
+            "label": label,
             "contract": contract_id,
             "schema_version": 1,
             "created_at": datetime.now(UTC).isoformat(),

@@ -31,6 +31,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 
 from reader.core.artifacts import ArtifactStore
 from reader.core.config_model import ReaderSpec
@@ -103,7 +104,10 @@ def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, An
     for label, target in reads.items():
         if isinstance(target, str) and target.startswith("file:"):
             # pass through file path; plugin validates
-            inputs[label] = Path(target.split("file:", 1)[1])
+            path = Path(target.split("file:", 1)[1])
+            if not path.exists():
+                raise ExecutionError(f"Input file missing for '{label}': {path}")
+            inputs[label] = path
         else:
             art = store.read(target)
             inputs[label] = art
@@ -112,9 +116,11 @@ def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, An
 
 def _assert_input_contracts(plugin: Plugin, inputs: dict[str, Any], *, where: str) -> None:
     req = plugin.input_contracts()
+    allowed: set[str] = set()
     for raw_name, contract_id in req.items():
         optional = raw_name.endswith("?")
         name = raw_name[:-1] if optional else raw_name
+        allowed.add(name)
         if name not in inputs:
             if optional:
                 continue
@@ -126,6 +132,9 @@ def _assert_input_contracts(plugin: Plugin, inputs: dict[str, Any], *, where: st
             raise ExecutionError(
                 f"[{where}] input '{name}' must be contract {contract_id} but got {getattr(inp, 'contract_id', None)}"
             )
+    extra = sorted(set(inputs) - allowed)
+    if extra:
+        raise ExecutionError(f"[{where}] unexpected inputs provided: {extra} (allowed: {sorted(allowed)})")
 
 
 def _assert_output_contracts(plugin: Plugin, outputs: dict[str, Any], *, where: str) -> None:
@@ -142,10 +151,35 @@ def _assert_output_contracts(plugin: Plugin, outputs: dict[str, Any], *, where: 
             validate_df(val, contract, where=where)
 
 
+def _resolve_output_labels(
+    *, step_id: str, output_contracts: dict[str, str], writes: dict[str, str]
+) -> dict[str, str]:
+    unknown = sorted(set(writes) - set(output_contracts))
+    if unknown:
+        raise ExecutionError(
+            f"[{step_id}] writes includes unknown outputs: {unknown} (expected: {sorted(output_contracts)})"
+        )
+    labels: dict[str, str] = {}
+    for out_name, cid in output_contracts.items():
+        if out_name in writes:
+            if cid == "none":
+                raise ExecutionError(f"[{step_id}] writes cannot target output '{out_name}' (contract is 'none').")
+            label = writes[out_name]
+        else:
+            label = f"{step_id}/{out_name}"
+        if not isinstance(label, str) or not label.strip():
+            raise ExecutionError(f"[{step_id}] writes for '{out_name}' must be a non-empty string.")
+        labels[out_name] = label
+    if len(set(labels.values())) != len(labels):
+        raise ExecutionError(f"[{step_id}] writes produce duplicate output labels: {labels}")
+    return labels
+
+
 def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
     table = Table(
-        title=f"[title]{title}[/title]",
+        title=title,
         title_justify="left",
+        title_style="bold cyan",
         header_style="bold",
         box=box.ROUNDED,
         expand=True,
@@ -159,28 +193,35 @@ def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
     for i, step in enumerate(steps, 1):
         P = registry.resolve(step.uses)
         inp = ", ".join(f"{k}:{v}" for k, v in P.input_contracts().items())
-        out = ", ".join(f"{k}:{v}" for k, v in P.output_contracts().items())
+        out = ", ".join(
+            f"{step.writes.get(k, f'{step.id}/{k}')}:{v}" for k, v in P.output_contracts().items()
+        )
         table.add_row(str(i), step.id, step.uses, inp, out)
     return table
 
 
 def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
     steps = list(spec.steps)
-    reports = list(spec.reports or [])
-    registry = registry or load_entry_points(categories=_collect_categories(steps + reports))
+    deliverables = list(spec.deliverables or [])
+    registry = registry or load_entry_points(categories=_collect_categories(steps + deliverables))
     if steps:
         pipeline = _plan_table(steps, registry, title="Pipeline")
         console.print(
-            Panel(pipeline, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(steps)} steps[/muted]")
+            Panel(
+                pipeline,
+                border_style="cyan",
+                box=box.ROUNDED,
+                subtitle=Text(f"{len(steps)} steps", style="dim"),
+            )
         )
-    if reports:
-        report_table = _plan_table(reports, registry, title="Reports")
+    if deliverables:
+        deliverables_table = _plan_table(deliverables, registry, title="Deliverables")
         console.print(
             Panel(
-                report_table,
-                border_style="accent",
+                deliverables_table,
+                border_style="cyan",
                 box=box.ROUNDED,
-                subtitle=f"[muted]{len(reports)} steps[/muted]",
+                subtitle=Text(f"{len(deliverables)} steps", style="dim"),
             )
         )
 
@@ -188,35 +229,95 @@ def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
 def validate(spec: ReaderSpec, *, console: Console) -> None:
     # schema already validated by pydantic; here we ensure contracts exist
     steps = list(spec.steps)
-    reports = list(spec.reports or [])
-    registry = load_entry_points(categories=_collect_categories(steps + reports))
+    deliverables = list(spec.deliverables or [])
+    registry = load_entry_points(categories=_collect_categories(steps + deliverables))
 
-    def _validate_steps(items: list[Any], label: str) -> None:
+    def _validate_steps(items: list[Any], label: str, *, available_labels: set[str] | None = None) -> set[str]:
+        available = set(available_labels or set())
+        produced: set[str] = set()
         for step in items:
             uses = step.uses
             try:
                 plugin_cls = registry.resolve(uses)
             except Exception as e:
                 raise ConfigError(f"{label} {step.id}: {e}") from e
+            # check reads against declared inputs
+            try:
+                req = plugin_cls.input_contracts()
+                expected = set()
+                required = set()
+                for raw_name in req:
+                    optional = raw_name.endswith("?")
+                    name = raw_name[:-1] if optional else raw_name
+                    expected.add(name)
+                    if not optional:
+                        required.add(name)
+                provided = set((step.reads or {}).keys())
+                missing = sorted(required - provided)
+                extra = sorted(provided - expected)
+                if missing or extra:
+                    parts = []
+                    if missing:
+                        parts.append(f"missing inputs: {missing}")
+                    if extra:
+                        parts.append(f"unexpected inputs: {extra}")
+                    raise ConfigError(f"{label} {step.id}: reads do not match plugin inputs ({'; '.join(parts)})")
+            except ConfigError:
+                raise
+            except Exception as e:
+                raise ConfigError(f"{label} {step.id}: could not validate reads: {e}") from e
+            # check reads reference earlier outputs (or file:)
+            for key, target in (step.reads or {}).items():
+                if isinstance(target, str) and target.startswith("file:"):
+                    continue
+                if target not in (available | produced):
+                    preview = sorted(available | produced)
+                    shown = ", ".join(preview[:12]) if preview else "—"
+                    tail = " …" if len(preview) > 12 else ""
+                    raise ConfigError(
+                        f"{label} {step.id}: reads '{key}' → '{target}', which is not produced by any prior step. "
+                        f"Known labels so far: {shown}{tail}. "
+                        "Check writes/reads aliases or use file: paths."
+                    )
             # validate config model
             try:
                 plugin_cls.ConfigModel.model_validate(step.with_ or {})
             except Exception as e:
                 raise ConfigError(f"{label} {step.id}: invalid config for {uses}: {e}") from e
+            try:
+                output_contracts = plugin_cls.output_contracts()
+                output_labels = _resolve_output_labels(
+                    step_id=step.id,
+                    output_contracts=output_contracts,
+                    writes=(step.writes or {}),
+                )
+            except ExecutionError as e:
+                raise ConfigError(f"{label} {step.id}: {e}") from e
+            for out_name, out_label in output_labels.items():
+                if output_contracts[out_name] == "none":
+                    continue
+                if out_label in available or out_label in produced:
+                    raise ConfigError(
+                        f"{label} {step.id}: output label '{out_label}' is already produced by another step. "
+                        "Use a unique writes mapping to avoid clobbering artifacts."
+                    )
+                produced.add(out_label)
 
-    _validate_steps(steps, "step")
-    if reports:
-        _validate_steps(reports, "report")
+        return available | produced
+
+    pipeline_labels = _validate_steps(steps, "step")
+    if deliverables:
+        _validate_steps(deliverables, "deliverable", available_labels=pipeline_labels)
 
     lines = [
-        "[ok]✓ Config validated[/ok]",
-        f"[muted]steps[/muted]: {len(steps)}",
-        f"[muted]reports[/muted]: {len(reports)}",
-        "[muted]checks[/muted]: schema, plugin availability, plugin config",
-        "[muted]not checked[/muted]: input files, data contents",
-        "[muted]tip[/muted]: use 'reader explain' to see inputs/outputs",
+        "[green]✓ Config validated[/green]",
+        f"[dim]steps[/dim]: {len(steps)}",
+        f"[dim]deliverables[/dim]: {len(deliverables)}",
+        "[dim]checks[/dim]: schema, plugin availability, reads, output labels, plugin config",
+        "[dim]not checked[/dim]: input files, data contents",
+        "[dim]tip[/dim]: use 'reader explain' to see inputs/outputs",
     ]
-    console.print(Panel.fit("\n".join(lines), border_style="ok", box=box.ROUNDED))
+    console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
 
 
 def run_job(
@@ -228,7 +329,7 @@ def run_job(
     log_level: str = "INFO",
     console: Console | None = None,
     include_pipeline: bool = True,
-    include_reports: bool = True,
+    include_deliverables: bool = True,
 ) -> None:
     os.environ.setdefault("ARROW_LOG_LEVEL", "FATAL")
     spec = ReaderSpec.load(spec_path)
@@ -275,10 +376,10 @@ def run_job(
             except StopIteration:
                 raise ConfigError(f"--until: step id '{until}' not found") from None
 
-    reports = list(spec.reports or [])
-    if not include_reports:
-        reports = []
-    all_steps = steps + reports
+    deliverables = list(spec.deliverables or [])
+    if not include_deliverables:
+        deliverables = []
+    all_steps = steps + deliverables
 
     if any(getattr(step, "uses", "").startswith("plot/") for step in all_steps):
         _ensure_mpl_cache_dir(base_dir=out_dir)
@@ -322,8 +423,8 @@ def run_job(
     registry = load_entry_points(categories=_collect_categories(all_steps))
 
     if dry_run:
-        console.print(Panel.fit("DRY RUN — printing plan", border_style="warn", box=box.ROUNDED))
-        spec_slice = spec.model_copy(update={"steps": steps, "reports": reports})
+        console.print(Panel.fit("DRY RUN — printing plan", border_style="yellow", box=box.ROUNDED))
+        spec_slice = spec.model_copy(update={"steps": steps, "deliverables": deliverables})
         explain(spec_slice, console=console, registry=registry)
         return
 
@@ -346,7 +447,13 @@ def run_job(
                 plugin_cls = registry.resolve(step.uses)
                 cfg = plugin_cls.ConfigModel.model_validate(step.with_ or {})
                 plugin = plugin_cls()
-                pre_plot_state = _snapshot_dir(ctx.plots_dir) if phase == "reports" else {}
+                output_contracts = plugin.output_contracts()
+                output_labels = _resolve_output_labels(
+                    step_id=step.id,
+                    output_contracts=output_contracts,
+                    writes=(step.writes or {}),
+                )
+                pre_plot_state = _snapshot_dir(ctx.plots_dir) if phase == "deliverables" else {}
 
                 # collect & check inputs
                 inputs = _resolve_inputs(store, step.reads or {})
@@ -373,12 +480,13 @@ def run_job(
 
                 # persist outputs
                 for out_name, obj in outputs.items():
-                    cid = plugin.output_contracts()[out_name]
+                    cid = output_contracts[out_name]
                     if isinstance(obj, pd.DataFrame) and cid != "none":
                         store.persist_dataframe(
                             step_id=step.id,
                             plugin_key=plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
                             out_name=out_name,
+                            label=output_labels[out_name],
                             df=obj,
                             contract_id=cid,
                             inputs=[
@@ -393,7 +501,7 @@ def run_job(
                     else:
                         raise ExecutionError(f"{phase[:-1]} {step.id}: unsupported output type for {out_name}")
 
-                if phase == "reports":
+                if phase == "deliverables":
                     post_plot_state = _snapshot_dir(ctx.plots_dir)
                     plot_files = _diff_files(pre_plot_state, post_plot_state)
                     file_outputs = outputs.get("files")
@@ -422,20 +530,20 @@ def run_job(
                         ],
                         "files": sorted(rel_files),
                     }
-                    store.append_report_entry(entry)
+                    store.append_deliverable_entry(entry)
 
                 progress.advance(task)
 
     ctx.logger.info(
-        "run • pipeline=%d step(s)%s • reports=%d step(s)",
+        "run • pipeline=%d step(s)%s • deliverables=%d step(s)",
         len(steps),
         " (skipped)" if (not include_pipeline) else "",
-        len(reports),
+        len(deliverables),
     )
-    if include_pipeline and (not include_reports) and spec.reports:
-        ctx.logger.info("reports skipped • use `reader report` or `reader run --reports`")
+    if include_pipeline and (not include_deliverables) and spec.deliverables:
+        ctx.logger.info("deliverables skipped • use `reader deliverables` or `reader run --deliverables`")
     _run_steps(steps, phase="steps")
-    if reports:
-        _run_steps(reports, phase="reports")
+    if deliverables:
+        _run_steps(deliverables, phase="deliverables")
 
-    console.print(Panel.fit(f"✓ Done — outputs in [path]{str(out_dir)}[/path]", border_style="ok", box=box.ROUNDED))
+    console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))

@@ -163,12 +163,7 @@ class SynergyH1(Plugin):
     # ---------- run ----------
 
     def run(self, ctx, inputs, cfg: SynergyH1UnifiedCfg):
-        # Back-compat shims depending on plugin key (no silent fallbacks in parse logic)
         effective_mode = cfg.mode
-        if getattr(self, "key", "") == "synergy_h1_kinetic" and cfg.mode == "auto":
-            effective_mode = "kinetic_only"
-        if getattr(self, "key", "") == "synergy_h1_snapshot_and_timeseries" and cfg.mode == "auto":
-            effective_mode = "mixed"
 
         try:
             files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)

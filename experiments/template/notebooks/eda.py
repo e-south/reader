@@ -9,7 +9,9 @@ def _():
     import json
     from pathlib import Path
     import duckdb
-    return mo, json, Path, duckdb
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    return mo, json, Path, duckdb, pd, plt
 
 @app.cell
 def _(Path, mo):
@@ -26,19 +28,33 @@ def _(Path, mo):
     outputs_dir = exp_dir / "outputs"
     manifest_path = outputs_dir / "manifest.json"
     plots_dir = outputs_dir / "plots"
+    deliverables_manifest_path = outputs_dir / "deliverables_manifest.json"
+    return exp_dir, outputs_dir, manifest_path, plots_dir, deliverables_manifest_path
 
+@app.cell
+def _(exp_dir, mo):
+    title = mo.ui.text(value=exp_dir.name, label="Title")
+    design_keys = mo.ui.text(value="design_id", label="Design keys (comma-separated)")
+    treatment_keys = mo.ui.text(value="treatment", label="Treatment keys (comma-separated)")
+    notes = mo.ui.text_area(value="", label="Notes", full_width=True)
+    return design_keys, notes, title, treatment_keys
+
+@app.cell
+def _(design_keys, exp_dir, mo, notes, title, treatment_keys):
+    notes_text = (notes.value or "").strip()
+    notes_block = f"\n\n**Notes:** {notes_text}" if notes_text else ""
     mo.md(
         f"""# Reader EDA
 
 **Experiment:** `{exp_dir.name}`
-
-Artifacts and plots are loaded from `{outputs_dir}`.
+**Design keys:** `{design_keys.value}`
+**Treatment keys:** `{treatment_keys.value}`{notes_block}
 """
     )
-    return exp_dir, outputs_dir, manifest_path, plots_dir
+    return
 
 @app.cell
-def _(json, manifest_path, mo, outputs_dir, plots_dir):
+def _(deliverables_manifest_path, json, manifest_path, mo, outputs_dir, plots_dir):
     if not outputs_dir.exists():
         mo.stop(True, mo.md("No outputs/ directory found. Run `reader run` first."))
     if not manifest_path.exists():
@@ -47,14 +63,13 @@ def _(json, manifest_path, mo, outputs_dir, plots_dir):
     artifacts = manifest.get("artifacts", {})
     labels = sorted(artifacts.keys())
     plot_files = sorted([p.name for p in plots_dir.glob("*") if p.is_file()]) if plots_dir.exists() else []
-    report_manifest_path = outputs_dir / "report_manifest.json"
-    report_entries = []
-    if report_manifest_path.exists():
-        report_manifest = json.loads(report_manifest_path.read_text(encoding="utf-8"))
-        report_entries = report_manifest.get("reports", []) or []
+    deliverable_entries = []
+    if deliverables_manifest_path.exists():
+        deliverables_manifest = json.loads(deliverables_manifest_path.read_text(encoding="utf-8"))
+        deliverable_entries = deliverables_manifest.get("deliverables", []) or []
     if not labels:
         mo.stop(True, mo.md("No artifacts listed in manifest.json."))
-    return manifest, artifacts, labels, plot_files, report_entries
+    return manifest, artifacts, labels, plot_files, deliverable_entries
 
 @app.cell
 def _(artifacts, mo):
@@ -72,21 +87,21 @@ def _(artifacts, mo):
     return artifact_rows
 
 @app.cell
-def _(mo, report_entries):
-    mo.md("## Reports")
-    if not report_entries:
-        mo.md("No report_manifest.json entries yet.")
+def _(deliverable_entries, mo):
+    mo.md("## Deliverables")
+    if not deliverable_entries:
+        mo.md("No deliverables_manifest.json entries yet.")
         return
-    report_rows = [
+    deliverable_rows = [
         {
             "step_id": entry.get("step_id", ""),
             "plugin": entry.get("plugin", ""),
             "files": len(entry.get("files", []) or []),
         }
-        for entry in report_entries
+        for entry in deliverable_entries
     ]
-    mo.ui.table(report_rows)
-    return report_rows
+    mo.ui.table(deliverable_rows)
+    return deliverable_rows
 
 @app.cell
 def _(labels, mo):
@@ -133,9 +148,7 @@ def _(duckdb, mo, preview_limit, artifact_path):
     preview_df
 
 @app.cell
-def _(mo, preview_df):
-    import pandas as pd
-
+def _(mo, pd, preview_df):
     mo.md("## Quick plot")
     if preview_df is None or getattr(preview_df, "empty", False):
         mo.stop(True, mo.md("No preview data available."))
@@ -154,9 +167,7 @@ def _(mo, preview_df):
     return plot_type, x_col, y_col, hue_col
 
 @app.cell
-def _(hue_col, mo, plot_type, preview_df, x_col, y_col):
-    import matplotlib.pyplot as plt
-
+def _(hue_col, mo, plot_type, plt, preview_df, x_col, y_col):
     if preview_df is None or getattr(preview_df, "empty", False):
         mo.stop(True)
     x = x_col.value
@@ -196,20 +207,20 @@ def _(artifact_path, contract, duckdb, mo, preview_df):
         mo.stop(True, mo.md("Selected artifact is not a tidy table."))
     try:
         meta_df = duckdb.query(
-            f\"\"\"
+            f"""
             SELECT
                 min(time) AS time_min,
                 max(time) AS time_max,
                 count(*) AS rows
             FROM read_parquet('{artifact_path.as_posix()}')
-            \"\"\"
+            """
         ).df()
         channel_df = duckdb.query(
-            f\"\"\"
+            f"""
             SELECT DISTINCT channel
             FROM read_parquet('{artifact_path.as_posix()}')
             ORDER BY channel
-            \"\"\"
+            """
         ).df()
     except Exception as exc:
         mo.stop(True, mo.md(f"Tidy summary failed: `{exc}`"))
@@ -272,9 +283,7 @@ def _(mo, tidy_filtered):
     return
 
 @app.cell
-def _(hue_select, mo, tidy_filtered):
-    import matplotlib.pyplot as plt
-
+def _(hue_select, mo, plt, tidy_filtered):
     mo.md("### Tidy time series (mean)")
     if tidy_filtered is None or getattr(tidy_filtered, "empty", False):
         mo.stop(True, mo.md("No rows after filters."))
@@ -318,15 +327,15 @@ def _(duckdb, mo, run_sql, sql_input):
     sql_df
 
 @app.cell
-def _(Path, mo, plot_files, plots_dir, report_entries, outputs_dir):
+def _(Path, deliverable_entries, mo, plot_files, plots_dir, outputs_dir):
     mo.md("## Plot outputs")
-    report_files = []
-    for entry in report_entries:
+    deliverable_files = []
+    for entry in deliverable_entries:
         for name in entry.get("files", []) or []:
-            report_files.append(name)
+            deliverable_files.append(name)
     file_rows = []
-    if report_files:
-        for name in sorted(set(report_files)):
+    if deliverable_files:
+        for name in sorted(set(deliverable_files)):
             path = Path(name)
             if not path.is_absolute():
                 path = outputs_dir / path
@@ -334,7 +343,7 @@ def _(Path, mo, plot_files, plots_dir, report_entries, outputs_dir):
     elif plot_files:
         file_rows = [{"file": name, "path": str(plots_dir / name)} for name in plot_files]
     else:
-        mo.stop(True, mo.md("No plots found yet. Run `reader run` with reports enabled."))
+        mo.stop(True, mo.md("No plots found yet. Run `reader run` with deliverables enabled."))
     plot_rows = file_rows
     mo.ui.table(plot_rows)
     return plot_rows
