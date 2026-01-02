@@ -24,7 +24,9 @@ from .base import (
     best_subplot_grid,
     pretty_name,
     resolve_groups,
+    require_columns,
     save_figure,
+    warn_if_empty,
 )
 from .style import PaletteBook, use_style
 
@@ -63,6 +65,7 @@ def plot_time_series(
     ci_alpha: float = 0.15,
     legend_loc: str = "upper right",
     show_replicates: bool = False,
+    filename: str | None = None,
 ) -> None:
     """
     Time-series plotting with one figure per group (default: per genotype[(_alias)]),
@@ -73,6 +76,8 @@ def plot_time_series(
     line_alpha = float((fig_kwargs or {}).get("line_alpha", 0.85))
     mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
     replicate_alpha = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
+
+    require_columns(df, [xcol, "channel", "value"], where="time_series")
 
     # Channel roster
     y_feats = (list(y) if y else list(channels or [])) or sorted(df["channel"].astype(str).unique().tolist())
@@ -85,17 +90,26 @@ def plot_time_series(
         base = base[
             (pd.to_numeric(base[xcol], errors="coerce") >= lo) & (pd.to_numeric(base[xcol], errors="coerce") <= hi)
         ].copy()
-    if base.empty:
+    if warn_if_empty(base, where="time_series", detail="after time_window filter"):
         return
 
     group_col = alias_column(base, group_on) if group_on else None
     hue_col = alias_column(base, hue)
+    if hue_col and hue_col not in base.columns:
+        raise ValueError(
+            f"time_series: missing hue column {hue_col!r}. "
+            "Either set hue=None/another column or add metadata via merge/sample_map."
+        )
+    if group_col and group_col not in base.columns:
+        raise ValueError(f"time_series: missing group_on column {group_col!r}")
     # Drop None-like labels
     if group_col:
         mask = base[group_col].notna() & (
             ~base[group_col].astype(str).str.strip().str.lower().isin({"none", "nan", ""})
         )
         base = base.loc[mask].copy()
+        if warn_if_empty(base, where="time_series", detail="after group_on filter"):
+            return
     if group_col:
         universe = base[group_col].astype(str).unique().tolist()
         fig_groups = (
@@ -103,6 +117,16 @@ def plot_time_series(
         )
     else:
         fig_groups = [("all", [None])]
+
+    available_channels = sorted(base["channel"].astype(str).unique().tolist())
+    explicit_channels = list(y) if y else (list(channels) if channels else [])
+    if explicit_channels:
+        missing = [str(c) for c in explicit_channels if str(c) not in available_channels]
+        if missing:
+            raise ValueError(
+                f"time_series: requested channels not found: {missing}. "
+                f"Available: {available_channels}"
+            )
 
     # Optional sheet-change lines
     sheet_lines = None
@@ -258,6 +282,13 @@ def plot_time_series(
 
             # Allow file type override via fig.ext ("pdf" | "png" | "svg", etc.)
             ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
-            stub = f"ts__{label}"
-            save_figure(fig, Path(output_dir), stub, ext=ext)
+            dpi = (fig_kwargs or {}).get("dpi", None)
+            group_tag = None
+            if group_col and members != [None]:
+                group_tag = f"__{str(group_col)}={str(label)}"
+            if filename:
+                stub = f"{filename}{group_tag}" if group_tag else filename
+            else:
+                stub = f"ts__{label}"
+            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
             plt.close(fig)

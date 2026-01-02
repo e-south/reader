@@ -70,6 +70,7 @@ class ArtifactStore:
         else:
             self.plots_dir = self.root / plots_subdir
         self.manifest_path = self.root / "manifest.json"
+        self.report_manifest_path = self.root / "report_manifest.json"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         if self.plots_dir != self.root:
             self.plots_dir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +83,22 @@ class ArtifactStore:
 
     def _write_manifest(self, payload: dict[str, Any]) -> None:
         self.manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    # -------------- report manifest --------------
+    def _read_report_manifest(self) -> dict[str, Any]:
+        if not self.report_manifest_path.exists():
+            return {"schema_version": 1, "reports": []}
+        return json.loads(self.report_manifest_path.read_text(encoding="utf-8"))
+
+    def _write_report_manifest(self, payload: dict[str, Any]) -> None:
+        self.report_manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def append_report_entry(self, entry: dict[str, Any]) -> None:
+        manifest = self._read_report_manifest()
+        manifest.setdefault("schema_version", 1)
+        manifest.setdefault("reports", [])
+        manifest["reports"].append(entry)
+        self._write_report_manifest(manifest)
 
     # -------------- helpers --------------
     def _revision_dir(self, step_dir: Path) -> Path:

@@ -10,6 +10,7 @@
 
 ### Contents
 
+- [Documentation](#documentation)
 - [Repo layout](#repo-layout)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
@@ -17,6 +18,13 @@
 - [Running notebooks](#running-notebooks)
 - [Maintaining dependencies](#maintaining-dependencies)
 - [Upgrading dependencies](#upgrading-dependencies)
+
+---
+
+### Documentation
+
+- [Pipeline config + reports](./docs/pipeline.md)
+- [Plugin development](./docs/plugins.md)
 
 ---
 
@@ -28,10 +36,10 @@
 reader/
 ├─ experiments/             # experiment workbench (configs + data + results)
 │  └─ exp_001/
-│     ├─ config.yaml        # pipeline spec (steps: ingest→merge→transform→plot)
-│     ├─ raw_data/          # instrument exports (or raw/)
+│     ├─ config.yaml        # pipeline spec (ingest→merge→transform + optional reports)
+│     ├─ inputs/            # instrument exports (preferred; raw_data/ or raw/ also scanned by default)
 │     ├─ notebooks/         # optional: marimo notebooks for this experiment
-│     └─ outputs/           # generated: artifacts/, plots/, manifest.json, reader.log
+│     └─ outputs/           # generated: artifacts/, plots/, exports/, manifest.json, report_manifest.json, reader.log
 │
 └─ src/
    └─ reader/               # optional: library for running config.yaml-driven workflows across experiments
@@ -122,17 +130,17 @@ deactivate
 ##### 1. If you have a template, copy it. Otherwise create a folder manually.
 
 ```bash
-mkdir -p experiments/my_experiment/{raw_data,notebooks,outputs}
+mkdir -p experiments/my_experiment/{inputs,notebooks,outputs}
 ```
 
-Drop experimental data into `raw_data/`.
+Drop experimental data into `inputs/` (or `raw_data/` / `raw/`).
 
 ##### 2. Run CLI steps (optional, repeatable)
 
 If the experiment has a `config.yaml`:
 ```bash
 uv run reader explain experiments/my_experiment/config.yaml
-uv run reader run     experiments/my_experiment/config.yaml
+uv run reader run     experiments/my_experiment/config.yaml   # runs pipeline + reports
 ```
 
 ---
@@ -140,9 +148,11 @@ uv run reader run     experiments/my_experiment/config.yaml
 #### CLI workbench commands
 
 The CLI is a set of helpers for the workspace.
+Commands assume `uv run reader` in this repo (or `reader` if installed).
 
 ```bash
 reader ls --root experiments
+reader demo
 reader plugins
 reader steps <CONFIG or INDEX>
 reader artifacts <CONFIG or INDEX>
@@ -151,12 +161,17 @@ reader artifacts <CONFIG or INDEX>
 Common workflow helpers:
 
 - `reader ls [--root DIR]` — list experiments (finds `**/config.yaml`).
+- `reader demo` — quick walkthrough of common commands.
 - `reader explain CONFIG|DIR|INDEX` — show the plan (what would run).
-- `reader validate CONFIG|DIR|INDEX` — validate the config + plugin configs.
-- `reader run CONFIG|DIR|INDEX [--step STEP] [--resume-from ID] [--until ID]` — execute (sliceable).
+- `reader validate CONFIG|DIR|INDEX` — validate config + plugin configs (no data I/O).
+- `reader check-inputs CONFIG|DIR|INDEX` — verify file inputs declared via `reads: file:` exist.
+- `reader run CONFIG|DIR|INDEX [--step STEP] [--resume-from ID] [--until ID]` — execute the pipeline (reports run by default).
+- `reader report CONFIG|DIR|INDEX [--list]` — render report steps (plots/exports) using existing artifacts.
 - `reader run-step STEP --config CONFIG|DIR|INDEX` — run exactly one step using existing artifacts.
 - `reader artifacts CONFIG|DIR|INDEX` — list the latest artifact locations (manifest-backed).
 - `reader plugins` — show discovered plugins (built-ins + entry points).
+- `reader presets [NAME]` — list preset bundles (or inspect one).
+- `reader explore CONFIG|DIR|INDEX` — scaffold a marimo notebook under `notebooks/` (no execution).
 
 **Note:** `ls` only lists experiments that have a `config.yaml`. Notebooks can exist without configs,
 but then they won’t be discoverable via ls.
@@ -167,6 +182,30 @@ but then they won’t be discoverable via ls.
 
 There are two practical modes:
 
+##### 0. Scaffold an experiment notebook (recommended)
+
+```bash
+reader explore path/to/experiment
+uv sync --locked --group notebooks
+uv run marimo edit path/to/experiment/notebooks/eda.py
+```
+
+The scaffolded notebook uses DuckDB to query parquet artifacts efficiently.
+It includes a small “Quick plot” widget (line/scatter/hist) and a **Tidy explorer**
+with channel/time filters, a data explorer, and a mean time-series view.
+
+If you only want PDFs, use:
+
+```bash
+reader report path/to/experiment
+```
+
+If you use flow cytometry plugins, include the extra group:
+
+```bash
+uv sync --locked --group notebooks --group cytometry
+```
+
 ##### 1. Install marimo into the project
 
 ```bash
@@ -176,40 +215,28 @@ uv run marimo edit notebook.py
 
 This runs marimo inside your project environment, so it can import `reader` and anything in `uv.lock`.
 
-##### 2. Sandboxed / self-contained marimo notebooks (inline dependencies)
+##### 2. Optional: sandboxed marimo notebooks (inline dependencies)
 
-Marimo can manage per-notebook sandbox environments using inline metadata. This is great for sharable notebooks.
+Marimo can manage per-notebook environments using inline metadata (useful for sharing).
 
-1. Create/edit a sandbox notebook (marimo installed temporarily via uvx).
+Create/edit a sandbox notebook:
 
-      ```bash
-      uvx marimo edit --sandbox notebook.py
-      ```
+```bash
+uvx marimo edit --sandbox notebook.py
+```
 
-2. Run a sandbox notebook as a script.
+Add your local reader checkout to the sandbox:
 
-      ```bash
-      uv run notebook.py
-      ```
+```bash
+uv add --script notebook.py . --editable
+```
 
-3. Make the sandbox notebook use your local `reader` repo in editable mode.
+Add/remove sandbox dependencies (only affects the notebook file):
 
-      From the repo root:
-
-      ```bash
-      uv add --script path/to/notebook.py . --editable
-      ```
-
-      This writes inline metadata into the notebook so its sandbox can install **reader** from your local checkout in editable mode.
-
-4. Add/remove sandbox dependencies (only affects the notebook file)
-
-      ```bash
-      uv add    --script notebook.py numpy
-      uv remove --script notebook.py numpy
-      ```
-
-> **Note:** You can also run claude code/codex in the terminal and ask it to edit a marimo notebook on your behalf. Make sure that you run your notebook with the [watch](https://docs.marimo.io/api/watch/) flag turned on, like `marimo edit --watch notebook.py`, to see updates appear live whenever agents makes a change.
+```bash
+uv add    --script notebook.py numpy
+uv remove --script notebook.py numpy
+```
 
 ---
 
@@ -261,7 +288,7 @@ To pull the latest `dnadesign` and refresh your environment:
 uv sync --upgrade-package dnadesign
 ```
 
-This will update `uv.lock`** (bumping the pinned commit SHA for `dnadesign`) and then re-sync `.venv` to match. Commit the updated `uv.lock` so everyone gets the same version.
+This will update `uv.lock` (bumping the pinned commit SHA for `dnadesign`) and then re-sync `.venv` to match. Commit the updated `uv.lock` so everyone gets the same version.
 
 ---
 

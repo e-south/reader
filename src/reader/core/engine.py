@@ -12,8 +12,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from importlib import import_module
 from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -48,6 +50,52 @@ def _digest_cfg(plugin_cfg: Any) -> str:
         payload = json.loads(json.dumps(plugin_cfg, default=str))
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def _needs_plot_palette(steps: list[Any], palette: str | None) -> bool:
+    if palette is None:
+        return False
+    return any(getattr(step, "uses", "").startswith("plot/") for step in steps)
+
+
+def _ensure_mpl_cache_dir(base_dir: Path | None = None) -> None:
+    if os.environ.get("MPLCONFIGDIR"):
+        return
+    override = os.environ.get("READER_MPLCONFIGDIR")
+    if override:
+        cache_dir = Path(override).expanduser()
+    else:
+        root = base_dir if base_dir is not None else Path.cwd()
+        cache_dir = root / ".cache" / "matplotlib"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    os.environ["MPLCONFIGDIR"] = str(cache_dir)
+
+
+def _collect_categories(steps: list[Any]) -> set[str]:
+    cats: set[str] = set()
+    for step in steps:
+        uses = getattr(step, "uses", "")
+        if "/" in uses:
+            cats.add(uses.split("/", 1)[0])
+    return cats
+
+
+def _snapshot_dir(root: Path) -> dict[Path, float]:
+    if not root.exists():
+        return {}
+    return {p: p.stat().st_mtime for p in root.rglob("*") if p.is_file()}
+
+
+def _diff_files(before: dict[Path, float], after: dict[Path, float]) -> list[Path]:
+    changed: list[Path] = []
+    for path, mtime in after.items():
+        prev = before.get(path)
+        if prev is None or mtime > prev + 1e-6:
+            changed.append(path)
+    return changed
 
 
 def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, Any]:
@@ -94,10 +142,9 @@ def _assert_output_contracts(plugin: Plugin, outputs: dict[str, Any], *, where: 
             validate_df(val, contract, where=where)
 
 
-def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
-    registry = registry or load_entry_points()
+def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
     table = Table(
-        title="[title]Plan[/title]",
+        title=f"[title]{title}[/title]",
         title_justify="left",
         header_style="bold",
         box=box.ROUNDED,
@@ -109,30 +156,67 @@ def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
     table.add_column("Plugin")
     table.add_column("Inputs (label:contract)")
     table.add_column("Outputs (label:contract)")
-    for i, step in enumerate(spec.steps, 1):
+    for i, step in enumerate(steps, 1):
         P = registry.resolve(step.uses)
         inp = ", ".join(f"{k}:{v}" for k, v in P.input_contracts().items())
         out = ", ".join(f"{k}:{v}" for k, v in P.output_contracts().items())
         table.add_row(str(i), step.id, step.uses, inp, out)
-    console.print(
-        Panel(table, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(spec.steps)} steps[/muted]")
-    )
+    return table
+
+
+def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
+    steps = list(spec.steps)
+    reports = list(spec.reports or [])
+    registry = registry or load_entry_points(categories=_collect_categories(steps + reports))
+    if steps:
+        pipeline = _plan_table(steps, registry, title="Pipeline")
+        console.print(
+            Panel(pipeline, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(steps)} steps[/muted]")
+        )
+    if reports:
+        report_table = _plan_table(reports, registry, title="Reports")
+        console.print(
+            Panel(
+                report_table,
+                border_style="accent",
+                box=box.ROUNDED,
+                subtitle=f"[muted]{len(reports)} steps[/muted]",
+            )
+        )
 
 
 def validate(spec: ReaderSpec, *, console: Console) -> None:
     # schema already validated by pydantic; here we ensure contracts exist
-    for step in spec.steps:
-        uses = step.uses
-        try:
-            plugin_cls = load_entry_points().resolve(uses)
-        except Exception as e:
-            raise ConfigError(f"step {step.id}: {e}") from e
-        # validate config model
-        try:
-            plugin_cls.ConfigModel.model_validate(step.with_ or {})
-        except Exception as e:
-            raise ConfigError(f"step {step.id}: invalid config for {uses}: {e}") from e
-    console.print(Panel.fit("✓ Config validated", border_style="ok", box=box.ROUNDED))
+    steps = list(spec.steps)
+    reports = list(spec.reports or [])
+    registry = load_entry_points(categories=_collect_categories(steps + reports))
+
+    def _validate_steps(items: list[Any], label: str) -> None:
+        for step in items:
+            uses = step.uses
+            try:
+                plugin_cls = registry.resolve(uses)
+            except Exception as e:
+                raise ConfigError(f"{label} {step.id}: {e}") from e
+            # validate config model
+            try:
+                plugin_cls.ConfigModel.model_validate(step.with_ or {})
+            except Exception as e:
+                raise ConfigError(f"{label} {step.id}: invalid config for {uses}: {e}") from e
+
+    _validate_steps(steps, "step")
+    if reports:
+        _validate_steps(reports, "report")
+
+    lines = [
+        "[ok]✓ Config validated[/ok]",
+        f"[muted]steps[/muted]: {len(steps)}",
+        f"[muted]reports[/muted]: {len(reports)}",
+        "[muted]checks[/muted]: schema, plugin availability, plugin config",
+        "[muted]not checked[/muted]: input files, data contents",
+        "[muted]tip[/muted]: use 'reader explain' to see inputs/outputs",
+    ]
+    console.print(Panel.fit("\n".join(lines), border_style="ok", box=box.ROUNDED))
 
 
 def run_job(
@@ -143,7 +227,10 @@ def run_job(
     dry_run: bool = False,
     log_level: str = "INFO",
     console: Console | None = None,
+    include_pipeline: bool = True,
+    include_reports: bool = True,
 ) -> None:
+    os.environ.setdefault("ARROW_LOG_LEVEL", "FATAL")
     spec = ReaderSpec.load(spec_path)
     exp = spec.experiment
     out_dir = Path(exp["outputs"]).resolve()
@@ -168,10 +255,38 @@ def run_job(
     logger.addHandler(fh)
     logger.addHandler(sh)
 
+    steps = list(spec.steps)
+    if not include_pipeline:
+        if resume_from or until:
+            raise ConfigError("--resume-from/--until require pipeline execution; use reader run for sliced runs.")
+        steps = []
+    else:
+        # resume/until slicing (pipeline only)
+        if resume_from:
+            try:
+                idx = next(i for i, s in enumerate(steps) if s.id == resume_from)
+                steps = steps[idx:]
+            except StopIteration:
+                raise ConfigError(f"--resume-from: step id '{resume_from}' not found") from None
+        if until:
+            try:
+                idx = next(i for i, s in enumerate(steps) if s.id == until)
+                steps = steps[: idx + 1]
+            except StopIteration:
+                raise ConfigError(f"--until: step id '{until}' not found") from None
+
+    reports = list(spec.reports or [])
+    if not include_reports:
+        reports = []
+    all_steps = steps + reports
+
+    if any(getattr(step, "uses", "").startswith("plot/") for step in all_steps):
+        _ensure_mpl_cache_dir(base_dir=out_dir)
+
     palette = exp.get("palette", "colorblind")
 
     PaletteBook = None
-    if palette is not None:
+    if (not dry_run) and _needs_plot_palette(all_steps, palette):
         try:
             mod = import_module("reader.lib.microplates.style")
             PaletteBook = getattr(mod, "PaletteBook", None)
@@ -203,90 +318,124 @@ def run_job(
     )
 
     store = ArtifactStore(out_dir, plots_subdir=(plots_cfg if plots_cfg not in (None, "", ".", "./") else None))
-    registry = load_entry_points()
 
-    # resume/until slicing
-    steps = spec.steps
-    if resume_from:
-        try:
-            idx = next(i for i, s in enumerate(steps) if s.id == resume_from)
-            steps = steps[idx:]
-        except StopIteration:
-            raise ConfigError(f"--resume-from: step id '{resume_from}' not found") from None
-    if until:
-        try:
-            idx = next(i for i, s in enumerate(steps) if s.id == until)
-            steps = steps[: idx + 1]
-        except StopIteration:
-            raise ConfigError(f"--until: step id '{until}' not found") from None
+    registry = load_entry_points(categories=_collect_categories(all_steps))
 
     if dry_run:
         console.print(Panel.fit("DRY RUN — printing plan", border_style="warn", box=box.ROUNDED))
-        explain(spec, console=console, registry=registry)
+        spec_slice = spec.model_copy(update={"steps": steps, "reports": reports})
+        explain(spec_slice, console=console, registry=registry)
         return
 
-    with Progress(
-        SpinnerColumn(style="accent"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("Running steps", total=len(steps))
+    def _run_steps(items: list[Any], *, phase: str) -> None:
+        if not items:
+            return
+        with Progress(
+            SpinnerColumn(style="accent"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Running {phase}", total=len(items))
 
-        for ordinal, step in enumerate(steps, 1):
-            ctx.logger.info("→ step %s [%d/%d] uses=%s", step.id, ordinal, len(steps), step.uses)
-            plugin_cls = registry.resolve(step.uses)
-            cfg = plugin_cls.ConfigModel.model_validate(step.with_ or {})
-            plugin = plugin_cls()
+            for ordinal, step in enumerate(items, 1):
+                ctx.logger.info("→ %s %s [%d/%d] uses=%s", phase[:-1], step.id, ordinal, len(items), step.uses)
+                plugin_cls = registry.resolve(step.uses)
+                cfg = plugin_cls.ConfigModel.model_validate(step.with_ or {})
+                plugin = plugin_cls()
+                pre_plot_state = _snapshot_dir(ctx.plots_dir) if phase == "reports" else {}
 
-            # collect & check inputs
-            inputs = _resolve_inputs(store, step.reads or {})
-            _assert_input_contracts(plugin, inputs, where=f"{step.id}")
+                # collect & check inputs
+                inputs = _resolve_inputs(store, step.reads or {})
+                _assert_input_contracts(plugin, inputs, where=f"{step.id}")
 
-            # adapt artifacts -> dataframes/files for plugin
-            plug_inputs: dict[str, Any] = {}
-            for k, v in inputs.items():
-                if hasattr(v, "load_dataframe"):
-                    plug_inputs[k] = v.load_dataframe()
-                else:
-                    plug_inputs[k] = v  # Path for "file:" pseudo artifact
+                # adapt artifacts -> dataframes/files for plugin
+                plug_inputs: dict[str, Any] = {}
+                for k, v in inputs.items():
+                    if hasattr(v, "load_dataframe"):
+                        plug_inputs[k] = v.load_dataframe()
+                    else:
+                        plug_inputs[k] = v  # Path for "file:" pseudo artifact
 
-            # run
-            try:
-                outputs = plugin.run(ctx, plug_inputs, cfg)
-            except ReaderError:
-                raise
-            except Exception as e:
-                raise ExecutionError(f"step {step.id} crashed: {e}") from e
+                # run
+                try:
+                    outputs = plugin.run(ctx, plug_inputs, cfg)
+                except ReaderError:
+                    raise
+                except Exception as e:
+                    raise ExecutionError(f"{phase[:-1]} {step.id} crashed: {e}") from e
 
-            # check outputs vs declared contracts
-            _assert_output_contracts(plugin, outputs, where=f"{step.id}")
+                # check outputs vs declared contracts
+                _assert_output_contracts(plugin, outputs, where=f"{step.id}")
 
-            # persist outputs
-            for out_name, obj in outputs.items():
-                cid = plugin.output_contracts()[out_name]
-                if isinstance(obj, pd.DataFrame) and cid != "none":
-                    store.persist_dataframe(
-                        step_id=step.id,
-                        plugin_key=plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
-                        out_name=out_name,
-                        df=obj,
-                        contract_id=cid,
-                        inputs=[
+                # persist outputs
+                for out_name, obj in outputs.items():
+                    cid = plugin.output_contracts()[out_name]
+                    if isinstance(obj, pd.DataFrame) and cid != "none":
+                        store.persist_dataframe(
+                            step_id=step.id,
+                            plugin_key=plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
+                            out_name=out_name,
+                            df=obj,
+                            contract_id=cid,
+                            inputs=[
+                                inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n])
+                                for n in (step.reads or {})
+                            ],
+                            config_digest=_digest_cfg(cfg),
+                        )
+                    elif cid == "none":
+                        # e.g., plots: plugin must have already written files into ctx.plots_dir
+                        continue
+                    else:
+                        raise ExecutionError(f"{phase[:-1]} {step.id}: unsupported output type for {out_name}")
+
+                if phase == "reports":
+                    post_plot_state = _snapshot_dir(ctx.plots_dir)
+                    plot_files = _diff_files(pre_plot_state, post_plot_state)
+                    file_outputs = outputs.get("files")
+                    extra_files: list[Path] = []
+                    if file_outputs:
+                        if isinstance(file_outputs, (str, Path)):
+                            extra_files = [Path(file_outputs)]
+                        elif isinstance(file_outputs, list):
+                            extra_files = [Path(p) for p in file_outputs if p]
+                    combined = list({*plot_files, *extra_files})
+                    rel_files: list[str] = []
+                    for p in combined:
+                        try:
+                            rel_files.append(str(p.relative_to(ctx.outputs_dir)))
+                        except Exception:
+                            rel_files.append(str(p))
+                    entry = {
+                        "schema_version": 1,
+                        "created_at": datetime.now(UTC).isoformat(),
+                        "step_id": step.id,
+                        "plugin": plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
+                        "config_digest": _digest_cfg(cfg),
+                        "inputs": [
                             inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n])
                             for n in (step.reads or {})
                         ],
-                        config_digest=_digest_cfg(cfg),
-                    )
-                elif cid == "none":
-                    # e.g., plots: plugin must have already written files into ctx.plots_dir
-                    continue
-                else:
-                    raise ExecutionError(f"step {step.id}: unsupported output type for {out_name}")
+                        "files": sorted(rel_files),
+                    }
+                    store.append_report_entry(entry)
 
-            progress.advance(task)
+                progress.advance(task)
+
+    ctx.logger.info(
+        "run • pipeline=%d step(s)%s • reports=%d step(s)",
+        len(steps),
+        " (skipped)" if (not include_pipeline) else "",
+        len(reports),
+    )
+    if include_pipeline and (not include_reports) and spec.reports:
+        ctx.logger.info("reports skipped • use `reader report` or `reader run --reports`")
+    _run_steps(steps, phase="steps")
+    if reports:
+        _run_steps(reports, phase="reports")
 
     console.print(Panel.fit(f"✓ Done — outputs in [path]{str(out_dir)}[/path]", border_style="ok", box=box.ROUNDED))

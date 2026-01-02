@@ -50,7 +50,7 @@ def resolve_reference_genotype_label(
             return str(matches[0])  # unique alias→raw mapping
         if len(matches) > 1:
             raise ValueError(
-                f"sfxi: reference.genotype {want!r} resolves via {alias_col!r} to multiple {label_col!r} values: "
+                f"sfxi: reference.design_id {want!r} resolves via {alias_col!r} to multiple {label_col!r} values: "
                 f"{sorted(map(str, matches))!r}"
             )
 
@@ -60,7 +60,7 @@ def resolve_reference_genotype_label(
     raw_prev = ", ".join(sorted(raw_vals)[:8]) + (" …" if len(raw_vals) > 8 else "")
     alias_prev = ", ".join(sorted(alias_vals)[:8]) + (" …" if len(alias_vals) > 8 else "")
     raise ValueError(
-        f"sfxi: reference.genotype {want!r} not found under {label_col!r} or {alias_col!r}.\n"
+        f"sfxi: reference.design_id {want!r} not found under {label_col!r} or {alias_col!r}.\n"
         f"   available raw:   [{raw_prev}]\n"
         f"   available alias: [{alias_prev or '—'}]"
     )

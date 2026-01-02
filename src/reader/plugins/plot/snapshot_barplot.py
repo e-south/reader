@@ -25,7 +25,7 @@ class SnapshotBarCfg(PluginConfig):
     hue: str | None = None
     group_on: str | None = None
     pool_sets: str | list[dict[str, list[str]]] | None = None
-    time: float = 0.0
+    time: float = Field(..., description="Snapshot time (hours); required for deterministic plotting.")
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
     fig: dict[str, Any] = Field(default_factory=dict)
     filename: str | None = None

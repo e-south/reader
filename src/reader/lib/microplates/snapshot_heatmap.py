@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import Colormap, LinearSegmentedColormap
 
-from .base import alias_column, pretty_name, save_figure
+from .base import alias_column, pretty_name, save_figure, warn_if_empty
 from .style import new_fig_ax, use_style
 
 
@@ -129,6 +129,7 @@ def plot_snapshot_heatmap(
 
     # nothing to draw?
     if pivot.empty or pivot.shape[0] == 0 or pivot.shape[1] == 0:
+        warn_if_empty(pivot, where="snapshot_heatmap", detail="after pivot")
         return
 
     with use_style(rc=(fig_kwargs or {}).get("rc")):
@@ -212,5 +213,6 @@ def plot_snapshot_heatmap(
         # Always append concise tags so tuning doesn’t overwrite previous files
         stub = f"{base}__gy{n_geno}-{geno_id}__fp{fp_id}"
         ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
-        save_figure(fig, Path(output_dir), stub, ext=ext)
+        dpi = (fig_kwargs or {}).get("dpi", None)
+        save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
         plt.close(fig)

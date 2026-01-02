@@ -24,10 +24,12 @@ from .base import (
     alias_column,
     best_subplot_grid,
     nearest_time_per_key,
+    require_columns,
     resolve_groups,
     save_figure,
     smart_grouped_dose_key,
     smart_string_numeric_key,
+    warn_if_empty,
 )
 from .style import PaletteBook, use_style
 
@@ -120,6 +122,12 @@ def plot_snapshot_barplot(
     hue_col = alias_column(df, hue) if hue else None
     group_col = alias_column(df, group_on) if group_on else None
     y_list = [y] if isinstance(y, str) else list(y)
+    required = ["time", "channel", "value", "position", x_col]
+    if hue_col:
+        required.append(hue_col)
+    if group_col:
+        required.append(group_col)
+    require_columns(df, required, where="snapshot_barplot")
 
     # Base frame
     work = df.copy()
@@ -127,9 +135,22 @@ def plot_snapshot_barplot(
 
     # Restrict to requested channels in the common case
     if panel_by == "channel":
+        available = sorted(work["channel"].astype(str).unique().tolist())
+        missing = [str(c) for c in y_list if str(c) not in available]
+        if missing:
+            raise ValueError(f"snapshot_barplot: requested channels not found: {missing}. Available: {available}")
         work = work[work["channel"].astype(str).isin([str(c) for c in y_list])].copy()
-    if work.empty:
+    if warn_if_empty(work, where="snapshot_barplot", detail="after channel filter"):
         return
+
+    if panel_by in {"x", "group"} and not channel_select:
+        raise ValueError("snapshot_barplot: channel_select is required when panel_by != 'channel'")
+    if channel_select:
+        available = sorted(work["channel"].astype(str).unique().tolist())
+        if str(channel_select) not in available:
+            raise ValueError(
+                f"snapshot_barplot: channel_select {channel_select!r} not in data. Available: {available}"
+            )
 
     # Pick nearest-time replicates per (groupby?, x, hue?, channel, position)
     key_cols: list[str] = [c for c in [group_col, x_col, hue_col, "channel", "position"] if c]
@@ -579,6 +600,7 @@ def plot_snapshot_barplot(
 
             # Save (PDF by default)
             ext = str(fig_kwargs.get("ext", "pdf")).lower()
+            dpi = fig_kwargs.get("dpi", None)
             if filename:
                 stub = filename
             else:
@@ -590,5 +612,5 @@ def plot_snapshot_barplot(
                     stub = f"snap__ch__{key}"
                 else:  # by x
                     stub = f"snap__x__{selected_channel}__{fig_label}"
-            save_figure(fig, Path(output_dir), stub, ext=ext)
+            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
             plt.close(fig)

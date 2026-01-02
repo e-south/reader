@@ -25,14 +25,14 @@ from reader.lib.sfxi.selection import cornerize_and_aggregate
 
 class SFXICfg(PluginConfig):
     response: dict[str, str]  # {"logic_channel":..., "intensity_channel":...}
-    design_by: list[str] = Field(default_factory=lambda: ["genotype"])
+    design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
     time_mode: str = "nearest"  # nearest|last_before|first_after|exact
     target_time_h: float | None = None
     time_tolerance_h: float = 0.5
     treatment_map: dict[str, str]
     reference: dict[str, str | None] = Field(
-        default_factory=lambda: {"genotype": None, "scope": "batch", "stat": "mean"}
+        default_factory=lambda: {"design_id": None, "scope": "batch", "stat": "mean"}
     )
     treatment_case_sensitive: bool = True
     require_all_corners_per_design: bool = True
@@ -61,7 +61,7 @@ class SFXITransform(Plugin):
 
     def run(self, ctx, inputs, cfg: SFXICfg):
         df: pd.DataFrame = inputs["df"].copy()
-        label_col = cfg.design_by[0] if cfg.design_by else "genotype"
+        label_col = cfg.design_by[0] if cfg.design_by else "design_id"
         idx_cols = [c for c in (cfg.design_by + [cfg.batch_col]) if c]
 
         # ---------- selection (logic channel) ----------
@@ -112,7 +112,8 @@ class SFXITransform(Plugin):
         _assert_same_times(sel_logic.chosen_times, sel_int.chosen_times)
 
         # ---------- resolve & assert reference genotype (to RAW label) ----------
-        provided_ref = (cfg.reference or {}).get("genotype")
+        ref_cfg = cfg.reference or {}
+        provided_ref = ref_cfg.get("design_id") or ref_cfg.get("genotype")
         ref_geno = resolve_reference_genotype_label(inputs["df"], design_by=cfg.design_by, ref_label=provided_ref)
         if ref_geno is not None:
             ref_rows = sel_int.per_corner[sel_int.per_corner[label_col].astype(str) == str(ref_geno)]

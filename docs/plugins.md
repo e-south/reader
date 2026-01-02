@@ -58,7 +58,7 @@ Use it in an experiment:
 ```yaml
 - id: "ingest_custom"
   uses: "ingest/my_format"
-  reads: { raw: "file:./raw_data/run001.ext" }
+  reads: { raw: "file:./inputs/run001.ext" }
 ```
 
 ### New transform (operate on a tidy table)
@@ -88,6 +88,40 @@ class ScaleValues(Plugin):
         df = inputs["df"].copy()
         df["value"] = pd.to_numeric(df["value"], errors="coerce") * cfg.factor
         return {"df": df}
+```
+
+### New report (plot/export)
+
+Report steps live under `reports:` in config (optionally bundled via
+`report_presets` + `report_overrides`) and are run by `reader report`
+(or automatically after `reader run` unless `--no-reports` is set).
+
+Guidelines:
+- Report plugins should be deterministic and pure: read declared inputs, write files.
+- Avoid experiment‑specific logic inside plot plugins; keep bespoke logic in `lib/`.
+- Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
+- Plot steps are assertive: missing required columns raise an error; empty selections emit a warning and skip.
+- Report outputs are tracked in `outputs/report_manifest.json`.
+
+Common plot config knobs (shared across most plot plugins):
+- `filename`: override the output filename stub.
+- `fig.ext`: file extension (default `pdf`).
+- `fig.dpi`: raster resolution for PNGs (ignored for vector PDFs).
+
+Inspect plot/export plugins:
+
+```bash
+uv run reader plugins --category plot
+uv run reader plugins --category export
+```
+
+Example export step:
+
+```yaml
+- id: export_vec8
+  uses: "export/csv"
+  reads: { df: "sfxi_vec8/df" }
+  with: { path: "exports/sfxi_vec8.csv" }
 ```
 
 ### Inspect what’s available

@@ -36,6 +36,9 @@ include = ["reader*"]
 namespaces = false
 
 [dependency-groups]
+cytometry = [
+    "flowio>=1.4.0",
+]
 dev = [
   "pytest>=8.2",
   "ruff>=0.4",
@@ -43,6 +46,7 @@ dev = [
 ]
 
 notebooks = [
+  "duckdb>=1.4.3",
   "marimo>=0.18.4",
 ]
 

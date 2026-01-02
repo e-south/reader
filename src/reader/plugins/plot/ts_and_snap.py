@@ -46,7 +46,7 @@ class TSAndSnapCfg(PluginConfig):
     snap_x: str = "treatment"
     snap_channel: str | None = None
     snap_hue: str | None = None
-    snap_time: float = 0.0
+    snap_time: float = Field(..., description="Snapshot time (hours); required for deterministic plotting.")
     snap_agg: Literal["mean", "median"] = "mean"
     snap_err: Literal["sem", "iqr", "none"] = "sem"
     snap_time_tolerance: float = 0.51

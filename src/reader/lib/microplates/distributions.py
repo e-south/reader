@@ -20,9 +20,11 @@ from .base import (
     GroupMatch,
     alias_column,
     best_subplot_grid,
+    require_columns,
     resolve_groups,
     save_figure,
     smart_string_numeric_key,
+    warn_if_empty,
 )
 from .style import PaletteBook, use_style
 
@@ -97,13 +99,20 @@ def plot_distributions(
 
     # --- resolve columns (assertive, no silent fallbacks) ---
     ch_list = [str(c) for c in channels]
+    require_columns(df, ["channel", "value"], where="distributions")
     work = df[df["channel"].astype(str).isin(ch_list)].copy()
-    if work.empty:
+    if warn_if_empty(work, where="distributions", detail="after channel filter"):
         return
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = work.dropna(subset=["value"])
 
     gcol = alias_column(work, group_on) if group_on else None
+    if gcol and gcol not in work.columns:
+        raise ValueError(f"distributions: missing group_on column {gcol!r}")
+    if hue:
+        hcol = alias_column(work, hue)
+        if hcol not in work.columns:
+            raise ValueError(f"distributions: missing hue column {hcol!r}")
     if panel_by not in {"channel", "group"}:
         raise ValueError("panel_by must be 'channel' or 'group'")
 
@@ -186,9 +195,10 @@ def plot_distributions(
                     axes[k].set_visible(False)
 
                 ext = str(fig_kwargs.get("ext", "pdf")).lower()
+                dpi = fig_kwargs.get("dpi", None)
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                save_figure(fig, Path(output_dir), stub, ext=ext)
+                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
                 plt.close(fig)
 
     else:  # panel_by == "group"
@@ -240,6 +250,7 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             ext = str(fig_kwargs.get("ext", "pdf")).lower()
+            dpi = fig_kwargs.get("dpi", None)
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            save_figure(fig, Path(output_dir), stub, ext=ext)
+            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
             plt.close(fig)

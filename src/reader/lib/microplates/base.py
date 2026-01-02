@@ -13,6 +13,7 @@ import math
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+import logging
 from typing import Literal
 
 import pandas as pd
@@ -30,15 +31,31 @@ def slugify(s: str) -> str:
     return re.sub(r"_{2,}", "_", s).strip("_")
 
 
-def save_figure(fig, output_dir: Path, filename_stub: str, ext: str = "pdf") -> Path:
+def save_figure(fig, output_dir: Path, filename_stub: str, ext: str = "pdf", dpi: int | None = None) -> Path:
     """
     Save figures as **PDF by default** (print-friendly, vector). Use ext="png" if you
     explicitly need rasters.
     """
     ensure_dir(output_dir)
     out = output_dir / f"{slugify(filename_stub)}.{ext}"
-    fig.savefig(out, bbox_inches="tight")
+    fig.savefig(out, bbox_inches="tight", dpi=dpi)
     return out
+
+
+def require_columns(df: pd.DataFrame, cols: Iterable[str], *, where: str) -> None:
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"{where}: missing required columns: {missing}")
+
+
+def warn_if_empty(df: pd.DataFrame, *, where: str, detail: str | None = None) -> bool:
+    if df.empty:
+        msg = f"[warn]{where}[/warn] • no rows to plot"
+        if detail:
+            msg += f" ({detail})"
+        logging.getLogger("reader").info(msg)
+        return True
+    return False
 
 
 # -------------------- alias helpers --------------------

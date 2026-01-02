@@ -13,7 +13,7 @@ import fnmatch
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-DEFAULT_ROOTS = ("./raw", "./raw_data")
+DEFAULT_ROOTS = ("./inputs", "./raw", "./raw_data")
 DEFAULT_INCLUDE = ("*.xlsx", "*.xls")
 DEFAULT_EXCLUDE = ("~$*", "._*", "#*#", "*.tmp", "*.temp", "*.bak")
 
@@ -41,7 +41,7 @@ def discover_files(
 ) -> list[Path]:
     """
     Return candidate raw files under the given roots (relative to `base` = experiment dir).
-    - roots: directories to search (default: ./raw and ./raw_data)
+    - roots: directories to search (default: ./inputs, ./raw, and ./raw_data)
     - include: filename patterns to include
     - exclude: filename patterns to exclude
     - recursive: whether to search subdirectories

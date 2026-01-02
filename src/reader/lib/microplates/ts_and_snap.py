@@ -25,10 +25,12 @@ from .base import (
     GroupMatch,
     alias_column,
     nearest_time_per_key,
+    require_columns,
     resolve_groups,
     save_figure,
     smart_grouped_dose_key,
     smart_string_numeric_key,
+    warn_if_empty,
 )
 from .style import _DEFAULT_RC as _RC
 from .style import PaletteBook, use_style
@@ -127,6 +129,13 @@ def plot_ts_and_snap(
     ch_ts = str(ts_channel)
     ch_snap = str(snap_channel if snap_channel else ts_channel)
 
+    required = ["time", "channel", "value", "position", ts_x_col, ts_hue_col, snap_x_col]
+    if group_col:
+        required.append(group_col)
+    if snap_hue_col:
+        required.append(snap_hue_col)
+    require_columns(df, required, where="ts_and_snap")
+
     # Base numerics
     work = df.copy()
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
@@ -137,8 +146,14 @@ def plot_ts_and_snap(
             (pd.to_numeric(work[ts_x_col], errors="coerce") >= lo)
             & (pd.to_numeric(work[ts_x_col], errors="coerce") <= hi)
         ].copy()
-    if work.empty:
+    if warn_if_empty(work, where="ts_and_snap", detail="after time_window filter"):
         return
+
+    available_channels = sorted(work["channel"].astype(str).unique().tolist())
+    if ch_ts not in available_channels:
+        raise ValueError(f"ts_and_snap: ts_channel {ch_ts!r} not in data. Available: {available_channels}")
+    if ch_snap not in available_channels:
+        raise ValueError(f"ts_and_snap: snap_channel {ch_snap!r} not in data. Available: {available_channels}")
 
     # Figure iteration over groups
     if group_col:
@@ -443,6 +458,7 @@ def plot_ts_and_snap(
             # ---- figure title + save ----
             fig.suptitle(f"{label}", y=float(fig_kwargs.get("suptitle_y", 1.04)))
             ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
+            dpi = (fig_kwargs or {}).get("dpi", None)
 
             # ----- Unique, descriptive filenames -----
             # If grouping is active, append "<group_col>=<label>" to make per-group files distinct.
@@ -458,5 +474,5 @@ def plot_ts_and_snap(
                 base = f"ts_snap__{ch_snap}"
                 # Backward‑compatible default still includes label; enhanced with group_col when available
                 stub = f"{base}{group_tag}" if group_tag else f"{base}__{label}"
-            save_figure(fig, out_dir, stub, ext=ext)
+            save_figure(fig, out_dir, stub, ext=ext, dpi=dpi)
             plt.close(fig)

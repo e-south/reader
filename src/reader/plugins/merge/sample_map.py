@@ -89,21 +89,21 @@ class SampleMapMerge(Plugin):
                 before = len(df)
                 df = df[~df["position"].astype(str).isin(removed_positions)].copy()
                 after = len(df)
-                head = ", ".join(removed_positions[:20])
-                tail = " …" if len(removed_positions) > 20 else ""
                 try:
                     ctx.logger.info(
-                        f"[muted]sample_map: dropped {before - after} raw rows for positions with no metadata: "
-                        f"{head}{tail}[/muted]"
+                        "[muted]sample_map: dropped %d raw rows (%d positions without metadata)[/muted]",
+                        before - after,
+                        len(removed_positions),
                     )
+                    head = ", ".join(removed_positions[:20])
+                    tail = " …" if len(removed_positions) > 20 else ""
+                    ctx.logger.debug("sample_map: removed positions: %s%s", head, tail)
                     # Optional arithmetic trace (best-effort; relies on tidy schema)
                     try:
                         chans = df["channel"].astype(str).nunique()
-                        # approximate number of time slices = (rows_per_pos / channels)
-                        # snapshot rows are indistinguishable here; this is a hint, not a guarantee
                         avg_rows_per_pos = (before - after) / max(len(removed_positions), 1)
                         approx_time_slices = round(avg_rows_per_pos / max(chans, 1))
-                        ctx.logger.info(
+                        ctx.logger.debug(
                             "sample_map: consistency hint • removed_positions=%d • channels=%d • ~time_slices_per_channel=%d",
                             len(removed_positions),
                             chans,

@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from reader.core.errors import ConfigError
+from reader.core.presets import resolve_preset
 
 
 class StepSpec(BaseModel):
@@ -35,6 +36,7 @@ class ReaderSpec(BaseModel):
     contracts: list[dict[str, Any]] = Field(default_factory=list)
     collections: dict[str, Any] = Field(default_factory=dict)
     steps: list[StepSpec]
+    reports: list[StepSpec] = Field(default_factory=list)
 
     @field_validator("experiment", mode="after")
     @classmethod
@@ -67,14 +69,69 @@ class ReaderSpec(BaseModel):
                 data["experiment"]["outputs"] = str((root / outp).resolve())
         if "io" in data:
             data["io"] = _norm_io(data["io"])
-        for s in data.get("steps", []):
-            # normalize file: pseudo-reads
-            r = {}
-            for k, v in s.get("reads", {}).items():
-                if isinstance(v, str) and v.startswith("file:"):
-                    p = v.split("file:", 1)[1]
-                    r[k] = f"file:{(root / p).resolve()}"
+
+        overrides = data.get("overrides", {}) or {}
+
+        def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+            out = dict(base)
+            for k, v in override.items():
+                if isinstance(v, dict) and isinstance(out.get(k), dict):
+                    out[k] = _deep_merge(out[k], v)
                 else:
-                    r[k] = v
-            s["reads"] = r
+                    out[k] = v
+            return out
+
+        def _expand_steps(raw_steps: list[dict[str, Any]], *, section: str) -> list[dict[str, Any]]:
+            expanded: list[dict[str, Any]] = []
+            for entry in raw_steps:
+                if "preset" in entry:
+                    preset_name = entry["preset"]
+                    steps = resolve_preset(preset_name)
+                    extra = {k: v for k, v in entry.items() if k != "preset"}
+                    if extra:
+                        if len(steps) != 1:
+                            raise ConfigError(
+                                f"Preset {preset_name!r} expands to {len(steps)} steps; "
+                                f"inline overrides are only supported for single-step presets ({section})."
+                            )
+                        steps = [_deep_merge(steps[0], extra)]
+                    expanded.extend(steps)
+                else:
+                    expanded.append(entry)
+            return expanded
+
+        raw_steps = data.get("steps", []) or []
+        data["steps"] = _expand_steps(raw_steps, section="steps")
+
+        report_presets = data.get("report_presets", []) or []
+        if not isinstance(report_presets, list):
+            raise ConfigError("report_presets must be a list")
+        report_overrides = data.get("report_overrides", {}) or {}
+        if not isinstance(report_overrides, dict):
+            raise ConfigError("report_overrides must be a mapping of id -> overrides")
+        raw_reports = [{"preset": name} for name in report_presets]
+        raw_reports.extend(data.get("reports", []) or [])
+        data["reports"] = _expand_steps(raw_reports, section="reports")
+
+        def _finalize_steps(steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str) -> None:
+            for s in steps:
+                step_id = s.get("id")
+                if not step_id:
+                    raise ConfigError(f"Every {section} step must include an id (after preset expansion).")
+                if step_id in overrides_map:
+                    s.update(_deep_merge(s, overrides_map[step_id]))
+                # normalize file: pseudo-reads
+                r = {}
+                for k, v in s.get("reads", {}).items():
+                    if isinstance(v, str) and v.startswith("file:"):
+                        p = v.split("file:", 1)[1]
+                        r[k] = f"file:{(root / p).resolve()}"
+                    else:
+                        r[k] = v
+                s["reads"] = r
+                s.setdefault("with", {})
+                s.setdefault("writes", {})
+
+        _finalize_steps(data.get("steps", []), overrides, section="pipeline")
+        _finalize_steps(data.get("reports", []), report_overrides, section="report")
         return cls.model_validate(data)

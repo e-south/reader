@@ -305,7 +305,7 @@ def _tidy_kinetic_blocks(
         pairs = [
             f"{raw!r} → {raw_to_canon.get(raw, '?')!r} → {raw_to_resolved[raw]!r}" for raw in sorted(raw_to_resolved)
         ]
-        log.info("channel normalization (kinetic, sheet %s): %s", sheet_name, "; ".join(pairs))
+        log.debug("channel normalization (kinetic, sheet %s): %s", sheet_name, "; ".join(pairs))
 
     return out
 
@@ -384,8 +384,8 @@ def parse_snapshot_and_timeseries(
                     add_sheet=add_sheet,
                 )
             )
-            # Snapshot uses configured channels; log them for transparency
-            logging.getLogger("reader").info(
+            # Snapshot uses configured channels; log them for transparency (debug)
+            logging.getLogger("reader").debug(
                 "channel normalization (snapshot, sheet %s): configured=%s", sheet, list(channels or [])
             )
         if include_kinetic and kin is not None and not kin.empty:

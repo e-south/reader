@@ -73,25 +73,31 @@ class AliasTransform(Plugin):
         examples: list[str],
         unused_rules_preview: list[str],
     ) -> None:
-        # Pretty, indented INFO block with newlines (Rich handler preserves formatting)
-        ex_block = "\n".join(f"      • {s}" for s in examples) if examples else "      —"
-        unused_block = "\n".join(f"      • {s}" for s in unused_rules_preview) if unused_rules_preview else "      —"
+        unused_count = len(unused_rules_preview)
         ctx.logger.info(
-            (
-                "alias • [accent]%s[/accent] → %s\n"
-                "   rules: %d  used: %d  changed_rows: %d  uniques: %d\n"
-                "   examples:\n%s\n"
-                "   unused_rule_keys:\n%s"
-            ),
+            "alias • [accent]%s[/accent] → %s • rules=%d used=%d changed=%d uniques=%d%s",
             col,
             out_col,
             rules_total,
             used_rules,
             changed_rows,
             uniq_vals,
-            ex_block,
-            unused_block,
+            f" • unused={unused_count}" if unused_count else "",
         )
+        if examples or unused_rules_preview:
+            ex_block = "\n".join(f"      • {s}" for s in examples) if examples else "      —"
+            unused_block = "\n".join(f"      • {s}" for s in unused_rules_preview) if unused_rules_preview else "      —"
+            ctx.logger.debug(
+                (
+                    "alias details • %s → %s\n"
+                    "   examples:\n%s\n"
+                    "   unused_rule_keys:\n%s"
+                ),
+                col,
+                out_col,
+                ex_block,
+                unused_block,
+            )
 
     # ---------------- main ----------------
 

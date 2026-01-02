@@ -24,8 +24,10 @@ from reader.core.config_model import ReaderSpec
 from reader.core.engine import explain as explain_job
 from reader.core.engine import run_job
 from reader.core.engine import validate as validate_job
-from reader.core.errors import ExecutionError
-from reader.core.registry import load_entry_points
+from reader.core.errors import ConfigError, ExecutionError
+from reader.core.notebooks import write_experiment_eda_notebook
+from reader.core.presets import describe_preset, list_presets
+from reader.core.registry import _ensure_mpl_cache_dir, load_entry_points
 
 THEME = Theme(
     {
@@ -41,15 +43,26 @@ THEME = Theme(
 
 app = typer.Typer(
     add_completion=False,
+    invoke_without_command=True,
     help=(
-        "reader — instrument-agnostic pipeline runner.\n\n"
-        "Run data pipelines described by a config.yaml. Pipelines are sequences of steps "
-        "(ingest → merge → transform → plot) implemented by plugins. "
-        "Each experiment is a directory with a config.yaml; results are written under outputs/."
+        "reader — experiment pipeline runner.\n\n"
+        "Run pipelines defined by config.yaml (steps + optional reports). "
+        "Use 'reader report' for plots/exports and 'reader explore' for notebooks. "
+        "Start with 'reader demo' or 'reader ls'."
     ),
 )
 console = Console(theme=THEME)
 rich_tracebacks(show_locals=False)
+# Pre-set Matplotlib cache dir to a writable location (prevents noisy warnings).
+_ensure_mpl_cache_dir()
+
+
+@app.callback(invoke_without_command=True)
+def _main(ctx: typer.Context) -> None:
+    """Show help when no command is provided."""
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
 _RUN_EXTRA_ARG = typer.Argument(
     None,
@@ -75,6 +88,81 @@ def _table(title: str) -> Table:
         show_lines=False,
         show_edge=True,
     )
+
+
+@app.command(help="List presets or describe one.")
+def presets(
+    name: str | None = typer.Argument(
+        None,
+        metavar="[NAME]",
+        help="Optional preset name to describe (e.g., plate_reader/synergy_h1).",
+    ),
+):
+    try:
+        if name:
+            info = describe_preset(name)
+            table = _table(f"Preset: {info['name']}")
+            table.add_column("#", justify="right", style="muted")
+            table.add_column("Step ID", style="accent")
+            table.add_column("Plugin")
+            for i, step in enumerate(info["steps"], 1):
+                table.add_row(str(i), step.get("id", ""), step.get("uses", ""))
+            console.print(Panel(table, border_style="accent", box=box.ROUNDED, subtitle=info["description"]))
+            return
+
+        table = _table("Presets")
+        table.add_column("Name", style="accent")
+        table.add_column("Description")
+        for preset, desc in list_presets():
+            table.add_row(preset, desc)
+        console.print(Panel(table, border_style="accent", box=box.ROUNDED))
+    except ConfigError as e:
+        raise typer.BadParameter(str(e)) from e
+
+
+@app.command(help="Scaffold an interactive marimo notebook (no execution).")
+def explore(
+    job: str | None = typer.Argument(
+        None,
+        metavar="CONFIG|DIR|INDEX",
+        help="Experiment config path, directory, or index from 'reader ls'.",
+    ),
+    name: str = typer.Option(
+        "eda.py",
+        "--name",
+        help="Notebook filename (created under experiments/<exp>/notebooks).",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite the notebook if it already exists.",
+    ),
+):
+    try:
+        job_path = _infer_job_path(job)
+        exp_dir = job_path.parent
+        nb_dir = exp_dir / "notebooks"
+        target = nb_dir / name
+        has_fcs = any(p.suffix.lower() == ".fcs" for p in exp_dir.rglob("*.fcs"))
+        write_experiment_eda_notebook(target, overwrite=force)
+        console.print(
+            Panel.fit(f"✓ Notebook created: [path]{target}[/path]", border_style="ok", box=box.ROUNDED)
+        )
+        sync_cmd = "uv sync --locked --group notebooks"
+        if has_fcs:
+            sync_cmd = "uv sync --locked --group notebooks --group cytometry"
+        console.print(
+            Panel.fit(
+                "Next:\n"
+                f"  1) {sync_cmd}\n"
+                "     (Note: uv sync removes undeclared packages; include extra groups you use)\n"
+                "  2) uv run marimo edit " + str(target),
+                border_style="accent",
+                box=box.ROUNDED,
+            )
+        )
+    except ConfigError as e:
+        raise typer.BadParameter(str(e)) from e
 
 
 def _find_nearest_experiments_dir(start: Path) -> Path:
@@ -145,7 +233,8 @@ def _infer_job_path(job: str | None) -> Path:
             return c.resolve()
     raise typer.BadParameter(
         "Missing CONFIG and no 'config.yaml' found in the current or parent directories. "
-        "Run inside an experiment dir or pass a path to the config (or the experiment dir)."
+        "Run inside an experiment dir or pass a path to the config (or the experiment dir). "
+        "Tip: use 'reader ls' to list experiments and pass its index."
     )
 
 
@@ -171,11 +260,7 @@ def _append_journal(job_path: Path, command_line: str) -> None:
 
 
 @app.command(
-    help=(
-        "List experiments found under --root (default: ./experiments). "
-        "Shows the experiment *names* (directory names). The absolute experiments root "
-        "is shown once in the panel subtitle."
-    )
+    help="List experiments under a root (default: ./experiments)."
 )
 def ls(
     root: str = typer.Option(
@@ -220,10 +305,7 @@ def ls(
 
 
 @app.command(
-    help=(
-        "Render the execution plan for a config.yaml (or experiment dir, or numeric index from 'reader ls'): "
-        "step order, plugins, and input/output contracts. This does not run the pipeline."
-    )
+    help="Show planned steps and contracts (no execution)."
 )
 def explain(
     job: str | None = typer.Argument(
@@ -239,10 +321,7 @@ def explain(
 
 
 @app.command(
-    help=(
-        "Validate a config.yaml (or experiment dir, or numeric index): schema, plugin availability, "
-        "and each plugin's configuration. No steps are executed."
-    )
+    help="Validate config and plugin params (no data I/O)."
 )
 def validate(
     job: str | None = typer.Argument(
@@ -257,14 +336,59 @@ def validate(
     validate_job(spec, console=console)
 
 
-@app.command(
-    help=(
-        "Execute a pipeline described by config.yaml (or experiment dir, or numeric index from 'reader ls'). "
-        "Use --dry-run to print the plan without running. Use --resume-from/--until to run a slice of steps, "
-        "or the convenient --step/STEP shorthand to run exactly one step (accepts id or 1-based index). "
-        "Examples: 'reader run 14 --step 11', 'reader run 14 11', 'reader run 14 step 11'. "
-        "Logs go to outputs/reader.log."
+@app.command(help="Check that file inputs declared in reads: file: exist.")
+def check_inputs(
+    job: str | None = typer.Argument(
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+    ),
+):
+    job_path = _infer_job_path(job)
+    spec = ReaderSpec.load(job_path)
+
+    exp_root = Path(spec.experiment.get("root", job_path.parent))
+    entries: list[tuple[str, str, str, Path]] = []
+    for label, items in (("step", spec.steps), ("report", spec.reports or [])):
+        for step in items:
+            for key, target in (step.reads or {}).items():
+                if isinstance(target, str) and target.startswith("file:"):
+                    path = Path(target.split("file:", 1)[1])
+                    entries.append((label, step.id, key, path))
+
+    if not entries:
+        console.print(Panel.fit("No file inputs declared in reads: file:", border_style="warn", box=box.ROUNDED))
+        return
+
+    missing = []
+    for label, step_id, key, path in entries:
+        if not path.exists():
+            missing.append((label, step_id, key, path))
+
+    if missing:
+        lines = ["[error]✗ Missing input files[/error]"]
+        for label, step_id, key, path in missing:
+            rel = None
+            try:
+                rel = path.relative_to(exp_root)
+            except Exception:
+                rel = path
+            lines.append(f"- {label}:{step_id} • {key} → [path]{rel}[/path]")
+        lines.append("[muted]tip[/muted]: update reads: file: paths or place files under the experiment directory")
+        console.print(Panel.fit("\n".join(lines), border_style="error", box=box.ROUNDED))
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            f"✓ Inputs found ({len(entries)} file input(s))",
+            border_style="ok",
+            box=box.ROUNDED,
+        )
     )
+
+
+@app.command(
+    help="Run pipeline. Reports (plots/exports) run by default; use --no-reports for pipeline-only."
 )
 def run(
     job: str | None = typer.Argument(
@@ -308,6 +432,11 @@ def run(
         metavar="LEVEL",
         help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
     ),
+    reports: bool | None = typer.Option(
+        None,
+        "--reports/--no-reports",
+        help="Run report steps after the pipeline (default: on for full runs).",
+    ),
 ):
     # Normalize args & support sugar: 'reader run 14 11' and 'reader run 14 step 11'
     job_path = _infer_job_path(job)
@@ -348,8 +477,19 @@ def run(
             parts += ["--dry-run"]
         if log_level and log_level != "INFO":
             parts += ["--log-level", log_level]
+        if reports is not None:
+            parts += ["--reports" if reports else "--no-reports"]
         _append_journal(job_path, " ".join(parts))
-        run_job(job_path, resume_from=step_id, until=step_id, dry_run=dry_run, log_level=log_level, console=console)
+        run_job(
+            job_path,
+            resume_from=step_id,
+            until=step_id,
+            dry_run=dry_run,
+            log_level=log_level,
+            console=console,
+            include_pipeline=True,
+            include_reports=False,
+        )
         return
 
     # Accept numeric indices for --resume-from/--until as well
@@ -367,16 +507,85 @@ def run(
         parts += ["--dry-run"]
     if log_level and log_level != "INFO":
         parts += ["--log-level", log_level]
+    if reports is not None:
+        parts += ["--reports" if reports else "--no-reports"]
     _append_journal(job_path, " ".join(parts))
     # Pass our themed console down so engine can render pretty output & progress
-    run_job(job_path, resume_from=resume_from, until=until, dry_run=dry_run, log_level=log_level, console=console)
+    include_reports = True if reports is None else reports
+    if reports is None and (resume_from or until):
+        include_reports = False
+    run_job(
+        job_path,
+        resume_from=resume_from,
+        until=until,
+        dry_run=dry_run,
+        log_level=log_level,
+        console=console,
+        include_pipeline=True,
+        include_reports=include_reports,
+    )
 
 
 @app.command(
-    help=(
-        "List materialized artifacts for a run (from outputs/manifest.json). "
-        "By default shows the latest revision per artifact. Use --all for history counts."
+    help="Render report steps only (static plots/exports) using existing artifacts. Use --list to show steps."
+)
+def report(
+    job: str | None = typer.Argument(
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+    ),
+    list_only: bool = typer.Option(
+        False,
+        "--list",
+        help="List report steps for this config and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Plan only: validate and print the report plan without executing.",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        metavar="LEVEL",
+        help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
+    ),
+):
+    job_path = _infer_job_path(job)
+    spec = ReaderSpec.load(job_path)
+    if list_only:
+        if not spec.reports:
+            console.print(Panel.fit("No reports configured.", border_style="warn", box=box.ROUNDED))
+            return
+        t = _table("Reports")
+        t.add_column("#", justify="right", style="muted")
+        t.add_column("id", style="accent")
+        t.add_column("uses")
+        for i, s in enumerate(spec.reports, 1):
+            t.add_row(str(i), s.id, s.uses)
+        console.print(Panel(t, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(spec.reports)} total[/muted]"))
+        return
+    if not spec.reports:
+        raise typer.BadParameter("No reports configured in this experiment. Add a reports section or report_presets.")
+    parts = ["reader report", str(job_path)]
+    if dry_run:
+        parts += ["--dry-run"]
+    if log_level and log_level != "INFO":
+        parts += ["--log-level", log_level]
+    _append_journal(job_path, " ".join(parts))
+    run_job(
+        job_path,
+        dry_run=dry_run,
+        log_level=log_level,
+        console=console,
+        include_pipeline=False,
+        include_reports=True,
     )
+
+
+@app.command(
+    help="List emitted artifacts from outputs/manifest.json."
 )
 def artifacts(
     job: str | None = typer.Argument(
@@ -405,7 +614,7 @@ def artifacts(
     console.print(Panel(t, border_style="accent", box=box.ROUNDED))
 
 
-@app.command(help="Show the steps declared in a config.yaml (index, id, plugin key).")
+@app.command(help="List step ids and plugins for a config.")
 def steps(
     job: str | None = typer.Argument(
         None,
@@ -424,17 +633,14 @@ def steps(
 
 
 @app.command(
-    help=(
-        "Show discovered plugins by category. Built-ins are scanned from reader.plugins.*; "
-        "external plugins are loaded via entry points. Use --category to filter."
-    )
+    help="List plugins by category."
 )
 def plugins(
     category: str | None = typer.Option(
         None,
         "--category",
         metavar="NAME",
-        help="Filter by category: ingest | merge | transform | plot",
+        help="Filter by category: ingest | merge | transform | plot | export",
     ),
 ):
     reg = load_entry_points()
@@ -471,7 +677,10 @@ def _resolve_step_id(spec: ReaderSpec, which: str) -> str:
     if which_str.isdigit():
         idx = int(which_str)
         if idx < 1 or idx > len(spec.steps):
-            raise typer.BadParameter(f"Step index out of range: {idx} (valid: 1..{len(spec.steps)})")
+            raise typer.BadParameter(
+                f"Step index out of range: {idx} (valid: 1..{len(spec.steps)}). "
+                "Tip: use 'reader steps <config>' to list ids."
+            )
         return spec.steps[idx - 1].id
     # by id
     try:
@@ -517,7 +726,16 @@ def _run_one_step_cli(which: str, job: str | None, *, dry_run: bool, log_level: 
 
     # Delegate to the engine using (resume_from == until == selected step)
     try:
-        run_job(job_path, resume_from=step_id, until=step_id, dry_run=dry_run, log_level=log_level, console=console)
+        run_job(
+            job_path,
+            resume_from=step_id,
+            until=step_id,
+            dry_run=dry_run,
+            log_level=log_level,
+            console=console,
+            include_pipeline=True,
+            include_reports=False,
+        )
     except ExecutionError as e:
         # Make common “artifact missing” errors friendlier.
         m = re.search(r"Artifact '([^']+)' missing", str(e))
@@ -537,15 +755,31 @@ def _run_one_step_cli(which: str, job: str | None, *, dry_run: bool, log_level: 
         raise
 
 
+def _print_missing_step_hint(command: str) -> None:
+    msg = (
+        "[error]✗ Missing STEP[/error]\n"
+        "Provide a step id or a 1-based index.\n"
+        "Examples:\n"
+        f"  {command} 1\n"
+        f"  {command} ratio_yfp_od600\n"
+        f"  {command} 3 --config path/to/config.yaml\n"
+        "[muted]Tip: use 'reader steps <config>' to list ids.[/muted]"
+    )
+    console.print(Panel.fit(msg, border_style="error", box=box.ROUNDED))
+
+
 @app.command(
     name="run-step",
     help=(
-        "Execute exactly one step by ID or 1-based index, using existing artifacts for inputs. "
-        "Does not run prior steps. Use --dry-run to print the plan slice without executing."
+        "Run a single step using existing artifacts (no prior steps)."
     ),
 )
 def run_step(
-    which: str = typer.Argument(..., metavar="STEP", help="Step id (e.g. 'ingest') or 1-based index (e.g. '1')."),
+    which: str | None = typer.Argument(
+        None,
+        metavar="STEP",
+        help="Step id (e.g. 'ingest') or 1-based index (e.g. '1').",
+    ),
     config: str | None = typer.Option(
         None,
         "--config",
@@ -560,14 +794,50 @@ def run_step(
         "INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR."
     ),
 ):
+    if not which:
+        _print_missing_step_hint("reader run-step")
+        raise typer.Exit(code=2)
     _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
 
 
 @app.command(name="step", help="[alias] Same as 'run-step'. Run exactly one step by ID or index.")
 def step_alias(
-    which: str = typer.Argument(..., metavar="STEP"),
+    which: str | None = typer.Argument(None, metavar="STEP"),
     config: str | None = typer.Option(None, "--config", "-c", metavar="CONFIG"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     log_level: str = typer.Option("INFO", "--log-level", metavar="LEVEL"),
 ):
+    if not which:
+        _print_missing_step_hint("reader step")
+        raise typer.Exit(code=2)
     _run_one_step_cli(which, config, dry_run=dry_run, log_level=log_level)
+
+
+@app.command(help="Show a quick guided walkthrough.")
+def demo():
+    steps = [
+        ("1", "Find experiments", "reader ls"),
+        ("2", "List presets", "reader presets"),
+        ("3", "Explain plan", "reader explain 1"),
+        ("4", "Validate config", "reader validate 1"),
+        ("5", "Check file inputs", "reader check-inputs 1"),
+        ("6", "Run pipeline + reports", "reader run 1"),
+        ("7", "Reports only (plots/exports)", "reader report 1"),
+        ("8", "List report steps", "reader report --list 1"),
+        ("9", "Notebook scaffold (marimo)", "reader explore 1"),
+        ("10", "See artifacts", "reader artifacts 1"),
+    ]
+    t = _table("Reader Demo")
+    t.add_column("#", justify="right", style="muted")
+    t.add_column("Goal", style="accent")
+    t.add_column("Command", style="path")
+    for row in steps:
+        t.add_row(*row)
+    console.print(
+        Panel(
+            t,
+            border_style="accent",
+            box=box.ROUNDED,
+            subtitle="[muted]Tip: replace the index with a path or experiment directory[/muted]",
+        )
+    )

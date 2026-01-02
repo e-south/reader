@@ -42,7 +42,7 @@ out/
 .ipynb_checkpoints/
 
 # Marimo
-**/__marimo__/cache/
+**/__marimo__/
 
 # -----------------------------------------------------------------------------
 # Python build & tooling
@@ -68,6 +68,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
 .nox/
 .coverage
 .coverage.*

@@ -92,7 +92,8 @@ class SynergyH1(Plugin):
         )
         if not files:
             raise ParseError(
-                f"No raw .xlsx discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude})."
+                f"No raw .xlsx discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude}).\n"
+                "Hint: put raw files under ./inputs (default), or set auto_roots / reads.raw explicitly."
             )
         if cfg.auto_pick in ("single", "latest"):
             return [self._auto_pick_one(files, cfg.auto_pick)]
@@ -107,12 +108,12 @@ class SynergyH1(Plugin):
             sel = len(sheet_names or xl.sheet_names)
             shown = (sheet_names or xl.sheet_names)[:5]
             extra = "" if sel <= 5 else " …"
-            ctx.logger.info(
+            ctx.logger.debug(
                 f"[accent]{path.name}[/accent] • sheets: {total} • selected: {sel} "
                 f"({', '.join(map(str, shown))}{extra})"
             )
         except Exception:
-            ctx.logger.info(f"[accent]{path.name}[/accent] • sheets: ? (failed to introspect)")
+            ctx.logger.debug(f"[accent]{path.name}[/accent] • sheets: ? (failed to introspect)")
 
     def _log_df_summary(self, ctx, df: pd.DataFrame, files_count: int, mode: str):
         try:
@@ -138,14 +139,14 @@ class SynergyH1(Plugin):
             )
             if chans:
                 preview = ", ".join(chans[:8]) + (" …" if len(chans) > 8 else "")
-                ctx.logger.info("channels: %s", preview)
+                ctx.logger.debug("channels: %s", preview)
 
             # Block presence line (unambiguous snapshot/kinetic summary)
             snap_n = int(src_counts.get("snapshot", 0))
             kin_n = int(src_counts.get("kinetic", 0))
             snap_flag = "YES" if snap_n > 0 else "NO"
             kin_flag = "YES" if kin_n > 0 else "NO"
-            ctx.logger.info(
+            ctx.logger.debug(
                 "parsed blocks • snapshot=%s (%d rows) • kinetic=%s (%d rows)", snap_flag, snap_n, kin_flag, kin_n
             )
 
@@ -173,7 +174,12 @@ class SynergyH1(Plugin):
             files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
 
             if cfg.print_summary:
-                ctx.logger.info("[muted]Synergy H1 ingest • %d file(s) selected[/muted]", len(files))
+                file_names = ", ".join(getattr(f, "name", str(f)) for f in files)
+                ctx.logger.info(
+                    "[muted]Synergy H1 ingest • %d file(s) selected[/muted]%s",
+                    len(files),
+                    f" • {file_names}" if file_names else "",
+                )
                 for f in files:
                     self._log_file_overview(ctx, f, cfg.sheet_names)
 

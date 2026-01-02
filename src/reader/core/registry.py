@@ -12,9 +12,11 @@ from __future__ import annotations
 import importlib
 import importlib.metadata as md
 import inspect
+import os
 import pkgutil
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -31,7 +33,7 @@ class Plugin(ABC):
     """Contract-driven plugin interface."""
 
     key: str  # short unique key within category
-    category: str  # ingest|merge|transform|plot|validator
+    category: str  # ingest|merge|transform|plot|export|validator
 
     ConfigModel = PluginConfig
 
@@ -59,6 +61,7 @@ class Registry:
             "merge": {},
             "transform": {},
             "plot": {},
+            "export": {},
             "validator": {},
         }
 
@@ -82,12 +85,35 @@ class Registry:
             raise RegistryError(f"Unknown plugin '{uses}'. Installed: {available}") from None
 
 
-def load_entry_points() -> Registry:
+def _ensure_mpl_cache_dir() -> None:
+    if os.environ.get("MPLCONFIGDIR"):
+        return
+    override = os.environ.get("READER_MPLCONFIGDIR")
+    cache_dir = Path(override).expanduser() if override else (Path.cwd() / ".cache" / "matplotlib")
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    os.environ["MPLCONFIGDIR"] = str(cache_dir)
+
+
+def load_entry_points(categories: set[str] | None = None) -> Registry:
     """Register built-in plugins by scanning the package, then load external ones via entry points."""
     reg = Registry()
+    wanted = set(categories) if categories else None
+
+    if wanted is None or "plot" in wanted:
+        _ensure_mpl_cache_dir()
 
     discovered = 0
     for modinfo in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
+        if wanted is not None:
+            parts = modinfo.name.split(".")
+            if len(parts) < 3:
+                continue
+            category = parts[2]
+            if category not in wanted:
+                continue
         module = importlib.import_module(modinfo.name)
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Plugin) and obj is not Plugin:
@@ -108,7 +134,9 @@ def load_entry_points() -> Registry:
                 raise RegistryError(f"Entry point {ep.name} in {group} is not a Plugin subclass")
             reg.register(category, cls.key, cls)
 
-    for category in ("ingest", "merge", "transform", "plot"):
+    for category in ("ingest", "merge", "transform", "plot", "export"):
+        if wanted is not None and category not in wanted:
+            continue
         _load(f"reader.{category}", category)
 
     return reg

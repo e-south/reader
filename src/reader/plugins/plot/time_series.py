@@ -36,6 +36,7 @@ class TimeSeriesCfg(PluginConfig):
     ci_alpha: float = 0.15
     legend_loc: str = "upper left"
     show_replicates: bool = False
+    filename: str | None = None
 
 
 class TimeSeriesPlot(Plugin):
@@ -104,5 +105,6 @@ class TimeSeriesPlot(Plugin):
             ci_alpha=cfg.ci_alpha,
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
+            filename=cfg.filename,
         )
         return {"files": None}
