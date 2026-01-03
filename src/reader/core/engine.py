@@ -9,13 +9,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
+import warnings
+from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
-from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -37,7 +39,8 @@ from reader.core.artifacts import ArtifactStore
 from reader.core.config_model import ReaderSpec
 from reader.core.context import RunContext
 from reader.core.contracts import BUILTIN, validate_df
-from reader.core.errors import ConfigError, ExecutionError, ReaderError
+from reader.core.errors import ConfigError, ContractError, ExecutionError, ReaderError
+from reader.core.mpl import ensure_mpl_cache_dir
 from reader.core.registry import Plugin, load_entry_points
 
 
@@ -57,22 +60,6 @@ def _needs_plot_palette(steps: list[Any], palette: str | None) -> bool:
     if palette is None:
         return False
     return any(getattr(step, "uses", "").startswith("plot/") for step in steps)
-
-
-def _ensure_mpl_cache_dir(base_dir: Path | None = None) -> None:
-    if os.environ.get("MPLCONFIGDIR"):
-        return
-    override = os.environ.get("READER_MPLCONFIGDIR")
-    if override:
-        cache_dir = Path(override).expanduser()
-    else:
-        root = base_dir if base_dir is not None else Path.cwd()
-        cache_dir = root / ".cache" / "matplotlib"
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        return
-    os.environ["MPLCONFIGDIR"] = str(cache_dir)
 
 
 def _collect_categories(steps: list[Any]) -> set[str]:
@@ -107,6 +94,8 @@ def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, An
             path = Path(target.split("file:", 1)[1])
             if not path.exists():
                 raise ExecutionError(f"Input file missing for '{label}': {path}")
+            if path.is_dir():
+                raise ExecutionError(f"Input file path is a directory for '{label}': {path}")
             inputs[label] = path
         else:
             art = store.read(target)
@@ -114,7 +103,14 @@ def _resolve_inputs(store: ArtifactStore, reads: dict[str, str]) -> dict[str, An
     return inputs
 
 
-def _assert_input_contracts(plugin: Plugin, inputs: dict[str, Any], *, where: str) -> None:
+def _assert_input_contracts(
+    plugin: Plugin,
+    inputs: dict[str, Any],
+    *,
+    where: str,
+    strict: bool = True,
+    logger: logging.Logger | None = None,
+) -> None:
     req = plugin.input_contracts()
     allowed: set[str] = set()
     for raw_name, contract_id in req.items():
@@ -129,26 +125,66 @@ def _assert_input_contracts(plugin: Plugin, inputs: dict[str, Any], *, where: st
             continue
         inp = inputs[name]
         if getattr(inp, "contract_id", None) != contract_id:
-            raise ExecutionError(
-                f"[{where}] input '{name}' must be contract {contract_id} but got {getattr(inp, 'contract_id', None)}"
+            msg = (
+                f"[{where}] input '{name}' must be contract {contract_id} "
+                f"but got {getattr(inp, 'contract_id', None)}"
             )
+            if strict:
+                raise ExecutionError(msg)
+            if logger is not None:
+                logger.warning("contract relaxed • %s", msg)
+            else:
+                warnings.warn(msg, stacklevel=2)
     extra = sorted(set(inputs) - allowed)
     if extra:
         raise ExecutionError(f"[{where}] unexpected inputs provided: {extra} (allowed: {sorted(allowed)})")
 
 
-def _assert_output_contracts(plugin: Plugin, outputs: dict[str, Any], *, where: str) -> None:
+def _assert_output_contracts(
+    plugin: Plugin,
+    outputs: dict[str, Any],
+    *,
+    where: str,
+    strict: bool = True,
+    logger: logging.Logger | None = None,
+) -> None:
     exp = plugin.output_contracts()
     # Exactly the declared outputs must be present
     if set(outputs.keys()) != set(exp.keys()):
         raise ExecutionError(f"[{where}] plugin must emit outputs {sorted(exp)} but emitted {sorted(outputs)}")
     for name, cid in exp.items():
         val = outputs[name]
-        if isinstance(val, pd.DataFrame) and cid != "none":
+        if cid == "none":
+            if isinstance(val, pd.DataFrame):
+                msg = f"[{where}] output '{name}' is declared as contract 'none' but returned a DataFrame"
+                if strict:
+                    raise ExecutionError(msg)
+                if logger is not None:
+                    logger.warning("contract relaxed • %s", msg)
+                else:
+                    warnings.warn(msg, stacklevel=2)
+            continue
+        if isinstance(val, pd.DataFrame):
             contract = BUILTIN.get(cid)
             if not contract:
-                raise ExecutionError(f"[{where}] unknown contract id {cid}")
-            validate_df(val, contract, where=where)
+                msg = f"[{where}] unknown contract id {cid}"
+                if strict:
+                    raise ExecutionError(msg)
+                if logger is not None:
+                    logger.warning("contract relaxed • %s", msg)
+                else:
+                    warnings.warn(msg, stacklevel=2)
+                continue
+            try:
+                validate_df(val, contract, where=where)
+            except ContractError as e:
+                msg = str(e)
+                if strict:
+                    raise ExecutionError(msg) from e
+                if logger is not None:
+                    logger.warning("contract relaxed • %s", msg)
+                else:
+                    warnings.warn(msg, stacklevel=2)
 
 
 def _resolve_output_labels(
@@ -203,7 +239,11 @@ def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
 def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
     steps = list(spec.steps)
     deliverables = list(spec.deliverables or [])
-    registry = registry or load_entry_points(categories=_collect_categories(steps + deliverables))
+    categories = _collect_categories(steps + deliverables)
+    if "plot" in categories:
+        out_dir = Path(spec.experiment["outputs"])
+        ensure_mpl_cache_dir(base_dir=out_dir)
+    registry = registry or load_entry_points(categories=categories)
     if steps:
         pipeline = _plan_table(steps, registry, title="Pipeline")
         console.print(
@@ -230,7 +270,11 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
     # schema already validated by pydantic; here we ensure contracts exist
     steps = list(spec.steps)
     deliverables = list(spec.deliverables or [])
-    registry = load_entry_points(categories=_collect_categories(steps + deliverables))
+    categories = _collect_categories(steps + deliverables)
+    if "plot" in categories:
+        out_dir = Path(spec.experiment["outputs"])
+        ensure_mpl_cache_dir(base_dir=out_dir)
+    registry = load_entry_points(categories=categories)
 
     def _validate_steps(items: list[Any], label: str, *, available_labels: set[str] | None = None) -> set[str]:
         available = set(available_labels or set())
@@ -334,18 +378,29 @@ def run_job(
     os.environ.setdefault("ARROW_LOG_LEVEL", "FATAL")
     spec = ReaderSpec.load(spec_path)
     exp = spec.experiment
-    out_dir = Path(exp["outputs"]).resolve()
     # Normalize outputs relative to the experiment root if still relative
     out_dir = Path(exp["outputs"])
     if not out_dir.is_absolute():
         out_dir = Path(exp["root"]) / out_dir
     out_dir = out_dir.resolve()
+    if out_dir.exists() and not out_dir.is_dir():
+        raise ConfigError(f"experiment.outputs points to a file: {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
     # logging
+    level_name = str(log_level).upper()
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if level_name not in valid_levels:
+        raise ConfigError(f"Invalid log level {log_level!r}. Choose one of: {sorted(valid_levels)}")
     logger = logging.getLogger("reader")
-    logger.handlers.clear()
-    logger.setLevel(getattr(logging, str(log_level).upper(), logging.INFO))
-    fh = logging.FileHandler(out_dir / "reader.log", encoding="utf-8")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        with contextlib.suppress(Exception):
+            handler.close()
+    logger.setLevel(getattr(logging, level_name))
+    try:
+        fh = logging.FileHandler(out_dir / "reader.log", encoding="utf-8")
+    except OSError as e:
+        raise ConfigError(f"Cannot write reader.log in outputs directory: {out_dir}") from e
     fmt_file = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     fh.setFormatter(fmt_file)
     # Pretty console logs with Rich (integrates with progress bars)
@@ -382,25 +437,31 @@ def run_job(
     all_steps = steps + deliverables
 
     if any(getattr(step, "uses", "").startswith("plot/") for step in all_steps):
-        _ensure_mpl_cache_dir(base_dir=out_dir)
+        ensure_mpl_cache_dir(base_dir=out_dir)
 
     palette = exp.get("palette", "colorblind")
+    if palette is not None:
+        if not isinstance(palette, str) or not palette.strip():
+            raise ConfigError("experiment.palette must be a non-empty string or null")
+        palette = palette.strip()
 
     PaletteBook = None
+    available_palettes = None
     if (not dry_run) and _needs_plot_palette(all_steps, palette):
         try:
             mod = import_module("reader.lib.microplates.style")
             PaletteBook = getattr(mod, "PaletteBook", None)
-            if PaletteBook is None:
-                raise ImportError("PaletteBook not found in style module")
+            available_palettes = getattr(mod, "available_palettes", None)
+            if PaletteBook is None or available_palettes is None:
+                raise ImportError("PaletteBook or available_palettes not found in style module")
         except Exception as e:
-            logger.warning(
-                "Plot palette disabled: could not import reader.lib.microplates.style (%s). "
-                "Continuing without a palette; plots will use Matplotlib rcParams. "
-                "To re‑enable, install plotting extras or set experiment.palette: null. ",
-                e.__class__.__name__,
+            raise ConfigError(
+                "Plot palettes require matplotlib; install plotting dependencies or set experiment.palette: null."
+            ) from e
+        if palette not in available_palettes():
+            raise ConfigError(
+                f"Unknown palette {palette!r}. Available: {available_palettes()} (or set experiment.palette: null)."
             )
-            PaletteBook = None
 
     # Where should plots go?
     plots_cfg = exp.get("plots_dir", "plots")  # set to None to flatten into outputs/
@@ -457,7 +518,7 @@ def run_job(
 
                 # collect & check inputs
                 inputs = _resolve_inputs(store, step.reads or {})
-                _assert_input_contracts(plugin, inputs, where=f"{step.id}")
+                _assert_input_contracts(plugin, inputs, where=f"{step.id}", strict=ctx.strict, logger=ctx.logger)
 
                 # adapt artifacts -> dataframes/files for plugin
                 plug_inputs: dict[str, Any] = {}
@@ -476,7 +537,7 @@ def run_job(
                     raise ExecutionError(f"{phase[:-1]} {step.id} crashed: {e}") from e
 
                 # check outputs vs declared contracts
-                _assert_output_contracts(plugin, outputs, where=f"{step.id}")
+                _assert_output_contracts(plugin, outputs, where=f"{step.id}", strict=ctx.strict, logger=ctx.logger)
 
                 # persist outputs
                 for out_name, obj in outputs.items():
@@ -494,6 +555,7 @@ def run_job(
                                 for n in (step.reads or {})
                             ],
                             config_digest=_digest_cfg(cfg),
+                            validate_contract=ctx.strict,
                         )
                     elif cid == "none":
                         # e.g., plots: plugin must have already written files into ctx.plots_dir
@@ -507,7 +569,7 @@ def run_job(
                     file_outputs = outputs.get("files")
                     extra_files: list[Path] = []
                     if file_outputs:
-                        if isinstance(file_outputs, (str, Path)):
+                        if isinstance(file_outputs, str | Path):
                             extra_files = [Path(file_outputs)]
                         elif isinstance(file_outputs, list):
                             extra_files = [Path(p) for p in file_outputs if p]

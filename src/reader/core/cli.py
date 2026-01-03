@@ -29,7 +29,7 @@ from reader.core.engine import validate as validate_job
 from reader.core.errors import ConfigError, ExecutionError, ReaderError
 from reader.core.notebooks import list_notebook_presets, write_experiment_notebook
 from reader.core.presets import describe_preset, list_presets
-from reader.core.registry import _ensure_mpl_cache_dir, load_entry_points
+from reader.core.registry import load_entry_points
 
 THEME = Theme(
     {
@@ -55,8 +55,6 @@ app = typer.Typer(
 )
 console = Console(theme=THEME)
 rich_tracebacks(show_locals=False)
-# Pre-set Matplotlib cache dir to a writable location (prevents noisy warnings).
-_ensure_mpl_cache_dir()
 
 
 @app.callback(invoke_without_command=True)
@@ -502,7 +500,7 @@ def run(
         "INFO",
         "--log-level",
         metavar="LEVEL",
-        help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
+        help="Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO).",
     ),
     deliverables: bool | None = typer.Option(
         None,
@@ -638,7 +636,7 @@ def deliverables(
         "INFO",
         "--log-level",
         metavar="LEVEL",
-        help="Logging level: DEBUG | INFO | WARNING | ERROR (default: INFO).",
+        help="Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO).",
     ),
 ):
     try:
@@ -701,21 +699,40 @@ def artifacts(
 ):
     try:
         spec = ReaderSpec.load(_infer_job_path(job))
+        outputs_dir = Path(spec.experiment["outputs"])
+        manifest_path = outputs_dir / "manifest.json"
+        if not manifest_path.exists():
+            _abort("No outputs/manifest.json found. Run 'reader run' first to produce artifacts.")
+        store = ArtifactStore(outputs_dir)
+        man = store._read_manifest()
     except ReaderError as e:
         _handle_reader_error(e)
-    outputs_dir = Path(spec.experiment["outputs"])
-    manifest_path = outputs_dir / "manifest.json"
-    if not manifest_path.exists():
-        _abort("No outputs/manifest.json found. Run 'reader run' first to produce artifacts.")
-    store = ArtifactStore(outputs_dir)
-    man = store._read_manifest()
+
     if all:
+        if not man.get("history"):
+            console.print(
+                Panel.fit(
+                    "No artifact history listed in outputs/manifest.json. Run 'reader run' first.",
+                    border_style="warn",
+                    box=box.ROUNDED,
+                )
+            )
+            return
         t = _table("Artifacts • history")
         t.add_column("Label")
         t.add_column("Revisions", justify="right")
         for k, hist in man["history"].items():
             t.add_row(k, str(len(hist)))
     else:
+        if not man.get("artifacts"):
+            console.print(
+                Panel.fit(
+                    "No artifacts listed in outputs/manifest.json. Run 'reader run' first.",
+                    border_style="warn",
+                    box=box.ROUNDED,
+                )
+            )
+            return
         t = _table("Artifacts • latest")
         t.add_column("Label")
         t.add_column("Contract", style="accent")
@@ -908,7 +925,7 @@ def run_step(
         False, "--dry-run", help="Plan only: validate and print the plan slice without executing."
     ),
     log_level: str = typer.Option(
-        "INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR."
+        "INFO", "--log-level", metavar="LEVEL", help="Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL."
     ),
 ):
     if not which:

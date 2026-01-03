@@ -60,13 +60,20 @@ class PaletteBook:
     name: str = "colorblind"
 
     def colors(self, n: int) -> list[str]:
-        pal = _PALETTES.get(self.name, _PALETTES["colorblind"])
+        if self.name not in _PALETTES:
+            opts = ", ".join(sorted(_PALETTES))
+            raise ValueError(f"Unknown palette '{self.name}'. Available: {opts}")
+        pal = _PALETTES[self.name]
         if n <= len(pal):
             return pal[:n]
         out = []
         while len(out) < n:
             out.extend(pal)
         return out[:n]
+
+
+def available_palettes() -> list[str]:
+    return sorted(_PALETTES)
 
 
 _DEFAULT_RC = {

@@ -1,12 +1,6 @@
-## reader spec (architecture + developer workflow)
+# reader specification
 
 This document is the developer‑oriented source of truth for how **reader** is structured, how configs map to execution, and how dependencies are managed.
-
-Quick links:
-- [README](../README.md)
-- [Pipeline config + deliverables](./pipeline.md)
-- [CLI reference](./cli.md)
-- [Plugin development](./plugins.md)
 
 ---
 
@@ -34,20 +28,29 @@ reader/
 
 ---
 
-### Config + outputs
-
-This spec defers to [pipeline.md](./pipeline.md) for config keys, execution semantics, and outputs/manifests.
-
----
-
 ### Contracts
 
 Plugins declare input/output contracts (schema identifiers). The engine:
 - asserts required inputs are present
 - validates declared outputs
-- fails fast on mismatches (unless runtime strictness is relaxed)
+- fails fast on mismatches (unless runtime strictness is relaxed, in which case mismatches are logged as warnings)
 
 Built‑in contracts live in `src/reader/core/contracts.py`.
+
+---
+
+### Matplotlib cache
+
+Plotting plugins require a writable Matplotlib cache directory. `reader` sets
+`MPLCONFIGDIR` automatically when plotting is needed.
+
+Defaults:
+- Commands that resolve a config/experiment (run/explain/validate/deliverables) use
+  `<experiment.outputs>/.cache/matplotlib`.
+- Other commands that load plot plugins without a config (e.g., `reader plugins`)
+  use `$XDG_CACHE_HOME/reader/matplotlib` (or `~/.cache/reader/matplotlib`).
+
+Override with `MPLCONFIGDIR` or `READER_MPLCONFIGDIR` if you need a custom path.
 
 ---
 

@@ -7,11 +7,19 @@ Tests for engine contract enforcement and writes aliasing.
 --------------------------------------------------------------------------------
 """
 
+import logging
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
-from reader.core.engine import _assert_input_contracts, _resolve_output_labels
+from reader.core.artifacts import ArtifactStore
+from reader.core.engine import (
+    _assert_input_contracts,
+    _assert_output_contracts,
+    _resolve_inputs,
+    _resolve_output_labels,
+)
 from reader.core.errors import ExecutionError
 
 
@@ -19,6 +27,12 @@ class DummyPlugin:
     @staticmethod
     def input_contracts():
         return {"df": "tidy.v1", "raw?": "none"}
+
+
+class DummyOutputPlugin:
+    @staticmethod
+    def output_contracts():
+        return {"df": "tidy.v1"}
 
 
 def test_assert_input_contracts_rejects_extra_inputs():
@@ -35,6 +49,24 @@ def test_assert_input_contracts_allows_optional_missing():
     plugin = DummyPlugin()
     inputs = {"df": SimpleNamespace(contract_id="tidy.v1")}
     _assert_input_contracts(plugin, inputs, where="test")
+
+
+def test_assert_input_contracts_allows_mismatch_when_non_strict(caplog):
+    plugin = DummyPlugin()
+    inputs = {"df": SimpleNamespace(contract_id="other.v1")}
+    logger = logging.getLogger("reader.tests")
+    with caplog.at_level(logging.WARNING):
+        _assert_input_contracts(plugin, inputs, where="test", strict=False, logger=logger)
+    assert any("contract relaxed" in rec.message for rec in caplog.records)
+
+
+def test_assert_output_contracts_allows_mismatch_when_non_strict(caplog):
+    plugin = DummyOutputPlugin()
+    bad_df = pd.DataFrame({"position": ["A1"]})
+    logger = logging.getLogger("reader.tests")
+    with caplog.at_level(logging.WARNING):
+        _assert_output_contracts(plugin, {"df": bad_df}, where="test", strict=False, logger=logger)
+    assert any("contract relaxed" in rec.message for rec in caplog.records)
 
 
 def test_resolve_output_labels_default_and_override():
@@ -76,3 +108,11 @@ def test_resolve_output_labels_rejects_none_contract_writes():
             output_contracts={"files": "none"},
             writes={"files": "plots"},
         )
+
+
+def test_resolve_inputs_rejects_directory_file_input(tmp_path):
+    store = ArtifactStore(tmp_path / "outputs")
+    data_dir = tmp_path / "inputs"
+    data_dir.mkdir()
+    with pytest.raises(ExecutionError):
+        _resolve_inputs(store, {"raw": f"file:{data_dir}"})

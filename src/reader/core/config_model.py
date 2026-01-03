@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,16 @@ class ReaderSpec(BaseModel):
     def _validate_exp(cls, v: dict[str, Any]) -> dict[str, Any]:
         if "outputs" not in v:
             raise ConfigError("experiment.outputs must be provided")
+        outputs = v.get("outputs")
+        if not isinstance(outputs, str) or not outputs.strip():
+            raise ConfigError("experiment.outputs must be a non-empty string path")
+        palette = v.get("palette", None)
+        if palette is not None:
+            if not isinstance(palette, str) or not palette.strip():
+                raise ConfigError("experiment.palette must be a non-empty string or null")
+        plots_dir = v.get("plots_dir", None)
+        if plots_dir is not None and not isinstance(plots_dir, str):
+            raise ConfigError("experiment.plots_dir must be a string or null")
         return v
 
     @classmethod
@@ -64,6 +75,28 @@ class ReaderSpec(BaseModel):
                 "Config uses legacy report keys. Rename to: "
                 "deliverables, deliverable_presets, deliverable_overrides."
             )
+        if "steps" not in data:
+            raise ConfigError("Config must define 'steps' (use an empty list if there are no pipeline steps).")
+        if "experiment" in data and not isinstance(data["experiment"], dict):
+            raise ConfigError("experiment must be a mapping")
+        data.setdefault("experiment", {})
+        outputs_raw = data["experiment"].get("outputs", None)
+        if outputs_raw is None:
+            raise ConfigError("experiment.outputs must be provided")
+        if not isinstance(outputs_raw, str) or not outputs_raw.strip():
+            raise ConfigError("experiment.outputs must be a non-empty string path")
+        palette_raw = data["experiment"].get("palette", None)
+        if palette_raw is not None and (not isinstance(palette_raw, str) or not palette_raw.strip()):
+            raise ConfigError("experiment.palette must be a non-empty string or null")
+        plots_dir_raw = data["experiment"].get("plots_dir", None)
+        if plots_dir_raw is not None and not isinstance(plots_dir_raw, str):
+            raise ConfigError("experiment.plots_dir must be a string or null")
+        runtime_raw = data.get("runtime", {}) or {}
+        if not isinstance(runtime_raw, dict):
+            raise ConfigError("runtime must be a mapping")
+        if "strict" in runtime_raw and not isinstance(runtime_raw["strict"], bool):
+            raise ConfigError("runtime.strict must be a boolean (true/false)")
+        data["runtime"] = runtime_raw
         # Normalize relative paths to job file directory
         root = path.parent
 
@@ -75,7 +108,6 @@ class ReaderSpec(BaseModel):
 
             return {k: _fix(v) for k, v in d.items()}
 
-        data.setdefault("experiment", {})
         data["experiment"]["root"] = str(root.resolve())
         data["experiment"].setdefault("name", root.name)
         # Normalize experiment.outputs relative to config directory
@@ -84,6 +116,8 @@ class ReaderSpec(BaseModel):
             if not outp.is_absolute():
                 data["experiment"]["outputs"] = str((root / outp).resolve())
         if "io" in data:
+            if not isinstance(data["io"], dict):
+                raise ConfigError("io must be a mapping")
             data["io"] = _norm_io(data["io"])
 
         overrides = data.get("overrides", {}) or {}
@@ -98,6 +132,16 @@ class ReaderSpec(BaseModel):
                 else:
                     out[k] = v
             return out
+
+        def _ensure_step_list(raw_steps: Any, *, section: str) -> list[dict[str, Any]]:
+            if not isinstance(raw_steps, list):
+                raise ConfigError(f"{section} must be a list of steps")
+            normalized: list[dict[str, Any]] = []
+            for i, entry in enumerate(raw_steps, 1):
+                if not isinstance(entry, dict):
+                    raise ConfigError(f"{section} step #{i} must be a mapping, got {type(entry).__name__}")
+                normalized.append(entry)
+            return normalized
 
         def _expand_steps(raw_steps: list[dict[str, Any]], *, section: str) -> list[dict[str, Any]]:
             expanded: list[dict[str, Any]] = []
@@ -118,7 +162,7 @@ class ReaderSpec(BaseModel):
                     expanded.append(entry)
             return expanded
 
-        raw_steps = data.get("steps", []) or []
+        raw_steps = _ensure_step_list(data.get("steps", []) or [], section="steps")
         data["steps"] = _expand_steps(raw_steps, section="steps")
 
         deliverable_presets = data.get("deliverable_presets", []) or []
@@ -128,7 +172,7 @@ class ReaderSpec(BaseModel):
         if not isinstance(deliverable_overrides, dict):
             raise ConfigError("deliverable_overrides must be a mapping of id -> overrides")
         raw_deliverables = [{"preset": name} for name in deliverable_presets]
-        raw_deliverables.extend(data.get("deliverables", []) or [])
+        raw_deliverables.extend(_ensure_step_list(data.get("deliverables", []) or [], section="deliverables"))
         data["deliverables"] = _expand_steps(raw_deliverables, section="deliverables")
 
         def _validate_override_keys(steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str) -> None:
@@ -152,12 +196,33 @@ class ReaderSpec(BaseModel):
                             f"{section} overrides for '{step_id}' cannot change the step id "
                             f"(got {s.get('id')!r})."
                         )
+                reads_raw = s.get("reads", {})
+                if reads_raw is None:
+                    reads_raw = {}
+                if not isinstance(reads_raw, dict):
+                    raise ConfigError(f"{section} {step_id}: reads must be a mapping")
+                writes_raw = s.get("writes", {})
+                if writes_raw is None:
+                    writes_raw = {}
+                if not isinstance(writes_raw, dict):
+                    raise ConfigError(f"{section} {step_id}: writes must be a mapping")
+                with_raw = s.get("with", {})
+                if with_raw is None:
+                    with_raw = {}
+                if not isinstance(with_raw, dict):
+                    raise ConfigError(f"{section} {step_id}: with must be a mapping")
                 # normalize file: pseudo-reads
                 r = {}
-                for k, v in s.get("reads", {}).items():
+                for k, v in reads_raw.items():
                     if isinstance(v, str) and v.startswith("file:"):
-                        p = v.split("file:", 1)[1]
-                        r[k] = f"file:{(root / p).resolve()}"
+                        raw = v.split("file:", 1)[1].strip()
+                        if not raw:
+                            raise ConfigError(
+                                f"{section} {step_id}: reads '{k}' uses an empty file: path."
+                            )
+                        p = Path(raw).expanduser()
+                        p = (root / p).resolve() if not p.is_absolute() else p.resolve()
+                        r[k] = f"file:{p}"
                     else:
                         r[k] = v
                 s["reads"] = r
@@ -168,6 +233,22 @@ class ReaderSpec(BaseModel):
         _validate_override_keys(data.get("deliverables", []), deliverable_overrides, section="deliverables")
         _finalize_steps(data.get("steps", []), overrides, section="pipeline")
         _finalize_steps(data.get("deliverables", []), deliverable_overrides, section="deliverables")
+
+        def _ensure_unique_ids(steps: list[dict[str, Any]], *, section: str) -> set[str]:
+            ids = [s.get("id") for s in steps if isinstance(s, dict)]
+            dupes = sorted(k for k, v in Counter(ids).items() if k and v > 1)
+            if dupes:
+                raise ConfigError(f"{section} contains duplicate step id(s): {dupes}")
+            return {i for i in ids if i}
+
+        pipeline_ids = _ensure_unique_ids(data.get("steps", []), section="steps")
+        deliverable_ids = _ensure_unique_ids(data.get("deliverables", []), section="deliverables")
+        overlap = sorted(pipeline_ids & deliverable_ids)
+        if overlap:
+            raise ConfigError(
+                f"steps and deliverables reuse step id(s): {overlap}. "
+                "Use unique ids across both sections."
+            )
         data.pop("overrides", None)
         data.pop("deliverable_overrides", None)
         data.pop("deliverable_presets", None)

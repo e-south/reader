@@ -12,21 +12,22 @@ from __future__ import annotations
 import importlib
 import importlib.metadata as md
 import inspect
-import os
 import pkgutil
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 import reader.plugins as pkg
 from reader.core.errors import RegistryError
+from reader.core.mpl import ensure_mpl_cache_dir
 
 
 class PluginConfig(BaseModel):
     """Base class for per-plugin configs (pydantic v2)."""
+
+    model_config = {"extra": "forbid"}
 
 
 class Plugin(ABC):
@@ -85,25 +86,13 @@ class Registry:
             raise RegistryError(f"Unknown plugin '{uses}'. Installed: {available}") from None
 
 
-def _ensure_mpl_cache_dir() -> None:
-    if os.environ.get("MPLCONFIGDIR"):
-        return
-    override = os.environ.get("READER_MPLCONFIGDIR")
-    cache_dir = Path(override).expanduser() if override else (Path.cwd() / ".cache" / "matplotlib")
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        return
-    os.environ["MPLCONFIGDIR"] = str(cache_dir)
-
-
 def load_entry_points(categories: set[str] | None = None) -> Registry:
     """Register built-in plugins by scanning the package, then load external ones via entry points."""
     reg = Registry()
     wanted = set(categories) if categories else None
 
     if wanted is None or "plot" in wanted:
-        _ensure_mpl_cache_dir()
+        ensure_mpl_cache_dir()
 
     discovered = 0
     for modinfo in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):

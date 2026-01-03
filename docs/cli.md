@@ -1,36 +1,7 @@
 ## reader CLI reference
 
-This is the canonical CLI reference for **reader**. It is intentionally concise and aligned with current behavior.
-Examples use `reader`; inside this repo you can run `uv run reader` instead.
-
-Quick links:
-- [README](../README.md)
-- [Pipeline config + deliverables](./pipeline.md)
-- [Notebooks](./notebooks.md)
-- [Spec / architecture](./spec.md)
-
----
-
-### Conventions
-
-**CONFIG|DIR|INDEX**
-- Most commands accept a config path, an experiment directory, or a numeric index from `reader ls`.
-- If omitted, the CLI searches upward from the current directory for `config.yaml`.
-
-**Journal entries**
-- `reader explain`, `reader validate`, `reader run`, `reader deliverables`, and `reader run-step` append a timestamped entry to `JOURNAL.md` in the experiment directory.
-
-**Output style**
-- The CLI uses rich tables and panels. Example outputs below are shape‑only; actual content varies.
-
----
-
-## Commands
-
 ### `reader ls`
 List experiments under a root (defaults to nearest `./experiments`).
-
-When to use: discover configs and get an index for other commands.
 
 ```bash
 reader ls --root experiments
@@ -129,7 +100,7 @@ Key options:
 - `--resume-from <ID>` start from this step (inclusive).
 - `--until <ID>` stop after this step (inclusive).
 - `--dry-run` plan only (no execution).
-- `--log-level <LEVEL>` set logging verbosity.
+- `--log-level <LEVEL>` set logging verbosity (DEBUG | INFO | WARNING | ERROR | CRITICAL).
 - `--deliverables/--no-deliverables` toggle deliverables.
 
 Notes:

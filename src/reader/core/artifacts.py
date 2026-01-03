@@ -79,7 +79,17 @@ class ArtifactStore:
 
     # -------------- manifest --------------
     def _read_manifest(self) -> dict[str, Any]:
-        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ArtifactError(f"manifest.json is not valid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise ArtifactError("manifest.json must be a JSON object")
+        if "artifacts" not in data or "history" not in data:
+            raise ArtifactError("manifest.json must include 'artifacts' and 'history' objects")
+        if not isinstance(data["artifacts"], dict) or not isinstance(data["history"], dict):
+            raise ArtifactError("manifest.json 'artifacts' and 'history' must be JSON objects")
+        return data
 
     def _write_manifest(self, payload: dict[str, Any]) -> None:
         self.manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -88,7 +98,15 @@ class ArtifactStore:
     def _read_deliverables_manifest(self) -> dict[str, Any]:
         if not self.deliverables_manifest_path.exists():
             return {"schema_version": 1, "deliverables": []}
-        return json.loads(self.deliverables_manifest_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.deliverables_manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ArtifactError(f"deliverables_manifest.json is not valid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise ArtifactError("deliverables_manifest.json must be a JSON object")
+        if "deliverables" not in data or not isinstance(data["deliverables"], list):
+            raise ArtifactError("deliverables_manifest.json must include a 'deliverables' list")
+        return data
 
     def _write_deliverables_manifest(self, payload: dict[str, Any]) -> None:
         self.deliverables_manifest_path.write_text(
@@ -148,6 +166,7 @@ class ArtifactStore:
         inputs: list[str],
         config_digest: str,
         code_digest: str | None = None,
+        validate_contract: bool = True,
     ) -> Artifact:
         # Choose base step directory; new revision when prior config differs
         base = f"{step_id}.{plugin_key}"
@@ -169,7 +188,7 @@ class ArtifactStore:
         data_path = step_dir / f"{out_name}.parquet"
 
         # validate against contract before writing
-        if contract_id != "none":
+        if validate_contract and contract_id != "none":
             contract = BUILTIN.get(contract_id)
             if not contract:
                 raise ArtifactError(f"Unknown contract id '{contract_id}'")

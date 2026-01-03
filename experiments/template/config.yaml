@@ -68,9 +68,11 @@ deliverables:
       x: "time"
       y: ["OD600","CFP","YFP"]
       hue: "treatment"
-      subplots: "group"
-      groups: [{ "Group A": ["g1","g2"] }, { "Group B": ["g3"] }]
-      fig: { seaborn_style: "ticks", dpi: 300 }
+      group_on: "genotype"
+      pool_sets: [{ "Group A": ["g1","g2"] }, { "Group B": ["g3"] }]
+      fig:
+        rc:
+          savefig_dpi: 300
 
   - id: "91_logic"
     uses: "plot/logic_symmetry"
