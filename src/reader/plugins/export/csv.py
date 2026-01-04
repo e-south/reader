@@ -43,7 +43,7 @@ class ExportCsv(Plugin):
         df: pd.DataFrame = inputs["df"]
         out_path = Path(cfg.path)
         if not out_path.is_absolute():
-            out_path = ctx.outputs_dir / out_path
+            out_path = ctx.exports_dir / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=cfg.index, sep=cfg.sep, na_rep=cfg.na_rep)
         ctx.logger.info("export • csv → %s", out_path)

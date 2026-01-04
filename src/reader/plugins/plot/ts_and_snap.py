@@ -17,8 +17,8 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import Field
 
+from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
 
 
 class TSAndSnapCfg(PluginConfig):
@@ -71,8 +71,9 @@ class TSAndSnapPlot(Plugin):
     def output_contracts(cls) -> Mapping[str, str]:
         return {"files": "none"}
 
-    def run(self, ctx, inputs, cfg: TSAndSnapCfg):
+    def render(self, ctx, inputs, cfg: TSAndSnapCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
+        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
@@ -88,12 +89,12 @@ class TSAndSnapPlot(Plugin):
                     if not group_on_col:
                         raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
                     col, set_name = str(group_on_col), ref
-                cat = (ctx.collections or {}).get(col)
+                cat = (ctx.groupings or {}).get(col)
                 if not isinstance(cat, dict) or set_name not in cat:
                     opts = ", ".join(sorted((cat or {}).keys())) if isinstance(cat, dict) else "—"
                     raise ValueError(
                         f"Unknown pool_sets reference '{ref}'. "
-                        "Define it under collections.<column>.<set_name> in config. "
+                        "Define it under data.groupings.<column>.<set_name> in config. "
                         f"(available for {col!r}: {opts})"
                     )
                 return cat[set_name]
@@ -101,9 +102,9 @@ class TSAndSnapPlot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        plot_ts_and_snap(
+        return plot_ts_and_snap(
             df=df,
-            output_dir=ctx.plots_dir,
+            output_dir=None,
             group_on=cfg.group_on,
             pool_sets=resolved_pools,
             pool_match=cfg.pool_match,
@@ -136,4 +137,8 @@ class TSAndSnapPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-        return {"files": None}
+
+    def run(self, ctx, inputs, cfg: TSAndSnapCfg):
+        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
+        saved = save_plot_figures(figures, ctx.plots_dir)
+        return {"files": [str(p) for p in saved] if saved else None}

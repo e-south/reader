@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from reader.core.plot_sinks import PlotFigure
+
 from .base import (
     GroupMatch,
     alias_column,
@@ -74,7 +76,7 @@ def _asym_yerr(lower: Sequence[float], upper: Sequence[float]) -> np.ndarray:
 def plot_snapshot_barplot(
     *,
     df: pd.DataFrame,
-    output_dir,
+    output_dir: Path | None,
     x: str,
     y: list[str] | str,
     hue: str | None,
@@ -93,7 +95,7 @@ def plot_snapshot_barplot(
     file_by: _FileBy = "auto",
     show_legend: bool = False,
     legend_loc: str = "upper right",
-) -> None:
+) -> list[PlotFigure]:
     """
     Snapshot barplot with replicate dots.
 
@@ -141,7 +143,7 @@ def plot_snapshot_barplot(
             raise ValueError(f"snapshot_barplot: requested channels not found: {missing}. Available: {available}")
         work = work[work["channel"].astype(str).isin([str(c) for c in y_list])].copy()
     if warn_if_empty(work, where="snapshot_barplot", detail="after channel filter"):
-        return
+        return []
 
     if panel_by in {"x", "group"} and not channel_select:
         raise ValueError("snapshot_barplot: channel_select is required when panel_by != 'channel'")
@@ -162,7 +164,7 @@ def plot_snapshot_barplot(
         if snapped.empty:
             # Truly nothing to plot at any time
             log.info("[warn]snapshot_barplot[/warn] • no rows available at any time — skipping figure")
-            return
+            return []
         # Summarize what we used
         times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna()
         uniq = sorted(times_used.unique().tolist())
@@ -282,6 +284,7 @@ def plot_snapshot_barplot(
         # No channels available to iterate — nothing to draw.
         return
 
+    figures: list[PlotFigure] = []
     for fig_label, members in fig_groups:
         for ch_for_file in channels_for_files:
             # Determine panels for this figure and the "selected_channel" when needed
@@ -612,5 +615,9 @@ def plot_snapshot_barplot(
                     stub = f"snap__ch__{key}"
                 else:  # by x
                     stub = f"snap__x__{selected_channel}__{fig_label}"
-            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-            plt.close(fig)
+            if output_dir is None:
+                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
+            else:
+                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
+                plt.close(fig)
+    return figures

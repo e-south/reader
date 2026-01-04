@@ -18,13 +18,15 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
 
+from reader.core.plot_sinks import PlotFigure
+
 from .base import (
     GroupMatch,
     alias_column,
     best_subplot_grid,
     pretty_name,
-    resolve_groups,
     require_columns,
+    resolve_groups,
     save_figure,
     warn_if_empty,
 )
@@ -46,7 +48,7 @@ def plot_time_series(
     *,
     df: pd.DataFrame,
     blanks: pd.DataFrame,
-    output_dir,
+    output_dir: Path | None,
     x: str,
     y: list[str] | None,
     hue: str,
@@ -66,7 +68,7 @@ def plot_time_series(
     legend_loc: str = "upper right",
     show_replicates: bool = False,
     filename: str | None = None,
-) -> None:
+) -> list[PlotFigure]:
     """
     Time-series plotting with one figure per group (default: per genotype[(_alias)]),
     subplots across channels, mean lines with CI bands, and *vertical gray background
@@ -91,7 +93,7 @@ def plot_time_series(
             (pd.to_numeric(base[xcol], errors="coerce") >= lo) & (pd.to_numeric(base[xcol], errors="coerce") <= hi)
         ].copy()
     if warn_if_empty(base, where="time_series", detail="after time_window filter"):
-        return
+        return []
 
     group_col = alias_column(base, group_on) if group_on else None
     hue_col = alias_column(base, hue)
@@ -109,7 +111,7 @@ def plot_time_series(
         )
         base = base.loc[mask].copy()
         if warn_if_empty(base, where="time_series", detail="after group_on filter"):
-            return
+            return []
     if group_col:
         universe = base[group_col].astype(str).unique().tolist()
         fig_groups = (
@@ -151,6 +153,7 @@ def plot_time_series(
         return cyc[:n]
 
     # Per-figure drawing
+    figures: list[PlotFigure] = []
     for label, members in fig_groups:
         d = base.copy()
         if group_col and members != [None]:
@@ -286,9 +289,10 @@ def plot_time_series(
             group_tag = None
             if group_col and members != [None]:
                 group_tag = f"__{str(group_col)}={str(label)}"
-            if filename:
-                stub = f"{filename}{group_tag}" if group_tag else filename
+            stub = (f"{filename}{group_tag}" if group_tag else filename) if filename else f"ts__{label}"
+            if output_dir is None:
+                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
             else:
-                stub = f"ts__{label}"
-            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-            plt.close(fig)
+                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
+                plt.close(fig)
+    return figures

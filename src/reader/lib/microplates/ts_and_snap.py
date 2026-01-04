@@ -21,6 +21,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
 
+from reader.core.plot_sinks import PlotFigure
+
 from .base import (
     GroupMatch,
     alias_column,
@@ -67,7 +69,7 @@ def _order_levels(levels: list[str]) -> list[str]:
 def plot_ts_and_snap(
     *,
     df: pd.DataFrame,
-    output_dir: Path | str,
+    output_dir: Path | None,
     # grouping
     group_on: str | None,
     pool_sets: list[dict[str, list[str]]] | None,
@@ -100,7 +102,7 @@ def plot_ts_and_snap(
     fig_kwargs: dict | None = None,
     filename: str | None = None,
     palette_book: PaletteBook | None = None,
-) -> None:
+) -> list[PlotFigure]:
     """
     Render one figure per group value (if group_on is set), each with two subplots:
       • Left  = time series (mean ± CI) for `ts_channel`
@@ -117,7 +119,6 @@ def plot_ts_and_snap(
         raise ValueError("snap_err must be 'sem', 'iqr', or 'none'")
 
     fig_kwargs = fig_kwargs or {}
-    out_dir = Path(output_dir)
 
     # Resolve columns (prefer *_alias when present)
     ts_x_col = alias_column(df, ts_x)
@@ -147,7 +148,7 @@ def plot_ts_and_snap(
             & (pd.to_numeric(work[ts_x_col], errors="coerce") <= hi)
         ].copy()
     if warn_if_empty(work, where="ts_and_snap", detail="after time_window filter"):
-        return
+        return []
 
     available_channels = sorted(work["channel"].astype(str).unique().tolist())
     if ch_ts not in available_channels:
@@ -164,6 +165,7 @@ def plot_ts_and_snap(
     else:
         fig_groups = [("all", [None])]
 
+    figures: list[PlotFigure] = []
     for label, members in fig_groups:
         d = work.copy()
         if group_col and members != [None]:
@@ -474,5 +476,9 @@ def plot_ts_and_snap(
                 base = f"ts_snap__{ch_snap}"
                 # Backward‑compatible default still includes label; enhanced with group_col when available
                 stub = f"{base}{group_tag}" if group_tag else f"{base}__{label}"
-            save_figure(fig, out_dir, stub, ext=ext, dpi=dpi)
-            plt.close(fig)
+            if output_dir is None:
+                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
+            else:
+                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
+                plt.close(fig)
+    return figures

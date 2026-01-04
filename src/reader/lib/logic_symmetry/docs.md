@@ -6,7 +6,7 @@ A single-figure plotter that places each two-input promoter (per **design × bat
 * **y = A (asymmetry):** whether **A-only** or **B-only** is larger
 * Optional encodings for **size**, **hue**, **alpha**, and **shape** to summarize batch order, noise, categories, etc.
 
-It plugs into the `reader` pipeline under `plots:` and returns a typed table artifact (`logic_symmetry.v1`) alongside the plot.
+It plugs into the `reader` plots section and renders a logic-symmetry figure. It does not emit artifacts; if you need a table, derive it in the pipeline or export it explicitly.
 
 ---
 
@@ -227,7 +227,7 @@ plots:
 ## Outputs
 
 * `logic_symmetry_<name>.pdf|png` — one figure with all points
-* **Artifact:** `logic_symmetry.v1` (returned table) — one row per `(design_by…, batch)`:
+* **Table (in-memory):** one row per `(design_by…, batch)` when computed during plotting. Persist it explicitly via pipeline/export if needed.
 
 ```
 <design_by...>, batch,

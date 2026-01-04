@@ -59,7 +59,7 @@ def _pick_baseline_corner(row: pd.Series) -> str:
 def plot_logic_symmetry(
     df: pd.DataFrame,
     blanks: pd.DataFrame,
-    output_dir: str | Path,
+    output_dir: str | Path | None,
     *,
     response_channel: str,
     design_by: list[str] = None,
@@ -315,22 +315,23 @@ def plot_logic_symmetry(
         if col in csv_out.columns:
             csv_out[col] = _cast_if_present(csv_out[col].astype("string"), "string")
 
-    out_dir = Path(output_dir)
     base = f"{base_name}"
-
-    plot_paths = save_plot(fig, out_dir, base, out_formats, dpi)
-
-    # Optional companion CSV for human inspection (off by default to avoid duplication)
-    write_csv_flag = bool(_dget(output, "write_csv", False))
+    plot_paths: list[Path] = []
     csv_path = None
-    if write_csv_flag:
-        csv_path = write_csv(csv_out, out_dir, base)
+    if output_dir is not None:
+        out_dir = Path(output_dir)
+        plot_paths = save_plot(fig, out_dir, base, out_formats, dpi)
 
-    LOG.info(
-        "✓ logic_symmetry wrote: %s.[%s]%s",
-        str(out_dir / base),
-        ",".join(out_formats),
-        (" and " + (out_dir / f"{base}.csv").name) if write_csv_flag else "",
-    )
+        # Optional companion CSV for human inspection (off by default to avoid duplication)
+        write_csv_flag = bool(_dget(output, "write_csv", False))
+        if write_csv_flag:
+            csv_path = write_csv(csv_out, out_dir, base)
+
+        LOG.info(
+            "✓ logic_symmetry wrote: %s.[%s]%s",
+            str(out_dir / base),
+            ",".join(out_formats),
+            (" and " + (out_dir / f"{base}.csv").name) if write_csv_flag else "",
+        )
 
     return LogicSymmetryResult(table=csv_out, fig=fig, plot_paths=plot_paths, csv_path=csv_path)

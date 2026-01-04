@@ -58,9 +58,10 @@ def _find_duplicates(template: str) -> set[str]:
 
 def test_notebook_templates_no_duplicate_globals() -> None:
     templates = {
-        "eda/basic": notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE,
-        "eda/microplate": notebooks.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
-        "eda/cytometry": notebooks.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
+        "notebook/basic": notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE,
+        "notebook/microplate": notebooks.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
+        "notebook/cytometry": notebooks.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
+        "notebook/plot": notebooks.EXPERIMENT_NOTEBOOK_PLOT_TEMPLATE,
     }
     for name, template in templates.items():
         dupes = sorted(_find_duplicates(template))

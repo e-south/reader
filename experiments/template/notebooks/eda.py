@@ -8,17 +8,25 @@ def _():
     import json
     from pathlib import Path
 
-    import altair as alt
     import duckdb
     import marimo as mo
     import matplotlib.pyplot as plt
     import pandas as pd
-    import yaml
-    alt.data_transformers.disable_max_rows()
-    return mo, json, Path, alt, duckdb, pd, plt, yaml
+
+    from reader.core.config_model import ReaderSpec
+
+    altair_err = None
+    try:
+        import altair as alt
+        alt.data_transformers.disable_max_rows()
+    except Exception as exc:
+        alt = None
+        altair_err = exc
+
+    return mo, json, Path, alt, altair_err, duckdb, pd, plt, ReaderSpec
 
 @app.cell
-def _(Path, mo, yaml):
+def _(Path, ReaderSpec, mo):
     def _find_experiment_root(start: Path) -> Path:
         for base in [start] + list(start.parents):
             if (base / "config.yaml").exists():
@@ -28,62 +36,54 @@ def _(Path, mo, yaml):
             "or set exp_dir manually."
         )
 
-    def _load_config(root: Path) -> dict:
+    def _load_spec(root: Path):
         cfg_path = root / "config.yaml"
         try:
-            data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            return ReaderSpec.load(cfg_path)
         except Exception as exc:
             raise RuntimeError(f"Failed to read config.yaml: {exc}") from exc
-        if not isinstance(data, dict):
-            raise RuntimeError("config.yaml must be a mapping (YAML object).")
-        return data
 
-    def _resolve_outputs(exp_root: Path, config: dict) -> tuple[Path, Path]:
-        exp_cfg = config.get("experiment", {}) if isinstance(config, dict) else {}
-        if not isinstance(exp_cfg, dict):
-            exp_cfg = {}
-        outputs_raw = exp_cfg.get("outputs", "./outputs") or "./outputs"
-        outputs_path = Path(str(outputs_raw)).expanduser()
-        outputs_path = (exp_root / outputs_path).resolve() if not outputs_path.is_absolute() else outputs_path.resolve()
-        plots_cfg = exp_cfg.get("plots_dir", "plots")
-        plots_path = outputs_path if plots_cfg in (None, "", ".", "./") else outputs_path / str(plots_cfg)
-        return outputs_path, plots_path
-
-    def _collect_steps(cfg: dict, sections: list[str], prefix: str) -> list[dict]:
-        steps: list[dict] = []
-        for section in sections:
-            raw = cfg.get(section, []) if isinstance(cfg, dict) else []
-            if not isinstance(raw, list):
-                continue
-            for step in raw:
-                if not isinstance(step, dict):
-                    continue
-                uses = str(step.get("uses", "") or "")
-                if uses.startswith(prefix):
-                    step_copy = dict(step)
-                    step_copy["_section"] = section
-                    steps.append(step_copy)
-        return steps
+    def _resolve_outputs(spec) -> tuple[Path, Path, Path]:
+        outputs_path = Path(spec.paths.outputs).resolve()
+        plots_cfg = spec.paths.plots
+        exports_cfg = spec.paths.exports
+        plots_path = outputs_path if plots_cfg in ("", ".", "./") else outputs_path / str(plots_cfg)
+        exports_path = outputs_path if exports_cfg in ("", ".", "./") else outputs_path / str(exports_cfg)
+        return outputs_path, plots_path, exports_path
 
     exp_dir = _find_experiment_root(Path(__file__).resolve())
-    config = _load_config(exp_dir)
-    outputs_dir, plots_dir = _resolve_outputs(exp_dir, config)
-    _exp_cfg = config.get("experiment", {}) if isinstance(config, dict) else {}
-    exp_meta = _exp_cfg if isinstance(_exp_cfg, dict) else {}
-    ingest_steps_cfg = _collect_steps(config, ["steps"], "ingest/")
-    plot_steps_cfg = _collect_steps(config, ["steps", "deliverables"], "plot/")
+    spec = _load_spec(exp_dir)
+    outputs_dir, plots_dir, exports_dir = _resolve_outputs(spec)
+    exp_meta = {"name": spec.experiment.title or spec.experiment.id, "id": spec.experiment.id}
+    ingest_steps_cfg = [
+        s.model_dump(by_alias=True) for s in spec.pipeline.steps if str(s.uses).startswith("ingest/")
+    ]
+    from reader.core.specs import resolve_export_specs, resolve_plot_specs
+
+    plot_steps_cfg = [
+        {"id": s.id, "uses": s.uses, "reads": s.reads, "with": s.with_, "writes": s.writes}
+        for s in resolve_plot_specs(spec)
+    ]
+    export_steps_cfg = [
+        {"id": s.id, "uses": s.uses, "reads": s.reads, "with": s.with_, "writes": s.writes}
+        for s in resolve_export_specs(spec)
+    ]
     manifest_path = outputs_dir / "manifest.json"
-    deliverables_manifest_path = outputs_dir / "deliverables_manifest.json"
+    plots_manifest_path = outputs_dir / "plots_manifest.json"
+    exports_manifest_path = outputs_dir / "exports_manifest.json"
     return (
-        config,
+        spec,
         exp_dir,
         exp_meta,
         ingest_steps_cfg,
         plot_steps_cfg,
+        export_steps_cfg,
         outputs_dir,
         manifest_path,
         plots_dir,
-        deliverables_manifest_path,
+        exports_dir,
+        plots_manifest_path,
+        exports_manifest_path,
     )
 
 @app.cell
@@ -105,6 +105,7 @@ def _(
     mo,
     notes,
     plot_steps_cfg,
+    export_steps_cfg,
     title,
     treatment_keys,
 ):
@@ -113,8 +114,10 @@ def _(
     _exp_id = exp_meta.get("id")
     _ingest_uses = sorted({str(step.get("uses", "")) for step in ingest_steps_cfg if isinstance(step, dict)})
     _plot_uses = sorted({str(step.get("uses", "")) for step in plot_steps_cfg if isinstance(step, dict)})
+    _export_uses = sorted({str(step.get("uses", "")) for step in export_steps_cfg if isinstance(step, dict)})
     _ingest_text = ", ".join(_ingest_uses) if _ingest_uses else "—"
     _plot_text = ", ".join(_plot_uses) if _plot_uses else "—"
+    _export_text = ", ".join(_export_uses) if _export_uses else "—"
     _header_lines = [f"# {title.value or exp_dir.name}", ""]
     _header_lines.append(f"**Experiment directory:** `{exp_dir.name}`")
     if _exp_name:
@@ -125,6 +128,7 @@ def _(
     _header_lines.append(f"**Treatment keys:** `{treatment_keys.value}`")
     _header_lines.append(f"**Ingest:** {_ingest_text}")
     _header_lines.append(f"**Configured plots:** {_plot_text}")
+    _header_lines.append(f"**Configured exports:** {_export_text}")
     if _notes_text:
         _header_lines.append(f"**Notes:** {_notes_text}")
     _header_md = mo.md("\n".join(_header_lines))
@@ -132,7 +136,16 @@ def _(
     return
 
 @app.cell
-def _(deliverables_manifest_path, json, manifest_path, mo, outputs_dir, plots_dir):
+def _(
+    exports_manifest_path,
+    json,
+    manifest_path,
+    mo,
+    outputs_dir,
+    plots_dir,
+    exports_dir,
+    plots_manifest_path,
+):
     if not outputs_dir.exists():
         mo.stop(True, mo.md("No outputs/ directory found. Run `reader run` first."))
     if not manifest_path.exists():
@@ -141,13 +154,17 @@ def _(deliverables_manifest_path, json, manifest_path, mo, outputs_dir, plots_di
     artifacts = manifest.get("artifacts", {})
     labels = sorted(artifacts.keys())
     plot_files = sorted([p.name for p in plots_dir.glob("*") if p.is_file()]) if plots_dir.exists() else []
+    export_files = sorted([p.name for p in exports_dir.glob("*") if p.is_file()]) if exports_dir.exists() else []
     deliverable_entries = []
-    if deliverables_manifest_path.exists():
-        deliverables_manifest = json.loads(deliverables_manifest_path.read_text(encoding="utf-8"))
-        deliverable_entries = deliverables_manifest.get("deliverables", []) or []
+    if plots_manifest_path.exists():
+        plots_manifest = json.loads(plots_manifest_path.read_text(encoding="utf-8"))
+        deliverable_entries.extend(plots_manifest.get("plots", []) or [])
+    if exports_manifest_path.exists():
+        exports_manifest = json.loads(exports_manifest_path.read_text(encoding="utf-8"))
+        deliverable_entries.extend(exports_manifest.get("exports", []) or [])
     if not labels:
         mo.stop(True, mo.md("No artifacts listed in manifest.json."))
-    return manifest, artifacts, labels, plot_files, deliverable_entries
+    return manifest, artifacts, labels, plot_files, export_files, deliverable_entries
 
 @app.cell
 def _(labels, mo):
@@ -182,19 +199,13 @@ def _(
     meta_summary_md = mo.md("")
     _label = meta_source.value
     if not _label:
-        meta_summary_md = mo.md("## Metadata summary
-Select a metadata source to summarize.")
-        return meta_summary_md
+        mo.stop(True, mo.md("## Metadata summary\nSelect a metadata source to summarize."))
     _entry = artifacts.get(_label)
     if not _entry:
-        meta_summary_md = mo.md(f"## Metadata summary
-Artifact not found: `{_label}`")
-        return meta_summary_md
+        mo.stop(True, mo.md(f"## Metadata summary\nArtifact not found: `{_label}`"))
     _artifact_path = outputs_dir / "artifacts" / _entry.get("step_dir", "") / _entry.get("filename", "")
     if not _artifact_path.exists():
-        meta_summary_md = mo.md(f"## Metadata summary
-Artifact file not found: `{_artifact_path}`")
-        return meta_summary_md
+        mo.stop(True, mo.md(f"## Metadata summary\nArtifact file not found: `{_artifact_path}`"))
 
     def _split_keys(text: str) -> list[str]:
         return [part.strip() for part in (text or "").split(",") if part.strip()]
@@ -207,9 +218,7 @@ Artifact file not found: `{_artifact_path}`")
             f"SELECT * FROM read_parquet('{_artifact_path.as_posix()}') LIMIT 0"
         ).df()
     except Exception as exc:
-        meta_summary_md = mo.md(f"## Metadata summary
-Schema read failed: `{exc}`")
-        return meta_summary_md
+        mo.stop(True, mo.md(f"## Metadata summary\nSchema read failed: `{exc}`"))
     _columns = list(_schema_df.columns)
     _limit = int(meta_limit.value)
 
@@ -291,9 +300,9 @@ def _(artifacts, mo):
 
 @app.cell
 def _(deliverable_entries, mo):
-    mo.md("## Deliverables")
+    mo.md("## Plots/exports")
     if not deliverable_entries:
-        mo.stop(True, mo.md("No deliverables_manifest.json entries yet."))
+        mo.stop(True, mo.md("No plot/export entries yet."))
     deliverable_rows = [
         {
             "step_id": _entry.get("step_id", ""),
@@ -316,9 +325,9 @@ def _(mo):
 
 @app.cell
 def _(available_plot_modules, mo, plot_steps_cfg):
-    mo.md("## Configured plot steps (from config.yaml)")
+    _panels = [mo.md("## Configured plot specs (from config.yaml)")]
     if not plot_steps_cfg:
-        mo.md("No plot steps configured in config.yaml.")
+        _panels.append(mo.md("No plot specs configured in config.yaml."))
 
     def _summarize_with(cfg: dict) -> str:
         if not isinstance(cfg, dict):
@@ -352,16 +361,17 @@ def _(available_plot_modules, mo, plot_steps_cfg):
     if _plot_panels:
         _max_cols = min(3, len(_plot_panels))
         if _max_cols <= 1:
-            mo.vstack(_plot_panels)
+            _panels.append(mo.vstack(_plot_panels))
         else:
             _buckets = [[] for _ in range(_max_cols)]
             for _i, _panel in enumerate(_plot_panels):
                 _buckets[_i % _max_cols].append(_panel)
-            mo.hstack([mo.vstack(_bucket) for _bucket in _buckets])
+            _panels.append(mo.hstack([mo.vstack(_bucket) for _bucket in _buckets]))
 
     if available_plot_modules:
-        mo.md("### Available plot modules (reader.plugins.plot)")
-        mo.ui.table([{"module": name} for name in available_plot_modules])
+        _panels.append(mo.md("### Available plot modules (reader.plugins.plot)"))
+        _panels.append(mo.ui.table([{"module": name} for name in available_plot_modules]))
+    mo.vstack(_panels)
     return
 
 @app.cell
@@ -406,12 +416,14 @@ def _(duckdb, mo, preview_limit, artifact_path):
         preview_df = duckdb.query(query).df()
     except Exception as exc:
         mo.stop(True, mo.md(f"Preview query failed: `{exc}`"))
-    preview_df
+    return preview_df
 
 @app.cell
 def _(mo, pd, preview_df):
     mo.md("## Quick plot")
-    if preview_df is None or getattr(preview_df, "empty", False):
+    if not isinstance(preview_df, pd.DataFrame):
+        mo.stop(True, mo.md("No preview data available."))
+    if preview_df.empty:
         mo.stop(True, mo.md("No preview data available."))
     _numeric_cols = [_c for _c in preview_df.columns if pd.api.types.is_numeric_dtype(preview_df[_c])]
     if not _numeric_cols:
@@ -458,12 +470,14 @@ def _(hue_col, mo, plot_type, plt, preview_df, x_col, y_col):
         _ax.set_xlabel(x)
         _ax.set_ylabel(y)
         _ax.set_title(f"{kind}: {y} vs {x}")
-    _ax
+    return _ax
 
 @app.cell
 def _(mo, pd, preview_df):
     mo.md("## Quick plot (Altair)")
-    if preview_df is None or getattr(preview_df, "empty", False):
+    if not isinstance(preview_df, pd.DataFrame):
+        mo.stop(True, mo.md("No preview data available."))
+    if preview_df.empty:
         mo.stop(True, mo.md("No preview data available."))
     _numeric_cols = [_c for _c in preview_df.columns if pd.api.types.is_numeric_dtype(preview_df[_c])]
     if not _numeric_cols:
@@ -481,7 +495,8 @@ def _(mo, pd, preview_df):
     return alt_agg, alt_hue_col, alt_plot_type, alt_x_col, alt_y_col
 
 @app.cell
-def _(alt, alt_agg, alt_hue_col, alt_plot_type, alt_x_col, alt_y_col, mo, preview_df):
+def _(alt, altair_err, alt_agg, alt_hue_col, alt_plot_type, alt_x_col, alt_y_col, mo, preview_df):
+    mo.stop(altair_err is not None, mo.md("Altair is required here. Run `uv sync --locked --group notebooks` (or `uv add altair`)."))
     if preview_df is None or getattr(preview_df, "empty", False):
         mo.stop(True)
     _kind = alt_plot_type.value
@@ -599,15 +614,15 @@ def _(apply_filters, artifact_path, channel_select, duckdb, hue_select, mo, max_
     if tmin > tmax:
         mo.stop(True, mo.md("Time min must be <= time max."))
     _sql = (
-        "SELECT * FROM read_parquet('{path}') "
-        "WHERE channel = '{channel}' AND time BETWEEN {tmin} AND {tmax} "
-        "LIMIT {limit}"
-    ).format(path=artifact_path.as_posix(), channel=str(channel), tmin=tmin, tmax=tmax, limit=_limit)
+        f"SELECT * FROM read_parquet('{artifact_path.as_posix()}') "
+        f"WHERE channel = '{channel}' AND time BETWEEN {tmin} AND {tmax} "
+        f"LIMIT {_limit}"
+    )
     try:
         tidy_filtered = duckdb.query(_sql).df()
     except Exception as exc:
         mo.stop(True, mo.md(f"Tidy query failed: `{exc}`"))
-    tidy_filtered
+    return tidy_filtered
 
 @app.cell
 def _(mo, tidy_filtered):
@@ -618,13 +633,13 @@ def _(mo, tidy_filtered):
     return
 
 @app.cell
-def _(hue_select, mo, plt, tidy_filtered):
+def _(alt, altair_err, hue_select, mo, plt, tidy_filtered):
     mo.md("### Tidy time series (Altair mean)")
+    mo.stop(altair_err is not None, mo.md("Altair is required here. Run `uv sync --locked --group notebooks` (or `uv add altair`)."))
     if tidy_filtered is None or getattr(tidy_filtered, "empty", False):
         mo.stop(True, mo.md("No rows after filters."))
     if "time" not in tidy_filtered.columns or "value" not in tidy_filtered.columns:
         mo.stop(True, mo.md("Filtered data is missing time/value columns."))
-    import altair as alt
 
     _hue = hue_select.value
     if _hue != "(none)" and _hue in tidy_filtered.columns:
@@ -669,26 +684,27 @@ def _(duckdb, mo, run_sql, sql_input):
         sql_df = duckdb.query(_sql).df()
     except Exception as exc:
         mo.stop(True, mo.md(f"SQL error: `{exc}`"))
-    sql_df
+    return sql_df
 
 @app.cell
-def _(Path, deliverable_entries, mo, plot_files, plots_dir, outputs_dir):
-    mo.md("## Plot outputs")
+def _(Path, deliverable_entries, mo, plot_files, export_files, plots_dir, exports_dir, outputs_dir):
+    mo.md("## Plot + export outputs")
     deliverable_files = []
     for _entry in deliverable_entries:
-        for name in _entry.get("files", []) or []:
-            deliverable_files.append(name)
+        for _name in _entry.get("files", []) or []:
+            deliverable_files.append(_name)
     file_rows = []
     if deliverable_files:
-        for name in sorted(set(deliverable_files)):
-            path = Path(name)
+        for _name in sorted(set(deliverable_files)):
+            path = Path(_name)
             if not path.is_absolute():
                 path = outputs_dir / path
             file_rows.append({"file": path.name, "path": str(path)})
-    elif plot_files:
-        file_rows = [{"file": name, "path": str(plots_dir / name)} for name in plot_files]
+    elif plot_files or export_files:
+        file_rows = [{"file": _name, "path": str(plots_dir / _name)} for _name in plot_files]
+        file_rows.extend([{"file": _name, "path": str(exports_dir / _name)} for _name in export_files])
     else:
-        mo.stop(True, mo.md("No plots found yet. Run `reader run` with deliverables enabled."))
+        mo.stop(True, mo.md("No outputs found yet. Run `reader plot --mode save` or `reader export`."))
     plot_rows = file_rows
     mo.ui.table(plot_rows)
     return plot_rows

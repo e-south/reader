@@ -9,11 +9,11 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-import logging
 from typing import Literal
 
 import pandas as pd

@@ -12,6 +12,7 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
@@ -153,7 +154,7 @@ class FlowCytometerIngest(Plugin):
         out = pd.concat(frames, ignore_index=True)
 
         if cfg.print_summary:
-            try:
+            with suppress(Exception):
                 ctx.logger.info(
                     "flow_cytometer ingest • files=%d • rows=%d • channels=%d • samples=%d",
                     len(files),
@@ -161,7 +162,5 @@ class FlowCytometerIngest(Plugin):
                     out["channel"].nunique(),
                     out["sample_id"].nunique(),
                 )
-            except Exception:
-                pass
 
         return {"df": out}

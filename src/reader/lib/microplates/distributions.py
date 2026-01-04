@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from reader.core.plot_sinks import PlotFigure
+
 from .base import (
     GroupMatch,
     alias_column,
@@ -72,7 +74,7 @@ def plot_distributions(
     *,
     df: pd.DataFrame,
     blanks: pd.DataFrame,
-    output_dir: Path | str,
+    output_dir: Path | None,
     channels: list[str],
     # modern grouping knobs
     group_on: str | None = "genotype",
@@ -86,7 +88,7 @@ def plot_distributions(
     fig_kwargs: dict | None = None,
     filename: str | None = None,
     palette_book: PaletteBook | None = None,
-) -> None:
+) -> list[PlotFigure]:
     """
     Distribution histograms with modern semantics:
       • Auto‑alias columns: prefers '<group_on>_alias' transparently.
@@ -95,6 +97,7 @@ def plot_distributions(
         output file for each `group_on` value (e.g., per genotype).
     """
     fig_kwargs = fig_kwargs or {}
+    figures: list[PlotFigure] = []
     fill_alpha = float(fig_kwargs.get("kde_fill_alpha", 0.18))
 
     # --- resolve columns (assertive, no silent fallbacks) ---
@@ -102,7 +105,7 @@ def plot_distributions(
     require_columns(df, ["channel", "value"], where="distributions")
     work = df[df["channel"].astype(str).isin(ch_list)].copy()
     if warn_if_empty(work, where="distributions", detail="after channel filter"):
-        return
+        return []
     work["value"] = pd.to_numeric(work["value"], errors="coerce")
     work = work.dropna(subset=["value"])
 
@@ -198,8 +201,11 @@ def plot_distributions(
                 dpi = fig_kwargs.get("dpi", None)
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-                plt.close(fig)
+                if output_dir is None:
+                    figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
+                else:
+                    save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
+                    plt.close(fig)
 
     else:  # panel_by == "group"
         if not gcol:
@@ -218,12 +224,12 @@ def plot_distributions(
                     members_union.append(v)
                     seen.add(v)
         if not members_union:
-            return
+            return []
         rows, cols = best_subplot_grid(len(members_union))
 
         sub = work[work["channel"].astype(str) == ch]
         if sub.empty:
-            return
+            return []
 
         colors = _colors_for(1, palette_book)
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=colors):
@@ -252,5 +258,9 @@ def plot_distributions(
             ext = str(fig_kwargs.get("ext", "pdf")).lower()
             dpi = fig_kwargs.get("dpi", None)
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-            plt.close(fig)
+            if output_dir is None:
+                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
+            else:
+                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
+                plt.close(fig)
+    return figures

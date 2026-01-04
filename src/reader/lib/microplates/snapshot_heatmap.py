@@ -23,6 +23,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import Colormap, LinearSegmentedColormap
 
+from reader.core.plot_sinks import PlotFigure
+
 from .base import alias_column, pretty_name, save_figure, warn_if_empty
 from .style import new_fig_ax, use_style
 
@@ -76,7 +78,7 @@ def plot_snapshot_heatmap(
     *,
     df: pd.DataFrame,
     blanks: pd.DataFrame,  # accepted for API parity; not used here
-    output_dir: Path | str,
+    output_dir: Path | None,
     channel: str,
     time: float,
     x: str = "treatment",
@@ -88,7 +90,7 @@ def plot_snapshot_heatmap(
     vmax: float | None = None,
     fig_kwargs: dict[str, Any],
     filename: str | None,
-) -> None:
+) -> list[PlotFigure]:
     """
     Render a heatmap for a single channel at the snapshot time nearest to `time`.
 
@@ -130,7 +132,7 @@ def plot_snapshot_heatmap(
     # nothing to draw?
     if pivot.empty or pivot.shape[0] == 0 or pivot.shape[1] == 0:
         warn_if_empty(pivot, where="snapshot_heatmap", detail="after pivot")
-        return
+        return []
 
     with use_style(rc=(fig_kwargs or {}).get("rc")):
         fig, ax = new_fig_ax(fig_kwargs)
@@ -214,5 +216,8 @@ def plot_snapshot_heatmap(
         stub = f"{base}__gy{n_geno}-{geno_id}__fp{fp_id}"
         ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
         dpi = (fig_kwargs or {}).get("dpi", None)
+        if output_dir is None:
+            return [PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi)]
         save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
         plt.close(fig)
+        return []
