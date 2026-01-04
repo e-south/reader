@@ -26,8 +26,10 @@ class RunContext:
     outputs_dir: Path
     artifacts_dir: Path
     plots_dir: Path
+    exports_dir: Path
     manifest_path: Path
     logger: logging.Logger
     palette_book: PaletteBook | None
     strict: bool = True
-    collections: Mapping[str, Any] | None = None
+    groupings: Mapping[str, Any] | None = None
+    aliases: Mapping[str, Any] | None = None

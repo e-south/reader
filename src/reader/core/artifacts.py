@@ -55,13 +55,17 @@ class ArtifactStore:
           df.parquet
           meta.json
         plots/
-          <flat files emitted by plot steps>
+          <flat files emitted by plot specs>
+        exports/
+          <flat files emitted by export specs>
 
     - Manifest tracks latest and historical versions for (step_id, output_name)
     - When config digest changes, a new revision directory __rN is created
     """
 
-    def __init__(self, outputs_dir: Path, *, plots_subdir: str | None = "plots") -> None:
+    def __init__(
+        self, outputs_dir: Path, *, plots_subdir: str | None = "plots", exports_subdir: str | None = "exports"
+    ) -> None:
         self.root = outputs_dir
         self.artifacts_dir = self.root / "artifacts"
         # flatten when plots_subdir is None / "" / "."; otherwise use given subdir
@@ -69,11 +73,18 @@ class ArtifactStore:
             self.plots_dir = self.root
         else:
             self.plots_dir = self.root / plots_subdir
+        if exports_subdir in (None, "", ".", "./"):
+            self.exports_dir = self.root
+        else:
+            self.exports_dir = self.root / exports_subdir
         self.manifest_path = self.root / "manifest.json"
-        self.deliverables_manifest_path = self.root / "deliverables_manifest.json"
+        self.plots_manifest_path = self.root / "plots_manifest.json"
+        self.exports_manifest_path = self.root / "exports_manifest.json"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         if self.plots_dir != self.root:
             self.plots_dir.mkdir(parents=True, exist_ok=True)
+        if self.exports_dir != self.root:
+            self.exports_dir.mkdir(parents=True, exist_ok=True)
         if not self.manifest_path.exists():
             self._write_manifest({"artifacts": {}, "history": {}})
 
@@ -94,31 +105,53 @@ class ArtifactStore:
     def _write_manifest(self, payload: dict[str, Any]) -> None:
         self.manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    # -------------- deliverables manifest --------------
-    def _read_deliverables_manifest(self) -> dict[str, Any]:
-        if not self.deliverables_manifest_path.exists():
-            return {"schema_version": 1, "deliverables": []}
+    # -------------- plots manifest --------------
+    def _read_plots_manifest(self) -> dict[str, Any]:
+        if not self.plots_manifest_path.exists():
+            return {"schema_version": 1, "plots": []}
         try:
-            data = json.loads(self.deliverables_manifest_path.read_text(encoding="utf-8"))
+            data = json.loads(self.plots_manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            raise ArtifactError(f"deliverables_manifest.json is not valid JSON: {e}") from e
+            raise ArtifactError(f"plots_manifest.json is not valid JSON: {e}") from e
         if not isinstance(data, dict):
-            raise ArtifactError("deliverables_manifest.json must be a JSON object")
-        if "deliverables" not in data or not isinstance(data["deliverables"], list):
-            raise ArtifactError("deliverables_manifest.json must include a 'deliverables' list")
+            raise ArtifactError("plots_manifest.json must be a JSON object")
+        if "plots" not in data or not isinstance(data["plots"], list):
+            raise ArtifactError("plots_manifest.json must include a 'plots' list")
         return data
 
-    def _write_deliverables_manifest(self, payload: dict[str, Any]) -> None:
-        self.deliverables_manifest_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
-        )
+    def _write_plots_manifest(self, payload: dict[str, Any]) -> None:
+        self.plots_manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    def append_deliverable_entry(self, entry: dict[str, Any]) -> None:
-        manifest = self._read_deliverables_manifest()
+    def append_plot_entry(self, entry: dict[str, Any]) -> None:
+        manifest = self._read_plots_manifest()
         manifest.setdefault("schema_version", 1)
-        manifest.setdefault("deliverables", [])
-        manifest["deliverables"].append(entry)
-        self._write_deliverables_manifest(manifest)
+        manifest.setdefault("plots", [])
+        manifest["plots"].append(entry)
+        self._write_plots_manifest(manifest)
+
+    # -------------- exports manifest --------------
+    def _read_exports_manifest(self) -> dict[str, Any]:
+        if not self.exports_manifest_path.exists():
+            return {"schema_version": 1, "exports": []}
+        try:
+            data = json.loads(self.exports_manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ArtifactError(f"exports_manifest.json is not valid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise ArtifactError("exports_manifest.json must be a JSON object")
+        if "exports" not in data or not isinstance(data["exports"], list):
+            raise ArtifactError("exports_manifest.json must include an 'exports' list")
+        return data
+
+    def _write_exports_manifest(self, payload: dict[str, Any]) -> None:
+        self.exports_manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def append_export_entry(self, entry: dict[str, Any]) -> None:
+        manifest = self._read_exports_manifest()
+        manifest.setdefault("schema_version", 1)
+        manifest.setdefault("exports", [])
+        manifest["exports"].append(entry)
+        self._write_exports_manifest(manifest)
 
     # -------------- helpers --------------
     def _revision_dir(self, step_dir: Path) -> Path:
@@ -228,5 +261,5 @@ class ArtifactStore:
 
     # ---- flat plots handling (not listed as dataframe artifacts) ----
     def plots_directory(self) -> Path:
-        """Directory where plot steps should write. May be outputs/ or a subdir."""
+        """Directory where plot specs write. May be outputs/ or a subdir."""
         return self.plots_dir

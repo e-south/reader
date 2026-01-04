@@ -32,8 +32,12 @@ def test_explain_renders_without_rich_subtitle_kwargs() -> None:
     registry.register("transform", "dummy", _Dummy)
     spec = ReaderSpec.model_validate(
         {
-            "experiment": {"outputs": "/tmp/reader"},
-            "steps": [{"id": "step_one", "uses": "transform/dummy"}],
+            "schema": "reader/v2",
+            "experiment": {"id": "exp"},
+            "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
+            "pipeline": {"steps": [{"id": "step_one", "uses": "transform/dummy"}]},
+            "plots": {"specs": []},
+            "exports": {"specs": []},
         }
     )
     console = Console(theme=THEME, record=True, width=80)

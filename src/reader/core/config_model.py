@@ -30,32 +30,93 @@ class StepSpec(BaseModel):
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
 
-class ReaderSpec(BaseModel):
-    experiment: dict[str, Any]
-    io: dict[str, Any] = Field(default_factory=dict)
-    runtime: dict[str, Any] = Field(default_factory=dict)
-    contracts: list[dict[str, Any]] = Field(default_factory=list)
-    collections: dict[str, Any] = Field(default_factory=dict)
-    steps: list[StepSpec]
-    deliverables: list[StepSpec] = Field(default_factory=list)
+class ExperimentSpec(BaseModel):
+    id: str
+    title: str | None = None
+    root: str | None = None  # internal: experiment directory
 
     model_config = {"extra": "forbid"}
 
-    @field_validator("experiment", mode="after")
+    @field_validator("id", mode="after")
     @classmethod
-    def _validate_exp(cls, v: dict[str, Any]) -> dict[str, Any]:
-        if "outputs" not in v:
-            raise ConfigError("experiment.outputs must be provided")
-        outputs = v.get("outputs")
-        if not isinstance(outputs, str) or not outputs.strip():
-            raise ConfigError("experiment.outputs must be a non-empty string path")
-        palette = v.get("palette", None)
-        if palette is not None:
-            if not isinstance(palette, str) or not palette.strip():
-                raise ConfigError("experiment.palette must be a non-empty string or null")
-        plots_dir = v.get("plots_dir", None)
-        if plots_dir is not None and not isinstance(plots_dir, str):
-            raise ConfigError("experiment.plots_dir must be a string or null")
+    def _validate_id(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ConfigError("experiment.id must be a non-empty string")
+        return v
+
+
+class PathsSpec(BaseModel):
+    outputs: str = "./outputs"
+    plots: str = "plots"
+    exports: str = "exports"
+
+    model_config = {"extra": "forbid"}
+
+
+class PlottingSpec(BaseModel):
+    palette: str | None = "colorblind"
+
+    model_config = {"extra": "forbid"}
+
+
+class DataSpec(BaseModel):
+    groupings: dict[str, Any] = Field(default_factory=dict)
+    aliases: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
+class PipelineSpec(BaseModel):
+    presets: list[str] = Field(default_factory=list)
+    runtime: dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    steps: list[StepSpec]
+
+    model_config = {"extra": "forbid"}
+
+
+class SpecDefaults(BaseModel):
+    reads: dict[str, str] = Field(default_factory=dict)
+    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
+
+    model_config = {"extra": "forbid"}
+
+
+class PlotSection(BaseModel):
+    presets: list[str] = Field(default_factory=list)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    defaults: SpecDefaults = Field(default_factory=SpecDefaults)
+    specs: list[StepSpec] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
+class ExportSection(BaseModel):
+    presets: list[str] = Field(default_factory=list)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    defaults: SpecDefaults = Field(default_factory=SpecDefaults)
+    specs: list[StepSpec] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
+class ReaderSpec(BaseModel):
+    schema_: str = Field(alias="schema")
+    experiment: ExperimentSpec
+    paths: PathsSpec = Field(default_factory=PathsSpec)
+    plotting: PlottingSpec = Field(default_factory=PlottingSpec)
+    data: DataSpec = Field(default_factory=DataSpec)
+    pipeline: PipelineSpec
+    plots: PlotSection = Field(default_factory=PlotSection)
+    exports: ExportSection = Field(default_factory=ExportSection)
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("schema_", mode="after")
+    @classmethod
+    def _validate_schema(cls, v: str) -> str:
+        if v != "reader/v2":
+            raise ConfigError("Config schema must be 'reader/v2'. This repo only supports reader/v2.")
         return v
 
     @classmethod
@@ -69,60 +130,45 @@ class ReaderSpec(BaseModel):
                 f"Config must be a mapping (YAML object) in {path}. "
                 "Check for empty files or top-level lists."
             )
-        legacy_keys = [k for k in ("reports", "report_presets", "report_overrides") if k in (data or {})]
-        if legacy_keys:
+        schema = data.get("schema")
+        if schema != "reader/v2":
             raise ConfigError(
-                "Config uses legacy report keys. Rename to: "
-                "deliverables, deliverable_presets, deliverable_overrides."
+                f"Config schema must be 'reader/v2'. This repo only supports reader/v2 (found {schema!r})."
             )
-        if "steps" not in data:
-            raise ConfigError("Config must define 'steps' (use an empty list if there are no pipeline steps).")
-        if "experiment" in data and not isinstance(data["experiment"], dict):
-            raise ConfigError("experiment must be a mapping")
-        data.setdefault("experiment", {})
-        outputs_raw = data["experiment"].get("outputs", None)
-        if outputs_raw is None:
-            raise ConfigError("experiment.outputs must be provided")
-        if not isinstance(outputs_raw, str) or not outputs_raw.strip():
-            raise ConfigError("experiment.outputs must be a non-empty string path")
-        palette_raw = data["experiment"].get("palette", None)
-        if palette_raw is not None and (not isinstance(palette_raw, str) or not palette_raw.strip()):
-            raise ConfigError("experiment.palette must be a non-empty string or null")
-        plots_dir_raw = data["experiment"].get("plots_dir", None)
-        if plots_dir_raw is not None and not isinstance(plots_dir_raw, str):
-            raise ConfigError("experiment.plots_dir must be a string or null")
-        runtime_raw = data.get("runtime", {}) or {}
-        if not isinstance(runtime_raw, dict):
-            raise ConfigError("runtime must be a mapping")
-        if "strict" in runtime_raw and not isinstance(runtime_raw["strict"], bool):
-            raise ConfigError("runtime.strict must be a boolean (true/false)")
-        data["runtime"] = runtime_raw
-        # Normalize relative paths to job file directory
-        root = path.parent
 
-        def _norm_io(d: dict[str, Any]) -> dict[str, Any]:
-            def _fix(p):
-                if isinstance(p, str) and (p.startswith("./") or p.startswith("../") or not Path(p).is_absolute()):
-                    return str((root / p).resolve())
-                return p
+        legacy_keys = {
+            "steps",
+            "overrides",
+            "collections",
+            "deliverables",
+            "deliverable_presets",
+            "deliverable_overrides",
+        }
+        exp_legacy = {"name", "outputs", "plots_dir", "palette"}
+        illegal = sorted(k for k in legacy_keys if k in data)
+        if "experiment" in data and isinstance(data["experiment"], dict):
+            illegal_exp = sorted(k for k in exp_legacy if k in data["experiment"])
+        else:
+            illegal_exp = []
+        if illegal or illegal_exp:
+            parts = []
+            if illegal:
+                parts.append(f"top-level keys: {illegal}")
+            if illegal_exp:
+                parts.append(f"experiment keys: {illegal_exp}")
+            raise ConfigError(
+                "Legacy v1 config keys are not supported in reader/v2. "
+                "Remove/replace: " + "; ".join(parts)
+            )
 
-            return {k: _fix(v) for k, v in d.items()}
+        if "experiment" not in data or not isinstance(data["experiment"], dict):
+            raise ConfigError("experiment must be a mapping with required keys: id (and optional title)")
+        if "pipeline" not in data or not isinstance(data["pipeline"], dict):
+            raise ConfigError("pipeline must be a mapping and include steps")
+        if "steps" not in data["pipeline"]:
+            raise ConfigError("pipeline.steps is required (use an empty list if there are no pipeline steps).")
 
-        data["experiment"]["root"] = str(root.resolve())
-        data["experiment"].setdefault("name", root.name)
-        # Normalize experiment.outputs relative to config directory
-        if "outputs" in data["experiment"]:
-            outp = Path(str(data["experiment"]["outputs"]))
-            if not outp.is_absolute():
-                data["experiment"]["outputs"] = str((root / outp).resolve())
-        if "io" in data:
-            if not isinstance(data["io"], dict):
-                raise ConfigError("io must be a mapping")
-            data["io"] = _norm_io(data["io"])
-
-        overrides = data.get("overrides", {}) or {}
-        if not isinstance(overrides, dict):
-            raise ConfigError("overrides must be a mapping of id -> overrides")
+        root = path.parent.resolve()
 
         def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
             out = dict(base)
@@ -133,69 +179,66 @@ class ReaderSpec(BaseModel):
                     out[k] = v
             return out
 
-        def _ensure_step_list(raw_steps: Any, *, section: str) -> list[dict[str, Any]]:
+        def _ensure_step_list(raw_steps: Any, *, section: str, label: str) -> list[dict[str, Any]]:
             if not isinstance(raw_steps, list):
-                raise ConfigError(f"{section} must be a list of steps")
+                raise ConfigError(f"{section}.{label} must be a list")
             normalized: list[dict[str, Any]] = []
             for i, entry in enumerate(raw_steps, 1):
                 if not isinstance(entry, dict):
-                    raise ConfigError(f"{section} step #{i} must be a mapping, got {type(entry).__name__}")
+                    raise ConfigError(f"{section}.{label} entry #{i} must be a mapping")
+                if "preset" in entry:
+                    raise ConfigError(
+                        f"{section}.{label} does not support inline preset expansion; "
+                        f"use {section}.presets instead."
+                    )
                 normalized.append(entry)
             return normalized
 
-        def _expand_steps(raw_steps: list[dict[str, Any]], *, section: str) -> list[dict[str, Any]]:
+        def _expand_presets(preset_names: list[str], *, section: str) -> list[dict[str, Any]]:
             expanded: list[dict[str, Any]] = []
-            for entry in raw_steps:
-                if "preset" in entry:
-                    preset_name = entry["preset"]
-                    steps = resolve_preset(preset_name)
-                    extra = {k: v for k, v in entry.items() if k != "preset"}
-                    if extra:
-                        if len(steps) != 1:
-                            raise ConfigError(
-                                f"Preset {preset_name!r} expands to {len(steps)} steps; "
-                                f"inline overrides are only supported for single-step presets ({section})."
-                            )
-                        steps = [_deep_merge(steps[0], extra)]
-                    expanded.extend(steps)
-                else:
-                    expanded.append(entry)
+            for name in preset_names:
+                steps = resolve_preset(name)
+                expanded.extend(steps)
             return expanded
 
-        raw_steps = _ensure_step_list(data.get("steps", []) or [], section="steps")
-        data["steps"] = _expand_steps(raw_steps, section="steps")
-
-        deliverable_presets = data.get("deliverable_presets", []) or []
-        if not isinstance(deliverable_presets, list):
-            raise ConfigError("deliverable_presets must be a list")
-        deliverable_overrides = data.get("deliverable_overrides", {}) or {}
-        if not isinstance(deliverable_overrides, dict):
-            raise ConfigError("deliverable_overrides must be a mapping of id -> overrides")
-        raw_deliverables = [{"preset": name} for name in deliverable_presets]
-        raw_deliverables.extend(_ensure_step_list(data.get("deliverables", []) or [], section="deliverables"))
-        data["deliverables"] = _expand_steps(raw_deliverables, section="deliverables")
-
-        def _validate_override_keys(steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str) -> None:
+        def _validate_overrides(steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str) -> None:
+            if not isinstance(overrides_map, dict):
+                raise ConfigError(f"{section}.overrides must be a mapping of id -> overrides")
             step_ids = {s.get("id") for s in steps if isinstance(s, dict)}
             unknown = sorted(set(overrides_map) - step_ids)
             if unknown:
                 raise ConfigError(
-                    f"{section} overrides reference unknown step id(s): {unknown}. "
+                    f"{section}.overrides reference unknown step id(s): {unknown}. "
                     "Check preset-expanded step ids or remove stale overrides."
                 )
 
-        def _finalize_steps(steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str) -> None:
+        def _validate_step_kind(step: dict[str, Any], *, section: str) -> None:
+            uses = str(step.get("uses", "") or "")
+            if "/" not in uses:
+                raise ConfigError(f"{section} {step.get('id', '<missing>')}: uses must be 'category/key'")
+            category = uses.split("/", 1)[0]
+            if section == "pipeline" and category in {"plot", "export"}:
+                raise ConfigError(f"pipeline {step.get('id')}: plot/export plugins are not allowed in pipeline.")
+            if section == "plots" and category != "plot":
+                raise ConfigError(f"plots {step.get('id')}: uses must be plot/*")
+            if section == "exports" and category != "export":
+                raise ConfigError(f"exports {step.get('id')}: uses must be export/*")
+
+        def _finalize_steps(
+            steps: list[dict[str, Any]], overrides_map: dict[str, Any], *, section: str
+        ) -> list[dict[str, Any]]:
+            finalized: list[dict[str, Any]] = []
             for s in steps:
                 step_id = s.get("id")
-                if not step_id:
-                    raise ConfigError(f"Every {section} step must include an id (after preset expansion).")
+                if not step_id or not isinstance(step_id, str):
+                    raise ConfigError(f"Every {section} step must include an id.")
                 if step_id in overrides_map:
-                    s.update(_deep_merge(s, overrides_map[step_id]))
-                    if s.get("id") != step_id:
+                    merged = _deep_merge(s, overrides_map[step_id])
+                    if merged.get("id") != step_id:
                         raise ConfigError(
-                            f"{section} overrides for '{step_id}' cannot change the step id "
-                            f"(got {s.get('id')!r})."
+                            f"{section}.overrides for '{step_id}' cannot change the step id (got {merged.get('id')!r})."
                         )
+                    s = merged
                 reads_raw = s.get("reads", {})
                 if reads_raw is None:
                     reads_raw = {}
@@ -212,27 +255,23 @@ class ReaderSpec(BaseModel):
                 if not isinstance(with_raw, dict):
                     raise ConfigError(f"{section} {step_id}: with must be a mapping")
                 # normalize file: pseudo-reads
-                r = {}
+                normalized_reads: dict[str, str] = {}
                 for k, v in reads_raw.items():
                     if isinstance(v, str) and v.startswith("file:"):
                         raw = v.split("file:", 1)[1].strip()
                         if not raw:
-                            raise ConfigError(
-                                f"{section} {step_id}: reads '{k}' uses an empty file: path."
-                            )
+                            raise ConfigError(f"{section} {step_id}: reads '{k}' uses an empty file: path.")
                         p = Path(raw).expanduser()
                         p = (root / p).resolve() if not p.is_absolute() else p.resolve()
-                        r[k] = f"file:{p}"
+                        normalized_reads[k] = f"file:{p}"
                     else:
-                        r[k] = v
-                s["reads"] = r
+                        normalized_reads[k] = v
+                s["reads"] = normalized_reads
                 s.setdefault("with", {})
                 s.setdefault("writes", {})
-
-        _validate_override_keys(data.get("steps", []), overrides, section="pipeline")
-        _validate_override_keys(data.get("deliverables", []), deliverable_overrides, section="deliverables")
-        _finalize_steps(data.get("steps", []), overrides, section="pipeline")
-        _finalize_steps(data.get("deliverables", []), deliverable_overrides, section="deliverables")
+                _validate_step_kind(s, section=section)
+                finalized.append(s)
+            return finalized
 
         def _ensure_unique_ids(steps: list[dict[str, Any]], *, section: str) -> set[str]:
             ids = [s.get("id") for s in steps if isinstance(s, dict)]
@@ -241,17 +280,114 @@ class ReaderSpec(BaseModel):
                 raise ConfigError(f"{section} contains duplicate step id(s): {dupes}")
             return {i for i in ids if i}
 
-        pipeline_ids = _ensure_unique_ids(data.get("steps", []), section="steps")
-        deliverable_ids = _ensure_unique_ids(data.get("deliverables", []), section="deliverables")
-        overlap = sorted(pipeline_ids & deliverable_ids)
-        if overlap:
-            raise ConfigError(
-                f"steps and deliverables reuse step id(s): {overlap}. "
-                "Use unique ids across both sections."
-            )
-        data.pop("overrides", None)
-        data.pop("deliverable_overrides", None)
-        data.pop("deliverable_presets", None)
+        # Normalize optional sections
+        data.setdefault("paths", {})
+        if not isinstance(data["paths"], dict):
+            raise ConfigError("paths must be a mapping")
+        data.setdefault("plotting", {})
+        if not isinstance(data["plotting"], dict):
+            raise ConfigError("plotting must be a mapping")
+        data.setdefault("data", {})
+        if not isinstance(data["data"], dict):
+            raise ConfigError("data must be a mapping")
+        data.setdefault("plots", {})
+        if not isinstance(data["plots"], dict):
+            raise ConfigError("plots must be a mapping")
+        data.setdefault("exports", {})
+        if not isinstance(data["exports"], dict):
+            raise ConfigError("exports must be a mapping")
+        if "steps" in data["plots"]:
+            raise ConfigError("plots.steps is not supported in reader/v2. Use plots.specs.")
+        if "steps" in data["exports"]:
+            raise ConfigError("exports.steps is not supported in reader/v2. Use exports.specs.")
+        for section in ("plots", "exports"):
+            defaults = data[section].get("defaults", {}) or {}
+            if not isinstance(defaults, dict):
+                raise ConfigError(f"{section}.defaults must be a mapping")
+            reads_default = defaults.get("reads", {}) or {}
+            if not isinstance(reads_default, dict):
+                raise ConfigError(f"{section}.defaults.reads must be a mapping")
+            with_default = defaults.get("with", {}) or {}
+            if not isinstance(with_default, dict):
+                raise ConfigError(f"{section}.defaults.with must be a mapping")
+            data[section]["defaults"] = {"reads": reads_default, "with": with_default}
+            overrides = data[section].get("overrides", {}) or {}
+            if not isinstance(overrides, dict):
+                raise ConfigError(f"{section}.overrides must be a mapping of id -> overrides")
+            data[section]["overrides"] = overrides
+
+        # Normalize paths
+        outputs_raw = data["paths"].get("outputs", "./outputs")
+        if not isinstance(outputs_raw, str) or not outputs_raw.strip():
+            raise ConfigError("paths.outputs must be a non-empty string path")
+        outputs_path = Path(outputs_raw).expanduser()
+        if not outputs_path.is_absolute():
+            outputs_path = (root / outputs_path).resolve()
+        data["paths"]["outputs"] = str(outputs_path)
+        plots_subdir = data["paths"].get("plots", "plots")
+        exports_subdir = data["paths"].get("exports", "exports")
+        for key, val in (("plots", plots_subdir), ("exports", exports_subdir)):
+            if val is None:
+                raise ConfigError(f"paths.{key} must be a string subdirectory (use '.' to flatten).")
+            if not isinstance(val, str):
+                raise ConfigError(f"paths.{key} must be a string subdirectory")
+            if Path(val).is_absolute():
+                raise ConfigError(f"paths.{key} must be relative to paths.outputs, not absolute.")
+
+        # plotting.palette validation
+        palette_raw = data["plotting"].get("palette", None)
+        if palette_raw is not None and (not isinstance(palette_raw, str) or not palette_raw.strip()):
+            raise ConfigError("plotting.palette must be a non-empty string or null")
+
+        # data.groupings / data.aliases validation
+        groupings_raw = data["data"].get("groupings", {}) or {}
+        if not isinstance(groupings_raw, dict):
+            raise ConfigError("data.groupings must be a mapping")
+        aliases_raw = data["data"].get("aliases", {}) or {}
+        if not isinstance(aliases_raw, dict):
+            raise ConfigError("data.aliases must be a mapping")
+        data["data"]["groupings"] = groupings_raw
+        data["data"]["aliases"] = aliases_raw
+
+        # pipeline runtime validation
+        runtime_raw = data["pipeline"].get("runtime", {}) or {}
+        if not isinstance(runtime_raw, dict):
+            raise ConfigError("pipeline.runtime must be a mapping")
+        if "strict" in runtime_raw and not isinstance(runtime_raw["strict"], bool):
+            raise ConfigError("pipeline.runtime.strict must be a boolean (true/false)")
+        data["pipeline"]["runtime"] = runtime_raw
+
+        # presets + specs validation
+        pipeline_presets = data["pipeline"].get("presets", []) or []
+        if not isinstance(pipeline_presets, list):
+            raise ConfigError("pipeline.presets must be a list")
+        plots_presets = data["plots"].get("presets", []) or []
+        if not isinstance(plots_presets, list):
+            raise ConfigError("plots.presets must be a list")
+        exports_presets = data["exports"].get("presets", []) or []
+        if not isinstance(exports_presets, list):
+            raise ConfigError("exports.presets must be a list")
+
+        pipeline_steps = _expand_presets(pipeline_presets, section="pipeline")
+        pipeline_steps.extend(
+            _ensure_step_list(data["pipeline"].get("steps", []) or [], section="pipeline", label="steps")
+        )
+        plots_specs = _ensure_step_list(data["plots"].get("specs", []) or [], section="plots", label="specs")
+        exports_specs = _ensure_step_list(data["exports"].get("specs", []) or [], section="exports", label="specs")
+
+        pipeline_overrides = data["pipeline"].get("overrides", {}) or {}
+        _validate_overrides(pipeline_steps, pipeline_overrides, section="pipeline")
+
+        pipeline_steps = _finalize_steps(pipeline_steps, pipeline_overrides, section="pipeline")
+        _ensure_unique_ids(pipeline_steps, section="pipeline")
+
+        data["pipeline"]["steps"] = pipeline_steps
+        data["plots"]["specs"] = plots_specs
+        data["exports"]["specs"] = exports_specs
+
+        # set experiment.root for internal use
+        data["experiment"]["root"] = str(root)
+
         try:
             return cls.model_validate(data)
         except ValidationError as e:

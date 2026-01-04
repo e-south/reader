@@ -42,6 +42,7 @@ from reader.core.contracts import BUILTIN, validate_df
 from reader.core.errors import ConfigError, ContractError, ExecutionError, ReaderError
 from reader.core.mpl import ensure_mpl_cache_dir
 from reader.core.registry import Plugin, load_entry_points
+from reader.core.specs import ensure_unique_spec_ids, resolve_export_specs, resolve_plot_specs
 
 
 def _digest_cfg(plugin_cfg: Any) -> str:
@@ -236,43 +237,64 @@ def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
     return table
 
 
-def explain(spec: ReaderSpec, *, console: Console, registry=None) -> None:
-    steps = list(spec.steps)
-    deliverables = list(spec.deliverables or [])
-    categories = _collect_categories(steps + deliverables)
+def explain(
+    spec: ReaderSpec,
+    *,
+    console: Console,
+    registry=None,
+    plot_specs=None,
+    export_specs=None,
+) -> None:
+    pipeline_steps = list(spec.pipeline.steps)
+    plot_specs = list(plot_specs) if plot_specs is not None else resolve_plot_specs(spec)
+    export_specs = list(export_specs) if export_specs is not None else resolve_export_specs(spec)
+    ensure_unique_spec_ids(pipeline_steps, plot_specs, export_specs)
+    categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
-        out_dir = Path(spec.experiment["outputs"])
+        out_dir = Path(spec.paths.outputs)
         ensure_mpl_cache_dir(base_dir=out_dir)
     registry = registry or load_entry_points(categories=categories)
-    if steps:
-        pipeline = _plan_table(steps, registry, title="Pipeline")
+    if pipeline_steps:
+        pipeline = _plan_table(pipeline_steps, registry, title="Pipeline")
         console.print(
             Panel(
                 pipeline,
                 border_style="cyan",
                 box=box.ROUNDED,
-                subtitle=Text(f"{len(steps)} steps", style="dim"),
+                subtitle=Text(f"{len(pipeline_steps)} steps", style="dim"),
             )
         )
-    if deliverables:
-        deliverables_table = _plan_table(deliverables, registry, title="Deliverables")
+    if plot_specs:
+        plots_table = _plan_table(plot_specs, registry, title="Plots")
         console.print(
             Panel(
-                deliverables_table,
+                plots_table,
                 border_style="cyan",
                 box=box.ROUNDED,
-                subtitle=Text(f"{len(deliverables)} steps", style="dim"),
+                subtitle=Text(f"{len(plot_specs)} specs", style="dim"),
+            )
+        )
+    if export_specs:
+        exports_table = _plan_table(export_specs, registry, title="Exports")
+        console.print(
+            Panel(
+                exports_table,
+                border_style="cyan",
+                box=box.ROUNDED,
+                subtitle=Text(f"{len(export_specs)} specs", style="dim"),
             )
         )
 
 
 def validate(spec: ReaderSpec, *, console: Console) -> None:
     # schema already validated by pydantic; here we ensure contracts exist
-    steps = list(spec.steps)
-    deliverables = list(spec.deliverables or [])
-    categories = _collect_categories(steps + deliverables)
+    pipeline_steps = list(spec.pipeline.steps)
+    plot_specs = resolve_plot_specs(spec)
+    export_specs = resolve_export_specs(spec)
+    ensure_unique_spec_ids(pipeline_steps, plot_specs, export_specs)
+    categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
-        out_dir = Path(spec.experiment["outputs"])
+        out_dir = Path(spec.paths.outputs)
         ensure_mpl_cache_dir(base_dir=out_dir)
     registry = load_entry_points(categories=categories)
 
@@ -349,14 +371,77 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
 
         return available | produced
 
-    pipeline_labels = _validate_steps(steps, "step")
-    if deliverables:
-        _validate_steps(deliverables, "deliverable", available_labels=pipeline_labels)
+    pipeline_labels = _validate_steps(pipeline_steps, "pipeline")
+
+    def _validate_specs(items: list[Any], label: str, *, available_labels: set[str]) -> None:
+        for spec_item in items:
+            uses = spec_item.uses
+            try:
+                plugin_cls = registry.resolve(uses)
+            except Exception as e:
+                raise ConfigError(f"{label} {spec_item.id}: {e}") from e
+            # check reads against declared inputs
+            try:
+                req = plugin_cls.input_contracts()
+                expected = set()
+                required = set()
+                for raw_name in req:
+                    optional = raw_name.endswith("?")
+                    name = raw_name[:-1] if optional else raw_name
+                    expected.add(name)
+                    if not optional:
+                        required.add(name)
+                provided = set((spec_item.reads or {}).keys())
+                missing = sorted(required - provided)
+                extra = sorted(provided - expected)
+                if missing or extra:
+                    parts = []
+                    if missing:
+                        parts.append(f"missing inputs: {missing}")
+                    if extra:
+                        parts.append(f"unexpected inputs: {extra}")
+                    raise ConfigError(f"{label} {spec_item.id}: reads do not match plugin inputs ({'; '.join(parts)})")
+            except ConfigError:
+                raise
+            except Exception as e:
+                raise ConfigError(f"{label} {spec_item.id}: could not validate reads: {e}") from e
+            # check reads reference pipeline outputs (or file:)
+            for key, target in (spec_item.reads or {}).items():
+                if isinstance(target, str) and target.startswith("file:"):
+                    continue
+                if target not in available_labels:
+                    preview = sorted(available_labels)
+                    shown = ", ".join(preview[:12]) if preview else "—"
+                    tail = " …" if len(preview) > 12 else ""
+                    raise ConfigError(
+                        f"{label} {spec_item.id}: reads '{key}' → '{target}', which is not produced by pipeline. "
+                        f"Known labels: {shown}{tail}. "
+                        "Check writes/reads aliases or use file: paths."
+                    )
+            # validate config model
+            try:
+                plugin_cls.ConfigModel.model_validate(spec_item.with_ or {})
+            except Exception as e:
+                raise ConfigError(f"{label} {spec_item.id}: invalid config for {uses}: {e}") from e
+            # enforce that plot/export plugins do not emit data artifacts
+            output_contracts = plugin_cls.output_contracts()
+            data_outputs = {k: v for k, v in output_contracts.items() if v != "none"}
+            if data_outputs:
+                raise ConfigError(
+                    f"{label} {spec_item.id}: plugins must not declare data outputs (got {data_outputs}). "
+                    "Move data outputs into the pipeline."
+                )
+
+    if plot_specs:
+        _validate_specs(plot_specs, "plot", available_labels=pipeline_labels)
+    if export_specs:
+        _validate_specs(export_specs, "export", available_labels=pipeline_labels)
 
     lines = [
         "[green]✓ Config validated[/green]",
-        f"[dim]steps[/dim]: {len(steps)}",
-        f"[dim]deliverables[/dim]: {len(deliverables)}",
+        f"[dim]pipeline[/dim]: {len(pipeline_steps)}",
+        f"[dim]plots[/dim]: {len(plot_specs)}",
+        f"[dim]exports[/dim]: {len(export_specs)}",
         "[dim]checks[/dim]: schema, plugin availability, reads, output labels, plugin config",
         "[dim]not checked[/dim]: input files, data contents",
         "[dim]tip[/dim]: use 'reader explain' to see inputs/outputs",
@@ -364,8 +449,8 @@ def validate(spec: ReaderSpec, *, console: Console) -> None:
     console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
 
 
-def run_job(
-    spec_path: Path,
+def run_spec(
+    spec: ReaderSpec,
     *,
     resume_from: str | None = None,
     until: str | None = None,
@@ -373,18 +458,18 @@ def run_job(
     log_level: str = "INFO",
     console: Console | None = None,
     include_pipeline: bool = True,
-    include_deliverables: bool = True,
+    include_plots: bool = True,
+    include_exports: bool = True,
+    plot_specs=None,
+    export_specs=None,
+    job_label: str | None = None,
+    show_next_steps: bool = False,
 ) -> None:
     os.environ.setdefault("ARROW_LOG_LEVEL", "FATAL")
-    spec = ReaderSpec.load(spec_path)
     exp = spec.experiment
-    # Normalize outputs relative to the experiment root if still relative
-    out_dir = Path(exp["outputs"])
-    if not out_dir.is_absolute():
-        out_dir = Path(exp["root"]) / out_dir
-    out_dir = out_dir.resolve()
+    out_dir = Path(spec.paths.outputs).resolve()
     if out_dir.exists() and not out_dir.is_dir():
-        raise ConfigError(f"experiment.outputs points to a file: {out_dir}")
+        raise ConfigError(f"paths.outputs points to a file: {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
     # logging
     level_name = str(log_level).upper()
@@ -411,38 +496,46 @@ def run_job(
     logger.addHandler(fh)
     logger.addHandler(sh)
 
-    steps = list(spec.steps)
+    pipeline_steps = list(spec.pipeline.steps)
+    plot_steps = list(plot_specs) if plot_specs is not None else resolve_plot_specs(spec)
+    export_steps = list(export_specs) if export_specs is not None else resolve_export_specs(spec)
+    ensure_unique_spec_ids(pipeline_steps, plot_steps, export_steps)
+    all_plot_specs = list(plot_steps)
+    all_export_specs = list(export_steps)
+
     if not include_pipeline:
         if resume_from or until:
-            raise ConfigError("--resume-from/--until require pipeline execution; use reader run for sliced runs.")
-        steps = []
+            raise ConfigError("--from/--until require pipeline execution; use reader run for sliced runs.")
+        pipeline_steps = []
     else:
         # resume/until slicing (pipeline only)
         if resume_from:
             try:
-                idx = next(i for i, s in enumerate(steps) if s.id == resume_from)
-                steps = steps[idx:]
+                idx = next(i for i, s in enumerate(pipeline_steps) if s.id == resume_from)
+                pipeline_steps = pipeline_steps[idx:]
             except StopIteration:
-                raise ConfigError(f"--resume-from: step id '{resume_from}' not found") from None
+                raise ConfigError(f"--from: step id '{resume_from}' not found") from None
         if until:
             try:
-                idx = next(i for i, s in enumerate(steps) if s.id == until)
-                steps = steps[: idx + 1]
+                idx = next(i for i, s in enumerate(pipeline_steps) if s.id == until)
+                pipeline_steps = pipeline_steps[: idx + 1]
             except StopIteration:
                 raise ConfigError(f"--until: step id '{until}' not found") from None
 
-    deliverables = list(spec.deliverables or [])
-    if not include_deliverables:
-        deliverables = []
-    all_steps = steps + deliverables
+    if not include_plots:
+        plot_steps = []
+    if not include_exports:
+        export_steps = []
 
-    if any(getattr(step, "uses", "").startswith("plot/") for step in all_steps):
+    all_steps = pipeline_steps + plot_steps + export_steps
+
+    if plot_steps:
         ensure_mpl_cache_dir(base_dir=out_dir)
 
-    palette = exp.get("palette", "colorblind")
+    palette = spec.plotting.palette if spec.plotting else None
     if palette is not None:
         if not isinstance(palette, str) or not palette.strip():
-            raise ConfigError("experiment.palette must be a non-empty string or null")
+            raise ConfigError("plotting.palette must be a non-empty string or null")
         palette = palette.strip()
 
     PaletteBook = None
@@ -456,37 +549,45 @@ def run_job(
                 raise ImportError("PaletteBook or available_palettes not found in style module")
         except Exception as e:
             raise ConfigError(
-                "Plot palettes require matplotlib; install plotting dependencies or set experiment.palette: null."
+                "Plot palettes require matplotlib; install plotting dependencies or set plotting.palette: null."
             ) from e
         if palette not in available_palettes():
             raise ConfigError(
-                f"Unknown palette {palette!r}. Available: {available_palettes()} (or set experiment.palette: null)."
+                f"Unknown palette {palette!r}. Available: {available_palettes()} (or set plotting.palette: null)."
             )
 
-    # Where should plots go?
-    plots_cfg = exp.get("plots_dir", "plots")  # set to None to flatten into outputs/
-    plots_dir = out_dir if plots_cfg in (None, "", ".", "./") else out_dir / plots_cfg
+    plots_cfg = spec.paths.plots
+    exports_cfg = spec.paths.exports
+    plots_dir = out_dir if plots_cfg in ("", ".", "./") else out_dir / str(plots_cfg)
+    exports_dir = out_dir if exports_cfg in ("", ".", "./") else out_dir / str(exports_cfg)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
 
     ctx = RunContext(
-        exp_dir=Path(exp["root"]),
+        exp_dir=Path(exp.root or out_dir.parent),
         outputs_dir=out_dir,
         artifacts_dir=out_dir / "artifacts",
         plots_dir=plots_dir,
+        exports_dir=exports_dir,
         manifest_path=out_dir / "manifest.json",
         logger=logger,
         palette_book=(None if (palette is None or PaletteBook is None) else PaletteBook(palette)),
-        strict=bool(spec.runtime.get("strict", True)) if isinstance(spec.runtime, dict) else True,
-        collections=(spec.collections or {}),
+        strict=bool(spec.pipeline.runtime.get("strict", True)) if isinstance(spec.pipeline.runtime, dict) else True,
+        groupings=(spec.data.groupings or {}),
+        aliases=(spec.data.aliases or {}),
     )
 
-    store = ArtifactStore(out_dir, plots_subdir=(plots_cfg if plots_cfg not in (None, "", ".", "./") else None))
+    store = ArtifactStore(
+        out_dir,
+        plots_subdir=(plots_cfg if plots_cfg not in ("", ".", "./") else None),
+        exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
+    )
 
     registry = load_entry_points(categories=_collect_categories(all_steps))
 
     if dry_run:
         console.print(Panel.fit("DRY RUN — printing plan", border_style="yellow", box=box.ROUNDED))
-        spec_slice = spec.model_copy(update={"steps": steps, "deliverables": deliverables})
-        explain(spec_slice, console=console, registry=registry)
+        explain(spec, console=console, registry=registry, plot_specs=plot_steps, export_specs=export_steps)
         return
 
     def _run_steps(items: list[Any], *, phase: str) -> None:
@@ -504,7 +605,7 @@ def run_job(
             task = progress.add_task(f"Running {phase}", total=len(items))
 
             for ordinal, step in enumerate(items, 1):
-                ctx.logger.info("→ %s %s [%d/%d] uses=%s", phase[:-1], step.id, ordinal, len(items), step.uses)
+                ctx.logger.info("→ %s %s [%d/%d] uses=%s", phase, step.id, ordinal, len(items), step.uses)
                 plugin_cls = registry.resolve(step.uses)
                 cfg = plugin_cls.ConfigModel.model_validate(step.with_ or {})
                 plugin = plugin_cls()
@@ -514,7 +615,11 @@ def run_job(
                     output_contracts=output_contracts,
                     writes=(step.writes or {}),
                 )
-                pre_plot_state = _snapshot_dir(ctx.plots_dir) if phase == "deliverables" else {}
+                pre_state = {}
+                if phase == "plots":
+                    pre_state = _snapshot_dir(ctx.plots_dir)
+                elif phase == "exports":
+                    pre_state = _snapshot_dir(ctx.exports_dir)
 
                 # collect & check inputs
                 inputs = _resolve_inputs(store, step.reads or {})
@@ -534,12 +639,12 @@ def run_job(
                 except ReaderError:
                     raise
                 except Exception as e:
-                    raise ExecutionError(f"{phase[:-1]} {step.id} crashed: {e}") from e
+                    raise ExecutionError(f"{phase} {step.id} crashed: {e}") from e
 
                 # check outputs vs declared contracts
                 _assert_output_contracts(plugin, outputs, where=f"{step.id}", strict=ctx.strict, logger=ctx.logger)
 
-                # persist outputs
+                # persist outputs (pipeline only)
                 for out_name, obj in outputs.items():
                     cid = output_contracts[out_name]
                     if isinstance(obj, pd.DataFrame) and cid != "none":
@@ -558,14 +663,14 @@ def run_job(
                             validate_contract=ctx.strict,
                         )
                     elif cid == "none":
-                        # e.g., plots: plugin must have already written files into ctx.plots_dir
                         continue
                     else:
-                        raise ExecutionError(f"{phase[:-1]} {step.id}: unsupported output type for {out_name}")
+                        raise ExecutionError(f"{phase} {step.id}: unsupported output type for {out_name}")
 
-                if phase == "deliverables":
-                    post_plot_state = _snapshot_dir(ctx.plots_dir)
-                    plot_files = _diff_files(pre_plot_state, post_plot_state)
+                if phase in {"plots", "exports"}:
+                    base_dir = ctx.plots_dir if phase == "plots" else ctx.exports_dir
+                    post_state = _snapshot_dir(base_dir)
+                    changed = _diff_files(pre_state, post_state)
                     file_outputs = outputs.get("files")
                     extra_files: list[Path] = []
                     if file_outputs:
@@ -573,7 +678,7 @@ def run_job(
                             extra_files = [Path(file_outputs)]
                         elif isinstance(file_outputs, list):
                             extra_files = [Path(p) for p in file_outputs if p]
-                    combined = list({*plot_files, *extra_files})
+                    combined = list({*changed, *extra_files})
                     rel_files: list[str] = []
                     for p in combined:
                         try:
@@ -590,22 +695,77 @@ def run_job(
                             inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n])
                             for n in (step.reads or {})
                         ],
-                        "files": sorted(rel_files),
+                        "files": sorted(set(rel_files)),
                     }
-                    store.append_deliverable_entry(entry)
+                    if phase == "plots":
+                        store.append_plot_entry(entry)
+                    else:
+                        store.append_export_entry(entry)
 
                 progress.advance(task)
 
     ctx.logger.info(
-        "run • pipeline=%d step(s)%s • deliverables=%d step(s)",
-        len(steps),
+        "run • pipeline=%d step(s)%s • plots=%d spec(s) • exports=%d spec(s)",
+        len(pipeline_steps),
         " (skipped)" if (not include_pipeline) else "",
-        len(deliverables),
+        len(plot_steps),
+        len(export_steps),
     )
-    if include_pipeline and (not include_deliverables) and spec.deliverables:
-        ctx.logger.info("deliverables skipped • use `reader deliverables` or `reader run --deliverables`")
-    _run_steps(steps, phase="steps")
-    if deliverables:
-        _run_steps(deliverables, phase="deliverables")
+    if include_pipeline and (not include_plots) and all_plot_specs:
+        ctx.logger.info("plots skipped • use `reader plot`")
+    if include_pipeline and (not include_exports) and all_export_specs:
+        ctx.logger.info("exports skipped • use `reader export`")
+    _run_steps(pipeline_steps, phase="pipeline")
+    if plot_steps:
+        _run_steps(plot_steps, phase="plots")
+    if export_steps:
+        _run_steps(export_steps, phase="exports")
 
-    console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
+    if show_next_steps:
+        label = (job_label or "").strip()
+
+        def _cmd(base: str, tail: str = "") -> str:
+            return f"{base} {label}{tail}" if label else f"{base}{tail}"
+
+        lines = [f"Artifacts generated in [path]{out_dir}[/path]", "", "Next steps:"]
+        if all_plot_specs:
+            lines.append(f"  {_cmd('reader plot', ' --list --mode save')}")
+            lines.append(f"  {_cmd('reader plot', ' --mode save')}")
+            lines.append(f"  {_cmd('reader plot', ' --mode notebook --edit')}")
+        if all_export_specs:
+            lines.append(f"  {_cmd('reader export', ' --list')}")
+            lines.append(f"  {_cmd('reader export')}")
+        lines.append(f"  {_cmd('reader notebook', ' --edit')}")
+        console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
+    else:
+        console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
+
+
+def run_job(
+    spec_path: Path,
+    *,
+    resume_from: str | None = None,
+    until: str | None = None,
+    dry_run: bool = False,
+    log_level: str = "INFO",
+    console: Console | None = None,
+    include_pipeline: bool = True,
+    include_plots: bool = True,
+    include_exports: bool = True,
+    job_label: str | None = None,
+    show_next_steps: bool = False,
+) -> None:
+    spec = ReaderSpec.load(spec_path)
+    run_spec(
+        spec,
+        resume_from=resume_from,
+        until=until,
+        dry_run=dry_run,
+        log_level=log_level,
+        console=console,
+        include_pipeline=include_pipeline,
+        include_plots=include_plots,
+        include_exports=include_exports,
+        job_label=job_label,
+        show_next_steps=show_next_steps,
+    )

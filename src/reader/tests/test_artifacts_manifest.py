@@ -24,11 +24,21 @@ def test_manifest_missing_keys_raises(tmp_path):
         store.latest("df")
 
 
-def test_deliverables_manifest_invalid_raises(tmp_path):
+def test_plots_manifest_invalid_raises(tmp_path):
     outputs = tmp_path / "outputs"
     outputs.mkdir()
     (outputs / "manifest.json").write_text(json.dumps({"artifacts": {}, "history": {}}), encoding="utf-8")
-    (outputs / "deliverables_manifest.json").write_text(json.dumps({"deliverables": {}}), encoding="utf-8")
+    (outputs / "plots_manifest.json").write_text(json.dumps({"plots": {}}), encoding="utf-8")
     store = ArtifactStore(outputs)
     with pytest.raises(ArtifactError):
-        store.append_deliverable_entry({"step_id": "plot", "files": []})
+        store.append_plot_entry({"step_id": "plot", "files": []})
+
+
+def test_exports_manifest_invalid_raises(tmp_path):
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    (outputs / "manifest.json").write_text(json.dumps({"artifacts": {}, "history": {}}), encoding="utf-8")
+    (outputs / "exports_manifest.json").write_text(json.dumps({"exports": {}}), encoding="utf-8")
+    store = ArtifactStore(outputs)
+    with pytest.raises(ArtifactError):
+        store.append_export_entry({"step_id": "export", "files": []})
