@@ -29,14 +29,15 @@ experiments/
 ```bash
 outputs/
   manifest.json
-  deliverables_manifest.json
+  plots_manifest.json
+  exports_manifest.json
   reader.log
   artifacts/
     <step_id>.<plugin_key>/        # first revision
       <output>.parquet
       meta.json
-  plots/                           # optional; only if plot steps write figures
-  exports/                         # optional; only if export steps write files
+  plots/                           # optional; only if plot specs write figures
+  exports/                         # optional; only if export specs write files
 ```
 
 3. Optionally generate plots and exports from those outputs.
@@ -131,14 +132,15 @@ Design and run a pipeline via `config.yaml`:
 
 ```bash
 uv run reader explain experiments/my_experiment/config.yaml
-uv run reader run     experiments/my_experiment/config.yaml   # pipeline + deliverables
+uv run reader run     experiments/my_experiment/config.yaml   # pipeline (artifacts)
 ```
 
-Generate ploting deliverables or scaffold a notebook:
+Generate plots/exports or scaffold a notebook:
 
 ```bash
-uv run reader deliverables experiments/my_experiment/config.yaml --list
-uv run reader explore      experiments/my_experiment/config.yaml --preset eda/basic
+uv run reader plot         experiments/my_experiment/config.yaml --list
+uv run reader export       experiments/my_experiment/config.yaml --list
+uv run reader notebook     experiments/my_experiment/config.yaml --preset notebook/basic --edit
 ```
 
 ---

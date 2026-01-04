@@ -7,7 +7,7 @@ This document is the developer‑oriented source of truth for how **reader** is 
 ### Scope
 
 - **Experiment directory** = unit of work.
-- **Pipeline steps** produce artifacts; **deliverables** render plots/exports.
+- **Pipeline steps** produce artifacts; **plots/exports** render static outputs.
 - **Notebooks** are optional and read outputs for interactive exploration.
 
 ---
@@ -45,8 +45,8 @@ Plotting plugins require a writable Matplotlib cache directory. `reader` sets
 `MPLCONFIGDIR` automatically when plotting is needed.
 
 Defaults:
-- Commands that resolve a config/experiment (run/explain/validate/deliverables) use
-  `<experiment.outputs>/.cache/matplotlib`.
+- Commands that resolve a config/experiment (run/explain/validate/plot/export) use
+  `<paths.outputs>/.cache/matplotlib`.
 - Other commands that load plot plugins without a config (e.g., `reader plugins`)
   use `$XDG_CACHE_HOME/reader/matplotlib` (or `~/.cache/reader/matplotlib`).
 

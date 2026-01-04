@@ -5,8 +5,8 @@ This document is a reference for working with marimo notebooks.
 Where this fits:
 - For the overall workflow, see [README](../README.md).
 - For notebook usage, see [docs/notebooks.md](./notebooks.md).
-- For pipeline outputs and deliverables that notebooks consume, see [docs/pipeline.md](./pipeline.md).
-- Use `reader explore` to scaffold an experiment notebook with paths and manifests wired up.
+- For pipeline outputs and plots/exports that notebooks consume, see [docs/pipeline.md](./pipeline.md).
+- Use `reader notebook` to scaffold an experiment notebook with paths and manifests wired up.
 
 Editing rule: only edit code inside the `@app.cell` function body. Marimo manages parameters and return statements.
 

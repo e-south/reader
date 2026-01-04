@@ -9,7 +9,7 @@ Plugins exist so repeated parsing/transforms/plots can be reused across experime
 2. [Example of adding new plugins](#example-of-adding-new-plugins)
 3. [Flow cytometry ingest plugin](#flow-cytometry-ingest-plugin)
 4. [Adding a transform plugin](#adding-a-transform-plugin)
-5. [Adding a deliverable plugin](#adding-a-deliverable-plugin)
+5. [Adding a plot/export plugin](#adding-a-plotexport-plugin)
 
 ---
 
@@ -33,8 +33,8 @@ You’ll typically see plugins grouped as:
 * `merge/*` — attach metadata or mapping tables
 * `transform/*` — operate on tidy tables (derive new channels, filter, normalize, etc.)
 * `validator/*` — enforce or upgrade schema/shape
-* `plot/*` — render plots (deliverables)
-* `export/*` — write exports (deliverables)
+* `plot/*` — render plots (plot specs)
+* `export/*` — write exports (export specs)
 
 ---
 
@@ -160,24 +160,25 @@ class ScaleValues(Plugin):
 
 ---
 
-### Adding a deliverable plugin
+### Adding a plot/export plugin
 
-Deliverable steps live under `deliverables:` in config (optionally bundled via
-`deliverable_presets` + `deliverable_overrides`). 
+Plot specs live under `plots:` and export specs under `exports:` in config (optionally bundled via
+`plots.presets` / `plots.overrides` and `exports.presets` / `exports.overrides`).
 
 They are run by:
 
-* `reader deliverables` (deliverables only)
-* `reader run` (pipeline + deliverables, unless `--no-deliverables`)
+* `reader plot --mode save` (plots only)
+* `reader export` (exports only)
+* `reader plot --mode notebook` (scaffolds a plot-focused notebook)
 
 Guidelines:
 
-* Deliverable plugins should be deterministic and pure: read declared inputs, write files.
+* Plot/export plugins should be deterministic and pure: read declared inputs, write files.
 * Avoid experiment-specific logic inside plot plugins; keep bespoke logic in `lib/`.
 * Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
-* Plot steps are assertive: missing required columns raise an error.
+* Plot specs are assertive: missing required columns raise an error.
 * If a selection is empty, emit a warning and skip (don’t silently write an empty plot).
-* Deliverable outputs are tracked in `outputs/deliverables_manifest.json`.
+* Plot/export outputs are tracked in `outputs/plots_manifest.json` and `outputs/exports_manifest.json`.
 
 Common plot config knobs (shared across most plot plugins):
 
@@ -193,13 +194,15 @@ uv run reader plugins --category plot
 uv run reader plugins --category export
 ```
 
-Example export step:
+Example export spec:
 
 ```yaml
-- id: export_vec8
-  uses: "export/csv"
-  reads: { df: "sfxi_vec8/df" }
-  with: { path: "exports/sfxi_vec8.csv" }
+exports:
+  specs:
+    - id: export_vec8
+      uses: "export/csv"
+      reads: { df: "sfxi_vec8/df" }
+      with: { path: "sfxi_vec8.csv" }
 ```
 
 ---

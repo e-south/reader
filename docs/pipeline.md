@@ -1,120 +1,205 @@
+# Configuring pipelines
 
-## Configuring pipelines
-
-Pipelines are defined within `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into other deliverables (plots/exports).
+Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots and exports.
 
 ### Contents
 
-1. [Configuration keys](#configuration-keys)
-2. [Example configuration](#example-configuration)
+1. [Schema marker](#schema-marker)
+2. [Top-level structure](#top-level-structure)
+3. [Step shape](#step-shape)
+4. [Example configuration](#example-configuration)
 
 ---
 
-### Configuration keys
+### Schema marker
 
-| Key                     | Type        | Required | Purpose                                                                                                                                                |
-| ----------------------- | ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `experiment.id`         | string      | no       | Stable identifier for the experiment.                                                                                                                  |
-| `experiment.name`       | string      | no       | Verbose name (defaults to directory name).                                                                                                      |
-| `experiment.outputs`    | string      | yes      | Output directory (relative to config).                                                                                                                 |
-| `experiment.palette`    | string/null | no       | Plot palette name (one of: `colorblind`, `muted`, `tableau`) or null to disable. Unknown names error.                                                  |
-| `experiment.plots_dir`  | string/null | no       | Subdir for plots under outputs (null/"" = outputs root).                                                                                               |
-| `runtime.strict`        | bool        | no       | Enforce contracts during execution (default true). If false, contract mismatches become warnings and execution continues (missing inputs still error). |
-| `steps`                 | list        | yes      | Pipeline steps (ingest/merge/transform/validate).                                                                                                      |
-| `deliverables`          | list        | no       | Deliverable steps (plots/exports).                                                                                                                     |
-| `deliverable_presets`   | list        | no       | Preset bundles for deliverables.                                                                                                                       |
-| `deliverable_overrides` | map         | no       | Per-deliverable step overrides by id.                                                                                                                  |
-| `overrides`             | map         | no       | Per-step overrides by id (pipeline steps).                                                                                                             |
-| `collections`           | map         | no       | Named groupings (used by some plots).                                                                                                                  |
+Every config must declare the schema at the top:
 
-How to interpret the configuration:
+```yaml
+schema: "reader/v2"
+```
 
-* Steps run top-to-bottom, in order.
-* `uses:` selects a plugin (`<category>/<key>`).
-* `reads:` binds plugin inputs to either:
+If the schema is missing or not `reader/v2`, `reader` errors immediately.
 
-  * a prior step output (`<step_id>/<output>`, e.g. `ingest/df`)
-  * a file path (`file:./something.xlsx`)
-* `with:` is plugin-specific configuration (unknown keys error).
-* `writes:` optionally maps plugin outputs to stable artifact labels (decouples downstream steps from step ids).
+---
 
-  * downstream `reads:` must reference the mapped label
-* `preset:` expands to one or more steps (use for shared bundles).
-* `overrides:` / `deliverable_overrides:` apply per-step config overrides by id.
+### Top-level structure
 
-Practical guardrails:
+```yaml
+schema: "reader/v2"
 
-* Step ids must be unique across **pipeline steps and deliverables**.
-* `reads:` labels must refer to outputs from prior steps (or `file:`).
-* Output labels must be unique across steps; use `writes:` to avoid accidental clobbering.
+experiment:
+  id: <string>                 # required
+  title: <string | null>       # optional
+
+paths:
+  outputs: "./outputs"        # default
+  plots: "plots"              # default (relative to outputs; use "." to flatten)
+  exports: "exports"          # default (relative to outputs; use "." to flatten)
+
+plotting:
+  palette: "colorblind"       # string or null
+
+data:
+  groupings: {}                # optional (used by some plots)
+  aliases: {}                  # optional (alias maps for transform/alias)
+
+pipeline:
+  presets: []                  # optional
+  runtime: {}                  # optional (e.g., strict: true)
+  overrides: {}                # optional per-step overrides by id
+  steps: []                    # required (use empty list if none)
+
+plots:
+  presets: []                  # optional
+  defaults:                    # optional defaults applied to all plot specs
+    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    with:  {}                  # shallow-merged into spec.with
+  overrides: {}                # optional per-plot overrides by id
+  specs: []                    # optional (unordered)
+
+exports:
+  presets: []                  # optional
+  defaults:                    # optional defaults applied to all export specs
+    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    with:  {}
+  overrides: {}                # optional per-export overrides by id
+  specs: []                    # optional (unordered)
+```
+
+Notes:
+
+- `paths.outputs` is resolved relative to the config file and stored as an absolute path.
+- `paths.plots` and `paths.exports` must be relative to `paths.outputs`.
+- `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
+- Step ids must be unique across pipeline, plots, and exports.
+- Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
+- Plot/export defaults apply after preset expansion and before per-id overrides.
+
+---
+
+### Step shape
+
+A step object (used in `pipeline.steps`, `plots.specs`, and `exports.specs`) looks like:
+
+```yaml
+- id: <string>
+  uses: "<category>/<key>"     # ingest/merge/transform/validator/plot/export
+  reads: {}                    # optional (input bindings)
+  with:  {}                    # optional (plugin params)
+  writes: {}                   # optional (stable output labels)
+```
+
+Rules:
+
+- `reads` can bind inputs to a prior output (e.g., `merge/df`) or to a file path using `file:`.
+- `writes` maps outputs to stable labels (so downstream steps can avoid tight coupling to step ids).
+- `pipeline` steps may not use `plot/*` or `export/*` plugins.
+- `plots` specs must use `plot/*` plugins and are unordered.
+- `exports` specs must use `export/*` plugins and are unordered.
+
+**Aliases in steps**
+
+The `transform/alias` plugin can pull alias maps from `data.aliases` using `aliases_ref`:
+
+```yaml
+- id: alias_design_id
+  uses: transform/alias
+  reads: { df: "final/df" }
+  with:
+    aliases_ref: "design_id"     # pulls from data.aliases.design_id
+```
+
+For multiple columns, add multiple alias steps (one per column):
+
+```yaml
+- id: alias_design_id
+  uses: transform/alias
+  reads: { df: "final/df" }
+  with:
+    aliases_ref: "design_id"
+
+- id: alias_treatment
+  uses: transform/alias
+  reads: { df: "alias_design_id/df" }
+  with:
+    aliases_ref: "treatment"
+```
 
 ---
 
 ### Example configuration
 
-Below is an example configuration showing a Synergy H1 ingest, sample-map merge, a small transform chain, and a deliverable preset.
-
 ```yaml
+schema: "reader/v2"
+
 experiment:
-  id: "20250512_panel_M9_glu_araBAD_pspA_marRAB_umuDC_alaS_phoA"
-  name: "Retrons panel — M9 + glucose"
+  id: "20250512_panel_M9_glu"
+  title: "Cell line panel — M9 + glucose"
+
+paths:
   outputs: "./outputs"
+  plots: "plots"
+  exports: "exports"
+
+plotting:
   palette: "colorblind"
 
-runtime:
-  strict: true
+data:
+  groupings:
+    genotype:
+      group_ab:
+        - { "Group A": ["g1", "g2"] }
+        - { "Group B": ["g3"] }
+  aliases:
+    design_id:
+      "ctrl": "control"
 
-steps:
-  - id: "ingest"
-    uses: "ingest/synergy_h1"
-    with:
-      channels: ["OD600", "CFP", "YFP"]
-      sheet_names: ["Plate 1 - Sheet1"]
-      add_sheet: true
-      auto_roots: ["./inputs", "./raw_data", "./raw"]
-      auto_include: ["*.xlsx", "*.xls"]
-      auto_exclude: ["~$*", "._*", "#*#", "*.tmp"]
-      auto_pick: "single"      # single | latest | merge
+pipeline:
+  runtime:
+    strict: true
+  steps:
+    - id: ingest
+      uses: ingest/synergy_h1
+      with:
+        channels: ["OD600", "CFP", "YFP"]
+        auto_roots: ["./inputs"]
+        auto_pick: "single"
 
-  - id: "merge_map"
-    uses: "merge/sample_map"
+    - id: merge_map
+      uses: merge/sample_map
+      reads:
+        df: "ingest/df"
+        sample_map: "file:./metadata.xlsx"
+
+    - id: ratio_yfp_od600
+      uses: transform/ratio
+      reads: { df: "merge_map/df" }
+      with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
+      writes: { df: "ratios/yfp_od600" }
+
+plots:
+  presets:
+    - plots/plate_reader_yfp_full
+  defaults:
     reads:
-      df: "ingest/df"
-      sample_map: "file:./metadata.xlsx"
+      df: "ratios/yfp_od600"
+  specs:
+    - id: plot_ts
+      uses: plot/time_series
+      with:
+        x: time
+        y: ["OD600", "YFP"]
+        hue: treatment
 
-  - id: "blank"
-    uses: "transform/blank_correction"
-    reads: { df: "merge_map/df" }
-    with:  { method: "disregard", capture_blanks: true }
-
-  - id: "overflow"
-    uses: "transform/overflow_handling"
-    reads: { df: "blank/df" }
-    with:  { action: "max", clip_quantile: 0.999 }
-
-  - id: "ratio_yfp_cfp"
-    uses: "transform/ratio"
-    reads: { df: "overflow/df" }
-    with:  { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
-
-  - id: "ratio_yfp_od600"
-    uses: "transform/ratio"
-    reads: { df: "ratio_yfp_cfp/df" }
-    with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
-
-deliverable_presets:
-  - plots/plate_reader_yfp_full
-
-deliverables:
-  - id: export_ratios
-    uses: export/csv
-    reads: { df: "ratio_yfp_od600/df" }
-    with: { path: "exports/ratio_yfp_od600.csv" }
-
-deliverable_overrides:
-  snapshot_bars_by_channel:
-    with:
-      time: 14.0
+exports:
+  defaults:
+    reads:
+      df: "ratios/yfp_od600"
+  specs:
+    - id: export_ratios
+      uses: export/csv
+      with: { path: "ratios.csv" }
 ```
 
 ---

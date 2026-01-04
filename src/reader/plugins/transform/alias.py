@@ -25,11 +25,13 @@ class AliasCfg(PluginConfig):
       <column_name>:
         <raw_value>: <alias_value>
         ...
+    aliases_ref:   reference key under data.aliases (used if aliases is omitted)
     in_place:      if true, mutate <column_name> directly; else create <column_name>_alias
     case_insensitive: map using casefold() on incoming values (keys in 'aliases' are matched case-insensitively)
     """
 
-    aliases: Mapping[str, Mapping[str, str]]
+    aliases: Mapping[str, Mapping[str, str]] | None = None
+    aliases_ref: str | None = None
     in_place: bool = False
     case_insensitive: bool = True
     suffix: str = "_alias"
@@ -104,7 +106,27 @@ class AliasTransform(Plugin):
     def run(self, ctx, inputs, cfg: AliasCfg):
         df: pd.DataFrame = inputs["df"].copy()
 
-        for col, mapping in cfg.aliases.items():
+        aliases = cfg.aliases
+        if aliases is None:
+            if not cfg.aliases_ref:
+                raise ValueError("alias: provide with.aliases or with.aliases_ref")
+            if not ctx.aliases or cfg.aliases_ref not in ctx.aliases:
+                raise ValueError(f"alias: data.aliases missing key '{cfg.aliases_ref}'")
+            aliases = ctx.aliases[cfg.aliases_ref]
+        if not isinstance(aliases, Mapping):
+            raise ValueError("alias: aliases must be a mapping of column -> {raw: alias}")
+        if aliases:
+            if all(not isinstance(v, Mapping) for v in aliases.values()):
+                if not cfg.aliases_ref:
+                    raise ValueError(
+                        "alias: aliases_ref is required when aliases is a raw->alias mapping (single column)"
+                    )
+                aliases = {cfg.aliases_ref: aliases}
+        elif cfg.aliases_ref:
+            # allow empty alias maps to create <col>_alias columns without changes
+            aliases = {cfg.aliases_ref: {}}
+
+        for col, mapping in aliases.items():
             if col not in df.columns:
                 raise ValueError(f"alias: column '{col}' not found in dataframe")
 

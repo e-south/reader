@@ -1,7 +1,6 @@
 ## reader demo
 
-This walkthrough shows a typical flow from discovery to deliverables and notebooks. Replace the index (`1`) with a config path or experiment directory as needed.
-
+This walkthrough shows a typical flow from discovery to artifacts, then plots/exports or notebooks. Replace the index (`1`) with a config path or experiment directory as needed.
 
 ---
 
@@ -32,39 +31,51 @@ reader explain 1
 reader validate 1
 ```
 
-4) Check file inputs
+4) Validate file inputs (checks reads: file: paths)
 
 ```bash
-reader check-inputs 1
+reader validate 1 --files
 ```
-If any `reads: file:` paths are missing, the CLI points to the exact step and input key.
 
-5) Run pipeline + deliverables
+5) Run the pipeline (artifacts only)
 
 ```bash
 reader run 1
 ```
 
-6) Deliverables only
-
-```bash
-reader deliverables 1 --list
-reader deliverables 1
-```
-
-7) Scaffold a notebook
-
-```bash
-reader explore 1 --preset eda/basic
-```
-
-See [docs/notebooks.md](./notebooks.md) for opening and dependency setup.
-
-8) Inspect artifacts
+6) Inspect artifacts
 
 ```bash
 reader artifacts 1
 ```
+
+7) Generate plots
+
+```bash
+reader plot 1 --list
+reader plot 1 --mode save
+```
+
+8) Generate exports
+
+```bash
+reader export 1 --list
+reader export 1
+```
+
+9) Scaffold a notebook
+
+```bash
+reader notebook 1 --preset notebook/basic --edit
+```
+
+Optional: plot-focused notebook
+
+```bash
+reader plot 1 --mode notebook --only plot_time_series --edit
+```
+
+See [docs/notebooks.md](./notebooks.md) for opening and dependency setup.
 
 ---
 

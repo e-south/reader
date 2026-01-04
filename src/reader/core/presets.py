@@ -16,7 +16,6 @@ from typing import Any
 
 from reader.core.errors import ConfigError
 
-
 _PRESETS: dict[str, dict[str, Any]] = {
     "plate_reader/synergy_h1": {
         "description": "Synergy H1 ingest (auto-discovery).",
@@ -114,12 +113,11 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_yfp_full": {
-        "description": "YFP plate reader deliverable set (time series + snapshots + TS+snap).",
+        "description": "YFP plate reader plot set (time series + snapshots + TS+snap).",
         "steps": [
             {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "hue": "treatment",
@@ -130,7 +128,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "x": "treatment",
                     "y": ["OD600", "YFP/OD600"],
@@ -141,7 +138,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_design_id",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "x": "design_id",
                     "y": "YFP/OD600",
@@ -152,7 +148,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "ts_and_snap__yfp_over_od600",
                 "uses": "plot/ts_and_snap",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "ts_channel": "YFP/OD600",
@@ -166,12 +161,11 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_yfp_time_series": {
-        "description": "YFP plate reader time-series + distributions deliverable set.",
+        "description": "YFP plate reader time-series + distributions plot set.",
         "steps": [
             {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "hue": "treatment",
@@ -182,7 +176,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "distributions__by_design_id",
                 "uses": "plot/distributions",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "channels": ["YFP/CFP"],
                     "group_on": "design_id",
@@ -196,7 +189,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "x": "treatment",
                     "y": ["OD600", "YFP/OD600"],
@@ -207,7 +199,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_design_id",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_yfp_od600/df"},
                 "with": {
                     "x": "design_id",
                     "y": "YFP/OD600",
@@ -218,12 +209,11 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plots/plate_reader_rfp_full": {
-        "description": "RFP plate reader deliverable set (time series + snapshots + TS+snap).",
+        "description": "RFP plate reader plot set (time series + snapshots + TS+snap).",
         "steps": [
             {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
-                "reads": {"df": "ratio_rfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "hue": "treatment",
@@ -234,7 +224,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_rfp_od600/df"},
                 "with": {
                     "x": "treatment",
                     "y": ["OD600", "RFP/OD600"],
@@ -245,7 +234,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_design_id",
                 "uses": "plot/snapshot_barplot",
-                "reads": {"df": "ratio_rfp_od600/df"},
                 "with": {
                     "x": "design_id",
                     "y": "RFP/OD600",
@@ -256,7 +244,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "ts_and_snap__rfp_over_od600",
                 "uses": "plot/ts_and_snap",
-                "reads": {"df": "ratio_rfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "ts_channel": "RFP/OD600",
@@ -275,7 +262,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
-                "reads": {"df": "ratio_rfp_od600/df"},
                 "with": {
                     "group_on": "design_id",
                     "hue": "treatment",
@@ -310,8 +296,27 @@ _PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
-def list_presets() -> list[tuple[str, str]]:
-    return sorted((name, info["description"]) for name, info in _PRESETS.items())
+def _infer_category(steps: list[dict[str, Any]]) -> str:
+    cats = {str(step.get("uses", "")).split("/", 1)[0] for step in steps if isinstance(step, dict)}
+    cats.discard("")
+    if not cats:
+        return "pipeline"
+    if cats == {"plot"}:
+        return "plot"
+    if cats == {"export"}:
+        return "export"
+    return "pipeline"
+
+
+def list_presets(category: str | None = None) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    for name, info in _PRESETS.items():
+        steps = info.get("steps", [])
+        cat = _infer_category(steps)
+        if category and cat != category:
+            continue
+        items.append((name, info["description"]))
+    return sorted(items)
 
 
 def resolve_preset(name: str) -> list[dict[str, Any]]:
@@ -326,4 +331,10 @@ def describe_preset(name: str) -> dict[str, Any]:
         opts = ", ".join(sorted(_PRESETS))
         raise ConfigError(f"Unknown preset {name!r}. Available presets: {opts}")
     info = _PRESETS[name]
-    return {"name": name, "description": info.get("description", ""), "steps": copy.deepcopy(info["steps"])}
+    steps = copy.deepcopy(info["steps"])
+    return {
+        "name": name,
+        "description": info.get("description", ""),
+        "category": _infer_category(steps),
+        "steps": steps,
+    }
