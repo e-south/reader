@@ -85,12 +85,12 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert "label=\"X\"" in content
     assert "label=\"Y\"" in content
     assert "label=\"Hue\"" in content
-    assert "label=\"Group by\"" in content
-    assert "label=\"Subplot by\"" in content
-    assert "label=\"Measurement / Channel\"" in content
-    assert "**Run summary**" in content
+    assert "label=\"Facet row\"" in content
+    assert "label=\"Facet col\"" in content
+    assert "Filter:" in content
     assert "Design IDs" in content
     assert "Design + treatment summary" not in content
+    assert "label=\"Group by\"" not in content
     assert "Interactive plot explorer" not in content
     assert "explore_x = mo.ui.dropdown" not in content
     assert "explore_y = mo.ui.dropdown" not in content

@@ -29,10 +29,6 @@ def _():
         import polars as pl
     except Exception:
         pl = None
-    try:
-        import pandas as pd
-    except Exception:
-        pd = None
     from reader.core.config_model import ReaderSpec
 
     return (
@@ -41,7 +37,6 @@ def _():
         alt,
         mo,
         pl,
-        pd,
         ReaderSpec,
     )
 
@@ -69,6 +64,12 @@ def _(Path, ReaderSpec):
     plots_dir = (outputs_dir / _spec.paths.plots).resolve()
     exports_dir = (outputs_dir / _spec.paths.exports).resolve()
     data_groupings = _spec.data.groupings or {}
+    data_aliases = _spec.data.aliases or {}
+    design_id_aliases = {}
+    if isinstance(data_aliases, dict):
+        raw_aliases = data_aliases.get("design_id", {})
+        if isinstance(raw_aliases, dict):
+            design_id_aliases = {str(k): str(v) for k, v in raw_aliases.items()}
     exp_meta = {
         "id": _spec.experiment.id,
         "title": _spec.experiment.title or "",
@@ -80,6 +81,7 @@ def _(Path, ReaderSpec):
         outputs_dir,
         pipeline_step_ids,
         data_groupings,
+        design_id_aliases,
         plots_dir,
         exports_dir,
     )
@@ -216,37 +218,24 @@ def _(artifact_dropdown, artifact_info):
     return selected_label, artifact_path
 
 @app.cell
-def _(artifact_path, pd, pl):
+def _(artifact_path, pl):
     df_active = None
     df_backend = None
     df_error = None
     _pl_error = None
-    _pd_error = None
 
     if artifact_path is not None:
-        if pl is not None:
+        if pl is None:
+            df_error = "Polars is required to read parquet. Install the notebooks group."
+        else:
             try:
                 df_active = pl.read_parquet(artifact_path)
                 df_backend = "polars"
             except Exception as exc:
                 _pl_error = str(exc)
-        if df_active is None and pd is not None:
-            try:
-                df_active = pd.read_parquet(artifact_path)
-                df_backend = "pandas"
-            except Exception as exc:
-                _pd_error = str(exc)
-        if df_active is None:
-            if pl is None and pd is None:
-                df_error = "Neither polars nor pandas is installed. Install the notebooks group."
-            else:
-                _details = []
-                if _pl_error:
-                    _details.append(f"polars: {_pl_error}")
-                if _pd_error:
-                    _details.append(f"pandas: {_pd_error}")
-                _suffix = "; ".join(_details) if _details else "unknown error"
-                df_error = f"Failed to read parquet with available backends ({_suffix})."
+        if df_active is None and df_error is None:
+            _suffix = _pl_error or "unknown error"
+            df_error = f"Failed to read parquet with polars ({_suffix})."
     return df_active, df_backend, df_error
 
 @app.cell
@@ -262,7 +251,7 @@ def _(df_active, pl):
     return df_rows, df_cols
 
 @app.cell
-def _(df_active, pd, pl):
+def _(df_active, pl):
     design_treatment_rows = []
     design_treatment_note = ""
     if df_active is None:
@@ -281,17 +270,14 @@ def _(df_active, pd, pl):
             design_treatment_note = f"Missing column(s): {', '.join(_missing)}."
         else:
             def _unique_values(df, col):
+                values = []
                 try:
                     if pl is not None and df.__class__.__module__.startswith("polars"):
-                        series = df.select(pl.col(col).drop_nulls().unique()).to_series()
-                        values = series.to_list()
-                    elif pd is not None:
-                        values = df[col].dropna().unique().tolist()
-                    else:
-                        values = []
+                        _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
+                        values = _series.to_list()
                 except Exception:
                     values = []
-                values = [str(v) for v in values if v is not None]
+                values = [str(_v) for _v in values if _v is not None]
                 return sorted(values)
 
             _design_vals = _unique_values(df_active, _design_col)
@@ -334,20 +320,6 @@ def _(
         _manifest_lines.append(f"  - {_name}: `{_path}`{_status}")
     _manifest_block = "\\n".join(_manifest_lines) if _manifest_lines else "  - (none found)"
 
-    _summary_md = (
-        "**Run summary**\\n"
-        f"- Outputs: `{outputs_dir}`\\n"
-        f"- Plots: `{plots_dir}`\\n"
-        f"- Exports: `{exports_dir}`\\n"
-        f"- Manifests:\\n{_manifest_block}\\n\\n"
-        "**Artifacts**\\n"
-        f"- Artifacts dir: `{_artifacts_dir}`\\n"
-        f"- Artifact datasets: {len(artifact_labels)}"
-    )
-    if artifact_note:
-        _summary_md += f"\\n- Note: {artifact_note}"
-    _summary_panel = mo.md(_summary_md)
-
     if design_treatment_rows:
         _design_table = mo.ui.table(design_treatment_rows)
     else:
@@ -355,7 +327,6 @@ def _(
     mo.vstack(
         [
             mo.md(f"# {_exp_title}\\n**Experiment id:** `{_exp_id}`"),
-            _summary_panel,
             mo.md("**Design IDs + treatments**"),
             _design_table,
         ]
@@ -404,7 +375,7 @@ def _(df_active, df_error, mo, selected_label):
     return df_ready
 
 @app.cell
-def _(df_active, df_ready, mo, pd, pl):
+def _(df_active, df_ready, mo, pl):
     _columns = list(df_active.columns) if hasattr(df_active, "columns") else []
     _elements = [mo.md("## Dataset table explorer")]
     df_preview = df_active
@@ -412,14 +383,12 @@ def _(df_active, df_ready, mo, pd, pl):
         _display_cols = _columns[:40]
         if pl is not None and df_active.__class__.__module__.startswith("polars"):
             df_preview = df_active.select(_display_cols)
-        elif pd is not None:
-            df_preview = df_active[_display_cols]
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
     _elements.append(mo.ui.table(df_preview, page_size=10))
     mo.vstack(_elements)
 
 @app.cell
-def _(data_groupings, df_active, df_ready, pd, pl):
+def _(data_groupings, df_active, df_ready, pl):
     df_eda = df_active
     grouping_columns = []
     if data_groupings:
@@ -443,11 +412,6 @@ def _(data_groupings, df_active, df_ready, pd, pl):
                 return list(values)
             return [values]
 
-        _pd_df = None
-        if pd is not None and isinstance(df_active, pd.DataFrame):
-            _pd_df = df_active.copy()
-            df_eda = _pd_df
-
         for _col, _sets in data_groupings.items():
             if _col not in _columns or not isinstance(_sets, dict):
                 continue
@@ -466,99 +430,74 @@ def _(data_groupings, df_active, df_ready, pd, pl):
                         .map_elements(lambda v, m=_mapping: m.get(v, "Other"), return_dtype=pl.Utf8)
                         .alias(_new_col)
                     )
-                elif _pd_df is not None:
-                    _pd_df[_new_col] = _pd_df[_col].map(_mapping).fillna("Other")
     return df_eda, grouping_columns
 
 @app.cell
-def _(df_eda, grouping_columns, pd, pl):
+def _(df_eda, grouping_columns, pl):
     all_columns = list(df_eda.columns) if hasattr(df_eda, "columns") else []
+    base_columns = [col for col in all_columns if col not in grouping_columns]
     numeric_cols = []
     categorical_cols = []
+    temporal_cols = []
     if pl is not None and df_eda.__class__.__module__.startswith("polars"):
         for _name, _dtype in zip(df_eda.columns, df_eda.dtypes):
             _dtype_name = str(_dtype).lower()
             if any(token in _dtype_name for token in ("int", "float", "decimal", "double")):
                 numeric_cols.append(_name)
-            elif (
-                _dtype_name in {"bool", "boolean", "utf8", "string", "categorical", "enum"}
-                or "date" in _dtype_name
-                or "time" in _dtype_name
-            ):
+            elif "date" in _dtype_name or "time" in _dtype_name:
+                temporal_cols.append(_name)
+            elif _dtype_name in {"bool", "boolean", "utf8", "string", "categorical", "enum"}:
                 categorical_cols.append(_name)
-    elif pd is not None:
-        for _name, _dtype in df_eda.dtypes.items():
-            if pd.api.types.is_numeric_dtype(_dtype):
-                numeric_cols.append(_name)
-            elif (
-                pd.api.types.is_bool_dtype(_dtype)
-                or pd.api.types.is_string_dtype(_dtype)
-                or pd.api.types.is_categorical_dtype(_dtype)
-                or pd.api.types.is_object_dtype(_dtype)
-            ):
-                categorical_cols.append(_name)
-    if "channel" in all_columns and "channel" not in categorical_cols:
+    if "channel" in base_columns and "channel" not in categorical_cols:
         categorical_cols.append("channel")
     for _col in grouping_columns:
         if _col not in categorical_cols:
             categorical_cols.append(_col)
 
-    channel_values = []
-    if "channel" in all_columns:
-        try:
-            if pl is not None and df_eda.__class__.__module__.startswith("polars"):
-                series = df_eda.select(pl.col("channel").drop_nulls().unique()).to_series()
-                channel_values = series.to_list()
-            elif pd is not None:
-                channel_values = df_eda["channel"].dropna().unique().tolist()
-        except Exception:
-            channel_values = []
-    channel_values = sorted([str(v) for v in channel_values if v is not None])
-
-    return all_columns, numeric_cols, categorical_cols, channel_values
+    return base_columns, all_columns, numeric_cols, categorical_cols, temporal_cols
 
 @app.cell
-def _(all_columns, categorical_cols, channel_values, mo, numeric_cols):
-    if not numeric_cols:
-        _eda_panel = mo.md("## Ad-hoc EDA\\nNo numeric columns available for plotting.")
+def _(all_columns, categorical_cols, mo, numeric_cols, temporal_cols):
+    if not all_columns:
         plot_type = None
         x_dropdown = None
         y_dropdown = None
         hue_dropdown = None
-        groupby_dropdown = None
-        agg_dropdown = None
-        bins_slider = None
-        channel_dropdown = None
-        subplot_dropdown = None
+        facet_row_dropdown = None
+        facet_col_dropdown = None
     else:
         plot_type = mo.ui.dropdown(
-            options=["scatter", "line", "histogram"],
-            value="scatter",
+            options=["line", "scatter", "histogram"],
+            value="line",
             label="Plot type",
             full_width=True,
         )
-        _x_default = "time" if "time" in numeric_cols else numeric_cols[0]
+        if "time" in all_columns:
+            _x_default = "time"
+        elif numeric_cols:
+            _x_default = numeric_cols[0]
+        else:
+            _x_default = all_columns[0]
         x_dropdown = mo.ui.dropdown(
-            options=numeric_cols,
+            options=all_columns,
             value=_x_default,
             label="X",
             full_width=True,
         )
-        _y_default = numeric_cols[1] if len(numeric_cols) > 1 else numeric_cols[0]
+        if "value" in all_columns:
+            _y_default = "value"
+        elif len(numeric_cols) > 1:
+            _y_default = numeric_cols[1]
+        elif numeric_cols:
+            _y_default = numeric_cols[0]
+        else:
+            _y_default = all_columns[0]
         y_dropdown = mo.ui.dropdown(
-            options=numeric_cols,
+            options=all_columns,
             value=_y_default,
             label="Y",
             full_width=True,
         )
-        channel_dropdown = None
-        if channel_values:
-            channel_dropdown = mo.ui.dropdown(
-                options=channel_values,
-                value=channel_values[0],
-                label="Measurement / Channel",
-                full_width=True,
-            )
         _cat_options = ["(none)"] + categorical_cols
         hue_dropdown = mo.ui.dropdown(
             options=_cat_options,
@@ -566,45 +505,134 @@ def _(all_columns, categorical_cols, channel_values, mo, numeric_cols):
             label="Hue",
             full_width=True,
         )
-        groupby_dropdown = mo.ui.dropdown(
-            options=_cat_options,
+        _facet_candidates = []
+        for _col in all_columns:
+            if _col in categorical_cols or _col in temporal_cols:
+                if _col not in _facet_candidates:
+                    _facet_candidates.append(_col)
+        _facet_options = ["(none)"] + _facet_candidates
+        facet_row_dropdown = mo.ui.dropdown(
+            options=_facet_options,
             value="(none)",
-            label="Group by",
+            label="Facet row",
             full_width=True,
         )
-        subplot_dropdown = mo.ui.dropdown(
-            options=["(none)"] + all_columns,
+        facet_col_dropdown = mo.ui.dropdown(
+            options=_facet_options,
             value="(none)",
-            label="Subplot by",
+            label="Facet col",
             full_width=True,
         )
-        agg_dropdown = mo.ui.dropdown(
-            options=["mean", "median"],
-            value="mean",
-            label="Aggregation",
+    return plot_type, x_dropdown, y_dropdown, hue_dropdown, facet_row_dropdown, facet_col_dropdown
+
+@app.cell
+def _():
+    def humanize_label(value):
+        if value is None:
+            return ""
+        text = str(value)
+        if "/" in text:
+            return text
+        if any(ch.isupper() for ch in text) and "_" not in text:
+            return text
+        if text.isupper():
+            return text
+        text = text.replace("__", " ").replace("_", " ")
+        parts = []
+        for part in text.split():
+            if part.lower() == "id":
+                parts.append("ID")
+            else:
+                parts.append(part.capitalize())
+        return " ".join(parts)
+
+    return humanize_label
+
+@app.cell
+def _(pl):
+    def sorted_unique_values(df, col):
+        if pl is None or not df.__class__.__module__.startswith("polars"):
+            return []
+        try:
+            _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
+            values = _series.to_list()
+        except Exception:
+            values = []
+        values = [str(_v) for _v in values if _v is not None]
+        return sorted(values)
+
+    return sorted_unique_values
+
+@app.cell
+def _(categorical_cols, df_eda, humanize_label, mo, sorted_unique_values, x_dropdown):
+    if x_dropdown is None:
+        x_filter_dropdown = None
+    elif x_dropdown.value in categorical_cols:
+        _values = sorted_unique_values(df_eda, x_dropdown.value)
+        x_filter_dropdown = mo.ui.dropdown(
+            options=["(all)"] + _values,
+            value="(all)",
+            label=f"Filter: {humanize_label(x_dropdown.value)}",
             full_width=True,
         )
-        bins_slider = mo.ui.slider(5, 100, value=30, label="Bins", full_width=True, step=1)
+    else:
+        x_filter_dropdown = None
+    return x_filter_dropdown
+
+@app.cell
+def _(categorical_cols, df_eda, humanize_label, mo, sorted_unique_values, y_dropdown):
+    if y_dropdown is None:
+        y_filter_dropdown = None
+    elif y_dropdown.value in categorical_cols:
+        _values = sorted_unique_values(df_eda, y_dropdown.value)
+        y_filter_dropdown = mo.ui.dropdown(
+            options=["(all)"] + _values,
+            value="(all)",
+            label=f"Filter: {humanize_label(y_dropdown.value)}",
+            full_width=True,
+        )
+    else:
+        y_filter_dropdown = None
+    return y_filter_dropdown
+
+@app.cell
+def _(mo, plot_type):
+    if plot_type is None:
+        bins_input = None
+    elif plot_type.value == "histogram":
+        bins_input = mo.ui.number(value=30, label="Bins", full_width=True)
+    else:
+        bins_input = None
+    return bins_input
+
+@app.cell
+def _(
+    bins_input,
+    facet_col_dropdown,
+    facet_row_dropdown,
+    hue_dropdown,
+    mo,
+    plot_type,
+    x_dropdown,
+    x_filter_dropdown,
+    y_dropdown,
+    y_filter_dropdown,
+):
+    if plot_type is None or x_dropdown is None:
+        _eda_panel = mo.md("## Ad-hoc EDA\\nNo columns available for plotting.")
+    else:
+        x_controls = mo.vstack([x_dropdown, x_filter_dropdown]) if x_filter_dropdown else x_dropdown
+        y_controls = mo.vstack([y_dropdown, y_filter_dropdown]) if y_filter_dropdown else y_dropdown
         _controls = [
             mo.md("## Ad-hoc EDA"),
-            mo.hstack([plot_type, x_dropdown, y_dropdown]),
-            mo.hstack([hue_dropdown, groupby_dropdown, agg_dropdown]),
-            mo.hstack([subplot_dropdown, channel_dropdown]) if channel_dropdown else mo.hstack([subplot_dropdown]),
-            bins_slider,
+            mo.hstack([plot_type, x_controls, y_controls]),
+            mo.hstack([hue_dropdown, facet_row_dropdown, facet_col_dropdown]),
         ]
+        if bins_input is not None:
+            _controls.append(bins_input)
         _eda_panel = mo.vstack(_controls)
     _eda_panel
-    return (
-        plot_type,
-        x_dropdown,
-        y_dropdown,
-        hue_dropdown,
-        groupby_dropdown,
-        agg_dropdown,
-        bins_slider,
-        channel_dropdown,
-        subplot_dropdown,
-    )
+    return
 
 @app.cell
 def _():
@@ -612,146 +640,297 @@ def _():
         return (
             chart.properties(background="white")
             .configure_view(stroke=None)
-            .configure_axis(gridColor="#E5E5E5")
-            .configure_legend(strokeColor=None, fillColor="white")
+            .configure_axis(
+                grid=True,
+                gridColor="#E6E6E6",
+                domain=True,
+                domainColor="#444444",
+                domainWidth=1,
+                ticks=True,
+                tickColor="#444444",
+                labels=True,
+                labelColor="#333333",
+                titleColor="#333333",
+            )
+            .configure_legend(strokeColor=None, fillColor="white", labelColor="#333333", titleColor="#333333")
+            .configure_header(labelColor="#333333", labelFontWeight="bold", titleColor="#333333")
         )
 
     return style_chart
 
 @app.cell
 def _(
-    agg_dropdown,
     alt,
-    bins_slider,
-    channel_dropdown,
+    categorical_cols,
+    design_id_aliases,
     df_eda,
     df_ready,
-    groupby_dropdown,
+    grouping_columns,
+    facet_col_dropdown,
+    facet_row_dropdown,
     hue_dropdown,
+    humanize_label,
     mo,
-    pd,
+    numeric_cols,
     pl,
     plot_type,
-    subplot_dropdown,
     style_chart,
+    temporal_cols,
+    bins_input,
     x_dropdown,
+    x_filter_dropdown,
     y_dropdown,
+    y_filter_dropdown,
 ):
     if plot_type is None or x_dropdown is None:
-        mo.stop(True, mo.md("No numeric columns available for plotting."))
+        mo.stop(True, mo.md("No columns available for plotting."))
+    if pl is None or not df_eda.__class__.__module__.startswith("polars"):
+        mo.stop(True, mo.md("Polars is required for plotting. Install the notebooks group."))
+
     plot_kind = plot_type.value
-    x_col = x_dropdown.value
-    hue_col = hue_dropdown.value if hue_dropdown is not None else "(none)"
-    groupby_col = groupby_dropdown.value if groupby_dropdown is not None else "(none)"
-    agg_value = agg_dropdown.value if agg_dropdown is not None else "mean"
-    bins = bins_slider.value if bins_slider is not None else 30
-    subplot_col = subplot_dropdown.value if subplot_dropdown is not None else "(none)"
-    channel_value = channel_dropdown.value if channel_dropdown is not None else None
-
-    _columns = list(df_eda.columns) if hasattr(df_eda, "columns") else []
-    y_col = y_dropdown.value if y_dropdown is not None else None
-    use_channel = channel_value is not None and "channel" in _columns
-    if use_channel and "value" in _columns:
-        y_col = "value"
-    if x_col not in _columns:
-        mo.stop(True, mo.md(f"Selected x column `{x_col}` is not in the dataset."))
-    if plot_kind != "histogram":
-        if y_col is None or y_col not in _columns:
-            mo.stop(True, mo.md("Select a valid y column for this plot type."))
-    if hue_col != "(none)" and hue_col not in _columns:
-        mo.stop(True, mo.md(f"Hue column `{hue_col}` is not in the dataset."))
-    if groupby_col != "(none)" and groupby_col not in _columns:
-        mo.stop(True, mo.md(f"Group-by column `{groupby_col}` is not in the dataset."))
-    if subplot_col != "(none)" and subplot_col not in _columns:
-        mo.stop(True, mo.md(f"Subplot column `{subplot_col}` is not in the dataset."))
-
-    def _is_polars(df) -> bool:
-        return pl is not None and df.__class__.__module__.startswith("polars")
-
-    def _aggregate(df, group_cols):
-        if _is_polars(df):
-            agg_expr = pl.col(y_col).median() if agg_value == "median" else pl.col(y_col).mean()
-            return df.group_by(group_cols).agg(agg_expr.alias(y_col))
-        if pd is not None:
-            if agg_value == "median":
-                return df.groupby(group_cols, dropna=False)[y_col].median().reset_index()
-            return df.groupby(group_cols, dropna=False)[y_col].mean().reset_index()
-        return df
-
-    color_field = None
-    if groupby_col != "(none)":
-        color_field = groupby_col
-    elif hue_col != "(none)":
-        color_field = hue_col
+    x_choice = x_dropdown.value
+    y_choice = y_dropdown.value if y_dropdown is not None else None
+    hue_choice = hue_dropdown.value if hue_dropdown is not None else "(none)"
+    facet_row_choice = facet_row_dropdown.value if facet_row_dropdown is not None else "(none)"
+    facet_col_choice = facet_col_dropdown.value if facet_col_dropdown is not None else "(none)"
+    x_filter_value = x_filter_dropdown.value if x_filter_dropdown is not None else "(all)"
+    y_filter_value = y_filter_dropdown.value if y_filter_dropdown is not None else "(all)"
+    bins = int(bins_input.value) if bins_input is not None else 30
 
     df_plot = df_eda
-    if use_channel:
-        if _is_polars(df_plot):
-            df_plot = df_plot.filter(pl.col("channel") == channel_value)
-        elif pd is not None:
-            df_plot = df_plot[df_plot["channel"] == channel_value]
+    _columns = list(df_plot.columns) if hasattr(df_plot, "columns") else []
+    if x_choice not in _columns:
+        mo.stop(True, mo.md(f"Selected x column `{x_choice}` is not in the dataset."))
+    if plot_kind != "histogram" and (y_choice is None or y_choice not in _columns):
+        mo.stop(True, mo.md("Select a valid y column for this plot type."))
+    if hue_choice != "(none)" and hue_choice not in _columns:
+        mo.stop(True, mo.md(f"Hue column `{hue_choice}` is not in the dataset."))
+    if facet_row_choice != "(none)" and facet_row_choice not in _columns:
+        mo.stop(True, mo.md(f"Facet row column `{facet_row_choice}` is not in the dataset."))
+    if facet_col_choice != "(none)" and facet_col_choice not in _columns:
+        mo.stop(True, mo.md(f"Facet col column `{facet_col_choice}` is not in the dataset."))
+
+    x_col = x_choice
+    y_col = y_choice
+    x_title = humanize_label(x_col)
+    y_title = humanize_label(y_col) if y_col is not None else ""
+
+    channel_filter = None
+    if x_choice == "channel" or y_choice == "channel":
+        if "channel" not in _columns:
+            mo.stop(True, mo.md("Column `channel` is required for channel plotting."))
+        if x_choice == "channel" and x_filter_value != "(all)":
+            channel_filter = x_filter_value
+        if y_choice == "channel" and y_filter_value != "(all)":
+            if channel_filter is not None and channel_filter != y_filter_value:
+                mo.stop(True, mo.md("Select the same channel measurement for both axes."))
+            channel_filter = channel_filter or y_filter_value
+        if channel_filter is not None:
+            if "value" not in _columns:
+                mo.stop(True, mo.md("Column `value` is required when filtering channel measurements."))
+            df_plot = df_plot.filter(pl.col("channel") == channel_filter)
+        if x_choice == "channel" and x_filter_value != "(all)":
+            x_col = "value"
+            x_title = x_filter_value
+        if y_choice == "channel" and y_filter_value != "(all)":
+            y_col = "value"
+            y_title = y_filter_value
+
+    if x_choice in categorical_cols and x_choice != "channel" and x_filter_value != "(all)":
+        df_plot = df_plot.filter(pl.col(x_choice) == x_filter_value)
+    if y_choice in categorical_cols and y_choice != "channel" and y_filter_value != "(all)":
+        df_plot = df_plot.filter(pl.col(y_choice) == y_filter_value)
+
+    def _infer_type(col):
+        if col in temporal_cols:
+            return "T"
+        if col in numeric_cols:
+            return "Q"
+        return "N"
+
+    x_type = _infer_type(x_col)
+    y_type = _infer_type(y_col) if y_col is not None else "N"
+
+    if plot_kind == "histogram" and x_type != "Q":
+        mo.stop(True, mo.md("Histogram requires a numeric X column."))
+    if plot_kind == "line" and y_type != "Q":
+        mo.stop(True, mo.md("Line plots require a numeric Y column."))
+
+    design_id_display_col = None
+    if design_id_aliases and "design_id" in _columns:
+        design_id_display_col = "design_id__label"
+        if design_id_display_col not in _columns:
+            df_plot = df_plot.with_columns(
+                pl.col("design_id")
+                .map_elements(
+                    lambda v, m=design_id_aliases: m.get(str(v), str(v)) if v is not None else None,
+                    return_dtype=pl.Utf8,
+                )
+                .alias(design_id_display_col)
+            )
+            _columns.append(design_id_display_col)
+
+    hue_field = hue_choice if hue_choice != "(none)" else None
+    if hue_choice == "design_id" and design_id_display_col is not None:
+        hue_field = design_id_display_col
+
+    facet_row_field = facet_row_choice if facet_row_choice != "(none)" else None
+    if facet_row_choice == "design_id" and design_id_display_col is not None:
+        facet_row_field = design_id_display_col
+    facet_col_field = facet_col_choice if facet_col_choice != "(none)" else None
+    if facet_col_choice == "design_id" and design_id_display_col is not None:
+        facet_col_field = design_id_display_col
+
+    def _as_chart_data(df):
+        try:
+            return df.to_arrow()
+        except Exception as exc:
+            mo.stop(True, mo.md(f"Failed to prepare data for plotting: {exc}"))
+        return df
+
+    data = _as_chart_data(df_plot)
+    base = alt.Chart(data).properties(height=320)
+
+    axis_x = alt.Axis(title=humanize_label(x_title), domain=True, ticks=True, labels=True)
+    axis_y = alt.Axis(title=humanize_label(y_title), domain=True, ticks=True, labels=True)
+
+    tooltip_fields = [alt.Tooltip(f"{x_col}:{x_type}", title=humanize_label(x_title))]
+    if plot_kind == "line" and y_col is not None:
+        tooltip_fields.append(alt.Tooltip(f"mean({y_col}):Q", title=humanize_label(y_title)))
+    elif plot_kind != "histogram" and y_col is not None:
+        tooltip_fields.append(alt.Tooltip(f"{y_col}:{y_type}", title=humanize_label(y_title)))
+    if hue_field is not None:
+        tooltip_fields.append(
+            alt.Tooltip(f"{hue_field}:N", title=humanize_label(hue_choice))
+        )
+    for _col in ("design_id", "treatment", "sample_id", "replicate", "position"):
+        display_col = _col
+        if _col == "design_id" and design_id_display_col is not None:
+            display_col = design_id_display_col
+        if display_col in _columns and display_col not in {x_col, y_col, hue_field, facet_row_field, facet_col_field}:
+            tooltip_fields.append(
+                alt.Tooltip(f"{display_col}:N", title=humanize_label(_col))
+            )
 
     if plot_kind == "histogram":
-        if _is_polars(df_plot):
-            df_plot = df_plot.select([x_col]).to_pandas()
-        elif pd is not None and not isinstance(df_plot, pd.DataFrame):
-            try:
-                df_plot = pd.DataFrame(df_plot)
-            except Exception:
-                pass
         chart = (
-            alt.Chart(df_plot)
-            .mark_bar()
+            base.mark_bar()
             .encode(
-                x=alt.X(f"{x_col}:Q", bin=alt.Bin(maxbins=bins)),
+                x=alt.X(f"{x_col}:Q", bin=alt.Bin(maxbins=bins), axis=axis_x),
                 y=alt.Y("count()", title="Count"),
+                tooltip=tooltip_fields + [alt.Tooltip("count()", title="Count")],
             )
-            .properties(height=320)
         )
     else:
-        if plot_kind == "line":
-            group_cols = [x_col]
-            if color_field:
-                group_cols.append(color_field)
-            if subplot_col != "(none)" and subplot_col not in group_cols:
-                group_cols.append(subplot_col)
-            do_agg = groupby_col != "(none)"
-            if not do_agg:
-                try:
-                    if _is_polars(df_plot):
-                        _unique = df_plot.select(pl.col(x_col).n_unique()).item()
-                        do_agg = _unique < df_plot.height
-                    elif pd is not None:
-                        do_agg = df_plot[x_col].nunique(dropna=False) < len(df_plot)
-                except Exception:
-                    do_agg = False
-            if do_agg:
-                df_plot = _aggregate(df_plot, group_cols)
-
-        if _is_polars(df_plot):
-            df_plot = df_plot.to_pandas()
-        elif pd is not None and not isinstance(df_plot, pd.DataFrame):
-            try:
-                df_plot = pd.DataFrame(df_plot)
-            except Exception:
-                pass
-
-        base = alt.Chart(df_plot).properties(height=320)
-        if plot_kind == "line":
-            base = base.mark_line()
+        color_kwargs = {}
+        if hue_field is not None:
+            color_kwargs["color"] = alt.Color(
+                f"{hue_field}:N",
+                title=humanize_label(hue_choice),
+                scale=alt.Scale(scheme="tableau10"),
+            )
+        if plot_kind == "scatter":
+            point_enc = {
+                "x": alt.X(f"{x_col}:{x_type}", axis=axis_x),
+                "y": alt.Y(f"{y_col}:{y_type}", axis=axis_y),
+                "tooltip": tooltip_fields,
+            }
+            point_enc.update(color_kwargs)
+            if hue_field is not None:
+                point_enc["shape"] = alt.Shape(f"{hue_field}:N", legend=None)
+            chart = base.mark_point(filled=True, stroke=None, strokeWidth=0, size=60).encode(
+                **point_enc
+            )
         else:
-            base = base.mark_point()
+            band_enc = {
+                "x": alt.X(f"{x_col}:{x_type}", axis=axis_x),
+                "y": alt.Y(f"{y_col}:Q", axis=axis_y),
+            }
+            band_enc.update(color_kwargs)
+            band = base.mark_errorband(extent="ci", opacity=0.2).encode(**band_enc)
 
-        enc = {
-            "x": alt.X(f"{x_col}:Q", title=x_col),
-            "y": alt.Y(f"{y_col}:Q", title=y_col),
-        }
-        if color_field:
-            enc["color"] = alt.Color(f"{color_field}:N", title=color_field)
-        chart = base.encode(**enc)
+            line_enc = {
+                "x": alt.X(f"{x_col}:{x_type}", axis=axis_x),
+                "y": alt.Y(f"mean({y_col}):Q", axis=axis_y),
+                "tooltip": tooltip_fields,
+            }
+            line_enc.update(color_kwargs)
+            line = base.mark_line().encode(**line_enc)
 
-    if subplot_col != "(none)":
-        chart = chart.facet(column=alt.Column(f"{subplot_col}:N", title=subplot_col), columns=3)
+            point_enc = {
+                "x": alt.X(f"{x_col}:{x_type}", axis=axis_x),
+                "y": alt.Y(f"mean({y_col}):Q", axis=axis_y),
+                "tooltip": tooltip_fields,
+            }
+            point_enc.update(color_kwargs)
+            if hue_field is not None:
+                point_enc["shape"] = alt.Shape(f"{hue_field}:N", legend=None)
+            points = base.mark_point(filled=True, stroke=None, strokeWidth=0, size=60).encode(
+                **point_enc
+            )
+            chart = alt.layer(band, line, points)
+
+    design_labels = []
+    if "design_id" in _columns:
+        try:
+            _series = df_plot.select(pl.col("design_id").drop_nulls().unique()).to_series()
+            raw_vals = [str(_v) for _v in _series.to_list() if _v is not None]
+            raw_vals = sorted(raw_vals)
+            if design_id_aliases:
+                design_labels = [design_id_aliases.get(_v, _v) for _v in raw_vals]
+            else:
+                design_labels = raw_vals
+        except Exception:
+            design_labels = []
+    if design_labels:
+        if len(design_labels) > 6:
+            summary = ", ".join(design_labels[:5])
+            summary = f"{summary}, +{len(design_labels) - 5} more"
+        else:
+            summary = ", ".join(design_labels)
+        title_prefix = "Design IDs"
+        facet_group_label = None
+        if facet_row_choice in grouping_columns:
+            facet_group_label = humanize_label(facet_row_choice)
+        elif facet_col_choice in grouping_columns:
+            facet_group_label = humanize_label(facet_col_choice)
+        if facet_group_label:
+            title_prefix = f"Design IDs ({facet_group_label})"
+        title = f"{title_prefix}: {summary}"
+    else:
+        title = "Design IDs"
+
+    def _facet_type(col_name):
+        return "T" if col_name in temporal_cols else "N"
+
+    if facet_row_field is not None or facet_col_field is not None:
+        if facet_row_field is not None and facet_col_field is not None:
+            chart = chart.facet(
+                row=alt.Row(
+                    f"{facet_row_field}:{_facet_type(facet_row_choice)}",
+                    title=humanize_label(facet_row_choice),
+                    header=alt.Header(labelFontWeight="bold"),
+                ),
+                column=alt.Column(
+                    f"{facet_col_field}:{_facet_type(facet_col_choice)}",
+                    title=humanize_label(facet_col_choice),
+                    header=alt.Header(labelFontWeight="bold"),
+                ),
+            )
+        else:
+            _facet_field = facet_row_field or facet_col_field
+            _facet_choice = facet_row_choice if facet_row_field is not None else facet_col_choice
+            chart = chart.facet(
+                column=alt.Column(
+                    f"{_facet_field}:{_facet_type(_facet_choice)}",
+                    title=humanize_label(_facet_choice),
+                    header=alt.Header(labelFontWeight="bold"),
+                ),
+                columns=5,
+            )
+        chart = chart.resolve_scale(x="shared", y="shared").resolve_axis(x="independent", y="independent")
+
+    chart = chart.properties(title=title)
     chart = style_chart(chart)
     mo.ui.altair_chart(chart)
 
@@ -769,7 +948,7 @@ EXPERIMENT_NOTEBOOK_PLOT_TEMPLATE = EXPERIMENT_EDA_BASIC_TEMPLATE
 
 NOTEBOOK_PRESETS: dict[str, dict[str, str]] = {
     "notebook/basic": {
-        "description": "Minimal artifact explorer with run summary, design/treatment table, and df.parquet preview.",
+        "description": "Minimal artifact explorer with design/treatment table and df.parquet preview.",
         "template": EXPERIMENT_EDA_BASIC_TEMPLATE,
     },
     "notebook/microplate": {

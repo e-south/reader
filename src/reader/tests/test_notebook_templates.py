@@ -85,5 +85,5 @@ def test_notebook_templates_parse() -> None:
 def test_notebook_template_parquet_fallbacks() -> None:
     template = notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE
     assert "pl.read_parquet" in template
-    assert "pd.read_parquet" in template
-    assert "Polars is required to read df.parquet" not in template
+    assert "pd.read_parquet" not in template
+    assert "Polars is required to read parquet" in template
