@@ -82,12 +82,7 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert "artifact dataset(s)" in content
     assert "label=\"Dataset (artifact df.parquet)\"" in content
     assert "df_active = None" in content
-    assert "label=\"X\"" in content
-    assert "label=\"Y\"" in content
-    assert "label=\"Hue\"" in content
-    assert "label=\"Facet row\"" in content
-    assert "label=\"Facet col\"" in content
-    assert "Filter:" in content
+    assert "## Dataset table explorer" in content
     assert "Design IDs" in content
     assert "Design + treatment summary" not in content
     assert "label=\"Group by\"" not in content
@@ -96,7 +91,7 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert "explore_y = mo.ui.dropdown" not in content
     assert "explore_hue = mo.ui.dropdown" not in content
     assert "mo.ui.table" in content
-    assert "mo.ui.altair_chart" in content
+    assert "mo.ui.altair_chart" not in content
     assert "Quick plot" not in content
     assert "Available plot modules" not in content
     assert "plot/time_series" not in content
