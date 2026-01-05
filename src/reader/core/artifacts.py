@@ -50,7 +50,10 @@ class ArtifactStore:
 
     Layout:
       outputs/
-        manifest.json
+        manifests/
+          manifest.json
+          plots_manifest.json
+          exports_manifest.json
         artifacts/stepNN_id.plugin/
           df.parquet
           meta.json
@@ -58,6 +61,8 @@ class ArtifactStore:
           <flat files emitted by plot specs>
         exports/
           <flat files emitted by export specs>
+        notebooks/
+          <scaffolded marimo notebooks>
 
     - Manifest tracks latest and historical versions for (step_id, output_name)
     - When config digest changes, a new revision directory __rN is created
@@ -68,6 +73,7 @@ class ArtifactStore:
     ) -> None:
         self.root = outputs_dir
         self.artifacts_dir = self.root / "artifacts"
+        self.manifests_dir = self.root / "manifests"
         # flatten when plots_subdir is None / "" / "."; otherwise use given subdir
         if plots_subdir in (None, "", ".", "./"):
             self.plots_dir = self.root
@@ -77,10 +83,11 @@ class ArtifactStore:
             self.exports_dir = self.root
         else:
             self.exports_dir = self.root / exports_subdir
-        self.manifest_path = self.root / "manifest.json"
-        self.plots_manifest_path = self.root / "plots_manifest.json"
-        self.exports_manifest_path = self.root / "exports_manifest.json"
+        self.manifest_path = self.manifests_dir / "manifest.json"
+        self.plots_manifest_path = self.manifests_dir / "plots_manifest.json"
+        self.exports_manifest_path = self.manifests_dir / "exports_manifest.json"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.manifests_dir.mkdir(parents=True, exist_ok=True)
         if self.plots_dir != self.root:
             self.plots_dir.mkdir(parents=True, exist_ok=True)
         if self.exports_dir != self.root:

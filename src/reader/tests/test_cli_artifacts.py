@@ -12,4 +12,4 @@ def test_artifacts_requires_manifest(tmp_path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["artifacts", str(config)])
     assert result.exit_code == 1
-    assert "No outputs/manifest.json found" in result.output
+    assert "No outputs/manifests/manifest.json found" in result.output

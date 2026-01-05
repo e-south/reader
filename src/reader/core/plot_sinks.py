@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from reader.core.errors import ExecutionError
-from reader.lib.microplates.base import save_figure
+from reader.core.plot_utils import save_figure
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ This document is the developer‑oriented source of truth for how **reader** is 
 ### Scope
 
 - **Experiment directory** = unit of work.
-- **Pipeline steps** produce artifacts; **plots/exports** render static outputs.
+- **Pipeline steps** produce artifacts; **plot/export specs** render outputs (file or inline notebook).
 - **Notebooks** are optional and read outputs for interactive exploration.
 
 ---

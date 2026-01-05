@@ -73,14 +73,6 @@ def test_plot_list_empty(tmp_path: Path) -> None:
     assert "No plot specs configured" in result.output
 
 
-def test_plot_requires_mode_when_not_list(tmp_path: Path) -> None:
-    cfg = _write_config(tmp_path, _base_config())
-    runner = CliRunner()
-    result = runner.invoke(app, ["plot", str(cfg)])
-    assert result.exit_code != 0
-    assert "--mode is required unless --list is set" in result.output
-
-
 def test_export_list_filters(tmp_path: Path) -> None:
     cfg = _write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -103,7 +95,7 @@ def test_export_list_empty(tmp_path: Path) -> None:
     assert "No export specs configured" in result.output
 
 
-def test_validate_files_flag(tmp_path: Path) -> None:
+def test_validate_checks_files_by_default(tmp_path: Path) -> None:
     cfg = _base_config()
     cfg["pipeline"]["steps"] = [
         {"id": "ingest", "uses": "ingest/synergy_h1"},
@@ -117,25 +109,41 @@ def test_validate_files_flag(tmp_path: Path) -> None:
     file_path = tmp_path / "metadata.xlsx"
     file_path.write_text("stub", encoding="utf-8")
     runner = CliRunner()
-    result = runner.invoke(app, ["validate", str(cfg_path), "--files"])
+    result = runner.invoke(app, ["validate", str(cfg_path)])
     assert result.exit_code == 0
 
     file_path.unlink()
-    result = runner.invoke(app, ["validate", str(cfg_path), "--files"])
+    result = runner.invoke(app, ["validate", str(cfg_path)])
     assert result.exit_code == 1
     assert "Missing input files" in result.output
 
 
-def test_plot_mode_notebook_scaffolds(tmp_path: Path) -> None:
+def test_validate_no_files_skips_checks(tmp_path: Path) -> None:
+    cfg = _base_config()
+    cfg["pipeline"]["steps"] = [
+        {"id": "ingest", "uses": "ingest/synergy_h1"},
+        {
+            "id": "merge_map",
+            "uses": "merge/sample_map",
+            "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
+        },
+    ]
+    cfg_path = _write_config(tmp_path, cfg)
+    runner = CliRunner()
+    result = runner.invoke(app, ["validate", str(cfg_path), "--no-files"])
+    assert result.exit_code == 0
+
+
+def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     cfg = _write_config(tmp_path, _base_config())
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["plot", str(cfg), "--mode", "notebook", "--only", "plot_a"],
+        ["notebook", str(cfg), "--preset", "notebook/plots", "--only", "plot_a", "--mode", "none"],
     )
     assert result.exit_code == 0
-    nb_path = tmp_path / "notebooks" / "plots.py"
+    nb_path = tmp_path / "outputs" / "notebooks" / "plots.py"
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
-    assert "PLOT_SPECS" in content
-    assert "plot_a" in content
+    assert "PLOT_SPECS" not in content
+    assert "label=\"Dataset (artifact df.parquet)\"" in content

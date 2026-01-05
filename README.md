@@ -22,22 +22,23 @@ experiments/
         config.yaml
         inputs/
         outputs/
-        notebooks/
 ```
 2. Run config-driven pipelines that process data and produce structured outputs. 
 
 ```bash
 outputs/
-  manifest.json
-  plots_manifest.json
-  exports_manifest.json
   reader.log
+  manifests/
+    manifest.json
+    plots_manifest.json
+    exports_manifest.json
   artifacts/
     <step_id>.<plugin_key>/        # first revision
       <output>.parquet
       meta.json
   plots/                           # optional; only if plot specs write figures
   exports/                         # optional; only if export specs write files
+  notebooks/
 ```
 
 3. Optionally generate plots and exports from those outputs.
@@ -125,7 +126,7 @@ Create an experiment directory:
 
 ```bash
 # From the reader root
-mkdir -p experiments/<year>/my_experiment/{inputs,notebooks,outputs}
+mkdir -p experiments/<year>/my_experiment/{inputs,outputs}
 ```
 
 Design and run a pipeline via `config.yaml`:
@@ -140,7 +141,7 @@ Generate plots/exports or scaffold a notebook:
 ```bash
 uv run reader plot         experiments/my_experiment/config.yaml --list
 uv run reader export       experiments/my_experiment/config.yaml --list
-uv run reader notebook     experiments/my_experiment/config.yaml --preset notebook/basic --edit
+uv run reader notebook     experiments/my_experiment/config.yaml
 ```
 
 ---

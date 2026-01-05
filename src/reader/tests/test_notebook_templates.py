@@ -61,8 +61,29 @@ def test_notebook_templates_no_duplicate_globals() -> None:
         "notebook/basic": notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE,
         "notebook/microplate": notebooks.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
         "notebook/cytometry": notebooks.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
-        "notebook/plot": notebooks.EXPERIMENT_NOTEBOOK_PLOT_TEMPLATE,
+        "notebook/plots": notebooks.EXPERIMENT_NOTEBOOK_PLOT_TEMPLATE,
     }
     for name, template in templates.items():
         dupes = sorted(_find_duplicates(template))
         assert not dupes, f"{name} defines the same non-private name in multiple cells: {dupes}"
+
+
+def test_notebook_templates_parse() -> None:
+    templates = {
+        "notebook/basic": notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE,
+        "notebook/microplate": notebooks.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
+        "notebook/cytometry": notebooks.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
+        "notebook/plots": notebooks.EXPERIMENT_NOTEBOOK_PLOT_TEMPLATE,
+    }
+    for name, template in templates.items():
+        try:
+            ast.parse(template)
+        except SyntaxError as exc:  # pragma: no cover - explicit failure path
+            raise AssertionError(f"{name} template has invalid syntax: {exc}") from exc
+
+
+def test_notebook_template_parquet_fallbacks() -> None:
+    template = notebooks.EXPERIMENT_EDA_BASIC_TEMPLATE
+    assert "pl.read_parquet" in template
+    assert "pd.read_parquet" in template
+    assert "Polars is required to read df.parquet" not in template

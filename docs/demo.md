@@ -25,55 +25,45 @@ Experiments
 reader explain 1
 ```
 
-3) Validate the config (no data I/O)
+3) Validate the config + inputs
 
 ```bash
 reader validate 1
 ```
 
-4) Validate file inputs (checks reads: file: paths)
-
-```bash
-reader validate 1 --files
-```
-
-5) Run the pipeline (artifacts only)
+4) Run the pipeline (artifacts only)
 
 ```bash
 reader run 1
 ```
 
-6) Inspect artifacts
+5) Inspect artifacts
 
 ```bash
 reader artifacts 1
 ```
 
-7) Generate plots
+6) Generate plots
 
 ```bash
 reader plot 1 --list
-reader plot 1 --mode save
+reader plot 1
 ```
 
-8) Generate exports
+7) Generate exports
 
 ```bash
 reader export 1 --list
 reader export 1
 ```
 
-9) Scaffold a notebook
+8) Scaffold a notebook
 
 ```bash
-reader notebook 1 --preset notebook/basic --edit
+reader notebook 1
 ```
 
-Optional: plot-focused notebook
-
-```bash
-reader plot 1 --mode notebook --only plot_time_series --edit
-```
+If you want a specific preset, pass `--preset <name>` (otherwise reader uses `notebook.preset` from config or auto-picks).
 
 See [docs/notebooks.md](./notebooks.md) for opening and dependency setup.
 

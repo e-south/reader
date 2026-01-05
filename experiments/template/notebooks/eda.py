@@ -68,9 +68,9 @@ def _(Path, ReaderSpec, mo):
         {"id": s.id, "uses": s.uses, "reads": s.reads, "with": s.with_, "writes": s.writes}
         for s in resolve_export_specs(spec)
     ]
-    manifest_path = outputs_dir / "manifest.json"
-    plots_manifest_path = outputs_dir / "plots_manifest.json"
-    exports_manifest_path = outputs_dir / "exports_manifest.json"
+    manifest_path = outputs_dir / "manifests" / "manifest.json"
+    plots_manifest_path = outputs_dir / "manifests" / "plots_manifest.json"
+    exports_manifest_path = outputs_dir / "manifests" / "exports_manifest.json"
     return (
         spec,
         exp_dir,
@@ -113,11 +113,7 @@ def _(
     _exp_name = exp_meta.get("name")
     _exp_id = exp_meta.get("id")
     _ingest_uses = sorted({str(step.get("uses", "")) for step in ingest_steps_cfg if isinstance(step, dict)})
-    _plot_uses = sorted({str(step.get("uses", "")) for step in plot_steps_cfg if isinstance(step, dict)})
-    _export_uses = sorted({str(step.get("uses", "")) for step in export_steps_cfg if isinstance(step, dict)})
     _ingest_text = ", ".join(_ingest_uses) if _ingest_uses else "—"
-    _plot_text = ", ".join(_plot_uses) if _plot_uses else "—"
-    _export_text = ", ".join(_export_uses) if _export_uses else "—"
     _header_lines = [f"# {title.value or exp_dir.name}", ""]
     _header_lines.append(f"**Experiment directory:** `{exp_dir.name}`")
     if _exp_name:
@@ -127,8 +123,6 @@ def _(
     _header_lines.append(f"**Design keys:** `{design_keys.value}`")
     _header_lines.append(f"**Treatment keys:** `{treatment_keys.value}`")
     _header_lines.append(f"**Ingest:** {_ingest_text}")
-    _header_lines.append(f"**Configured plots:** {_plot_text}")
-    _header_lines.append(f"**Configured exports:** {_export_text}")
     if _notes_text:
         _header_lines.append(f"**Notes:** {_notes_text}")
     _header_md = mo.md("\n".join(_header_lines))
@@ -149,7 +143,7 @@ def _(
     if not outputs_dir.exists():
         mo.stop(True, mo.md("No outputs/ directory found. Run `reader run` first."))
     if not manifest_path.exists():
-        mo.stop(True, mo.md("No outputs/manifest.json found. Run `reader run` first."))
+        mo.stop(True, mo.md("No outputs/manifests/manifest.json found. Run `reader run` first."))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     artifacts = manifest.get("artifacts", {})
     labels = sorted(artifacts.keys())
@@ -325,53 +319,6 @@ def _(mo):
 
 @app.cell
 def _(available_plot_modules, mo, plot_steps_cfg):
-    _panels = [mo.md("## Configured plot specs (from config.yaml)")]
-    if not plot_steps_cfg:
-        _panels.append(mo.md("No plot specs configured in config.yaml."))
-
-    def _summarize_with(cfg: dict) -> str:
-        if not isinstance(cfg, dict):
-            return ""
-        _parts = []
-        for _key in ("x", "y", "hue", "group_on", "time", "channel", "panel_by", "file_by"):
-            if _key in cfg:
-                _parts.append(f"{_key}={cfg.get(_key)}")
-        return ", ".join(_parts)
-
-    _plot_groups: dict[str, list[dict]] = {}
-    for _step in plot_steps_cfg:
-        _uses = str(_step.get("uses", "") or "")
-        _key = _uses.split("/", 1)[1] if "/" in _uses else _uses
-        _plot_groups.setdefault(_key, []).append(_step)
-
-    _plot_panels = []
-    for _key in sorted(_plot_groups):
-        _rows = []
-        for _step in _plot_groups[_key]:
-            _rows.append(
-                {
-                    "id": _step.get("id", ""),
-                    "section": _step.get("_section", ""),
-                    "uses": _step.get("uses", ""),
-                    "summary": _summarize_with(_step.get("with", {}) or {}),
-                }
-            )
-        _plot_panels.append(mo.vstack([mo.md(f"### plot/{_key}"), mo.ui.table(_rows)]))
-
-    if _plot_panels:
-        _max_cols = min(3, len(_plot_panels))
-        if _max_cols <= 1:
-            _panels.append(mo.vstack(_plot_panels))
-        else:
-            _buckets = [[] for _ in range(_max_cols)]
-            for _i, _panel in enumerate(_plot_panels):
-                _buckets[_i % _max_cols].append(_panel)
-            _panels.append(mo.hstack([mo.vstack(_bucket) for _bucket in _buckets]))
-
-    if available_plot_modules:
-        _panels.append(mo.md("### Available plot modules (reader.plugins.plot)"))
-        _panels.append(mo.ui.table([{"module": name} for name in available_plot_modules]))
-    mo.vstack(_panels)
     return
 
 @app.cell
@@ -704,9 +651,10 @@ def _(Path, deliverable_entries, mo, plot_files, export_files, plots_dir, export
         file_rows = [{"file": _name, "path": str(plots_dir / _name)} for _name in plot_files]
         file_rows.extend([{"file": _name, "path": str(exports_dir / _name)} for _name in export_files])
     else:
-        mo.stop(True, mo.md("No outputs found yet. Run `reader plot --mode save` or `reader export`."))
+        mo.md("No saved plot/export files yet. Use `reader plot` or `reader export` if you want files on disk.")
     plot_rows = file_rows
-    mo.ui.table(plot_rows)
+    if plot_rows:
+        mo.ui.table(plot_rows)
     return plot_rows
 
 if __name__ == "__main__":

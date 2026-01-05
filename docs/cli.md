@@ -35,16 +35,16 @@ Print the expanded config (presets + overrides applied):
 reader config CONFIG|DIR|INDEX
 ```
 
-Validate schema and wiring:
+Validate schema, wiring, and inputs:
 
 ```bash
 reader validate CONFIG|DIR|INDEX
 ```
 
-Validate input files (checks `reads: file:` paths):
+Skip file checks (config-only):
 
 ```bash
-reader validate CONFIG|DIR|INDEX --files
+reader validate CONFIG|DIR|INDEX --no-files
 ```
 
 Inspect the resolved plan without execution:
@@ -57,7 +57,7 @@ reader explain CONFIG|DIR|INDEX
 
 ## Pipeline (artifacts)
 
-Run the pipeline section only (produces artifacts + `outputs/manifest.json`):
+Run the pipeline section only (produces artifacts + `outputs/manifests/manifest.json`):
 
 ```bash
 reader run CONFIG|DIR|INDEX
@@ -76,18 +76,17 @@ Useful flags:
 - `--only <step_id>` (single pipeline step)
 - `--dry-run`
 - `--log-level <level>`
+- `--compact` (use the compact progress view instead of per-step logs)
 
 ---
 
 ## Plots
 
-Run plot specs only:
+Run plot specs only (saves files to `outputs/plots`):
 
 ```bash
-reader plot CONFIG|DIR|INDEX --mode save
+reader plot CONFIG|DIR|INDEX
 ```
-
-`--mode` is required (unless you use `--list`) and must be `save` or `notebook`.
 
 List resolved plot spec ids:
 
@@ -98,23 +97,15 @@ reader plot CONFIG|DIR|INDEX --list
 Filter plots:
 
 ```bash
-reader plot CONFIG|DIR|INDEX --mode save --only plot_ts --only plot_snapshot
-reader plot CONFIG|DIR|INDEX --mode save --exclude plot_debug
+reader plot CONFIG|DIR|INDEX --only plot_ts --only plot_snapshot
+reader plot CONFIG|DIR|INDEX --exclude plot_debug
 ```
-
-Plot-focused notebook (no plot plugin execution):
-
-```bash
-reader plot CONFIG|DIR|INDEX --mode notebook --only plot_ts --edit
-```
-
-Add `--edit` to open the generated notebook immediately.
 
 Ad-hoc overrides (plot/export only):
 
 ```bash
-reader plot CONFIG|DIR|INDEX --mode save --only plot_ts --input df=ratio_yfp_od600/df
-reader plot CONFIG|DIR|INDEX --mode save --only plot_ts --set with.time=6.0
+reader plot CONFIG|DIR|INDEX --only plot_ts --input df=ratio_yfp_od600/df
+reader plot CONFIG|DIR|INDEX --only plot_ts --set with.time=6.0
 ```
 
 `--set` paths must start with `reads.`, `with.`, or `writes.`.
@@ -152,13 +143,21 @@ reader export CONFIG|DIR|INDEX --only export_ratios --set with.path="exports/rat
 
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution):
+Scaffold a marimo notebook (no pipeline execution). If `--preset` is omitted, the CLI
+uses `notebook.preset` from config, otherwise auto-picks `notebook/plots` when plots
+exist or `notebook/basic` (both presets currently scaffold the same minimal notebook):
+
+Notebooks are written under `outputs/notebooks/`.
 
 ```bash
-reader notebook CONFIG|DIR|INDEX --preset notebook/basic --edit
+reader notebook CONFIG|DIR|INDEX
 ```
 
-Add `--edit` to open the notebook immediately (uses `uv run marimo edit`).
+Launch modes:
+
+- `--mode edit` (default): open Marimo editor
+- `--mode run`: run as a read-only app
+- `--mode none`: create only (no launch)
 
 See presets:
 
@@ -182,7 +181,7 @@ List pipeline steps (resolved):
 reader steps CONFIG|DIR|INDEX
 ```
 
-List artifacts from `outputs/manifest.json`:
+List artifacts from `outputs/manifests/manifest.json`:
 
 ```bash
 reader artifacts CONFIG|DIR|INDEX

@@ -8,6 +8,7 @@ paths:
   outputs: "./outputs"
   plots: "plots"
   exports: "exports"
+  notebooks: "notebooks"
 
 plotting:
   palette: "colorblind"

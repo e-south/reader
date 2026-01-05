@@ -49,6 +49,7 @@ class PathsSpec(BaseModel):
     outputs: str = "./outputs"
     plots: str = "plots"
     exports: str = "exports"
+    notebooks: str = "notebooks"
 
     model_config = {"extra": "forbid"}
 
@@ -100,6 +101,12 @@ class ExportSection(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class NotebookSpec(BaseModel):
+    preset: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
 class ReaderSpec(BaseModel):
     schema_: str = Field(alias="schema")
     experiment: ExperimentSpec
@@ -109,6 +116,7 @@ class ReaderSpec(BaseModel):
     pipeline: PipelineSpec
     plots: PlotSection = Field(default_factory=PlotSection)
     exports: ExportSection = Field(default_factory=ExportSection)
+    notebook: NotebookSpec = Field(default_factory=NotebookSpec)
 
     model_config = {"extra": "forbid"}
 
@@ -326,7 +334,8 @@ class ReaderSpec(BaseModel):
         data["paths"]["outputs"] = str(outputs_path)
         plots_subdir = data["paths"].get("plots", "plots")
         exports_subdir = data["paths"].get("exports", "exports")
-        for key, val in (("plots", plots_subdir), ("exports", exports_subdir)):
+        notebooks_subdir = data["paths"].get("notebooks", "notebooks")
+        for key, val in (("plots", plots_subdir), ("exports", exports_subdir), ("notebooks", notebooks_subdir)):
             if val is None:
                 raise ConfigError(f"paths.{key} must be a string subdirectory (use '.' to flatten).")
             if not isinstance(val, str):

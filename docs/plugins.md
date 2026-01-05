@@ -167,18 +167,42 @@ Plot specs live under `plots:` and export specs under `exports:` in config (opti
 
 They are run by:
 
-* `reader plot --mode save` (plots only)
+* `reader plot` (save plot files only)
 * `reader export` (exports only)
-* `reader plot --mode notebook` (scaffolds a plot-focused notebook)
 
 Guidelines:
 
-* Plot/export plugins should be deterministic and pure: read declared inputs, write files.
+* Plot/export plugins should be deterministic and pure: read declared inputs, produce deterministic outputs.
 * Avoid experiment-specific logic inside plot plugins; keep bespoke logic in `lib/`.
 * Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
 * Plot specs are assertive: missing required columns raise an error.
 * If a selection is empty, emit a warning and skip (don’t silently write an empty plot).
-* Plot/export outputs are tracked in `outputs/plots_manifest.json` and `outputs/exports_manifest.json`.
+* Plot/export outputs are tracked in `outputs/manifests/plots_manifest.json` and `outputs/manifests/exports_manifest.json`.
+
+Plot plugins implement a **single render path** that powers file output:
+
+* `render(ctx, inputs, cfg) -> PlotFigure | list[PlotFigure]`
+* `run(...)` should call `render(...)` and then save via `save_plot_figures(...)`.
+
+Minimal plot plugin pattern:
+
+```python
+from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+
+class MyPlot(Plugin):
+    key = "my_plot"
+    category = "plot"
+    ConfigModel = MyCfg
+
+    def render(self, ctx, inputs, cfg: MyCfg) -> list[PlotFigure]:
+        fig = build_plot(inputs["df"])
+        return [PlotFigure(fig=fig, filename=cfg.filename or "my_plot")]
+
+    def run(self, ctx, inputs, cfg: MyCfg):
+        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
+        saved = save_plot_figures(figures, ctx.plots_dir)
+        return {"files": [str(p) for p in saved] if saved else None}
+```
 
 Common plot config knobs (shared across most plot plugins):
 

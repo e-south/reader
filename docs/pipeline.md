@@ -36,6 +36,7 @@ paths:
   outputs: "./outputs"        # default
   plots: "plots"              # default (relative to outputs; use "." to flatten)
   exports: "exports"          # default (relative to outputs; use "." to flatten)
+  notebooks: "notebooks"      # default (relative to outputs)
 
 plotting:
   palette: "colorblind"       # string or null
@@ -65,16 +66,38 @@ exports:
     with:  {}
   overrides: {}                # optional per-export overrides by id
   specs: []                    # optional (unordered)
+
+notebook:
+  preset: "notebook/basic"     # optional (default for `reader notebook`)
 ```
 
 Notes:
 
 - `paths.outputs` is resolved relative to the config file and stored as an absolute path.
-- `paths.plots` and `paths.exports` must be relative to `paths.outputs`.
+- `paths.plots`, `paths.exports`, and `paths.notebooks` must be relative to `paths.outputs`.
 - `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
 - Step ids must be unique across pipeline, plots, and exports.
 - Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
 - Plot/export defaults apply after preset expansion and before per-id overrides.
+
+---
+
+### Outputs layout
+
+By default, outputs are written under `outputs/`:
+
+```
+outputs/
+  artifacts/
+  plots/
+  exports/
+  notebooks/
+  manifests/
+    manifest.json
+    plots_manifest.json
+    exports_manifest.json
+```
+- `notebook.preset` controls the default preset used by `reader notebook` when `--preset` is omitted.
 
 ---
 
@@ -141,6 +164,7 @@ paths:
   outputs: "./outputs"
   plots: "plots"
   exports: "exports"
+  notebooks: "notebooks"
 
 plotting:
   palette: "colorblind"
@@ -200,6 +224,9 @@ exports:
     - id: export_ratios
       uses: export/csv
       with: { path: "ratios.csv" }
+
+notebook:
+  preset: "notebook/plots"
 ```
 
 ---

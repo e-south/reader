@@ -13,33 +13,18 @@ import logging
 import math
 import re
 from collections.abc import Iterable, Sequence
-from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 
+from reader.core import plot_utils as _plot_utils
+
 GroupMatch = Literal["exact", "contains", "startswith", "endswith", "regex"]
 
-
-def ensure_dir(p: Path) -> None:
-    p.mkdir(parents=True, exist_ok=True)
-
-
-def slugify(s: str) -> str:
-    s = str(s).strip()
-    s = re.sub(r"[^\w\-.]+", "_", s)
-    return re.sub(r"_{2,}", "_", s).strip("_")
-
-
-def save_figure(fig, output_dir: Path, filename_stub: str, ext: str = "pdf", dpi: int | None = None) -> Path:
-    """
-    Save figures as **PDF by default** (print-friendly, vector). Use ext="png" if you
-    explicitly need rasters.
-    """
-    ensure_dir(output_dir)
-    out = output_dir / f"{slugify(filename_stub)}.{ext}"
-    fig.savefig(out, bbox_inches="tight", dpi=dpi)
-    return out
+# Re-export shared plot helpers for microplates modules.
+ensure_dir = _plot_utils.ensure_dir
+slugify = _plot_utils.slugify
+save_figure = _plot_utils.save_figure
 
 
 def require_columns(df: pd.DataFrame, cols: Iterable[str], *, where: str) -> None:
