@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -142,7 +143,8 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
         ["notebook", str(cfg), "--preset", "notebook/plots", "--only", "plot_a", "--mode", "none"],
     )
     assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "notebooks" / "plots.py"
+    date_stamp = datetime.now().strftime("%Y%m%d")
+    nb_path = tmp_path / "outputs" / "notebooks" / f"EDA_{date_stamp}.py"
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
     assert "PLOT_SPECS" not in content

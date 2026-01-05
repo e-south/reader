@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -12,6 +13,10 @@ def _write_config(tmp_path: Path, payload: dict) -> Path:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return path
+
+
+def _default_notebook_name() -> str:
+    return f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
 
 
 def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
@@ -36,12 +41,12 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--preset", "notebook/plots", "--mode", "none"])
     assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "notebooks" / "plots.py"
+    nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
     assert "label=\"Dataset (artifact df.parquet)\"" in content
     assert "df.parquet" in content
-    assert "df_active" in content
+    assert "df = None" in content
     assert "__PLOT_SPECS__" not in content
     assert "resolve_plot_specs" not in content
     assert "plot --mode save" not in content
@@ -60,7 +65,7 @@ def test_notebook_scaffold_defaults_to_outputs_dir(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "notebooks" / "notebook.py"
+    nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     assert nb_path.exists()
 
 
@@ -77,11 +82,11 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "notebooks" / "notebook.py"
+    nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "artifact dataset(s)" in content
     assert "label=\"Dataset (artifact df.parquet)\"" in content
-    assert "df_active = None" in content
+    assert "df = None" in content
     assert "## Dataset table explorer" in content
     assert "Design IDs" in content
     assert "Design + treatment summary" not in content
@@ -117,7 +122,7 @@ def test_notebook_scaffold_uses_legacy_dir_when_present(tmp_path: Path) -> None:
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
     assert "Legacy notebooks/ detected" in result.output
-    nb_path = legacy_dir / "notebook.py"
+    nb_path = legacy_dir / _default_notebook_name()
     assert nb_path.exists()
 
 
@@ -141,5 +146,5 @@ def test_notebook_scaffold_respects_notebooks_override(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "custom_notes" / "notebook.py"
+    nb_path = tmp_path / "outputs" / "custom_notes" / _default_notebook_name()
     assert nb_path.exists()

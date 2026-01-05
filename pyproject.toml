@@ -23,6 +23,7 @@ dependencies = [
   "seaborn>=0.13",
   "pillow>=10.0",
   "polars>=1.36.1",
+  "openai>=2.14.0",
 ]
 
 [project.scripts]

@@ -224,14 +224,31 @@ def _config_has_notebooks_override(path: Path) -> bool:
     return isinstance(paths, dict) and "notebooks" in paths
 
 
+def _default_notebook_name() -> str:
+    return f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
+
+
+def _next_available_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    counter = 1
+    while True:
+        candidate = path.with_name(f"{stem}_{counter}{suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
 def _scaffold_notebook(
     *,
     job: str | None,
-    name: str,
+    name: str | None,
     preset: str | None,
     list_presets: bool,
-    force: bool,
-    new_name: str | None,
+    overwrite: bool,
+    new: bool,
     refresh: bool,
     mode: str,
     plot_only: list[str] | None,
@@ -246,10 +263,10 @@ def _scaffold_notebook(
                 table.add_row(preset_name, desc)
             console.print(Panel(table, border_style="accent", box=box.ROUNDED))
             return
-        if new_name and name != "notebook.py":
-            raise typer.BadParameter("--new cannot be combined with --name.")
+        if overwrite and new:
+            raise typer.BadParameter("--overwrite cannot be combined with --new.")
         if refresh:
-            force = True
+            overwrite = True
         mode_value = (mode or "").strip().lower()
         if mode_value not in {"edit", "run", "none"}:
             raise typer.BadParameter("--mode must be one of: edit, run, none.")
@@ -277,10 +294,17 @@ def _scaffold_notebook(
                         box=box.ROUNDED,
                     )
                 )
-        target_name = new_name or name
-        if selected_preset == "notebook/plots" and target_name == "notebook.py" and not new_name:
-            target_name = "plots.py"
+        target_name = name or _default_notebook_name()
         target = nb_dir / target_name
+        if new:
+            target = _next_available_path(target)
+        elif overwrite and target.exists():
+            confirm = typer.confirm(
+                f"Notebook already exists at {target}. Overwrite?",
+                default=False,
+            )
+            if not confirm:
+                overwrite = False
         has_fcs = any(p.suffix.lower() == ".fcs" for p in exp_dir.rglob("*.fcs"))
         existed = target.exists()
         plot_specs_payload = None
@@ -291,11 +315,11 @@ def _scaffold_notebook(
         target, created = write_experiment_notebook(
             target,
             preset=selected_preset,
-            overwrite=force,
+            overwrite=overwrite,
             plot_specs=plot_specs_payload,
         )
         if created:
-            if existed and force:
+            if existed and overwrite:
                 status = f"✓ Notebook overwritten: [path]{target}[/path]\n[muted]preset[/muted]: {selected_preset}"
             else:
                 status = f"✓ Notebook created: [path]{target}[/path]\n[muted]preset[/muted]: {selected_preset}"
@@ -328,10 +352,10 @@ def notebook(
         metavar="CONFIG|DIR|INDEX",
         help="Experiment config path, directory, or index from 'reader ls'.",
     ),
-    name: str = typer.Option(
-        "notebook.py",
+    name: str | None = typer.Option(
+        None,
         "--name",
-        help="Notebook filename (created under outputs/notebooks).",
+        help="Notebook filename (created under outputs/notebooks). Defaults to EDA_YYYYMMDD.py.",
     ),
     preset: str | None = typer.Option(
         None,
@@ -343,21 +367,21 @@ def notebook(
         "--list-presets",
         help="List notebook presets and exit.",
     ),
-    force: bool = typer.Option(
+    overwrite: bool = typer.Option(
         False,
+        "--overwrite",
         "--force",
-        help="Overwrite the notebook if it already exists.",
+        help="Overwrite today's notebook if it already exists (asks for confirmation).",
     ),
-    new: str | None = typer.Option(
-        None,
+    new: bool = typer.Option(
+        False,
         "--new",
-        metavar="FILE",
-        help="Create a new notebook alongside the default notebook.py.",
+        help="Create an additional notebook by appending a numeric suffix if needed.",
     ),
     refresh: bool = typer.Option(
         False,
         "--refresh",
-        help="Regenerate the notebook even if it exists (same as --force).",
+        help="Regenerate the notebook even if it exists (same as --overwrite).",
     ),
     mode: str = NOTEBOOK_MODE_OPTION,
     only: list[str] = NOTEBOOK_PLOT_ONLY_OPTION,
@@ -368,8 +392,8 @@ def notebook(
         name=name,
         preset=preset,
         list_presets=list_presets,
-        force=force,
-        new_name=new,
+        overwrite=overwrite,
+        new=new,
         refresh=refresh,
         mode=mode,
         plot_only=only,

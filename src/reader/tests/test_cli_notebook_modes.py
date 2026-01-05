@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -14,6 +15,10 @@ def _write_config(tmp_path: Path, payload: dict) -> Path:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return path
+
+
+def _default_notebook_name() -> str:
+    return f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
 
 
 def _base_config() -> dict:
@@ -52,7 +57,7 @@ def test_notebook_mode_none_skips_launch(monkeypatch, tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
-    assert "notebook.py" in result.output
+    assert _default_notebook_name() in result.output
 
 
 def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> None:

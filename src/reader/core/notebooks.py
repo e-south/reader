@@ -16,9 +16,9 @@ from reader.core.errors import ConfigError
 EXPERIMENT_EDA_BASE_TEMPLATE = '''import marimo
 
 __generated_with = "0.18.4"
-app = marimo.App(width="full")
+app = marimo.App(width="medium")
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     from pathlib import Path
     import json
@@ -38,7 +38,7 @@ def _():
         ReaderSpec,
     )
 
-@app.cell
+@app.cell(hide_code=True)
 def _(Path, ReaderSpec):
     def _find_experiment_root(start: Path) -> Path:
         for base in [start] + list(start.parents):
@@ -71,7 +71,7 @@ def _(Path, ReaderSpec):
         pipeline_step_ids,
     )
 
-@app.cell
+@app.cell(hide_code=True)
 def _(json, outputs_dir):
     artifact_info = {}
     artifact_note = ""
@@ -152,7 +152,7 @@ def _(json, outputs_dir):
     artifact_labels = sorted(artifact_info)
     return artifact_info, artifact_labels, artifact_note
 
-@app.cell
+@app.cell(hide_code=True)
 def _(artifact_info, artifact_labels, artifact_note, mo, pipeline_step_ids):
     if not artifact_labels:
         note = artifact_note or "No datasets found. Run `reader run` first."
@@ -192,7 +192,7 @@ def _(artifact_info, artifact_labels, artifact_note, mo, pipeline_step_ids):
         )
     return artifact_dropdown
 
-@app.cell
+@app.cell(hide_code=True)
 def _(artifact_dropdown, artifact_info):
     if artifact_dropdown is None:
         selected_label = None
@@ -202,10 +202,9 @@ def _(artifact_dropdown, artifact_info):
         artifact_path = artifact_info.get(selected_label, {}).get("path")
     return selected_label, artifact_path
 
-@app.cell
+@app.cell(hide_code=True)
 def _(artifact_path, pl):
-    df_active = None
-    df_backend = None
+    df = None
     df_error = None
     _pl_error = None
 
@@ -214,35 +213,22 @@ def _(artifact_path, pl):
             df_error = "Polars is required to read parquet. Install the notebooks group."
         else:
             try:
-                df_active = pl.read_parquet(artifact_path)
-                df_backend = "polars"
+                df = pl.read_parquet(artifact_path)
             except Exception as exc:
                 _pl_error = str(exc)
-        if df_active is None and df_error is None:
+        if df is None and df_error is None:
             _suffix = _pl_error or "unknown error"
             df_error = f"Failed to read parquet with polars ({_suffix})."
-    return df_active, df_backend, df_error
+    return df, df_error
 
-@app.cell
-def _(df_active, pl):
-    df_rows = None
-    df_cols = None
-    if df_active is not None:
-        if pl is not None and df_active.__class__.__module__.startswith("polars"):
-            df_rows = df_active.height
-            df_cols = df_active.width
-        else:
-            df_rows, df_cols = df_active.shape
-    return df_rows, df_cols
-
-@app.cell
-def _(df_active, pl):
+@app.cell(hide_code=True)
+def _(df, pl):
     design_treatment_rows = []
     design_treatment_note = ""
-    if df_active is None:
+    if df is None:
         design_treatment_note = "No dataset selected yet."
     else:
-        _columns = list(df_active.columns) if hasattr(df_active, "columns") else []
+        _columns = list(df.columns) if hasattr(df, "columns") else []
         _design_col = "design_id" if "design_id" in _columns else None
         _treatment_col = "treatment" if "treatment" in _columns else None
 
@@ -265,8 +251,8 @@ def _(df_active, pl):
                 values = [str(_v) for _v in values if _v is not None]
                 return sorted(values)
 
-            _design_vals = _unique_values(df_active, _design_col)
-            _treatment_vals = _unique_values(df_active, _treatment_col)
+            _design_vals = _unique_values(df, _design_col)
+            _treatment_vals = _unique_values(df, _treatment_col)
             _max_len = max(len(_design_vals), len(_treatment_vals), 1)
             for _i in range(_max_len):
                 design_treatment_rows.append(
@@ -277,12 +263,12 @@ def _(df_active, pl):
                 )
     return design_treatment_rows, design_treatment_note
 
-@app.cell
+@app.cell(hide_code=True)
 def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
     _exp_id = exp_meta.get("id") or exp_dir.name
     _exp_title = exp_meta.get("title") or _exp_id
     if design_treatment_rows:
-        _design_table = mo.ui.table(design_treatment_rows)
+        _design_table = mo.ui.table(design_treatment_rows, page_size=len(design_treatment_rows))
     else:
         _design_table = mo.md(design_treatment_note or "No design/treatment summary available.")
     mo.vstack(
@@ -293,59 +279,37 @@ def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
         ]
     )
 
-@app.cell
-def _(
-    artifact_dropdown,
-    artifact_note,
-    artifact_path,
-    df_backend,
-    df_cols,
-    df_error,
-    df_rows,
-    mo,
-    selected_label,
-):
+@app.cell(hide_code=True)
+def _(artifact_dropdown, artifact_note, df_error, mo):
     _elements = [mo.md("## Dataset selection")]
     if artifact_dropdown is None:
         _elements.append(mo.md(artifact_note or "No datasets found."))
     else:
         _elements.append(artifact_dropdown)
-        _status_rows = []
-        if selected_label:
-            _status_rows.append({"Field": "Selected dataset", "Value": selected_label})
-        if artifact_path:
-            _status_rows.append({"Field": "Parquet path", "Value": str(artifact_path)})
-        if df_backend:
-            _status_rows.append({"Field": "Backend", "Value": df_backend})
-        if df_rows is not None and df_cols is not None and df_backend:
-            _status_rows.append({"Field": "Rows", "Value": df_rows})
-            _status_rows.append({"Field": "Columns", "Value": df_cols})
-        if _status_rows:
-            _elements.append(mo.ui.table(_status_rows))
         if df_error:
             _elements.append(mo.md(f"**Load error:** `{df_error}`"))
     mo.vstack(_elements)
 
-@app.cell
-def _(df_active, df_error, mo, selected_label):
+@app.cell(hide_code=True)
+def _(df, df_error, mo, selected_label):
     if df_error:
         mo.stop(True, mo.md(f"Failed to load `{selected_label}`: {df_error}"))
-    if df_active is None:
+    if df is None:
         mo.stop(True, mo.md("Select a dataset to explore."))
-    df_ready = True
-    return df_ready
+    data_ready = True
+    return data_ready
 
-@app.cell
-def _(df_active, df_ready, mo, pl):
-    _columns = list(df_active.columns) if hasattr(df_active, "columns") else []
+@app.cell(hide_code=True)
+def _(df, data_ready, mo, pl):
+    _columns = list(df.columns) if hasattr(df, "columns") else []
     _elements = [mo.md("## Dataset table explorer")]
-    df_preview = df_active
+    df_table = df
     if len(_columns) > 40:
         _display_cols = _columns[:40]
-        if pl is not None and df_active.__class__.__module__.startswith("polars"):
-            df_preview = df_active.select(_display_cols)
+        if pl is not None and df.__class__.__module__.startswith("polars"):
+            df_table = df.select(_display_cols)
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
-    _elements.append(mo.ui.table(df_preview, page_size=10))
+    _elements.append(mo.ui.table(df_table, page_size=10))
     mo.vstack(_elements)
 
 @app.cell
