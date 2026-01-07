@@ -16,33 +16,27 @@
 
 1. Place raw data and metadata in an experiment directory.
 
-```bash
-experiments/
-    <exp>/
-        config.yaml
-        inputs/
-        outputs/
-```
+    ```bash
+    experiments/
+        <exp>/
+            config.yaml     # experiment config
+            inputs/         # raw files + metadata (e.g., metadata.xlsx)
+            outputs/        # pipeline outputs, plots, exports, notebooks
+    ```
 2. Run config-driven pipelines that process data and produce structured outputs. 
 
-```bash
-outputs/
-  reader.log
-  manifests/
-    manifest.json
-    plots_manifest.json
-    exports_manifest.json
-  artifacts/
-    <step_id>.<plugin_key>/        # first revision
-      <output>.parquet
-      meta.json
-  plots/                           # optional; only if plot specs write figures
-  exports/                         # optional; only if export specs write files
-  notebooks/
-```
+    ```bash
+    outputs/
+      reader.log      # run log
+      manifests/      # inventories what was produced
+      artifacts/      # pipeline outputs (dataframes + metadata)
+      plots/          # rendered figures (optional)
+      exports/        # exported files (optional)
+      notebooks/      # scaffolded marimo notebooks
+    ```
 
-3. Optionally generate plots and exports from those outputs.
-4. Use notebooks for interactive exploration against the same outputs.
+3. Optionally generate plots and exports data.
+4. Use notebooks for exploratory data analysis.
 
 ---
 
@@ -88,16 +82,10 @@ uv run python -c "import reader, pandas, pyarrow; print('ok')"
 Dev tooling is opt-in via a dependency group.
 
 ```bash
-uv sync --locked --group dev --group notebooks --group cytometry
+uv sync --locked --group dev --group notebooks --group cytometry --extra dnadesign
 uv run ruff --version
 uv run ruff check .
 uv run pytest -q
-```
-
-Optional: design rendering (Baserender via dnadesign).
-
-```bash
-uv sync --locked --extra design
 ```
 
 **This project defines console scripts, which you can run via:**
@@ -121,6 +109,12 @@ deactivate
 ---
 
 ### Quickstart
+
+Try the guided walkthrough:
+
+```bash
+uv run reader demo
+```
 
 Create an experiment directory:
 

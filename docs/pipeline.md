@@ -1,6 +1,6 @@
 # Configuring pipelines
 
-Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots and exports.
+Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots, notebooks, and exports.
 
 ### Contents
 
@@ -18,8 +18,6 @@ Every config must declare the schema at the top:
 ```yaml
 schema: "reader/v2"
 ```
-
-If the schema is missing or not `reader/v2`, `reader` errors immediately.
 
 ---
 
@@ -121,6 +119,23 @@ Rules:
 - `plots` specs must use `plot/*` plugins and are unordered.
 - `exports` specs must use `export/*` plugins and are unordered.
 
+---
+
+### Inputs + metadata placement
+
+By default, place **raw inputs and metadata under `inputs/`**. Auto-discovery for ingest plugins
+(`ingest/synergy_h1`, `ingest/flow_cytometer`) scans `inputs/` by default and **excludes common
+metadata filenames** to avoid accidental ingestion:
+
+- `metadata.*`
+- `metadata_filtered.*`
+- `sample_map.*`
+- `sample_metadata.*`
+- `plate_map.*`
+
+If your metadata uses different names, either pass an explicit `reads.raw` file path or add those
+names to the ingest step’s `auto_exclude` list.
+
 **Aliases in steps**
 
 The `transform/alias` plugin can pull alias maps from `data.aliases` using `aliases_ref`:
@@ -154,79 +169,79 @@ For multiple columns, add multiple alias steps (one per column):
 ### Example configuration
 
 ```yaml
-schema: "reader/v2"
+schema: "reader/v2"                 # required schema marker
 
 experiment:
-  id: "20250512_panel_M9_glu"
-  title: "Cell line panel — M9 + glucose"
+  id: "20250512_panel_M9_glu"       # short unique experiment id
+  title: "Cell line panel — M9"     # optional display name
 
 paths:
-  outputs: "./outputs"
-  plots: "plots"
-  exports: "exports"
-  notebooks: "notebooks"
+  outputs: "./outputs"              # base output directory (relative to config)
+  plots: "plots"                    # subdir under outputs/
+  exports: "exports"                # subdir under outputs/
+  notebooks: "notebooks"            # subdir under outputs/
 
 plotting:
-  palette: "colorblind"
+  palette: "colorblind"             # palette name (or null)
 
 data:
   groupings:
-    genotype:
+    genotype:                       # grouping name used by plots
       group_ab:
-        - { "Group A": ["g1", "g2"] }
-        - { "Group B": ["g3"] }
+        - {"Group A": ["g1", "g2"]} # label -> members
+        - {"Group B": ["g3"]}
   aliases:
     design_id:
-      "ctrl": "control"
+      "ctrl": "control"             # rename raw labels
 
 pipeline:
   runtime:
-    strict: true
+    strict: true                    # fail fast on missing inputs/columns
   steps:
-    - id: ingest
-      uses: ingest/synergy_h1
+    - id: ingest                    # unique step id
+      uses: ingest/synergy_h1       # plugin to read plate reader files
       with:
-        channels: ["OD600", "CFP", "YFP"]
-        auto_roots: ["./inputs"]
-        auto_pick: "single"
+        channels: ["OD600", "CFP"]  # measurements to ingest
+        auto_roots: ["./inputs"]    # where to look for raw files
+        auto_pick: "single"         # pick one file if multiple
 
     - id: merge_map
-      uses: merge/sample_map
+      uses: merge/sample_map        # attach metadata columns
       reads:
-        df: "ingest/df"
-        sample_map: "file:./metadata.xlsx"
+        df: "ingest/df"             # from prior step
+        sample_map: "file:./inputs/metadata.xlsx"  # metadata file
 
     - id: ratio_yfp_od600
       uses: transform/ratio
-      reads: { df: "merge_map/df" }
-      with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
-      writes: { df: "ratios/yfp_od600" }
+      reads: { df: "merge_map/df" } # input dataframe
+      with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }  # new column
+      writes: { df: "ratios/yfp_od600" }  # stable label for downstream
 
 plots:
   presets:
-    - plots/plate_reader_yfp_full
+    - plots/plate_reader_yfp_full   # bundle of plot specs
   defaults:
     reads:
-      df: "ratios/yfp_od600"
+      df: "ratios/yfp_od600"        # default plot input
   specs:
     - id: plot_ts
       uses: plot/time_series
       with:
-        x: time
-        y: ["OD600", "YFP"]
-        hue: treatment
+        x: time                     # x-axis column
+        y: ["OD600", "YFP"]         # y-series
+        hue: treatment              # color by treatment
 
 exports:
   defaults:
     reads:
-      df: "ratios/yfp_od600"
+      df: "ratios/yfp_od600"        # default export input
   specs:
     - id: export_ratios
       uses: export/csv
-      with: { path: "ratios.csv" }
+      with: { path: "ratios.csv" }  # file name under outputs/exports/
 
 notebook:
-  preset: "notebook/eda"
+  preset: "notebook/eda"            # default notebook scaffold
 ```
 
 ---

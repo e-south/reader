@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_notebook_scaffold.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

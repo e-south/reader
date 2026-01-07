@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_ratio_plugin.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 from types import SimpleNamespace
 
 import pandas as pd

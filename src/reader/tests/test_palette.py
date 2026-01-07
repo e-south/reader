@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_palette.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 import pytest
 
 from reader.lib.microplates.style import PaletteBook

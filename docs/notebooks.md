@@ -73,9 +73,10 @@ uv run reader notebook experiments/my_experiment/config.yaml
 
 What the scaffolded notebook includes:
 
-* artifact discovery via `outputs/manifests/manifest.json` (fallback: `outputs/artifacts/**/df.parquet`)
+* artifact discovery via `outputs/manifests/manifest.json`; if the manifest is missing or unreadable, the notebook
+  will warn and scan `outputs/artifacts/**/df.parquet` to populate the dataset list
 * a dataset dropdown labeled “Dataset (artifact df.parquet)” (defaults to the most downstream step when possible)
-* a canonical `df_active` variable populated from the selected artifact (polars preferred, pandas fallback)
+* a canonical `df_active` variable populated from the selected artifact (polars required to read parquet)
 * dataset status (backend, rows/columns, parquet path)
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
 * a top header with experiment id/title, resolved outputs path, and a conditions/treatments table
@@ -96,6 +97,10 @@ Notes:
 * `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
 * Common presets include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda` (SFXI vec8 builder scaffold; requires a `transform/sfxi` step or existing SFXI artifacts).
+* The SFXI preset draws a red dashed induction marker on the time-series plot when an induction time can be inferred from artifacts:
+  - preferred: an explicit column like `induction_time_h` (or `induction_time`) in the tidy dataframe
+  - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time
+  If neither is present, the induction marker is omitted.
 * If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new <FILE>` to create a second notebook.
 * If `--preset` is omitted, reader uses `notebook.preset` from `config.yaml` if provided; otherwise it auto-selects `notebook/eda` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
 

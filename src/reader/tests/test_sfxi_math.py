@@ -9,13 +9,16 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
+import json
 import math
+import warnings
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_bool_dtype, is_float_dtype
 
 from reader.lib.sfxi.math import compute_vec8
+from reader.lib.sfxi.run import run_sfxi
 
 
 def _mk(df_rows):
@@ -495,3 +498,101 @@ def test_vec8_contract_critical_dtypes_are_numeric():
     # v*, y* and r_logic should be float-like
     for c in ["v00", "v10", "v01", "v11", "y00_star", "y10_star", "y01_star", "y11_star", "r_logic"]:
         assert is_float_dtype(out[c])
+
+
+# ------------------------ flat-logic warnings + eta ------------------------
+
+
+def _flat_logic_tidy():
+    tmap = {"00": "A", "10": "B", "01": "C", "11": "D"}
+    rows = []
+    for design in ["REF", "D1"]:
+        for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):
+            for channel in ["YFP/CFP", "YFP/OD600"]:
+                rows.append(
+                    {
+                        "position": f"{pos}-{design}",
+                        "time": 12.0,
+                        "channel": channel,
+                        "value": 5.0 if channel == "YFP/CFP" else 10.0,
+                        "treatment": tmap[corner],
+                        "design_id": design,
+                    }
+                )
+    return pd.DataFrame(rows), tmap
+
+
+def test_flat_logic_warns_and_sets_v(tmp_path):
+    df, tmap = _flat_logic_tidy()
+    cfg = {
+        "design_by": ["design_id"],
+        "time_column": "time",
+        "response": {"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
+        "treatment_map": tmap,
+        "target_time_h": 12.0,
+        "time_mode": "exact",
+        "time_tolerance_h": 0.01,
+        "reference": {"design_id": "REF", "stat": "mean"},
+        "log2_offset_delta": 0.25,
+    }
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        run_sfxi(df, cfg, tmp_path)
+
+    msgs = [str(w.message) for w in caught]
+    assert any("flat logic" in m.lower() for m in msgs)
+
+    vec8_path = tmp_path / "sfxi" / "vec8.csv"
+    log_path = tmp_path / "sfxi" / "sfxi_log.json"
+    vec8 = pd.read_csv(vec8_path)
+    assert not vec8.empty
+    assert np.allclose(vec8[["v00", "v10", "v01", "v11"]].to_numpy(dtype=float), 0.25)
+    assert bool(vec8["flat_logic"].iloc[0]) is True
+    assert np.allclose(vec8["intensity_log2_offset_delta"].to_numpy(dtype=float), 0.25)
+
+    with open(log_path, "r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+    assert payload.get("flat_logic_count", 0) == 1
+    assert payload.get("flat_logic_fraction", 0.0) > 0.0
+
+
+def test_logic_minmax_uses_span_plus_eta():
+    u = np.array([0.0, 0.0005, 0.0015, 0.0020], dtype=float)
+    a = np.power(2.0, u)
+    pts_logic = _mk(
+        [
+            {
+                "design_id": "D1",
+                "b00": float(a[0]),
+                "b10": float(a[1]),
+                "b01": float(a[2]),
+                "b11": float(a[3]),
+            }
+        ]
+    )
+    pts_int = _mk([{"design_id": "D1", "b00": 1.0, "b10": 1.0, "b01": 1.0, "b11": 1.0}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1.0} for c in ("00", "10", "01", "11")])
+
+    vec8 = compute_vec8(
+        points_logic=pts_logic,
+        points_intensity=pts_int,
+        per_corner_intensity=per_corner,
+        design_by=["design_id"],
+        reference_design_id="REF",
+        reference_stat="mean",
+        eps_ratio=1e-12,
+        eps_range=1e-3,
+        eps_ref=1e-12,
+        eps_abs=0.0,
+        ref_add_alpha=0.0,
+        log2_offset_delta=0.0,
+    )
+
+    row = vec8.iloc[0]
+    span = float(u.max() - u.min())
+    eta = 1e-3
+    expected_v11 = span / (span + eta)
+    assert bool(row["flat_logic"]) is False
+    assert np.isclose(row["v00"], 0.0)
+    assert np.isclose(row["v11"], expected_v11, rtol=0, atol=1e-9)

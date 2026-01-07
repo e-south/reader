@@ -37,7 +37,7 @@ pipeline:
       uses: "merge/sample_map"
       reads:
         df: "raw/df"
-        sample_map: "file:./metadata.xlsx"
+        sample_map: "file:./inputs/metadata.xlsx"
       writes: { df: "merged/df" }
 
     - id: "ratio_yfp_cfp"

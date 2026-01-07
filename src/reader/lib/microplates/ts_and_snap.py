@@ -172,6 +172,7 @@ def plot_ts_and_snap(
         fig_groups = [("all", [None])]
 
     figures: list[PlotFigure] = []
+    snap_fallbacks: list[dict[str, object]] = []
     for label, members in fig_groups:
         d = work.copy()
         if group_col and members != [None]:
@@ -320,7 +321,6 @@ def plot_ts_and_snap(
             )
             snapped = snapped[snapped["channel"].astype(str) == ch_snap].copy()
             if snapped.empty:
-                log = logging.getLogger("reader")
                 fb = nearest_time_per_key(snap, target_time=float(snap_time), keys=key_cols, tol=float("inf"))
                 snapped = fb[fb["channel"].astype(str) == ch_snap].copy()
                 if not snapped.empty:
@@ -328,13 +328,12 @@ def plot_ts_and_snap(
                     t_rep = uniq[0] if len(uniq) == 1 else float(pd.Series(uniq).median())
                     delta = abs(float(t_rep) - float(snap_time))
                     preview = ", ".join(f"{t:.2f}" for t in uniq[:6]) + (" …" if len(uniq) > 6 else "")
-                    log.info(
-                        "[warn]ts_and_snap:snapshot[/warn] • requested t=%.2f h; no rows within ±%.2f h — "
-                        "using nearest available per key (times=%s; Δ≈%.2f h)",
-                        float(snap_time),
-                        float(snap_time_tolerance),
-                        preview,
-                        float(delta),
+                    snap_fallbacks.append(
+                        {
+                            "label": str(label),
+                            "times": preview,
+                            "delta": float(delta),
+                        }
                     )
             times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna() if not snapped.empty else pd.Series([])
             t_used = float(times_used.median()) if not times_used.empty else float(snap_time)
@@ -489,4 +488,20 @@ def plot_ts_and_snap(
             else:
                 save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
                 plt.close(fig)
+    if snap_fallbacks:
+        log = logging.getLogger("reader")
+        sample = []
+        for row in snap_fallbacks[:3]:
+            sample.append(f"{row['label']}: times={row['times']} Δ≈{float(row['delta']):.2f} h")
+        extra = f" (+{len(snap_fallbacks) - 3} more)" if len(snap_fallbacks) > 3 else ""
+        log.info(
+            "[warn]ts_and_snap:snapshot[/warn] • requested t=%.2f h; no rows within ±%.2f h for %d group(s) — "
+            "using nearest available per key (examples: %s%s)",
+            float(snap_time),
+            float(snap_time_tolerance),
+            len(snap_fallbacks),
+            "; ".join(sample),
+            extra,
+        )
+
     return figures

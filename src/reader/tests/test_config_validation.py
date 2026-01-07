@@ -124,7 +124,7 @@ def test_validate_rejects_unexpected_reads(tmp_path: Path) -> None:
         {
             "id": "merge_map",
             "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "plate_map": "file:./metadata.xlsx"},
+            "reads": {"df": "ingest/df", "plate_map": "file:./inputs/metadata.xlsx"},
         },
     ]
     path = _write_config(tmp_path, data)
@@ -140,7 +140,7 @@ def test_validate_rejects_unknown_read_labels(tmp_path: Path) -> None:
         {
             "id": "merge_map",
             "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
+            "reads": {"df": "ingest/df", "sample_map": "file:./inputs/metadata.xlsx"},
         },
     ]
     path = _write_config(tmp_path, data)

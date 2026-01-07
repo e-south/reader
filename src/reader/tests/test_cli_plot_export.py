@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_cli_plot_export.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -128,11 +137,13 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
         {
             "id": "merge_map",
             "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
+            "reads": {"df": "ingest/df", "sample_map": "file:./inputs/metadata.xlsx"},
         },
     ]
     cfg_path = _write_config(tmp_path, cfg)
-    file_path = tmp_path / "metadata.xlsx"
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    file_path = inputs_dir / "metadata.xlsx"
     file_path.write_text("stub", encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(app, ["validate", str(cfg_path)])
@@ -151,7 +162,7 @@ def test_validate_no_files_skips_checks(tmp_path: Path) -> None:
         {
             "id": "merge_map",
             "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": "file:./metadata.xlsx"},
+            "reads": {"df": "ingest/df", "sample_map": "file:./inputs/metadata.xlsx"},
         },
     ]
     cfg_path = _write_config(tmp_path, cfg)

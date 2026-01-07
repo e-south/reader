@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_artifacts_manifest.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 import json
 
 import pytest

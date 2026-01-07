@@ -16,7 +16,6 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 from pydantic import Field
-
 from reader.core.registry import Plugin, PluginConfig
 from reader.lib.sfxi.run import build_vec8_from_tidy
 
@@ -125,16 +124,32 @@ class SFXITransform(Plugin):
 
             # replicate summary per design (logic & intensity)
             try:
-                nL = sel_logic.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
-                    columns={"n00": "n00_L", "n10": "n10_L", "n01": "n01_L", "n11": "n11_L"}
+                nL = sel_logic.points.set_index(idx_cols)[
+                    ["n00", "n10", "n01", "n11"]
+                ].rename(
+                    columns={
+                        "n00": "n00_L",
+                        "n10": "n10_L",
+                        "n01": "n01_L",
+                        "n11": "n11_L",
+                    }
                 )
-                nI = sel_int.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
-                    columns={"n00": "n00_I", "n10": "n10_I", "n01": "n01_I", "n11": "n11_I"}
+                nI = sel_int.points.set_index(idx_cols)[
+                    ["n00", "n10", "n01", "n11"]
+                ].rename(
+                    columns={
+                        "n00": "n00_I",
+                        "n10": "n10_I",
+                        "n01": "n01_I",
+                        "n11": "n11_I",
+                    }
                 )
                 n_join = nL.join(nI, how="outer").reset_index()
                 n_join = n_join.sort_values(idx_cols)
                 for _, rr in n_join.iterrows():
-                    key = " | ".join(f"{c}={rr[c]}" for c in sfxi_cfg.design_by if c in rr.index)
+                    key = " | ".join(
+                        f"{c}={rr[c]}" for c in sfxi_cfg.design_by if c in rr.index
+                    )
                     L = [
                         int(rr.get("n00_L", 0) or 0),
                         int(rr.get("n10_L", 0) or 0),
@@ -147,7 +162,12 @@ class SFXITransform(Plugin):
                         int(rr.get("n01_I", 0) or 0),
                         int(rr.get("n11_I", 0) or 0),
                     ]
-                    ctx.logger.info("sfxi • %s: replicates (logic)=%s  (intensity)=%s", key, L, I_counts)
+                    ctx.logger.info(
+                        "sfxi • %s: replicates (logic)=%s  (intensity)=%s",
+                        key,
+                        L,
+                        I_counts,
+                    )
             except Exception:
                 pass
 
@@ -156,15 +176,27 @@ class SFXITransform(Plugin):
                 rep_map = {}
                 if "nL" in locals() and not nL.empty:
                     for k, vals in (
-                        nL.reset_index().set_index(idx_cols)[["n00_L", "n10_L", "n01_L", "n11_L"]].iterrows()
+                        nL.reset_index()
+                        .set_index(idx_cols)[["n00_L", "n10_L", "n01_L", "n11_L"]]
+                        .iterrows()
                     ):
                         rep_map[k] = tuple(int(x) for x in vals.to_list())
                 sort_cols = [c for c in [label_col] if c in vec8.columns]
                 lines = []
                 for _, r in vec8.sort_values(sort_cols).iterrows():
                     key = " | ".join(f"{c}={r[c]}" for c in sort_cols)
-                    v = [float(r["v00"]), float(r["v10"]), float(r["v01"]), float(r["v11"])]
-                    y = [float(r["y00_star"]), float(r["y10_star"]), float(r["y01_star"]), float(r["y11_star"])]
+                    v = [
+                        float(r["v00"]),
+                        float(r["v10"]),
+                        float(r["v01"]),
+                        float(r["v11"]),
+                    ]
+                    y = [
+                        float(r["y00_star"]),
+                        float(r["y10_star"]),
+                        float(r["y01_star"]),
+                        float(r["y11_star"]),
+                    ]
                     rlog = float(r.get("r_logic", np.nan))
                     rmin = r.get("r_logic_min", np.nan)
                     rmax = r.get("r_logic_max", np.nan)
@@ -182,7 +214,9 @@ class SFXITransform(Plugin):
                         f"span_log2={float(span):.3g}){rep_txt}"
                     )
                 if lines:
-                    more = "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"
+                    more = (
+                        "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"
+                    )
                     ctx.logger.info(
                         "sfxi • vec8 per design  "
                         "[muted](v from log2(%s) min-max; y* is log2 of anchor-normalized %s)[/muted]\n%s%s",

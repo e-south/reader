@@ -215,6 +215,9 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
 
     # 4b) Attach 'sequence' if available in the tidy inputs
     vec8 = _attach_sequence(vec8, tidy_df, design_by=cfg.design_by)
+    # 4b.5) Persist intensity log2 offset delta for downstream enforcement
+    if "intensity_log2_offset_delta" not in vec8.columns:
+        vec8["intensity_log2_offset_delta"] = float(cfg.log2_offset_delta)
     # Carry additional metadata columns if requested
     idx_cols = [c for c in cfg.design_by if c in tidy_df.columns]
     for col in cfg.carry_metadata or []:
@@ -237,6 +240,18 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
     # 5) Compose a log payload (unchanged)
     # Compute r_logic distribution for quick provenance metrics
     r_desc = vec8_out["r_logic"].describe().to_dict() if "r_logic" in vec8_out.columns else {}
+    flat_count = 0
+    flat_fraction = 0.0
+    flat_samples: list[str] = []
+    if "flat_logic" in vec8_out.columns and len(vec8_out) > 0:
+        flat_mask = vec8_out["flat_logic"].astype(bool)
+        flat_count = int(flat_mask.sum())
+        flat_fraction = float(flat_count) / float(len(vec8_out)) if len(vec8_out) else 0.0
+        label_col = cfg.design_by[0] if cfg.design_by else None
+        if label_col and label_col in vec8_out.columns and flat_count > 0:
+            flat_samples = (
+                vec8_out.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
+            )
 
     log_payload: dict[str, Any] = {
         "name": cfg.name,
@@ -274,14 +289,16 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
         "eps": {
             "ratio": cfg.eps_ratio,
             "range": cfg.eps_range,
+            "eta": cfg.eps_range,
             "ref": cfg.eps_ref,
             "abs": cfg.eps_abs,
         },
         "semantics": {
             "v": {
                 "source_channel": cfg.response.logic_channel,
-                "transform": "u = log2(L); v = (u - min(u))/(max(u)-min(u))",
+                "transform": "u = log2(L); v = (u - min(u))/((max(u)-min(u)) + eta)",
                 "persisted_units": "unit-interval [0,1] (not log)",
+                "eta": cfg.eps_range,
             },
             "y_star": {
                 "source_channel": cfg.response.intensity_channel,
@@ -303,6 +320,9 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
             "points_intensity": int(len(sel_int.points)),
             "vec8": int(len(vec8_out)),
         },
+        "flat_logic_count": int(flat_count),
+        "flat_logic_fraction": float(flat_fraction),
+        "flat_logic_sample_design_ids": flat_samples,
     }
 
     return SFXIBuildResult(
@@ -325,6 +345,30 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
     # Emit soft warnings (once, from logic selection)
     if result.sel_logic.time_warning:
         warnings.warn(f"SFXI: {result.sel_logic.time_warning}", stacklevel=2)
+
+    # Emit flat-logic warning (aggregate, per run)
+    if "flat_logic" in result.vec8.columns and len(result.vec8) > 0:
+        flat_mask = result.vec8["flat_logic"].astype(bool)
+        flat_count = int(flat_mask.sum())
+        if flat_count > 0:
+            label_col = result.cfg.design_by[0] if result.cfg.design_by else None
+            sample = []
+            if label_col and label_col in result.vec8.columns:
+                sample = (
+                    result.vec8.loc[flat_mask, label_col]
+                    .astype(str)
+                    .dropna()
+                    .drop_duplicates()
+                    .head(5)
+                    .tolist()
+                )
+            frac = float(flat_count) / float(len(result.vec8)) if len(result.vec8) else 0.0
+            sample_note = f" Sample design_ids: {', '.join(sample)}." if sample else ""
+            warnings.warn(
+                f"SFXI: flat logic detected for {flat_count}/{len(result.vec8)} designs "
+                f"({frac:.1%}).{sample_note}",
+                stacklevel=2,
+            )
 
     # Write
     cfg = result.cfg

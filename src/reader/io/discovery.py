@@ -15,7 +15,19 @@ from pathlib import Path
 
 DEFAULT_ROOTS = ("./inputs", "./raw", "./raw_data")
 DEFAULT_INCLUDE = ("*.xlsx", "*.xls")
-DEFAULT_EXCLUDE = ("~$*", "._*", "#*#", "*.tmp", "*.temp", "*.bak")
+DEFAULT_EXCLUDE = (
+    "~$*",
+    "._*",
+    "#*#",
+    "*.tmp",
+    "*.temp",
+    "*.bak",
+    "metadata.*",
+    "metadata_filtered.*",
+    "sample_map.*",
+    "sample_metadata.*",
+    "plate_map.*",
+)
 
 
 def _iter_candidates(root: Path, patterns: Sequence[str], recursive: bool) -> Iterable[Path]:

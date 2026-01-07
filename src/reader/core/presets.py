@@ -28,14 +28,14 @@ _PRESETS: dict[str, dict[str, Any]] = {
         ],
     },
     "plate_reader/sample_map": {
-        "description": "Merge plate sample map from metadata.xlsx.",
+        "description": "Merge plate sample map from inputs/metadata.xlsx.",
         "steps": [
             {
                 "id": "merge_map",
                 "uses": "merge/sample_map",
                 "reads": {
                     "df": "ingest/df",
-                    "sample_map": "file:./metadata.xlsx",
+                    "sample_map": "file:./inputs/metadata.xlsx",
                 },
             }
         ],

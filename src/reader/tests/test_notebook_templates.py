@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_notebook_templates.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 import ast
 
 from reader.core import notebooks

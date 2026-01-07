@@ -1,6 +1,6 @@
 ## Generating SFXI 8-vectors in `reader`
 
-This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader (for more details on SFXI see [here](https://github.com/e-south/dnadesign/blob/main/src/dnadesign/opal/docs/setpoint_fidelity_x_intensity.md)). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design* in the fixed state order **00, 10, 01, 11**.
+This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader (for more details on SFXI see [here](https://github.com/e-south/dnadesign/blob/main/src/dnadesign/opal/docs/setpoint_fidelity_x_intensity.md)). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design_id* in the fixed state order **00, 10, 01, 11**.
 
 8-vector definition:
 
@@ -13,6 +13,7 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
 
 ### Contents
 
+1. [Reader hand-off to OPAL](#reader-hand-off-to-opal)
 1. [Scope (vec8 vs objective)](#scope-vec8-vs-objective)
 2. [Relevant modules](#relevant-modules)
 3. [Input contract](#input-contract)
@@ -23,6 +24,21 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
 8. [Output](#output)
 9. [Configuration entry point](#configuration-entry-point)
 10. [Usage demo](#usage-demo)
+
+---
+
+### reader hand-off to OPAL
+
+- **reader** is the source of truth for vec8 math. It computes:
+  * `u = log2(ratio)` for logic, then per-design min–max into `v ∈ [0,1]`.
+  * `y* = log2(y_linear + delta)` for intensity, where `y_linear` is reference-normalized.
+
+- **OPAL is the source of truth for the scalar objective.** It expects `y*_..` columns already in log2 and converts back to linear using its `intensity_log2_offset_delta` parameter.
+  * **Important:** The `delta` used in **reader** (`log2_offset_delta`) must match OPAL’s `intensity_log2_offset_delta`.
+  * **Reader makes this explicit** by writing an `intensity_log2_offset_delta` column into every vec8 row. When `log2_offset_delta` is left at its default (`0.0`), this column will be all zeros.
+  * **If OPAL uses a different delta, recovered linear intensities and downstream scores will be inconsistent.** Keep the values in sync (preferably by validating against the vec8 column at ingest time).
+
+- The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader/lib/sfxi/*` and adds pipeline plumbing and logging.
 
 ---
 
@@ -89,7 +105,7 @@ SFXI uses a small set of numerical stabilizers; these values are echoed in `sfxi
 * `eps_ref` (denominator floor for anchors)
 * `eps_abs` (numerator additive)
 * `ref_add_alpha` (α, additive to anchors)
-* `log2_offset_delta` (δ, additive inside the log argument)
+* `log2_offset_delta` (δ, additive inside the log argument). If this is `0.0` (default), the exported `intensity_log2_offset_delta` column will be all zeros.
 
 ---
 
@@ -483,62 +499,49 @@ The following example uses the SFXI-capable experiment
 
 1) Run the pipeline to generate tidy+map and vec8 outputs:
 
-```bash
-uv run reader run experiments/2025/20250915_sfxi_pSingle_ref/config.yaml
-```
+    ```bash
+    uv run reader run experiments/2025/20250915_sfxi_pSingle_ref/config.yaml
+    ```
 
-This writes:
+    This writes:
 
-* `outputs/sfxi/vec8.csv`
-* `outputs/sfxi/sfxi_log.json`
+    * `outputs/sfxi/vec8.csv`
+    * `outputs/sfxi/sfxi_log.json`
 
-2) Export the vec8 table via `reader export` (example):
+2) Export the vec8 table via `reader export`. Add export specs to the experiment `config.yaml` (adjust the `reads` path to match your SFXI step id):
 
-Add export specs to the experiment `config.yaml` (adjust the `reads` path to match your SFXI step id):
+    ```yaml
+    exports:
+      specs:
+        - id: export_vec8_xlsx
+          uses: export/xlsx
+          reads: { df: sfxi_vec8/vec8 }
+          with: { path: "sfxi/vec8.xlsx", sheet_name: "vec8" }
+    ```
 
-```yaml
-exports:
-  specs:
-    - id: export_vec8_xlsx
-      uses: export/xlsx
-      reads: { df: sfxi_vec8/vec8 }
-      with: { path: "sfxi/vec8.xlsx", sheet_name: "vec8" }
-```
+    Then run exports:
 
-Then run exports:
+    ```bash
+    uv run reader export experiments/2025/20250915_sfxi_pSingle_ref/config.yaml
+    ```
 
-```bash
-uv run reader export experiments/2025/20250915_sfxi_pSingle_ref/config.yaml
-```
+    This writes:
 
-This writes:
-
-* `outputs/exports/sfxi/vec8.xlsx`
-
-XLSX export uses `openpyxl` (included in reader core deps; run `uv sync` if missing).
+    * `outputs/exports/sfxi/vec8.xlsx`
 
 3) Launch the SFXI notebook preset (interactive vec8 inspection + export panel):
 
-```bash
-uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --preset notebook/sfxi_eda --mode edit
-```
+    ```bash
+    uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --preset notebook/sfxi_eda --mode edit
+    ```
 
-Notes:
+    Notes:
 
-* The notebook preset is gated: it only scaffolds when the experiment has a valid
-  `transform/sfxi` step or existing SFXI artifacts.
-* You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
+    * The notebook preset is gated: it only scaffolds when the experiment has a valid
+      `transform/sfxi` step or existing SFXI artifacts.
+    * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 
 4) (Optional) export vec8 from the notebook UI:
-
-In the notebook’s **Export vec8** section, keep the default `Export XLSX path` (for example
-`outputs/exports/sfxi/vec8.xlsx`) and click **Export vec8 (CSV + XLSX)**. This writes:
-
-* `outputs/exports/sfxi/vec8.csv`
-* `outputs/exports/sfxi/vec8.xlsx`
-* `outputs/exports/sfxi/sfxi_log.json`
-
-XLSX export uses `openpyxl` (included in reader core deps; run `uv sync` if missing).
 
 ---
 

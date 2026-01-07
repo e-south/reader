@@ -1,3 +1,12 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/test_cli_artifacts.py
+
+Author(s): Eric J. South
+--------------------------------------------------------------------------------
+"""
+
 from typer.testing import CliRunner
 
 from reader.core.cli import app

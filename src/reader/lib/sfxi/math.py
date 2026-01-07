@@ -12,7 +12,7 @@ Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per design.
     # r_logic is the dynamic range on the linear scale (after ε guard),
     # while v is obtained by log2 + min-max on the *log* scale.
     if max(u)-min(u) <= eps_range: v_i = 0.25
-    else: v = (u - u_min) / (u_max - u_min)
+    else: v = (u - u_min) / ((u_max - u_min) + eta)
 
 - y* are computed from the INTENSITY CHANNEL (e.g., YFP/OD600):
     y_linear_i = (b_i + eps_abs) / max(anchor_i + ref_add_alpha, eps_ref)
@@ -36,7 +36,7 @@ def _safe_log2(x: np.ndarray | float, eps: float) -> np.ndarray | float:
 
 
 def _logic_minmax_from_four(
-    vals: tuple[float, float, float, float], *, eps_ratio: float, eps_range: float
+    vals: tuple[float, float, float, float], *, eps_ratio: float, eps_range: float, eta: float
 ) -> tuple[np.ndarray, float, bool, float, float, float, str, str]:
     a = np.array(vals, dtype=float)
     # ε‑guarded linear values (used for r_logic = max/min)
@@ -46,7 +46,13 @@ def _logic_minmax_from_four(
     umin, umax = float(np.min(u)), float(np.max(u))
     span = umax - umin
     flat = bool(span <= eps_range)
-    v = np.full(4, 0.25, dtype=float) if flat else np.clip((u - umin) / span, 0.0, 1.0)
+    if flat:
+        v = np.full(4, 0.25, dtype=float)
+    else:
+        denom = span + float(eta)
+        if not np.isfinite(denom) or denom <= 0.0:
+            raise ValueError(f"SFXI: invalid logic min-max denom (span={span}, eta={eta}).")
+        v = np.clip((u - umin) / denom, 0.0, 1.0)
     M = float(np.max(a_guard))
     m = float(np.min(a_guard))
     r = (M / m) if M > 0 and m > 0 else 1.0
@@ -103,6 +109,7 @@ def compute_vec8(
             (float(row["b00_logic"]), float(row["b10_logic"]), float(row["b01_logic"]), float(row["b11_logic"])),
             eps_ratio=eps_ratio,
             eps_range=eps_range,
+            eta=eps_range,
         )
 
         anchors: dict[str, float] = {"00": np.nan, "10": np.nan, "01": np.nan, "11": np.nan}
