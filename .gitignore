@@ -42,7 +42,7 @@ out/
 .ipynb_checkpoints/
 
 # Marimo
-**/__marimo__/cache/
+**/__marimo__/
 
 # -----------------------------------------------------------------------------
 # Python build & tooling
@@ -68,8 +68,9 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.nox/
 .cache/
+.matplotlib_cache/
+.nox/
 .coverage
 .coverage.*
 htmlcov/
@@ -139,10 +140,8 @@ archived/
 # Raw instrument dumps and generated outputs (anywhere)
 raw/
 raw_data/
-inputs/
 **/raw/
 **/raw_data/
-**/inputs/
 
 outputs/
 **/outputs/

@@ -12,9 +12,12 @@ Author(s): Eric J. South
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from reader.domain.sfxi.math import compute_vec8
-from reader.domain.sfxi.selection import cornerize_and_aggregate
+from reader.lib.sfxi.api import load_sfxi_config
+from reader.lib.sfxi.math import compute_vec8
+from reader.lib.sfxi.reference import resolve_reference_design_id
+from reader.lib.sfxi.selection import cornerize_and_aggregate
 
 
 def _tidy(rows):
@@ -67,7 +70,6 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
         "target_time_h": 12.0,
         "time_mode": "nearest",
         "time_tolerance_h": 0.25,
-        "on_missing_time": "error",
         "require_all_corners_per_design": True,
     }
 
@@ -93,7 +95,7 @@ def test_missing_reference_design_id_raises_in_compute_vec8():
     pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 3, "b11": 4}])
     pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
 
-    # anchors table lacks the requested 'REF' design entirely
+    # anchors table lacks the requested 'REF' design_id entirely
     per_corner = pd.DataFrame(
         [
             {"design_id": "OTHER", "corner": "00", "y_mean": 5},
@@ -124,59 +126,197 @@ def test_missing_reference_design_id_raises_in_compute_vec8():
         assert "missing anchor" in str(e).lower() or "invalid anchor" in str(e).lower()
 
 
-def test_time_tolerance_warning_is_emitted():
-    # single time at 0.0; target is 0.5 with tol 0.1 -> warning
-    TMAP = {"00": "t0", "10": "t1", "01": "t2", "11": "t3"}
+def _rows_for_times(times, tmap, *, channel, design="G1", value_base=1.0):
+    rows = []
+    corners = ["00", "10", "01", "11"]
+    for t in times:
+        for pos, corner in zip(["A1", "B1", "C1", "D1"], corners, strict=False):
+            rows.append(
+                {
+                    "position": f"{pos}-{t}",
+                    "time": float(t),
+                    "channel": channel,
+                    "value": value_base + float(corners.index(corner)),
+                    "treatment": tmap[corner],
+                    "design_id": design,
+                }
+            )
+    return rows
+
+
+def test_time_mode_variants_and_tolerance_warnings():
+    tmap = {"00": "A", "10": "B", "01": "C", "11": "D"}
+    df = _tidy(_rows_for_times([1.0, 3.0], tmap, channel="YFP/CFP"))
+    common = {
+        "design_by": ["design_id"],
+        "treatment_map": tmap,
+        "case_sensitive": True,
+        "time_column": "time",
+        "time_tolerance_h": 0.5,
+        "require_all_corners_per_design": True,
+    }
+
+    sel_nearest = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="nearest", **common)
+    assert np.isclose(sel_nearest.chosen_time, 3.0)
+    assert sel_nearest.time_warning  # outside tolerance => warning recorded
+
+    sel_last = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="last_before", **common)
+    assert np.isclose(sel_last.chosen_time, 1.0)
+
+    sel_first = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="first_after", **common)
+    assert np.isclose(sel_first.chosen_time, 3.0)
+
+    with pytest.raises(ValueError, match="could not choose a global time"):
+        cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.0, time_mode="exact", **common)
+
+
+def test_treatment_alias_selection_and_case_sensitivity():
+    tmap = {"00": "EtOH", "10": "PMS", "01": "Cipro", "11": "NEG"}
     rows = []
     for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):
         rows.append(
             {
                 "position": pos,
-                "time": 0.0,
+                "time": 1.0,
                 "channel": "YFP/CFP",
                 "value": 1.0,
-                "treatment": TMAP[corner],
+                "treatment": f"raw_{corner}",
+                "treatment_alias": tmap[corner],
                 "design_id": "G1",
             }
         )
     df = _tidy(rows)
 
-    res = cornerize_and_aggregate(
+    sel = cornerize_and_aggregate(
         df,
         design_by=["design_id"],
-        treatment_map=TMAP,
-        case_sensitive=True,
-        time_column="time",
-        channel="YFP/CFP",
-        target_time_h=0.5,
-        time_mode="nearest",
-        time_tolerance_h=0.1,
-        on_missing_time="error",
-        require_all_corners_per_design=True,
-    )
-    assert res.time_warning is not None
-
-
-def test_sfxi_selection_does_not_inject_unexpected_columns():
-    df = _tidy(
-        [
-            {"position": "A1", "time": 1.0, "channel": "YFP/CFP", "value": 1.0, "treatment": "t00", "design_id": "X"},
-            {"position": "A1", "time": 1.0, "channel": "YFP/CFP", "value": 2.0, "treatment": "t10", "design_id": "X"},
-            {"position": "A1", "time": 1.0, "channel": "YFP/CFP", "value": 3.0, "treatment": "t01", "design_id": "X"},
-            {"position": "A1", "time": 1.0, "channel": "YFP/CFP", "value": 4.0, "treatment": "t11", "design_id": "X"},
-        ]
-    )
-    res = cornerize_and_aggregate(
-        df,
-        design_by=["design_id"],
-        treatment_map={"00": "t00", "10": "t10", "01": "t01", "11": "t11"},
+        treatment_map=tmap,
         case_sensitive=True,
         time_column="time",
         channel="YFP/CFP",
         target_time_h=1.0,
-        time_mode="nearest",
+        time_mode="exact",
         time_tolerance_h=0.1,
-        on_missing_time="error",
         require_all_corners_per_design=True,
     )
-    assert set(res.per_corner.columns) == {"design_id", "corner", "time", "y_mean", "y_sd", "y_n"}
+    assert not sel.points.empty  # matched via treatment_alias
+
+    rows_case = []
+    for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):
+        rows_case.append(
+            {
+                "position": f"{pos}-case",
+                "time": 1.0,
+                "channel": "YFP/CFP",
+                "value": 1.0,
+                "treatment": tmap[corner].lower(),
+                "design_id": "G1",
+            }
+        )
+    df_case = _tidy(rows_case)
+    with pytest.raises(ValueError, match="no rows matched"):
+        cornerize_and_aggregate(
+            df_case,
+            design_by=["design_id"],
+            treatment_map=tmap,
+            case_sensitive=True,
+            time_column="time",
+            channel="YFP/CFP",
+            target_time_h=1.0,
+            time_mode="exact",
+            time_tolerance_h=0.1,
+            require_all_corners_per_design=True,
+        )
+    # case-insensitive should pass
+    sel_ci = cornerize_and_aggregate(
+        df_case,
+        design_by=["design_id"],
+        treatment_map=tmap,
+        case_sensitive=False,
+        time_column="time",
+        channel="YFP/CFP",
+        target_time_h=1.0,
+        time_mode="exact",
+        time_tolerance_h=0.1,
+        require_all_corners_per_design=True,
+    )
+    assert not sel_ci.points.empty
+
+
+def test_duplicate_treatment_map_values_and_missing_corners():
+    tmap_dup = {"00": "A", "10": "A", "01": "B", "11": "C"}
+    df = _tidy(_rows_for_times([1.0], tmap_dup, channel="YFP/CFP"))
+    with pytest.raises(ValueError, match="duplicate treatment_map value"):
+        cornerize_and_aggregate(
+            df,
+            design_by=["design_id"],
+            treatment_map=tmap_dup,
+            case_sensitive=True,
+            time_column="time",
+            channel="YFP/CFP",
+            target_time_h=1.0,
+            time_mode="exact",
+            time_tolerance_h=0.1,
+            require_all_corners_per_design=True,
+        )
+
+    tmap = {"00": "A", "10": "B", "01": "C", "11": "D"}
+    rows = _rows_for_times([1.0], tmap, channel="YFP/CFP")
+    rows = [r for r in rows if r["treatment"] != "D"]  # drop corner 11
+    df_missing = _tidy(rows)
+    with pytest.raises(ValueError, match="missing corners"):
+        cornerize_and_aggregate(
+            df_missing,
+            design_by=["design_id"],
+            treatment_map=tmap,
+            case_sensitive=True,
+            time_column="time",
+            channel="YFP/CFP",
+            target_time_h=1.0,
+            time_mode="exact",
+            time_tolerance_h=0.1,
+            require_all_corners_per_design=True,
+        )
+
+
+def test_reference_design_id_resolution_raw_and_alias():
+    df_unique = pd.DataFrame(
+        {
+            "design_id": ["REF_RAW", "G1"],
+            "design_id_alias": ["REF", "G1"],
+        }
+    )
+    assert resolve_reference_design_id(df_unique, design_by=["design_id"], ref_label="REF") == "REF_RAW"
+
+    df = pd.DataFrame(
+        {
+            "design_id": ["REF_RAW", "G1", "G2"],
+            "design_id_alias": ["REF", "G1", "REF"],
+        }
+    )
+    assert resolve_reference_design_id(df, design_by=["design_id"], ref_label="REF_RAW") == "REF_RAW"
+    assert resolve_reference_design_id(df, design_by=["design_id"], ref_label="G1") == "G1"
+    with pytest.raises(ValueError, match="resolves via"):
+        resolve_reference_design_id(df, design_by=["design_id"], ref_label="REF")
+
+
+def _base_sfxi_cfg():
+    return {
+        "response": {"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
+        "treatment_map": {"00": "A", "10": "B", "01": "C", "11": "D"},
+        "reference": {"design_id": "REF"},
+    }
+
+
+def test_load_sfxi_config_requires_design_id():
+    cfg = _base_sfxi_cfg()
+    cfg["design_by"] = ["genotype"]
+    with pytest.raises(ValueError, match="design_by must start with 'design_id'"):
+        load_sfxi_config(cfg)
+
+
+def test_load_sfxi_config_rejects_reference_genotype():
+    cfg = _base_sfxi_cfg()
+    cfg["reference"] = {"genotype": "REF"}
+    with pytest.raises(ValueError, match="reference.genotype"):
+        load_sfxi_config(cfg)

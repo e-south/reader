@@ -11,16 +11,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
+from reader.core.errors import ExecutionError
 from reader.core.registry import Plugin, PluginConfig
 
 
 class ExportCsvCfg(PluginConfig):
     path: str = Field(..., description="Output CSV path (relative to outputs/ if not absolute).")
     index: bool = False
+    sep: str = ","
+    na_rep: str | None = None
 
 
 class ExportCsv(Plugin):
@@ -30,18 +34,21 @@ class ExportCsv(Plugin):
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "any"}
+        # Accept any DataFrame artifact; validate type at runtime.
+        return {"df": "none"}
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
         return {"files": "none"}
 
-    def run(self, ctx, inputs, cfg: ExportCsvCfg):
-        df: pd.DataFrame = inputs["df"]
-        out = Path(cfg.path)
-        if not out.is_absolute():
-            out = Path(ctx.outputs_dir) / out
-        out.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(out, index=cfg.index)
-        ctx.logger.info("export/csv → %s", out)
-        return {"files": [out]}
+    def run(self, ctx, inputs: dict[str, Any], cfg: ExportCsvCfg) -> dict[str, Any]:
+        df = inputs["df"]
+        if not isinstance(df, pd.DataFrame):
+            raise ExecutionError(f"export/csv expects a DataFrame input, got {type(df).__name__}")
+        out_path = Path(cfg.path)
+        if not out_path.is_absolute():
+            out_path = ctx.exports_dir / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path, index=cfg.index, sep=cfg.sep, na_rep=cfg.na_rep)
+        ctx.logger.info("export • csv → %s", out_path)
+        return {"files": [out_path]}

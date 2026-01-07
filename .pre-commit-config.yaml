@@ -1,3 +1,4 @@
+# .pre-commit-config.yaml
 minimum_pre_commit_version: "3.7.0"
 
 repos:
@@ -14,5 +15,5 @@ repos:
     hooks:
       # Run lint (with autofix) before formatting
       - id: ruff-check
-        args: [--fix]
+        args: [ --fix ]
       - id: ruff-format

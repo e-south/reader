@@ -13,12 +13,12 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-from reader.core.errors import TransformError
 from reader.core.registry import Plugin, PluginConfig
 
 
 class BlankCfg(PluginConfig):
     method: str = "disregard"  # disregard | subtract
+    capture_blanks: bool = True
 
 
 def _detect_blanks(df: pd.DataFrame) -> pd.DataFrame:
@@ -30,7 +30,7 @@ def _detect_blanks(df: pd.DataFrame) -> pd.DataFrame:
                 mask = mask | out[col].astype(bool)
             except Exception:
                 mask = mask | out[col].astype(str).str.lower().isin({"true", "1", "t", "yes"})
-    for col in ["treatment", "design_id", "sample_type"]:
+    for col in ["treatment", "genotype", "sample_type"]:
         if col in out.columns:
             mask = mask | out[col].astype(str).str.contains("blank", case=False, na=False)
     return out[mask].copy() if isinstance(mask, pd.Series) else out.iloc[0:0].copy()
@@ -56,11 +56,7 @@ class BlankCorrection(Plugin):
             return {"df": df, "blanks": blanks}
         if cfg.method == "subtract":
             if blanks.empty:
-                raise TransformError(
-                    "blank_correction • method=subtract requires detected blanks, but none were found. "
-                    "Add explicit blank rows (mark with is_blank/blank or include 'blank' in treatment/design_id), "
-                    "or switch to method=disregard."
-                )
+                return {"df": df, "blanks": blanks}
             corr = (
                 blanks.assign(value=pd.to_numeric(blanks["value"], errors="coerce"))
                 .groupby("channel")["value"]
@@ -73,4 +69,4 @@ class BlankCorrection(Plugin):
             out["value"] = out["value"] - out["__blank__"].fillna(0.0)
             out = out.drop(columns="__blank__")
             return {"df": out, "blanks": blanks}
-        raise TransformError(f"blank_correction: unknown method {cfg.method!r} (expected: disregard|subtract)")
+        raise ValueError(f"unknown method {cfg.method}")

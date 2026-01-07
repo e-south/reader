@@ -3,58 +3,63 @@
 <reader project>
 src/reader/plugins/ingest/flow_cytometer.py
 
+Flow cytometer ingest for .fcs files (snapshot data).
+
 Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandas as pd
+from pydantic import Field
 
 from reader.core.errors import ParseError
 from reader.core.registry import Plugin, PluginConfig
-from reader.parsers.discovery import DEFAULT_EXCLUDE, DEFAULT_ROOTS, discover_files
-from reader.parsers.flow_cytometer import parse_fcs_events
+from reader.io.discovery import DEFAULT_EXCLUDE, DEFAULT_ROOTS, discover_files
 
-DEFAULT_FCS_INCLUDE = ("*.fcs",)
+DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
 
 
 class FlowCytometerCfg(PluginConfig):
     # auto-discovery knobs
     auto_roots: list[str] | None = None
-    auto_include: list[str] = list(DEFAULT_FCS_INCLUDE)
-    auto_exclude: list[str] = list(DEFAULT_EXCLUDE)
+    auto_include: list[str] = Field(default_factory=lambda: list(DEFAULT_FCS_INCLUDE))
+    auto_exclude: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     auto_pick: Literal["single", "latest", "merge"] = "merge"
     auto_recursive: bool = False
 
-    # parsing knobs
-    channels: list[str] | None = None
+    # channel naming / output shaping
+    channel_name_field: str = "pns"  # field in FCS channel metadata (e.g., pns or pnn)
     channel_map: Mapping[str, str] | None = None
-    channel_name_field: Literal["pns", "pnn"] = "pns"
-    include_source_file: bool = True
+    drop_channels: list[str] | None = None
+    sample_id_from: Literal["stem", "name"] = "stem"
+    time_value: float = 0.0
 
     # logging
     print_summary: bool = True
 
 
-class FlowCytometer(Plugin):
-    """FCS ingest (event-level tidy table)."""
+class FlowCytometerIngest(Plugin):
+    """Ingest .fcs files into tidy.v1 (snapshot; time is constant)."""
 
     key = "flow_cytometer"
     category = "ingest"
     ConfigModel = FlowCytometerCfg
 
     @classmethod
-    def input_contracts(cls):
-        return {"raw?": "none"}  # file(s) optional; can auto-discover
+    def input_contracts(cls) -> Mapping[str, str]:
+        return {"raw?": "none"}  # optional explicit file input
 
     @classmethod
-    def output_contracts(cls):
-        return {"df": "cyto.events.v1"}
+    def output_contracts(cls) -> Mapping[str, str]:
+        return {"df": "tidy.v1"}
 
     def _auto_pick_one(self, files: list[Path], mode: str) -> Path:
         if mode == "single":
@@ -81,7 +86,8 @@ class FlowCytometer(Plugin):
         )
         if not files:
             raise ParseError(
-                f"No .fcs discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude})."
+                f"No .fcs files discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude}).\n"
+                "Hint: put raw files under ./inputs (default), or set auto_roots / reads.raw explicitly."
             )
         if cfg.auto_pick in ("single", "latest"):
             return [self._auto_pick_one(files, cfg.auto_pick)]
@@ -89,57 +95,70 @@ class FlowCytometer(Plugin):
             return files
         raise ParseError(f"Unknown auto_pick mode {cfg.auto_pick!r} (expected: single|latest|merge)")
 
-    def _log_df_summary(self, ctx, df: pd.DataFrame, files_count: int):
-        try:
-            n_rows = len(df)
-            n_events = df["event_index"].nunique()
-            n_samples = df["sample_id"].nunique()
-            chans = sorted(df["channel"].astype(str).unique().tolist())
-            ctx.logger.info(
-                "Flow cytometer ingest • files=%d • rows=%d • events=%d • samples=%d • channels=%d",
-                files_count,
-                n_rows,
-                n_events,
-                n_samples,
-                len(chans),
-            )
-            if chans:
-                preview = ", ".join(chans[:8]) + (" …" if len(chans) > 8 else "")
-                ctx.logger.info("channels: %s", preview)
-        except Exception:
-            pass
+    def _channel_names(self, channels: dict[int, dict[str, object]], *, field: str) -> list[str]:
+        names: list[str] = []
+        for key in sorted(channels):
+            meta = channels[key]
+            name = meta.get(field)
+            if name is None:
+                raise ParseError(
+                    f"Channel metadata missing field '{field}' for channel {key}. Use channel_name_field: pns or pnn."
+                )
+            names.append(str(name))
+        return names
 
     def run(self, ctx, inputs, cfg: FlowCytometerCfg):
         try:
-            if "raw" in inputs:
-                raw = inputs["raw"]
-                files = [
-                    Path(p) for p in (raw if isinstance(raw, Sequence) and not isinstance(raw, str | Path) else [raw])
-                ]
-            else:
-                files = self._discover(ctx, cfg)
+            from flowio import FlowData
+        except Exception as e:  # pragma: no cover - environment-specific
+            raise ParseError(
+                "flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry"
+            ) from e
 
-            frames: list[pd.DataFrame] = []
-            for f in files:
-                df = parse_fcs_events(
-                    f,
-                    channels=cfg.channels,
-                    channel_map=cfg.channel_map,
-                    channel_name_field=cfg.channel_name_field,
-                    include_source_file=cfg.include_source_file,
+        files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
+        field = str(cfg.channel_name_field).lower().strip()
+        channel_map = {str(k): str(v) for k, v in (cfg.channel_map or {}).items()}
+        drop_channels = {str(c) for c in (cfg.drop_channels or [])}
+
+        frames: list[pd.DataFrame] = []
+        for f in files:
+            flow = FlowData(str(f))
+            event_count = int(flow.event_count)
+            channel_count = int(flow.channel_count)
+            values = np.asarray(flow.events, dtype=float).reshape(event_count, channel_count)
+            channel_names = self._channel_names(flow.channels, field=field)
+            if len(channel_names) != channel_count:
+                raise ParseError(
+                    f"Channel count mismatch: metadata has {len(channel_names)} names, events have {channel_count}."
                 )
-                frames.append(df)
+            if channel_map:
+                mapped = [channel_map.get(name, name) for name in channel_names]
+                if len(set(mapped)) != len(mapped):
+                    raise ParseError("channel_map produces duplicate channel names; ensure a 1:1 mapping.")
+                channel_names = mapped
+            wide = pd.DataFrame(values, columns=channel_names)
+            wide["event_index"] = range(event_count)
+            long = wide.melt(id_vars=["event_index"], var_name="channel", value_name="value")
+            if drop_channels:
+                long = long[~long["channel"].isin(drop_channels)]
+            sample_id = f.stem if cfg.sample_id_from == "stem" else f.name
+            long["sample_id"] = sample_id
+            long["position"] = sample_id
+            long["time"] = float(cfg.time_value)
+            frames.append(long)
 
-            if not frames:
-                raise ParseError("No frames parsed from selected files")
-            out = pd.concat(frames, ignore_index=True)
+        if not frames:
+            raise ParseError("No cytometer frames parsed from selected files")
+        out = pd.concat(frames, ignore_index=True)
 
-            if cfg.print_summary:
-                self._log_df_summary(ctx, out, files_count=len(files))
-
-        except ParseError:
-            raise
-        except Exception as e:
-            raise ParseError(f"Flow cytometer ingest failed: {e}") from e
+        if cfg.print_summary:
+            with suppress(Exception):
+                ctx.logger.info(
+                    "flow_cytometer ingest • files=%d • rows=%d • channels=%d • samples=%d",
+                    len(files),
+                    len(out),
+                    out["channel"].nunique(),
+                    out["sample_id"].nunique(),
+                )
 
         return {"df": out}

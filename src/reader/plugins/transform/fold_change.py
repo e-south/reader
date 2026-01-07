@@ -24,7 +24,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.plotting.microplates.base import (
+from reader.lib.microplates.base import (
     nearest_time_per_key,
     smart_string_numeric_key,
 )
@@ -35,7 +35,7 @@ from reader.plotting.microplates.base import (
 def _synonyms_for(col: str) -> list[str]:
     """
     Accept both raw and alias names interchangeably when matching override rules.
-    e.g., 'design_id' ↔ 'design_id_alias'
+    e.g., 'genotype' ↔ 'genotype_alias'
     """
     names = [str(col)]
     if str(col).endswith("_alias"):
@@ -89,7 +89,7 @@ class FoldChangeCfg(PluginConfig):
     log2fc_column: str = "log2FC"
 
     # Attach extra metadata columns if present (won't be required by contract, just carried through)
-    attach_metadata: list[str] = Field(default_factory=list)
+    attach_metadata: list[str] = Field(default_factory=lambda: ["batch"])
 
     # ----- helpers kept here for cohesion (stateless static methods) -----
 
@@ -364,7 +364,6 @@ class FoldChange(Plugin):
                     row: dict[str, Any] = {
                         "target": target,
                         "time": float(t),
-                        "time_selected": float(r["time_used"]) if pd.notna(r["time_used"]) else float("nan"),
                         "treatment": trt_out,
                         cfg.fc_column: fc,
                         cfg.log2fc_column: log2fc,

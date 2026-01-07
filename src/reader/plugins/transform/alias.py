@@ -25,11 +25,13 @@ class AliasCfg(PluginConfig):
       <column_name>:
         <raw_value>: <alias_value>
         ...
+    aliases_ref:   reference key under data.aliases (used if aliases is omitted)
     in_place:      if true, mutate <column_name> directly; else create <column_name>_alias
     case_insensitive: map using casefold() on incoming values (keys in 'aliases' are matched case-insensitively)
     """
 
-    aliases: Mapping[str, Mapping[str, str]]
+    aliases: Mapping[str, Mapping[str, str]] | None = None
+    aliases_ref: str | None = None
     in_place: bool = False
     case_insensitive: bool = True
     suffix: str = "_alias"
@@ -73,32 +75,56 @@ class AliasTransform(Plugin):
         examples: list[str],
         unused_rules_preview: list[str],
     ) -> None:
-        # Pretty, indented INFO block with newlines (Rich handler preserves formatting)
-        ex_block = "\n".join(f"      • {s}" for s in examples) if examples else "      —"
-        unused_block = "\n".join(f"      • {s}" for s in unused_rules_preview) if unused_rules_preview else "      —"
+        unused_count = len(unused_rules_preview)
         ctx.logger.info(
-            (
-                "alias • [accent]%s[/accent] → %s\n"
-                "   rules: %d  used: %d  changed_rows: %d  uniques: %d\n"
-                "   examples:\n%s\n"
-                "   unused_rule_keys:\n%s"
-            ),
+            "alias • [accent]%s[/accent] → %s • rules=%d used=%d changed=%d uniques=%d%s",
             col,
             out_col,
             rules_total,
             used_rules,
             changed_rows,
             uniq_vals,
-            ex_block,
-            unused_block,
+            f" • unused={unused_count}" if unused_count else "",
         )
+        if examples or unused_rules_preview:
+            ex_block = "\n".join(f"      • {s}" for s in examples) if examples else "      —"
+            unused_block = (
+                "\n".join(f"      • {s}" for s in unused_rules_preview) if unused_rules_preview else "      —"
+            )
+            ctx.logger.debug(
+                ("alias details • %s → %s\n   examples:\n%s\n   unused_rule_keys:\n%s"),
+                col,
+                out_col,
+                ex_block,
+                unused_block,
+            )
 
     # ---------------- main ----------------
 
     def run(self, ctx, inputs, cfg: AliasCfg):
         df: pd.DataFrame = inputs["df"].copy()
 
-        for col, mapping in cfg.aliases.items():
+        aliases = cfg.aliases
+        if aliases is None:
+            if not cfg.aliases_ref:
+                raise ValueError("alias: provide with.aliases or with.aliases_ref")
+            if not ctx.aliases or cfg.aliases_ref not in ctx.aliases:
+                raise ValueError(f"alias: data.aliases missing key '{cfg.aliases_ref}'")
+            aliases = ctx.aliases[cfg.aliases_ref]
+        if not isinstance(aliases, Mapping):
+            raise ValueError("alias: aliases must be a mapping of column -> {raw: alias}")
+        if aliases:
+            if all(not isinstance(v, Mapping) for v in aliases.values()):
+                if not cfg.aliases_ref:
+                    raise ValueError(
+                        "alias: aliases_ref is required when aliases is a raw->alias mapping (single column)"
+                    )
+                aliases = {cfg.aliases_ref: aliases}
+        elif cfg.aliases_ref:
+            # allow empty alias maps to create <col>_alias columns without changes
+            aliases = {cfg.aliases_ref: {}}
+
+        for col, mapping in aliases.items():
             if col not in df.columns:
                 raise ValueError(f"alias: column '{col}' not found in dataframe")
 

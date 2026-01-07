@@ -15,8 +15,8 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import Field
 
+from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
 from reader.core.registry import Plugin, PluginConfig
-from reader.plotting.microplates.time_series import plot_time_series
 
 
 class TimeSeriesCfg(PluginConfig):
@@ -36,6 +36,7 @@ class TimeSeriesCfg(PluginConfig):
     ci_alpha: float = 0.15
     legend_loc: str = "upper left"
     show_replicates: bool = False
+    filename: str | None = None
 
 
 class TimeSeriesPlot(Plugin):
@@ -51,9 +52,10 @@ class TimeSeriesPlot(Plugin):
     def output_contracts(cls) -> Mapping[str, str]:
         return {"files": "none"}
 
-    def run(self, ctx, inputs, cfg: TimeSeriesCfg):
+    def render(self, ctx, inputs, cfg: TimeSeriesCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
+        from reader.lib.microplates.time_series import plot_time_series
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
@@ -69,12 +71,12 @@ class TimeSeriesPlot(Plugin):
                     if not cfg.group_on:
                         raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
                     col, set_name = str(cfg.group_on), ref
-                cat = (ctx.collections or {}).get(col)
+                cat = (ctx.groupings or {}).get(col)
                 if not isinstance(cat, dict) or set_name not in cat:
                     opts = ", ".join(sorted((cat or {}).keys())) if isinstance(cat, dict) else "—"
                     raise ValueError(
                         f"Unknown pool_sets reference '{ref}'. "
-                        "Define it under collections.<column>.<set_name> in config. "
+                        "Define it under data.groupings.<column>.<set_name> in config. "
                         f"(available for {col!r}: {opts})"
                     )
                 return cat[set_name]
@@ -82,10 +84,10 @@ class TimeSeriesPlot(Plugin):
 
         resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
 
-        files = plot_time_series(
+        return plot_time_series(
             df=df,
             blanks=blanks,
-            output_dir=ctx.plots_dir,
+            output_dir=None,
             x=cfg.x,
             y=cfg.y,
             hue=cfg.hue,
@@ -104,7 +106,10 @@ class TimeSeriesPlot(Plugin):
             ci_alpha=cfg.ci_alpha,
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
+            filename=cfg.filename,
         )
-        if not files:
-            ctx.logger.warning("plot/time_series produced no files (empty data after filtering).")
-        return {"files": files}
+
+    def run(self, ctx, inputs, cfg: TimeSeriesCfg):
+        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
+        saved = save_plot_figures(figures, ctx.plots_dir)
+        return {"files": [str(p) for p in saved] if saved else None}

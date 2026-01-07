@@ -21,11 +21,12 @@ dependencies = [
   "openpyxl>=3.1",
   "seaborn>=0.13",
   "pillow>=10.0",
-  "flowio>=1.4",
+  "polars>=1.36.1",
+  "openai>=2.14.0",
 ]
 
 [project.optional-dependencies]
-design = [
+dnadesign = [
   "dnadesign",
 ]
 
@@ -41,6 +42,9 @@ include = ["reader*"]
 namespaces = false
 
 [dependency-groups]
+cytometry = [
+    "flowio>=1.4.0",
+]
 dev = [
   "pytest>=8.2",
   "ruff>=0.4",
@@ -48,6 +52,8 @@ dev = [
 ]
 
 notebooks = [
+  "altair>=6.0.0",
+  "duckdb>=1.4.3",
   "marimo>=0.18.4",
 ]
 
@@ -96,5 +102,5 @@ addopts = [
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
-  "outputs", "plots", "raw_data", "inputs", "_scratch"
+  "outputs", "plots", "raw_data", "_scratch"
 ]

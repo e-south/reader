@@ -1,31 +1,116 @@
+schema: "reader/v2"
+
 experiment:
   id: "001"
-  name: "biosensor_panel_M9_glu"
+  title: "biosensor_panel_M9_glu"
+
+paths:
   outputs: "./outputs"
+  plots: "plots"
+  exports: "exports"
+  notebooks: "notebooks"
+
+plotting:
   palette: "colorblind"
-  plots_dir: "plots"
 
-presets:
-  - plate_reader/basic
-  - sfxi/promote
-  - sfxi/vec8
+data:
+  groupings:
+    design_id:
+      group_ab:
+        - { "Group A": ["g1","g2"] }
+        - { "Group B": ["g3"] }
+  aliases: {}
 
-report_presets:
-  - plots/plate_reader_yfp_full
+pipeline:
+  runtime:
+    strict: true
+  steps:
+    - id: "ingest"
+      uses: "ingest/synergy_h1"
+      with:
+        mode: mixed
+        channels: ["OD600","CFP","YFP"]
+        add_sheet: true
+      writes: { df: "raw/df" }
 
-overrides:
-  ingest:
-    with:
-      mode: mixed
-      channels: ["OD600", "CFP", "YFP"]
-      sheet_names: ["Plate 1 - Sheet1"]
-  sfxi_vec8:
-    with:
-      target_time_h: 10.0
-      treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
-      reference: { design_id: "REF", stat: "mean" }
-report_overrides:
-  plot_time_series:
-    with:
-      hue: "treatment"
-      group_on: "design_id"
+    - id: "merge_map"
+      uses: "merge/sample_map"
+      reads:
+        df: "raw/df"
+        sample_map: "file:./inputs/metadata.xlsx"
+      writes: { df: "merged/df" }
+
+    - id: "ratio_yfp_cfp"
+      uses: "transform/ratio"
+      reads: { df: "merged/df" }
+      with: { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
+      writes: { df: "ratio_yfp_cfp/df" }
+
+    - id: "ratio_yfp_od600"
+      uses: "transform/ratio"
+      reads: { df: "ratio_yfp_cfp/df" }
+      with: { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
+      writes: { df: "ratio_yfp_od600/df" }
+
+    - id: "blank"
+      uses: "transform/blank_correction"
+      reads: { df: "ratio_yfp_od600/df" }
+      with: { method: "subtract", capture_blanks: true }
+      writes: { df: "corrected/df", blanks: "corrected/blanks" }
+
+    - id: "overflow"
+      uses: "transform/overflow_handling"
+      reads: { df: "corrected/df" }
+      with: { action: "max", clip_quantile: 0.999 }
+      writes: { df: "final/df" }
+
+    - id: "sfxi"
+      uses: "transform/sfxi"
+      reads: { df: "final/df" }
+      with:
+        response: { logic_channel: "YFP/CFP", intensity_channel: "YFP/OD600" }
+        design_by: ["design_id"]
+        time_mode: "nearest"
+        target_time_h: 10
+        time_tolerance_h: 0.5
+        treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
+        reference: { design_id: "REF", stat: "mean" }
+      writes: { vec8: "sfxi/vec8" }
+
+plots:
+  defaults:
+    reads:
+      df: "final/df"
+  specs:
+    - id: "plot_ts"
+      uses: "plot/time_series"
+      reads: { blanks: "corrected/blanks" }
+      with:
+        x: "time"
+        y: ["OD600","CFP","YFP"]
+        hue: "treatment"
+        group_on: "design_id"
+        pool_sets: "design_id:group_ab"
+        fig:
+          rc:
+            savefig_dpi: 300
+
+    - id: "logic"
+      uses: "plot/logic_symmetry"
+      with:
+        response_channel: "YFP/CFP"
+        design_by: ["design_id"]
+        batch_col: "batch"
+        treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
+        aggregation: { replicate_stat: "mean", uncertainty: "halo" }
+        encodings: { size_by: "log_r", hue: null, alpha_by: "batch" }
+        output: { format: ["pdf"], dpi: 300, figsize: [7,6] }
+
+exports:
+  defaults:
+    reads:
+      df: "final/df"
+  specs:
+    - id: "export_final"
+      uses: "export/csv"
+      with: { path: "final.csv" }

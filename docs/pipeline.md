@@ -1,289 +1,249 @@
-## reader pipelines (config.yaml)
+# Configuring pipelines
 
-A `config.yaml` is the “repeatable” part of the workbench: it encodes pipeline steps you want to run the same way each time (parsing, metadata merges, common transforms) and optional report steps (plots/exports). Notebooks can then do added exploratory work alongside this.
+Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots, notebooks, and exports.
 
-Config validation is strict: unknown keys are errors.
+### Contents
 
-### The basics
+1. [Schema marker](#schema-marker)
+2. [Top-level structure](#top-level-structure)
+3. [Step shape](#step-shape)
+4. [Example configuration](#example-configuration)
 
-An experiment is a directory. Paths in `reads: file:...` are resolved relative to the config file.
+---
 
-```bash
-experiments/<year>/<yyyymmdd_shortslug>/
-  config.yaml
-  inputs/
-  metadata.xlsx
-  notebooks/
-  outputs/
-````
+### Schema marker
 
-If a single experiment uses multiple instruments, you may subdivide:
-
-```
-inputs/
-  plate_reader/
-  cytometer/
-```
-
-Run the pipeline:
-
-```bash
-uv run reader init  experiments/<exp> --preset plate_reader/basic
-uv run reader explain  experiments/<exp>/config.yaml
-uv run reader validate experiments/<exp>/config.yaml
-uv run reader config   experiments/<exp>/config.yaml
-uv run reader run      experiments/<exp>/config.yaml
-```
-
-Run reports (plots/exports) without re‑running the pipeline:
-
-```bash
-uv run reader report experiments/<exp>/config.yaml
-```
-
-Inspect the config schema:
-
-```bash
-uv run reader config --schema
-```
-
-Generate a minimal config from a preset:
-
-```bash
-uv run reader presets plate_reader/basic --write > config.yaml
-```
-
-You can also include report presets at init/template time:
-
-```bash
-uv run reader init experiments/<exp> --preset plate_reader/basic --report-preset plots/plate_reader_yfp_full
-```
-
-Top‑level keys are intentionally small: `experiment`, `collections` (optional), `steps`, and optional `reports`.
-`presets`/`overrides` (and `report_presets`/`report_overrides`) are optional sugar.
-
-### Presets (optional)
-
-Presets let you reuse common step bundles without bloating each config.
-List them:
-
-```bash
-uv run reader presets
-uv run reader presets plate_reader/synergy_h1
-```
-
-Inline a preset in `steps` and override only what differs:
+Every config must declare the schema at the top:
 
 ```yaml
-overrides:
-  ingest:
-    with:
-      mode: auto
-      channels: ["OD600", "CFP", "YFP"]
-      sheet_names: ["Plate 1 - Sheet1"]
-
-steps:
-  - preset: plate_reader/synergy_h1
-  - preset: plate_reader/sample_map
-  - id: aliases
-    uses: transform/alias
-    reads: { df: merge_map/df }
-    with:
-      aliases: { design_id: {}, treatment: {} }
-      in_place: false
-      case_insensitive: true
-  - preset: plate_reader/blank_overflow
-  - preset: plate_reader/ratios_yfp_cfp_od600
-
-report_presets:
-  - plots/plate_reader_yfp_full
+schema: "reader/v2"
 ```
 
-### Reports (optional)
+---
 
-Reports are **deliverables** built from pipeline artifacts. They run after `steps` and are
-restricted to `plot/*` and `export/*` plugins. Reports **must** read artifacts
-(no `file:` reads).
-
-You can also use `report_presets:` and `report_overrides:` the same way you use
-`presets:` and `overrides:` for pipeline steps.
+### Top-level structure
 
 ```yaml
-reports:
-  - preset: plots/plate_reader_yfp_full
-  - id: sfxi_vec8_csv
-    uses: export/csv
-    reads: { df: "sfxi_vec8/df" }
-    with: { path: "exports/sfxi_vec8.csv" }
-```
+schema: "reader/v2"
 
-### Outputs: artifacts + revisions
-
-**reader** writes into `experiment.outputs`.
-
-```bash
-outputs/
-  manifest.json
-  report_manifest.json
-  reader.log
-  artifacts/
-    <step_id>.<plugin_key>/        # first revision
-      <output>.parquet
-      meta.json
-    <step_id>.<plugin_key>__r2/    # later revision if config changed
-      <output>.parquet
-      meta.json
-  plots/                           # optional; controlled by experiment.plots_dir
-```
-
-Use:
-
-```bash
-uv run reader artifacts experiments/<exp>/config.yaml
-```
-
-`reader` also appends a short command log to `JOURNAL.md` in the experiment directory
-when you run `explain`, `validate`, `run`, or `run-step`.
-
-`report_manifest.json` tracks files emitted by report steps (plots/exports).
-
-### Example config
-
-Below is an example configuration showing a Synergy H1 ingest, sample-map merge, a small transform chain, and two plots.
-
-How to intepret the configuration:
-
-* Steps run in order.
-* `uses:` chooses a plugin (`<category>/<key>`).
-* `reads:` binds plugin inputs to either:
-
-  * a prior output (`<step_id>/<output>`, e.g. `ingest/df`)
-  * a file path: `file:./something.xlsx` (only when the plugin input contract is `none`)
-* `with:` is plugin-specific configuration.
-
-```yaml
 experiment:
-  id: "20250512_panel_M9_glu_araBAD_pspA_marRAB_umuDC_alaS_phoA"
-  name: "Retrons panel — M9 + glucose"
-  outputs: "./outputs"
-  palette: "colorblind"   # optional: plot palette name
-  plots_dir: "plots"      # optional: set to null to write plots into outputs/
+  id: <string>                 # required
+  title: <string | null>       # optional
 
-steps:
-  - id: "ingest"
-    uses: "ingest/synergy_h1"
-    with:
-      mode: "mixed"
-      channels: ["OD600", "CFP", "YFP"]
-      sheet_names: ["Plate 1 - Sheet1"]
-      add_sheet: true
-      auto_roots: ["./inputs"]
-      auto_include: ["*.xlsx", "*.xls"]
-      auto_exclude: ["~$*", "._*", "#*#", "*.tmp"]
-      auto_pick: "single"      # single | latest | merge
+paths:
+  outputs: "./outputs"        # default
+  plots: "plots"              # default (relative to outputs; use "." to flatten)
+  exports: "exports"          # default (relative to outputs; use "." to flatten)
+  notebooks: "notebooks"      # default (relative to outputs)
 
-  - id: "merge_map"
-    uses: "merge/sample_map"
-    reads:
-      df: "ingest/df"
-      sample_map: "file:./metadata.xlsx"
+plotting:
+  palette: "colorblind"       # string or null
 
-  - id: "blank"
-    uses: "transform/blank_correction"
-    reads: { df: "merge_map/df" }
-    with:  { method: "disregard" }
+data:
+  groupings: {}                # optional (used by some plots)
+  aliases: {}                  # optional (alias maps for transform/alias)
 
-  - id: "overflow"
-    uses: "transform/overflow_handling"
-    reads: { df: "blank/df" }
-    with:  { action: "max", clip_quantile: 0.999 }
+pipeline:
+  presets: []                  # optional
+  runtime: {}                  # optional (e.g., strict: true)
+  overrides: {}                # optional per-step overrides by id
+  steps: []                    # required (use empty list if none)
 
-  - id: "ratio_yfp_cfp"
-    uses: "transform/ratio"
-    reads: { df: "overflow/df" }
-    with:  { name: "YFP/CFP", numerator: "YFP", denominator: "CFP" }
+plots:
+  presets: []                  # optional
+  defaults:                    # optional defaults applied to all plot specs
+    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    with:  {}                  # shallow-merged into spec.with
+  overrides: {}                # optional per-plot overrides by id
+  specs: []                    # optional (unordered)
 
-  - id: "ratio_yfp_od600"
-    uses: "transform/ratio"
-    reads: { df: "ratio_yfp_cfp/df" }
-    with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }
+exports:
+  presets: []                  # optional
+  defaults:                    # optional defaults applied to all export specs
+    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    with:  {}
+  overrides: {}                # optional per-export overrides by id
+  specs: []                    # optional (unordered)
 
-reports:
-  - id: "plot_time_series"
-    uses: "plot/time_series"
-    reads: { df: "ratio_yfp_od600/df" }
-    with:
-      x: "time"
-      y: ["OD600", "YFP", "YFP/CFP", "YFP/OD600"]
-      hue: "treatment"
-      subplots: "group"
-      add_sheet_line: true
-      fig: { dpi: 300 }
-
-  - id: "plot_snapshot_barplot"
-    uses: "plot/snapshot_barplot"
-    reads: { df: "ratio_yfp_od600/df" }
-    with:
-      x: "design_id"
-      y: ["OD600", "YFP/OD600"]
-      hue: "treatment"
-      time: 14
-      fig: { figsize: [10, 6], dpi: 300 }
+notebook:
+  preset: "notebook/basic"     # optional (default for `reader notebook`)
 ```
 
-**Note:** The `transform/sfxi` step and the `plot/logic_symmetry` report both require `design_id` and `treatment`.
-Use `validator/to_tidy_plus_map` after your metadata merge to emit `tidy+map.v2` before those steps.
+Notes:
 
-### Collections + pool_sets (grouping helper)
+- `paths.outputs` is resolved relative to the config file and stored as an absolute path.
+- `paths.plots`, `paths.exports`, and `paths.notebooks` must be relative to `paths.outputs`.
+- `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
+- Step ids must be unique across pipeline, plots, and exports.
+- Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
+- Plot/export defaults apply after preset expansion and before per-id overrides.
 
-Some plot plugins accept `pool_sets` to group categories. Define them once under `collections`
-and reference them by name:
+---
+
+### Outputs layout
+
+By default, outputs are written under `outputs/`:
+
+```
+outputs/
+  artifacts/
+  plots/
+  exports/
+  notebooks/
+  manifests/
+    manifest.json
+    plots_manifest.json
+    exports_manifest.json
+```
+- `notebook.preset` controls the default preset used by `reader notebook` when `--preset` is omitted.
+
+---
+
+### Step shape
+
+A step object (used in `pipeline.steps`, `plots.specs`, and `exports.specs`) looks like:
 
 ```yaml
-collections:
-  design_id:
-    panel_a:
-      - { "Group 1": ["D1", "D2"] }
-      - { "Group 2": ["D3"] }
-
-reports:
-  - id: "plot_ts"
-    uses: "plot/time_series"
-    reads: { df: "ratio_yfp_od600/df" }
-    with:
-      group_on: "design_id"
-      pool_sets: "design_id:panel_a"
+- id: <string>
+  uses: "<category>/<key>"     # ingest/merge/transform/validator/plot/export
+  reads: {}                    # optional (input bindings)
+  with:  {}                    # optional (plugin params)
+  writes: {}                   # optional (stable output labels)
 ```
 
-### Running slices
+Rules:
 
-Useful during iteration:
+- `reads` can bind inputs to a prior output (e.g., `merge/df`) or to a file path using `file:`.
+- `writes` maps outputs to stable labels (so downstream steps can avoid tight coupling to step ids).
+- `pipeline` steps may not use `plot/*` or `export/*` plugins.
+- `plots` specs must use `plot/*` plugins and are unordered.
+- `exports` specs must use `export/*` plugins and are unordered.
 
-```bash
-uv run reader run <CONFIG> --dry-run
-uv run reader run <CONFIG> --step 1
-uv run reader run <CONFIG> --resume-from ingest --until merge_map
-uv run reader run-step merge_map --config <CONFIG>
-uv run reader config <CONFIG>
+---
+
+### Inputs + metadata placement
+
+By default, place **raw inputs and metadata under `inputs/`**. Auto-discovery for ingest plugins
+(`ingest/synergy_h1`, `ingest/flow_cytometer`) scans `inputs/` by default and **excludes common
+metadata filenames** to avoid accidental ingestion:
+
+- `metadata.*`
+- `metadata_filtered.*`
+- `sample_map.*`
+- `sample_metadata.*`
+- `plate_map.*`
+
+If your metadata uses different names, either pass an explicit `reads.raw` file path or add those
+names to the ingest step’s `auto_exclude` list.
+
+**Aliases in steps**
+
+The `transform/alias` plugin can pull alias maps from `data.aliases` using `aliases_ref`:
+
+```yaml
+- id: alias_design_id
+  uses: transform/alias
+  reads: { df: "final/df" }
+  with:
+    aliases_ref: "design_id"     # pulls from data.aliases.design_id
 ```
 
-### Exit codes
+For multiple columns, add multiple alias steps (one per column):
 
-- `0` success
-- `2` config invalid (schema, plugin config, or registry issues)
-- `3` contract mismatch
-- `4` input/merge/transform validation failures
-- `5` runtime/internal errors
+```yaml
+- id: alias_design_id
+  uses: transform/alias
+  reads: { df: "final/df" }
+  with:
+    aliases_ref: "design_id"
+
+- id: alias_treatment
+  uses: transform/alias
+  reads: { df: "alias_design_id/df" }
+  with:
+    aliases_ref: "treatment"
+```
+
+---
+
+### Example configuration
+
+```yaml
+schema: "reader/v2"                 # required schema marker
+
+experiment:
+  id: "20250512_panel_M9_glu"       # short unique experiment id
+  title: "Cell line panel — M9"     # optional display name
+
+paths:
+  outputs: "./outputs"              # base output directory (relative to config)
+  plots: "plots"                    # subdir under outputs/
+  exports: "exports"                # subdir under outputs/
+  notebooks: "notebooks"            # subdir under outputs/
+
+plotting:
+  palette: "colorblind"             # palette name (or null)
+
+data:
+  groupings:
+    genotype:                       # grouping name used by plots
+      group_ab:
+        - {"Group A": ["g1", "g2"]} # label -> members
+        - {"Group B": ["g3"]}
+  aliases:
+    design_id:
+      "ctrl": "control"             # rename raw labels
+
+pipeline:
+  runtime:
+    strict: true                    # fail fast on missing inputs/columns
+  steps:
+    - id: ingest                    # unique step id
+      uses: ingest/synergy_h1       # plugin to read plate reader files
+      with:
+        channels: ["OD600", "CFP"]  # measurements to ingest
+        auto_roots: ["./inputs"]    # where to look for raw files
+        auto_pick: "single"         # pick one file if multiple
+
+    - id: merge_map
+      uses: merge/sample_map        # attach metadata columns
+      reads:
+        df: "ingest/df"             # from prior step
+        sample_map: "file:./inputs/metadata.xlsx"  # metadata file
+
+    - id: ratio_yfp_od600
+      uses: transform/ratio
+      reads: { df: "merge_map/df" } # input dataframe
+      with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }  # new column
+      writes: { df: "ratios/yfp_od600" }  # stable label for downstream
+
+plots:
+  presets:
+    - plots/plate_reader_yfp_full   # bundle of plot specs
+  defaults:
+    reads:
+      df: "ratios/yfp_od600"        # default plot input
+  specs:
+    - id: plot_ts
+      uses: plot/time_series
+      with:
+        x: time                     # x-axis column
+        y: ["OD600", "YFP"]         # y-series
+        hue: treatment              # color by treatment
+
+exports:
+  defaults:
+    reads:
+      df: "ratios/yfp_od600"        # default export input
+  specs:
+    - id: export_ratios
+      uses: export/csv
+      with: { path: "ratios.csv" }  # file name under outputs/exports/
+
+notebook:
+  preset: "notebook/eda"            # default notebook scaffold
+```
 
 ---
 
 @e-south
-
----
-
-See also:
-
-- `docs/plugins.md`
-- `docs/sfxi_vec8.md`
-- `docs/logic_symmetry.md`
-- `README.md`

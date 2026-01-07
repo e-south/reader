@@ -15,7 +15,6 @@ from contextlib import suppress
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import TransformError
 from reader.core.registry import Plugin, PluginConfig
 
 
@@ -47,48 +46,50 @@ class RatioTransform(Plugin):
         for extra in ("sheet_index", "sheet_name", "source"):
             if extra in df.columns and extra not in key:
                 key.append(extra)
-
-        # Validate channels exist
-        channels = set(df["channel"].astype(str).unique().tolist())
-        missing = [c for c in (cfg.numerator, cfg.denominator) if c not in channels]
-        if missing:
-            preview = ", ".join(sorted(channels)[:8]) + (" …" if len(channels) > 8 else "")
-            raise TransformError(f"ratio • {cfg.name}: missing channel(s) {missing}. Available channels: {preview}")
+        if not key:
+            available = sorted(set(df.columns))
+            raise ValueError(
+                "ratio: none of align_on columns are present in the input.\n"
+                f"  align_on: {cfg.align_on}\n"
+                f"  available: {available}"
+            )
 
         # Partition numerator/denominator; keep ALL metadata on numerator side
         lhs = df[df["channel"] == cfg.numerator].rename(columns={"value": "__num__"}).copy()
         rhs = df[df["channel"] == cfg.denominator].rename(columns={"value": "__den__"}).copy()
+        if lhs.empty or rhs.empty:
+            available = sorted(df["channel"].dropna().astype(str).unique().tolist())
+            missing = []
+            if lhs.empty:
+                missing.append(cfg.numerator)
+            if rhs.empty:
+                missing.append(cfg.denominator)
+            raise ValueError(
+                f"ratio: requested channel(s) missing from input.\n  missing: {missing}\n  available: {available}"
+            )
 
         # Keep only join keys + denominator on RHS to avoid suffix collisions
         rhs = rhs[key + ["__den__"]]
 
         # Join (lhs may be many-to-one vs rhs on the key)
         merged = pd.merge(lhs, rhs, on=key, how="inner", validate="many_to_one")
-        if merged.empty:
-            raise TransformError(
-                f"ratio • {cfg.name}: no aligned rows after joining on {key}. "
-                "Check align_on keys and ensure numerator/denominator rows share the same keys."
-            )
 
-        # Numerics + validity filter (no silent drops)
+        # Numerics + validity filter (drop invalids to satisfy tidy.v1: no NaNs)
         merged["__num__"] = pd.to_numeric(merged["__num__"], errors="coerce")
         merged["__den__"] = pd.to_numeric(merged["__den__"], errors="coerce")
-        bad_num = int(merged["__num__"].isna().sum())
-        bad_den = int(merged["__den__"].isna().sum())
-        zero_den = int((merged["__den__"] == 0).sum())
-        if bad_num or bad_den or zero_den:
-            raise TransformError(
-                f"ratio • {cfg.name}: invalid values (non-numeric or zero denominator). "
-                f"bad_num={bad_num} bad_den={bad_den} zero_den={zero_den}"
+        ok = merged["__num__"].notna() & merged["__den__"].notna() & (merged["__den__"] != 0)
+        dropped = int((~ok).sum())
+        if dropped:
+            ctx.logger.warning(
+                "[warn]ratio[/warn] • %s: dropped %d row(s) due to missing/zero denominator", cfg.name, dropped
             )
 
+        merged = merged.loc[ok].copy()
         merged["value"] = merged["__num__"] / merged["__den__"]
         merged["channel"] = cfg.name
 
         # Restore original column set in original order (inherits metadata from lhs)
         derived = merged[df.columns].copy()
-        if derived.empty:
-            raise TransformError(f"ratio • {cfg.name}: produced zero derived rows. Check align_on keys and input data.")
 
         out = pd.concat([df, derived], ignore_index=True)
 
