@@ -109,9 +109,7 @@ def test_load_expands_file_reads_absolute_paths(tmp_path: Path) -> None:
     data_path = tmp_path / "inputs.xlsx"
     data_path.write_text("stub", encoding="utf-8")
     data = _base_config()
-    data["pipeline"]["steps"] = [
-        {"id": "ingest", "uses": "ingest/synergy_h1", "reads": {"raw": f"file:{data_path}"}}
-    ]
+    data["pipeline"]["steps"] = [{"id": "ingest", "uses": "ingest/synergy_h1", "reads": {"raw": f"file:{data_path}"}}]
     path = _write_config(exp_dir, data)
     spec = ReaderSpec.load(path)
     assert spec.pipeline.steps[0].reads["raw"] == f"file:{data_path.resolve()}"
@@ -168,9 +166,7 @@ def test_validate_rejects_duplicate_output_labels(tmp_path: Path) -> None:
 
 def test_plot_defaults_apply_to_presets(tmp_path: Path) -> None:
     data = _base_config()
-    data["pipeline"]["steps"] = [
-        {"id": "ingest", "uses": "ingest/synergy_h1", "writes": {"df": "raw/df"}}
-    ]
+    data["pipeline"]["steps"] = [{"id": "ingest", "uses": "ingest/synergy_h1", "writes": {"df": "raw/df"}}]
     data["plots"] = {
         "presets": ["plots/plate_reader_yfp_time_series"],
         "defaults": {"reads": {"df": "raw/df"}},

@@ -29,9 +29,7 @@ class SFXICfg(PluginConfig):
     target_time_h: float | None = None
     time_tolerance_h: float = 0.5
     treatment_map: dict[str, str]
-    reference: dict[str, str | None] = Field(
-        default_factory=lambda: {"design_id": None, "stat": "mean"}
-    )
+    reference: dict[str, str | None] = Field(default_factory=lambda: {"design_id": None, "stat": "mean"})
     treatment_case_sensitive: bool = True
     require_all_corners_per_design: bool = True
     eps_ratio: float = 1e-9
@@ -125,9 +123,7 @@ class SFXITransform(Plugin):
 
             # replicate summary per design (logic & intensity)
             try:
-                nL = sel_logic.points.set_index(idx_cols)[
-                    ["n00", "n10", "n01", "n11"]
-                ].rename(
+                nL = sel_logic.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
                     columns={
                         "n00": "n00_L",
                         "n10": "n10_L",
@@ -135,9 +131,7 @@ class SFXITransform(Plugin):
                         "n11": "n11_L",
                     }
                 )
-                nI = sel_int.points.set_index(idx_cols)[
-                    ["n00", "n10", "n01", "n11"]
-                ].rename(
+                nI = sel_int.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
                     columns={
                         "n00": "n00_I",
                         "n10": "n10_I",
@@ -148,9 +142,7 @@ class SFXITransform(Plugin):
                 n_join = nL.join(nI, how="outer").reset_index()
                 n_join = n_join.sort_values(idx_cols)
                 for _, rr in n_join.iterrows():
-                    key = " | ".join(
-                        f"{c}={rr[c]}" for c in sfxi_cfg.design_by if c in rr.index
-                    )
+                    key = " | ".join(f"{c}={rr[c]}" for c in sfxi_cfg.design_by if c in rr.index)
                     L = [
                         int(rr.get("n00_L", 0) or 0),
                         int(rr.get("n10_L", 0) or 0),
@@ -177,9 +169,7 @@ class SFXITransform(Plugin):
                 rep_map = {}
                 if "nL" in locals() and not nL.empty:
                     for k, vals in (
-                        nL.reset_index()
-                        .set_index(idx_cols)[["n00_L", "n10_L", "n01_L", "n11_L"]]
-                        .iterrows()
+                        nL.reset_index().set_index(idx_cols)[["n00_L", "n10_L", "n01_L", "n11_L"]].iterrows()
                     ):
                         rep_map[k] = tuple(int(x) for x in vals.to_list())
                 sort_cols = [c for c in [label_col] if c in vec8.columns]
@@ -215,9 +205,7 @@ class SFXITransform(Plugin):
                         f"span_log2={float(span):.3g}){rep_txt}"
                     )
                 if lines:
-                    more = (
-                        "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"
-                    )
+                    more = "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"
                     ctx.logger.info(
                         "sfxi • vec8 per design  "
                         "[muted](v from log2(%s) min-max; y* is log2 of anchor-normalized %s)[/muted]\n%s%s",

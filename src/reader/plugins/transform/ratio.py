@@ -65,9 +65,7 @@ class RatioTransform(Plugin):
             if rhs.empty:
                 missing.append(cfg.denominator)
             raise ValueError(
-                "ratio: requested channel(s) missing from input.\n"
-                f"  missing: {missing}\n"
-                f"  available: {available}"
+                f"ratio: requested channel(s) missing from input.\n  missing: {missing}\n  available: {available}"
             )
 
         # Keep only join keys + denominator on RHS to avoid suffix collisions

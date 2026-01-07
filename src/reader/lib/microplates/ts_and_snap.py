@@ -335,7 +335,9 @@ def plot_ts_and_snap(
                             "delta": float(delta),
                         }
                     )
-            times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna() if not snapped.empty else pd.Series([])
+            times_used = (
+                pd.to_numeric(snapped["time"], errors="coerce").dropna() if not snapped.empty else pd.Series([])
+            )
             t_used = float(times_used.median()) if not times_used.empty else float(snap_time)
             if not snapped.empty:
                 ax = ax_snap

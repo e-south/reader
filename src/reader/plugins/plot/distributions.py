@@ -93,9 +93,7 @@ class DistributionsPlot(Plugin):
                 # concatenate lists of {label:[members], ...}
                 sets_list = cat[set_name]
                 if not isinstance(sets_list, list):
-                    raise ValueError(
-                        f"data.groupings.{col}.{set_name} must be a list of single-key dict objects"
-                    )
+                    raise ValueError(f"data.groupings.{col}.{set_name} must be a list of single-key dict objects")
                 out.extend(sets_list)
             return out
 

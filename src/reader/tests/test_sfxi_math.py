@@ -335,8 +335,8 @@ def test_missing_anchor_raises():
             points_intensity=pts_int,
             per_corner_intensity=per_corner,
             design_by=["design_id"],
-        reference_design_id="REF",
-        reference_stat="mean",
+            reference_design_id="REF",
+            reference_stat="mean",
             eps_ratio=1e-12,
             eps_range=1e-12,
             eps_ref=1e-12,
@@ -452,9 +452,7 @@ def test_compute_vec8_applies_eps_and_alpha():
 def test_flat_logic_is_boolean_dtype():
     pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
     pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = pd.DataFrame(
-        [{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    per_corner = pd.DataFrame([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,
@@ -477,9 +475,7 @@ def test_flat_logic_is_boolean_dtype():
 def test_vec8_contract_critical_dtypes_are_numeric():
     pts_logic = pd.DataFrame([{"design_id": "X", "b00": 1, "b10": 2, "b01": 4, "b11": 8}])
     pts_int = pd.DataFrame([{"design_id": "X", "b00": 10, "b10": 10, "b01": 10, "b11": 10}])
-    per_corner = pd.DataFrame(
-        [{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")]
-    )
+    per_corner = pd.DataFrame([{"design_id": "REF", "corner": c, "y_mean": 5} for c in ("00", "10", "01", "11")])
 
     out = compute_vec8(
         points_logic=pts_logic,

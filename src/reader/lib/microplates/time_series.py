@@ -128,10 +128,7 @@ def plot_time_series(
     if explicit_channels:
         missing = [str(c) for c in explicit_channels if str(c) not in available_channels]
         if missing:
-            raise ValueError(
-                f"time_series: requested channels not found: {missing}. "
-                f"Available: {available_channels}"
-            )
+            raise ValueError(f"time_series: requested channels not found: {missing}. Available: {available_channels}")
 
     # Optional sheet-change lines
     sheet_lines = None

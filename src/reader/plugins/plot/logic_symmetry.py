@@ -52,6 +52,7 @@ class LogicSymmetryPlot(Plugin):
     def render(self, ctx, inputs, cfg: LogicSymCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         from reader.lib.logic_symmetry import plot_logic_symmetry
+
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],

@@ -57,9 +57,7 @@ def _write_config(tmp_path: Path, payload: dict) -> Path:
 def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
     store = ArtifactStore(outputs, plots_subdir="plots", exports_subdir="exports")
-    df = pd.DataFrame(
-        {"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}
-    )
+    df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
     store.persist_dataframe(
         step_id="ingest",
         plugin_key="dummy",

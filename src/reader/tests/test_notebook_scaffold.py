@@ -53,7 +53,7 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
-    assert "label=\"Dataset (artifact df.parquet)\"" in content
+    assert 'label="Dataset (artifact df.parquet)"' in content
     assert "df.parquet" in content
     assert "df = None" in content
     assert "__PLOT_SPECS__" not in content
@@ -94,12 +94,12 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "artifact dataset(s)" in content
-    assert "label=\"Dataset (artifact df.parquet)\"" in content
+    assert 'label="Dataset (artifact df.parquet)"' in content
     assert "df = None" in content
     assert "## Dataset table explorer" in content
     assert "Design IDs" in content
     assert "Design + treatment summary" not in content
-    assert "label=\"Group by\"" not in content
+    assert 'label="Group by"' not in content
     assert "Interactive plot explorer" not in content
     assert "explore_x = mo.ui.dropdown" not in content
     assert "explore_y = mo.ui.dropdown" not in content

@@ -47,9 +47,7 @@ def _base_config() -> dict:
             ]
         },
         "exports": {
-            "specs": [
-                {"id": "export_a", "uses": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}
-            ]
+            "specs": [{"id": "export_a", "uses": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}]
         },
     }
 
@@ -184,4 +182,4 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
     assert "PLOT_SPECS" not in content
-    assert "label=\"Dataset (artifact df.parquet)\"" in content
+    assert 'label="Dataset (artifact df.parquet)"' in content

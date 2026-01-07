@@ -135,8 +135,7 @@ class ReaderSpec(BaseModel):
             raise ConfigError(f"Invalid YAML in {path}: {e}") from e
         if not isinstance(data, dict):
             raise ConfigError(
-                f"Config must be a mapping (YAML object) in {path}. "
-                "Check for empty files or top-level lists."
+                f"Config must be a mapping (YAML object) in {path}. Check for empty files or top-level lists."
             )
         schema = data.get("schema")
         if schema != "reader/v2":
@@ -165,8 +164,7 @@ class ReaderSpec(BaseModel):
             if illegal_exp:
                 parts.append(f"experiment keys: {illegal_exp}")
             raise ConfigError(
-                "Legacy v1 config keys are not supported in reader/v2. "
-                "Remove/replace: " + "; ".join(parts)
+                "Legacy v1 config keys are not supported in reader/v2. Remove/replace: " + "; ".join(parts)
             )
 
         if "experiment" not in data or not isinstance(data["experiment"], dict):
@@ -196,8 +194,7 @@ class ReaderSpec(BaseModel):
                     raise ConfigError(f"{section}.{label} entry #{i} must be a mapping")
                 if "preset" in entry:
                     raise ConfigError(
-                        f"{section}.{label} does not support inline preset expansion; "
-                        f"use {section}.presets instead."
+                        f"{section}.{label} does not support inline preset expansion; use {section}.presets instead."
                     )
                 normalized.append(entry)
             return normalized
@@ -400,7 +397,5 @@ class ReaderSpec(BaseModel):
         try:
             return cls.model_validate(data)
         except ValidationError as e:
-            details = "; ".join(
-                f"{'.'.join(map(str, err.get('loc', [])))}: {err.get('msg')}" for err in e.errors()
-            )
+            details = "; ".join(f"{'.'.join(map(str, err.get('loc', [])))}: {err.get('msg')}" for err in e.errors())
             raise ConfigError(f"Invalid config in {path}: {details}") from e

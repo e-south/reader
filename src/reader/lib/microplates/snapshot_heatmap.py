@@ -146,11 +146,16 @@ def plot_snapshot_heatmap(
         cols = list(map(str, pivot.columns))
         lower = [c.lower() for c in cols]
         has_hint = any(
-            ("pms" in c) or ("etoh" in c) or ("ethanol" in c) or ("ciprofloxacin" in c) or ("cipro" in c)
+            ("pms" in c)
+            or ("etoh" in c)
+            or ("ethanol" in c)
+            or ("ciprofloxacin" in c)
+            or ("cipro" in c)
             or (c.strip() == "negative")
             for c in lower
         )
         if has_hint:
+
             def _rank(c: str) -> tuple[int, str]:
                 v = c.lower()
                 if "pms" in v:

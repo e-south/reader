@@ -52,8 +52,8 @@ def _attach_sequence(vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: li
     if not idx_cols:
         return vec8
 
-    seq_map = tidy_df[idx_cols + ["sequence"]].dropna(subset=["sequence"]).drop_duplicates(
-        subset=idx_cols, keep="first"
+    seq_map = (
+        tidy_df[idx_cols + ["sequence"]].dropna(subset=["sequence"]).drop_duplicates(subset=idx_cols, keep="first")
     )
 
     merged = vec8.merge(seq_map, on=idx_cols, how="left", suffixes=("", "_ref"))
@@ -249,9 +249,7 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
         flat_fraction = float(flat_count) / float(len(vec8_out)) if len(vec8_out) else 0.0
         label_col = cfg.design_by[0] if cfg.design_by else None
         if label_col and label_col in vec8_out.columns and flat_count > 0:
-            flat_samples = (
-                vec8_out.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
-            )
+            flat_samples = vec8_out.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
 
     log_payload: dict[str, Any] = {
         "name": cfg.name,
@@ -354,19 +352,11 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
             label_col = result.cfg.design_by[0] if result.cfg.design_by else None
             sample = []
             if label_col and label_col in result.vec8.columns:
-                sample = (
-                    result.vec8.loc[flat_mask, label_col]
-                    .astype(str)
-                    .dropna()
-                    .drop_duplicates()
-                    .head(5)
-                    .tolist()
-                )
+                sample = result.vec8.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
             frac = float(flat_count) / float(len(result.vec8)) if len(result.vec8) else 0.0
             sample_note = f" Sample design_ids: {', '.join(sample)}." if sample else ""
             warnings.warn(
-                f"SFXI: flat logic detected for {flat_count}/{len(result.vec8)} designs "
-                f"({frac:.1%}).{sample_note}",
+                f"SFXI: flat logic detected for {flat_count}/{len(result.vec8)} designs ({frac:.1%}).{sample_note}",
                 stacklevel=2,
             )
 

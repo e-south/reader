@@ -116,10 +116,7 @@ def _missing_metadata_hint(label: str, path: Path, exp_dir: Path | None) -> str 
         return None
 
     canonical = inputs_dir / path.name
-    hint = (
-        f"Canonical location is {canonical} "
-        f"(update config: reads.{label}: file:./inputs/{path.name})."
-    )
+    hint = f"Canonical location is {canonical} (update config: reads.{label}: file:./inputs/{path.name})."
 
     candidates = _metadata_like_files(inputs_dir)
     if candidates:
@@ -172,10 +169,7 @@ def _assert_input_contracts(
             continue
         inp = inputs[name]
         if getattr(inp, "contract_id", None) != contract_id:
-            msg = (
-                f"[{where}] input '{name}' must be contract {contract_id} "
-                f"but got {getattr(inp, 'contract_id', None)}"
-            )
+            msg = f"[{where}] input '{name}' must be contract {contract_id} but got {getattr(inp, 'contract_id', None)}"
             if strict:
                 raise ExecutionError(msg)
             if logger is not None:
@@ -234,9 +228,7 @@ def _assert_output_contracts(
                     warnings.warn(msg, stacklevel=2)
 
 
-def _resolve_output_labels(
-    *, step_id: str, output_contracts: dict[str, str], writes: dict[str, str]
-) -> dict[str, str]:
+def _resolve_output_labels(*, step_id: str, output_contracts: dict[str, str], writes: dict[str, str]) -> dict[str, str]:
     unknown = sorted(set(writes) - set(output_contracts))
     if unknown:
         raise ExecutionError(
@@ -786,7 +778,9 @@ def run_spec(
                     label=output_labels[out_name],
                     df=obj,
                     contract_id=cid,
-                    inputs=[inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in (step.reads or {})],
+                    inputs=[
+                        inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in (step.reads or {})
+                    ],
                     config_digest=_digest_cfg(cfg),
                     validate_contract=ctx.strict,
                 )
@@ -819,7 +813,9 @@ def run_spec(
                 "step_id": step.id,
                 "plugin": plugin.key if hasattr(plugin, "key") else plugin_cls.__name__,
                 "config_digest": _digest_cfg(cfg),
-                "inputs": [inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in (step.reads or {})],
+                "inputs": [
+                    inputs[n].label if hasattr(inputs[n], "label") else str(inputs[n]) for n in (step.reads or {})
+                ],
                 "files": sorted(set(rel_files)),
             }
             if phase == "plots":

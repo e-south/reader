@@ -30,7 +30,9 @@ def _base_config() -> dict:
         "paths": {"outputs": "./outputs", "plots": "plots", "exports": "exports"},
         "pipeline": {"steps": [{"id": "ingest", "uses": "ingest/synergy_h1"}]},
         "plots": {"specs": [{"id": "plot_a", "uses": "plot/time_series", "reads": {"df": "ingest/df"}}]},
-        "exports": {"specs": [{"id": "export_a", "uses": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}]},
+        "exports": {
+            "specs": [{"id": "export_a", "uses": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}]
+        },
     }
 
 

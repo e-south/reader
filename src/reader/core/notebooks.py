@@ -13,7 +13,7 @@ from pathlib import Path
 
 from reader.core.errors import ConfigError
 
-EXPERIMENT_EDA_BASE_TEMPLATE = '''import marimo
+EXPERIMENT_EDA_BASE_TEMPLATE = """import marimo
 
 __generated_with = "0.18.4"
 app = marimo.App(width="medium")
@@ -326,12 +326,12 @@ def _(df, data_ready, mo, pl):
 def _():
     return
 
-'''
+"""
 
-EXPERIMENT_EDA_TEMPLATE_FOOTER = '''
+EXPERIMENT_EDA_TEMPLATE_FOOTER = """
 if __name__ == "__main__":
     app.run()
-'''
+"""
 
 EXPERIMENT_EDA_BASIC_TEMPLATE = EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
 EXPERIMENT_EDA_MICROPLATE_TEMPLATE = EXPERIMENT_EDA_BASIC_TEMPLATE
@@ -1052,9 +1052,7 @@ def _(export_button, export_path, json, log_name, mo, vec8_result):
     mo.md(f"Exported 8-vector to `{export_path}` and log to `{log_path}`.")
 '''
 EXPERIMENT_SFXI_EDA_TEMPLATE = (
-    EXPERIMENT_EDA_BASE_TEMPLATE
-    + EXPERIMENT_SFXI_EXTENSION_TEMPLATE
-    + EXPERIMENT_EDA_TEMPLATE_FOOTER
+    EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_SFXI_EXTENSION_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
 )
 
 NOTEBOOK_PRESETS: dict[str, dict[str, str]] = {

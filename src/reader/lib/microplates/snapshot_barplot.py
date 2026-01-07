@@ -154,9 +154,7 @@ def plot_snapshot_barplot(
     if channel_select and panel_by in {"x", "group"}:
         available = sorted(work["channel"].astype(str).unique().tolist())
         if str(channel_select) not in available:
-            raise ValueError(
-                f"snapshot_barplot: channel_select {channel_select!r} not in data. Available: {available}"
-            )
+            raise ValueError(f"snapshot_barplot: channel_select {channel_select!r} not in data. Available: {available}")
 
     # Pick nearest-time replicates per (groupby?, x, hue?, channel, position)
     key_cols: list[str] = [c for c in [group_col, x_col, hue_col, "channel", "position"] if c]

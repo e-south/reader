@@ -156,20 +156,14 @@ def test_time_mode_variants_and_tolerance_warnings():
         "require_all_corners_per_design": True,
     }
 
-    sel_nearest = cornerize_and_aggregate(
-        df, channel="YFP/CFP", target_time_h=2.2, time_mode="nearest", **common
-    )
+    sel_nearest = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="nearest", **common)
     assert np.isclose(sel_nearest.chosen_time, 3.0)
     assert sel_nearest.time_warning  # outside tolerance => warning recorded
 
-    sel_last = cornerize_and_aggregate(
-        df, channel="YFP/CFP", target_time_h=2.2, time_mode="last_before", **common
-    )
+    sel_last = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="last_before", **common)
     assert np.isclose(sel_last.chosen_time, 1.0)
 
-    sel_first = cornerize_and_aggregate(
-        df, channel="YFP/CFP", target_time_h=2.2, time_mode="first_after", **common
-    )
+    sel_first = cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.2, time_mode="first_after", **common)
     assert np.isclose(sel_first.chosen_time, 3.0)
 
     with pytest.raises(ValueError, match="could not choose a global time"):

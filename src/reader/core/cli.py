@@ -109,6 +109,7 @@ def _main(ctx: typer.Context) -> None:
         typer.echo(ctx.get_help())
         raise typer.Exit()
 
+
 def _checkmark(cond: bool) -> str:
     return "[ok]✓[/ok]" if cond else "[muted]—[/muted]"
 
@@ -306,9 +307,7 @@ def _scaffold_notebook(
         if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
             raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
         outputs_dir = Path(spec.paths.outputs)
-        if selected_preset == "notebook/sfxi_eda" and not (
-            _has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)
-        ):
+        if selected_preset == "notebook/sfxi_eda" and not (_has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)):
             raise typer.BadParameter(
                 "Preset notebook/sfxi_eda requires a transform/sfxi step in config.yaml "
                 "or existing SFXI artifacts (tidy+map or vec8). "
@@ -572,9 +571,7 @@ def _append_journal(job_path: Path, command_line: str) -> None:
     )
 
 
-@app.command(
-    help="List experiments under a root (default: ./experiments)."
-)
+@app.command(help="List experiments under a root (default: ./experiments).")
 def ls(
     root: str = typer.Option(
         "./experiments",
@@ -627,9 +624,7 @@ def ls(
     )
 
 
-@app.command(
-    help="Show planned steps and contracts (no execution)."
-)
+@app.command(help="Show planned steps and contracts (no execution).")
 def explain(
     job: str | None = typer.Argument(
         None,
@@ -646,9 +641,7 @@ def explain(
         _handle_reader_error(e)
 
 
-@app.command(
-    help="Validate config, plugin params, reads wiring, and input files."
-)
+@app.command(help="Validate config, plugin params, reads wiring, and input files.")
 def validate(
     job: str | None = typer.Argument(
         None,
@@ -704,8 +697,6 @@ def config(
         typer.echo(yaml.safe_dump(payload, sort_keys=False))
         return
     raise typer.BadParameter("format must be 'yaml' or 'json'")
-
-
 
 
 @app.command(help="Run pipeline to generate artifacts.")
@@ -1179,9 +1170,7 @@ def export(
         _handle_reader_error(e)
 
 
-@app.command(
-    help="List emitted artifacts from outputs/manifests/manifest.json."
-)
+@app.command(help="List emitted artifacts from outputs/manifests/manifest.json.")
 def artifacts(
     job: str | None = typer.Argument(
         None,
@@ -1263,9 +1252,7 @@ def steps(
     )
 
 
-@app.command(
-    help="List plugins by category."
-)
+@app.command(help="List plugins by category.")
 def plugins(
     category: str | None = typer.Option(
         None,

@@ -85,13 +85,14 @@ def compute_vec8(
     # anchors from INTENSITY per-corner table for the reference design_id
     ref_tab: pd.DataFrame | None = None
     if reference_design_id:
-        ref_rows = per_corner_intensity[
-            per_corner_intensity[label_col].astype(str) == str(reference_design_id)
-        ].copy()
+        ref_rows = per_corner_intensity[per_corner_intensity[label_col].astype(str) == str(reference_design_id)].copy()
         if not ref_rows.empty:
             agg_fun = "median" if reference_stat == "median" else "mean"
             ref_tab = (
-                ref_rows.groupby(["corner"])["y_mean"].agg(agg_fun).reset_index().rename(columns={"y_mean": "anchor_mean"})
+                ref_rows.groupby(["corner"])["y_mean"]
+                .agg(agg_fun)
+                .reset_index()
+                .rename(columns={"y_mean": "anchor_mean"})
             )
 
     idx_cols = design_by

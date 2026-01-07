@@ -102,8 +102,7 @@ class FlowCytometerIngest(Plugin):
             name = meta.get(field)
             if name is None:
                 raise ParseError(
-                    f"Channel metadata missing field '{field}' for channel {key}. "
-                    "Use channel_name_field: pns or pnn."
+                    f"Channel metadata missing field '{field}' for channel {key}. Use channel_name_field: pns or pnn."
                 )
             names.append(str(name))
         return names
@@ -113,8 +112,7 @@ class FlowCytometerIngest(Plugin):
             from flowio import FlowData
         except Exception as e:  # pragma: no cover - environment-specific
             raise ParseError(
-                "flowio is required for ingest/flow_cytometer. "
-                "Install with: uv sync --locked --group cytometry"
+                "flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry"
             ) from e
 
         files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
