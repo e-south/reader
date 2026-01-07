@@ -21,6 +21,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import polars as pl
 from matplotlib.colors import Colormap, LinearSegmentedColormap
 
 from reader.core.plot_sinks import PlotFigure
@@ -82,7 +83,7 @@ def plot_snapshot_heatmap(
     channel: str,
     time: float,
     x: str = "treatment",
-    y: str = "genotype",
+    y: str = "design_id",
     order_x: list[str] | None = None,
     order_y: list[str] | None = None,
     square: bool = True,
@@ -103,25 +104,71 @@ def plot_snapshot_heatmap(
     _ensure(df, ["time", "channel", "value", x_col, y_col])
 
     # numeric conversions with explicit coercion (assertive)
-    work = df.copy()
-    work["time"] = pd.to_numeric(work["time"], errors="raise")
-    work["value"] = pd.to_numeric(work["value"], errors="coerce")
+    work_pl = pl.from_pandas(df)
+    time_expr = pl.col("time").cast(pl.Float64, strict=True)
+    value_expr = pl.col("value").cast(pl.Float64, strict=False)
+    value_expr = pl.when(value_expr.is_nan()).then(None).otherwise(value_expr)
+    work_pl = work_pl.with_columns(
+        time_expr.alias("time"),
+        value_expr.alias("value"),
+    )
 
     # choose snapshot time (optional tolerance from fig.rc or dedicated key)
     rc = (fig_kwargs or {}).get("rc", {})
     tol = (fig_kwargs or {}).get("time_tolerance", rc.get("time_tolerance", None))
-    times = work.loc[work["channel"].astype(str) == str(channel), "time"].unique()
+    times = (
+        work_pl.filter(pl.col("channel").cast(pl.Utf8) == str(channel))
+        .select(pl.col("time").fill_null(float("nan")).alias("time"))
+        .to_numpy()
+        .ravel()
+    )
     tsel = _choose_time(times, float(time), (None if tol is None else float(tol)))
 
-    snap = work[
-        (work["channel"].astype(str) == str(channel))
-        & (np.isclose(work["time"].astype(float), tsel, rtol=0.0, atol=1e-9))
-    ].copy()
-    if snap.empty:
+    snap_pl = work_pl.filter(
+        (pl.col("channel").cast(pl.Utf8) == str(channel)) & ((pl.col("time") - float(tsel)).abs() <= 1e-9)
+    )
+    if snap_pl.is_empty():
         raise ValueError("snapshot_heatmap: no rows after (channel,time) selection")
 
     # aggregate to a dense pivot (median is robust)
-    pivot = snap.groupby([y_col, x_col], dropna=False)["value"].median().unstack(x_col)
+    pivot_pl = (
+        snap_pl.group_by([y_col, x_col])
+        .agg(pl.col("value").median().alias("value"))
+        .sort([y_col, x_col])
+        .pivot(values="value", index=y_col, columns=x_col, aggregate_function="first")
+    )
+    pivot = pivot_pl.to_pandas(use_pyarrow_extension_array=False)
+    if y_col in pivot.columns:
+        pivot = pivot.set_index(y_col)
+
+    # Optional default ordering for treatment columns (if applicable and not overridden)
+    if order_x is None and pretty_name(str(x_col)) == "treatment":
+        cols = list(map(str, pivot.columns))
+        lower = [c.lower() for c in cols]
+        has_hint = any(
+            ("pms" in c) or ("etoh" in c) or ("ethanol" in c) or ("ciprofloxacin" in c) or ("cipro" in c)
+            or (c.strip() == "negative")
+            for c in lower
+        )
+        if has_hint:
+            def _rank(c: str) -> tuple[int, str]:
+                v = c.lower()
+                if "pms" in v:
+                    return (0, v)
+                if "etoh" in v or "ethanol" in v:
+                    return (1, v)
+                if "ciprofloxacin" in v or "cipro" in v:
+                    return (2, v)
+                if v.strip() == "negative" or "negative" in v:
+                    return (4, v)
+                return (3, v)
+
+            ordered = sorted(cols, key=_rank)
+            pivot = pivot[ordered]
+            logging.getLogger("reader").info(
+                "[dim]snapshot_heatmap[/dim] • treatment order applied: PMS → EtOH → ciprofloxacin → negative "
+                "(override with plots.<spec_id>.with.order_x in config.yaml)"
+            )
 
     # ordering
     if order_x:
@@ -161,7 +208,7 @@ def plot_snapshot_heatmap(
         ax.set_yticks(range(arr.shape[0]))
         ax.set_yticklabels(list(map(str, pivot.index)))
 
-        # Title‑case the axis labels (e.g., 'Treatment', 'Genotype')
+        # Title‑case the axis labels (e.g., 'Treatment', 'Design Id')
         ax.set_xlabel(pretty_name(str(x_col)).title())
         ax.set_ylabel(pretty_name(str(y_col)).title())
         # Exact time in the title (no approximate symbol)
@@ -182,7 +229,7 @@ def plot_snapshot_heatmap(
         # Base: include the channel and the *actual* time picked (tsel)
         base = filename or f"snapshot_heatmap__{channel}__t{tsel:g}h"
 
-        # Genotype roster (y-axis)
+        # Design roster (y-axis)
         y_levels = list(map(str, pivot.index))
         n_geno = len(y_levels)
 

@@ -20,7 +20,7 @@ from reader.core.registry import Plugin, PluginConfig
 
 
 class PromoteCfg(PluginConfig):
-    require_columns: list[str] = Field(default_factory=lambda: ["treatment", "genotype", "batch"])
+    require_columns: list[str] = Field(default_factory=lambda: ["treatment", "design_id", "batch"])
     require_non_null: bool = True  # be strict when promoting
     # Only promote a subset of rows (e.g., samples). If provided, we require the column to exist.
     type_column: str = "type"

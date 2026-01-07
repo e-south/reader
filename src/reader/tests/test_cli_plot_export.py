@@ -33,7 +33,7 @@ def _base_config() -> dict:
                     "id": "plot_b",
                     "uses": "plot/snapshot_barplot",
                     "reads": {"df": "ingest/df"},
-                    "with": {"x": "genotype", "y": ["OD600"], "time": 0.0},
+                    "with": {"x": "design_id", "y": ["OD600"], "time": 0.0},
                 },
             ]
         },
@@ -72,6 +72,31 @@ def test_plot_list_empty(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(cfg_path), "--list"])
     assert result.exit_code == 0
     assert "No plot specs configured" in result.output
+
+
+def test_plot_requires_artifacts(tmp_path: Path) -> None:
+    cfg = _write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg)])
+    assert result.exit_code != 0
+    assert "outputs/manifests/manifest.json" in result.output
+    assert "reader run" in result.output
+
+
+def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    year_dir = tmp_path / "experiments" / "2025"
+    exp_a = year_dir / "exp_a"
+    exp_b = year_dir / "exp_b"
+    exp_a.mkdir(parents=True)
+    exp_b.mkdir(parents=True)
+    _write_config(exp_a, _base_config())
+    _write_config(exp_b, _base_config())
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["plot", "--year", "2025", "--list"])
+    assert result.exit_code == 0
+    assert "exp_a" in result.output
+    assert "exp_b" in result.output
 
 
 def test_export_list_filters(tmp_path: Path) -> None:
@@ -140,7 +165,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["notebook", str(cfg), "--preset", "notebook/plots", "--only", "plot_a", "--mode", "none"],
+        ["notebook", str(cfg), "--preset", "notebook/eda", "--only", "plot_a", "--mode", "none"],
     )
     assert result.exit_code == 0
     date_stamp = datetime.now().strftime("%Y%m%d")

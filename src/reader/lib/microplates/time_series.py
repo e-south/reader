@@ -15,6 +15,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import polars as pl
 import seaborn as sns
 from matplotlib.lines import Line2D
 
@@ -85,13 +86,15 @@ def plot_time_series(
     y_feats = (list(y) if y else list(channels or [])) or sorted(df["channel"].astype(str).unique().tolist())
 
     # Base frame
-    base = df.copy()
-    base["value"] = pd.to_numeric(base["value"], errors="coerce")
+    base_pl = pl.from_pandas(df)
+    value_expr = pl.col("value").cast(pl.Float64, strict=False)
+    value_expr = pl.when(value_expr.is_nan()).then(None).otherwise(value_expr)
+    base_pl = base_pl.with_columns(value_expr.alias("value"))
     if time_window:
         lo, hi = float(time_window[0]), float(time_window[1])
-        base = base[
-            (pd.to_numeric(base[xcol], errors="coerce") >= lo) & (pd.to_numeric(base[xcol], errors="coerce") <= hi)
-        ].copy()
+        x_num = pl.col(xcol).cast(pl.Float64, strict=False)
+        base_pl = base_pl.filter((x_num >= lo) & (x_num <= hi))
+    base = base_pl.to_pandas(use_pyarrow_extension_array=False)
     if warn_if_empty(base, where="time_series", detail="after time_window filter"):
         return []
 

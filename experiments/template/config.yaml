@@ -15,7 +15,7 @@ plotting:
 
 data:
   groupings:
-    genotype:
+    design_id:
       group_ab:
         - { "Group A": ["g1","g2"] }
         - { "Group B": ["g3"] }
@@ -69,13 +69,12 @@ pipeline:
       reads: { df: "final/df" }
       with:
         response: { logic_channel: "YFP/CFP", intensity_channel: "YFP/OD600" }
-        design_by: ["genotype"]
-        batch_col: "batch"
+        design_by: ["design_id"]
         time_mode: "nearest"
         target_time_h: 10
         time_tolerance_h: 0.5
         treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
-        reference: { genotype: "REF", scope: "batch", stat: "mean" }
+        reference: { design_id: "REF", stat: "mean" }
       writes: { vec8: "sfxi/vec8" }
 
 plots:
@@ -90,8 +89,8 @@ plots:
         x: "time"
         y: ["OD600","CFP","YFP"]
         hue: "treatment"
-        group_on: "genotype"
-        pool_sets: "genotype:group_ab"
+        group_on: "design_id"
+        pool_sets: "design_id:group_ab"
         fig:
           rc:
             savefig_dpi: 300
@@ -100,7 +99,7 @@ plots:
       uses: "plot/logic_symmetry"
       with:
         response_channel: "YFP/CFP"
-        design_by: ["genotype"]
+        design_by: ["design_id"]
         batch_col: "batch"
         treatment_map: { "00": "…", "10": "…", "01": "…", "11": "…" }
         aggregation: { replicate_stat: "mean", uncertainty: "halo" }

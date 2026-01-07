@@ -226,7 +226,7 @@ exports:
       with: { path: "ratios.csv" }
 
 notebook:
-  preset: "notebook/plots"
+  preset: "notebook/eda"
 ```
 
 ---

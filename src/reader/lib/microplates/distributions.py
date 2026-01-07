@@ -77,7 +77,7 @@ def plot_distributions(
     output_dir: Path | None,
     channels: list[str],
     # modern grouping knobs
-    group_on: str | None = "genotype",
+    group_on: str | None = "design_id",
     pool_sets: list[dict[str, list[str]]] | None = None,
     pool_match: GroupMatch = "exact",
     # layout
@@ -94,7 +94,7 @@ def plot_distributions(
       • Auto‑alias columns: prefers '<group_on>_alias' transparently.
       • `group_on` + `pool_sets` replace legacy 'groupby_col' & 'groups'.
       • Default: panel_by='channel' (one subplot per channel) and a separate
-        output file for each `group_on` value (e.g., per genotype).
+        output file for each `group_on` value (e.g., per design_id).
     """
     fig_kwargs = fig_kwargs or {}
     figures: list[PlotFigure] = []

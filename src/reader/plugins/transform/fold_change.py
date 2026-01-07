@@ -74,14 +74,14 @@ class FoldChangeCfg(PluginConfig):
 
     # Grouping and labels
     treatment_column: str = "treatment"  # we will prefer '<col>_alias' when present
-    group_by: list[str] = Field(default_factory=lambda: ["genotype"])
+    group_by: list[str] = Field(default_factory=lambda: ["design_id"])
 
     # Baseline policy
     use_global_baseline: bool = False
     global_baseline_value: str | None = None  # used when use_global_baseline==True
     # overrides: list of maps; any keys matching group_by columns define a match; each must
     # include 'baseline_value'. Example:
-    #   - { genotype: "araBADp", baseline_value: "0 uM arabinose" }
+    #   - { design_id: "araBADp", baseline_value: "0 uM arabinose" }
     overrides: list[dict[str, Any]] = Field(default_factory=list)
 
     # Output columns (names)
@@ -109,7 +109,7 @@ class FoldChangeCfg(PluginConfig):
           2) Else if `use_global` and `global_value` is provided, return it.
           3) Else return None (baseline missing).
 
-        Matching considers BOTH raw and alias keys (e.g., 'genotype' and 'genotype_alias').
+        Matching considers BOTH raw and alias keys (e.g., 'design_id' and 'design_id_alias').
         """
         # 1) Try overrides first
         syn_view: dict[str, Any] = {}

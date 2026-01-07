@@ -95,9 +95,11 @@ Notes:
 * `reader notebook` only scaffolds the notebook; it does not run the pipeline.
 * `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
-* Common presets include `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/plots` (all share the same minimal scaffold).
+* Common presets include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda` (SFXI vec8 builder scaffold; requires a `transform/sfxi` step or existing SFXI artifacts).
 * If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new <FILE>` to create a second notebook.
-* If `--preset` is omitted, reader uses `notebook.preset` from `config.yaml` if provided; otherwise it auto-selects `notebook/plots` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
+* If `--preset` is omitted, reader uses `notebook.preset` from `config.yaml` if provided; otherwise it auto-selects `notebook/eda` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
+
+See also: [SFXI vec8 in reader](sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook preset aligns with the code.
 
 ---
 

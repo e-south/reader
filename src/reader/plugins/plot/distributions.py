@@ -23,7 +23,7 @@ class DistributionsCfg(PluginConfig):
     # what to draw
     channels: list[str]
     # modern grouping
-    group_on: str | None = "genotype"
+    group_on: str | None = "design_id"
     pool_sets: str | list[str] | list[dict[str, list[str]]] | None = None
     pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
     # layout

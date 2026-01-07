@@ -69,6 +69,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .cache/
+.matplotlib_cache/
 .nox/
 .coverage
 .coverage.*

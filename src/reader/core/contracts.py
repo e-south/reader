@@ -125,15 +125,15 @@ _register(
 _register(
     DataFrameContract(
         id="tidy+map.v1",
-        description="Tidy+metadata: tidy.v1 + treatment,str | genotype,str | batch,int",
+        description="Tidy+metadata: tidy.v1 + treatment,str | design_id,str | batch,float (optional)",
         columns=[
             ColumnRule("position", "string"),
             ColumnRule("time", "float", nonnegative=True),
             ColumnRule("channel", "string"),
             ColumnRule("value", "float"),
             ColumnRule("treatment", "string"),
-            ColumnRule("genotype", "string"),
-            ColumnRule("batch", "int"),
+            ColumnRule("design_id", "string"),
+            ColumnRule("batch", "float", required=False, allow_nan=True),
         ],
         unique_keys=[],
     )
@@ -143,12 +143,12 @@ _register(
 _register(
     DataFrameContract(
         id="sfxi.vec8.v1",
-        description="Per design×batch vec8 table with logic shape and anchor-normalized intensity",
+        description="Per design vec8 table with logic shape and anchor-normalized intensity",
         columns=[
             ColumnRule("genotype", "string"),
             ColumnRule("sequence", "string", required=False, allow_nan=True),
             ColumnRule("id", "string", required=False, allow_nan=True),
-            ColumnRule("batch", "int", required=False, allow_nan=True),
+            ColumnRule("time_selected_h", "float", required=False, allow_nan=True),
             ColumnRule("r_logic", "float", nonnegative=True),
             ColumnRule("v00", "float"),
             ColumnRule("v10", "float"),
@@ -160,7 +160,33 @@ _register(
             ColumnRule("y11_star", "float"),
             ColumnRule("flat_logic", "bool"),
         ],
-        unique_keys=[["genotype", "batch"]],
+        unique_keys=[["genotype"]],
+    )
+)
+
+# sfxi.vec8.v2 (design_id naming + reference provenance)
+_register(
+    DataFrameContract(
+        id="sfxi.vec8.v2",
+        description="Per design vec8 table with logic shape, anchor-normalized intensity, and reference provenance",
+        columns=[
+            ColumnRule("design_id", "string"),
+            ColumnRule("sequence", "string", required=False, allow_nan=True),
+            ColumnRule("id", "string", required=False, allow_nan=True),
+            ColumnRule("time_selected_h", "float", required=False, allow_nan=True),
+            ColumnRule("reference_design_id", "string"),
+            ColumnRule("r_logic", "float", nonnegative=True),
+            ColumnRule("v00", "float"),
+            ColumnRule("v10", "float"),
+            ColumnRule("v01", "float"),
+            ColumnRule("v11", "float"),
+            ColumnRule("y00_star", "float"),
+            ColumnRule("y10_star", "float"),
+            ColumnRule("y01_star", "float"),
+            ColumnRule("y11_star", "float"),
+            ColumnRule("flat_logic", "bool"),
+        ],
+        unique_keys=[["design_id"]],
     )
 )
 
@@ -191,7 +217,7 @@ _register(
 _register(
     DataFrameContract(
         id="logic_symmetry.v1",
-        description="Logic-symmetry per (design x batch) summary (points + metrics + encodings).",
+        description="Logic-symmetry per design (and batch, when present) summary (points + metrics + encodings).",
         columns=[
             # optional design-by columns (keep flexible)
             ColumnRule("genotype", "string", required=False, allow_nan=True),

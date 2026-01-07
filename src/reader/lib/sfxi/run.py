@@ -12,34 +12,32 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .api import load_sfxi_config
+from .api import SFXIConfig, load_sfxi_config
 from .math import compute_vec8
-from .reference import resolve_reference_genotype_label
-from .selection import cornerize_and_aggregate
+from .reference import compute_reference_table, resolve_reference_design_id
+from .selection import CornerizeResult, cornerize_and_aggregate
 from .writer import write_outputs
 
 
-def _assert_same_times(chosen_a: dict[object, float], chosen_b: dict[object, float]) -> None:
-    if set(chosen_a.keys()) != set(chosen_b.keys()):
-        raise ValueError("SFXI: logic and intensity selections produced different batch sets.")
-    for k, ta in chosen_a.items():
-        tb = float(chosen_b[k])
-        ta = float(ta)
-        if not np.isclose(ta, tb, rtol=0, atol=1e-9):
-            raise ValueError(
-                f"SFXI: logic and intensity channels selected different times for batch={k!r}: {ta} vs {tb}"
-            )
+def _assert_same_times(time_a: float | None, time_b: float | None) -> None:
+    if time_a is None and time_b is None:
+        return
+    if time_a is None or time_b is None:
+        raise ValueError("SFXI: logic and intensity selections produced different times.")
+    ta = float(time_a)
+    tb = float(time_b)
+    if not np.isclose(ta, tb, rtol=0, atol=1e-9):
+        raise ValueError(f"SFXI: logic and intensity channels selected different times: {ta} vs {tb}")
 
 
-def _attach_sequence(
-    vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: list[str], batch_col: str
-) -> pd.DataFrame:
+def _attach_sequence(vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: list[str]) -> pd.DataFrame:
     # If vec8 already has a usable 'sequence' column, keep it.
     if "sequence" in vec8.columns and vec8["sequence"].notna().any():
         return vec8
@@ -47,17 +45,18 @@ def _attach_sequence(
     if "sequence" not in tidy_df.columns:
         return vec8
 
-    label_col = design_by[0]
-    if not {label_col, batch_col, "sequence"}.issubset(tidy_df.columns):
+    if "sequence" not in tidy_df.columns:
         return vec8
 
-    seq_map = (
-        tidy_df[[label_col, batch_col, "sequence"]]
-        .dropna(subset=["sequence"])
-        .drop_duplicates(subset=[label_col, batch_col], keep="first")
+    idx_cols = [c for c in design_by if c in tidy_df.columns]
+    if not idx_cols:
+        return vec8
+
+    seq_map = tidy_df[idx_cols + ["sequence"]].dropna(subset=["sequence"]).drop_duplicates(
+        subset=idx_cols, keep="first"
     )
 
-    merged = vec8.merge(seq_map, on=[label_col, batch_col], how="left", suffixes=("", "_ref"))
+    merged = vec8.merge(seq_map, on=idx_cols, how="left", suffixes=("", "_ref"))
     # Prefer existing 'sequence' if present; otherwise use attached value
     if "sequence_ref" in merged.columns:
         if "sequence" not in merged.columns:
@@ -70,38 +69,42 @@ def _attach_sequence(
 
 
 def _reorder_and_filter(
-    vec8: pd.DataFrame, *, design_by: list[str], batch_col: str, ref_genotype: str | None
+    vec8: pd.DataFrame,
+    *,
+    design_by: list[str],
+    ref_design_id: str | None,
+    exclude_reference: bool,
 ) -> pd.DataFrame:
     """
     Apply user-requested:
-      - drop REF genotype rows
+      - drop REF design_id rows
       - reorder columns to:
-        genotype, sequence, r_logic, v00, v10, v01, v11,
-        y00_star, y10_star, y01_star, y11_star, flat_logic
+        design_id, sequence, time_selected_h, reference_design_id, r_logic, v00, v10, v01, v11,
+        y00_star, y10_star, y01_star, y11_star, flat_logic (then keep remaining columns)
     """
     label_col = design_by[0]
 
     df = vec8.copy()
 
     # Exclude REF (if specified)
-    if ref_genotype is not None and label_col in df.columns:
-        df = df[df[label_col].astype(str) != str(ref_genotype)].copy()
+    if exclude_reference and ref_design_id is not None and label_col in df.columns:
+        df = df[df[label_col].astype(str) != str(ref_design_id)].copy()
 
     # Ensure 'sequence' exists even if missing upstream
     if "sequence" not in df.columns:
         df["sequence"] = pd.NA
 
-    # Build final column order; tolerate absence of label_col under alias 'genotype'
-    # We will expose the label column as 'genotype' in output for clarity.
-    # If label_col is already 'genotype', this is a no-op rename.
-    if label_col != "genotype" and label_col in df.columns:
-        df = df.rename(columns={label_col: "genotype"})
-    elif "genotype" not in df.columns and label_col in df.columns:
-        df["genotype"] = df[label_col]
+    if "reference_sequence" in df.columns:
+        df = df.drop(columns=["reference_sequence"])
+
+    if label_col not in df.columns:
+        raise ValueError(f"SFXI: expected label column '{label_col}' in vec8 output.")
 
     desired = [
-        "genotype",
+        label_col,
         "sequence",
+        "time_selected_h",
+        "reference_design_id",
         "r_logic",
         "v00",
         "v10",
@@ -114,27 +117,51 @@ def _reorder_and_filter(
         "flat_logic",
     ]
 
-    # Keep only desired columns in that order (ignore extras like batch)
-    existing = [c for c in desired if c in df.columns]
-    out = df[existing].copy()
+    # Reorder preferred columns first, then keep remaining diagnostics/metadata.
+    front = [c for c in desired if c in df.columns]
+    rest = [c for c in df.columns if c not in front]
+    out = df[front + rest].copy()
 
     # Final tidy: drop duplicates just in case and reset index
     out = out.drop_duplicates().reset_index(drop=True)
     return out
 
 
-def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None:
+def _anchors_payload(anchor_table: pd.DataFrame | None) -> dict[str, float] | None:
+    if anchor_table is None or anchor_table.empty:
+        return None
+    row = anchor_table.iloc[0]
+    return {
+        "00": float(row.get("b00")),
+        "10": float(row.get("b10")),
+        "01": float(row.get("b01")),
+        "11": float(row.get("b11")),
+    }
+
+
+@dataclass(frozen=True)
+class SFXIBuildResult:
+    vec8: pd.DataFrame
+    log: dict[str, Any]
+    cfg: SFXIConfig
+    sel_logic: CornerizeResult
+    sel_int: CornerizeResult
+    ref_design_id: str | None
+
+
+def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResult:
     """
-    Called by reader.main. Consumes the in-memory tidy table and the YAML XForm
-    block (or XForm object), writes vec8 + log to disk inside out_dir/sfxi/.
+    Shared SFXI builder for pipeline + notebooks.
+    Returns vec8 + log payload + selection diagnostics without writing to disk.
     """
     cfg = load_sfxi_config(xform_cfg)
+    if cfg.reference.design_id is None:
+        raise ValueError("sfxi.reference.design_id must be provided to anchor intensity.")
 
     # 1) Cornerize + aggregate (LOGIC channel)
     sel_logic = cornerize_and_aggregate(
         tidy_df,
         design_by=cfg.design_by,
-        batch_col=cfg.batch_col,
         treatment_map=cfg.treatment_map,
         case_sensitive=cfg.treatment_case_sensitive,
         time_column=cfg.time_column,
@@ -142,8 +169,6 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
         target_time_h=cfg.target_time_h,
         time_mode=cfg.time_mode,
         time_tolerance_h=cfg.time_tolerance_h,
-        time_per_batch=cfg.time_per_batch,
-        on_missing_time=cfg.on_missing_time,
         require_all_corners_per_design=cfg.require_all_corners_per_design,
     )
 
@@ -151,7 +176,6 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
     sel_int = cornerize_and_aggregate(
         tidy_df,
         design_by=cfg.design_by,
-        batch_col=cfg.batch_col,
         treatment_map=cfg.treatment_map,
         case_sensitive=cfg.treatment_case_sensitive,
         time_column=cfg.time_column,
@@ -159,29 +183,22 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
         target_time_h=cfg.target_time_h,
         time_mode=cfg.time_mode,
         time_tolerance_h=cfg.time_tolerance_h,
-        time_per_batch=cfg.time_per_batch,
-        on_missing_time=cfg.on_missing_time,
         require_all_corners_per_design=cfg.require_all_corners_per_design,
     )
 
     # 3) Safety: same chosen snapshot times
-    _assert_same_times(sel_logic.chosen_times, sel_int.chosen_times)
+    _assert_same_times(sel_logic.chosen_time, sel_int.chosen_time)
 
-    # 3b) Emit soft warnings (once, from logic selection)
-    tol_notes: dict[object, str] = getattr(sel_logic, "time_warnings", {}) or {}
-    for _k, _msg in tol_notes.items():
-        warnings.warn(f"SFXI: {_msg}", stacklevel=2)
+    tol_note = sel_logic.time_warning
 
     # 4) Compute vec8 (logic from logic channel, y* from intensity channel + anchors)
-    ref_raw = resolve_reference_genotype_label(tidy_df, design_by=cfg.design_by, ref_label=cfg.reference.genotype)
+    ref_raw = resolve_reference_design_id(tidy_df, design_by=cfg.design_by, ref_label=cfg.reference.design_id)
     vec8 = compute_vec8(
         points_logic=sel_logic.points,
         points_intensity=sel_int.points,
         per_corner_intensity=sel_int.per_corner,
         design_by=cfg.design_by,
-        batch_col=cfg.batch_col,
-        reference_genotype=ref_raw,
-        reference_scope=cfg.reference.scope,
+        reference_design_id=ref_raw,
         reference_stat=cfg.reference.stat,
         eps_ratio=cfg.eps_ratio,
         eps_range=cfg.eps_range,
@@ -191,15 +208,30 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
         log2_offset_delta=cfg.log2_offset_delta,
     )
 
-    # 4b) Attach 'sequence' if available in the tidy inputs
-    vec8 = _attach_sequence(vec8, tidy_df, design_by=cfg.design_by, batch_col=cfg.batch_col)
+    # 4a) Attach selected snapshot time
+    if sel_logic.chosen_time is not None:
+        vec8["time_selected_h"] = float(sel_logic.chosen_time)
+        vec8["time_selected_h"] = pd.to_numeric(vec8["time_selected_h"], errors="coerce").astype(float)
 
-    # 4c) Apply requested filtering and column order
+    # 4b) Attach 'sequence' if available in the tidy inputs
+    vec8 = _attach_sequence(vec8, tidy_df, design_by=cfg.design_by)
+    # Carry additional metadata columns if requested
+    idx_cols = [c for c in cfg.design_by if c in tidy_df.columns]
+    for col in cfg.carry_metadata or []:
+        if col in tidy_df.columns and col not in vec8.columns:
+            meta = tidy_df[idx_cols + [col]].dropna(subset=[col]).drop_duplicates(subset=idx_cols, keep="first")
+            vec8 = vec8.merge(meta, on=idx_cols, how="left", validate="m:1")
+
+    # 4c) Reference provenance columns
+    if "reference_design_id" not in vec8.columns:
+        vec8["reference_design_id"] = ref_raw
+
+    # 4d) Apply requested filtering and column order
     vec8_out = _reorder_and_filter(
         vec8,
         design_by=cfg.design_by,
-        batch_col=cfg.batch_col,
-        ref_genotype=ref_raw,
+        ref_design_id=ref_raw,
+        exclude_reference=cfg.exclude_reference_from_output,
     )
 
     # 5) Compose a log payload (unchanged)
@@ -209,7 +241,6 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
     log_payload: dict[str, Any] = {
         "name": cfg.name,
         "design_by": cfg.design_by,
-        "batch_col": cfg.batch_col,
         "time_column": cfg.time_column,
         "channels": {
             "logic": cfg.response.logic_channel,
@@ -222,16 +253,23 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
             "mode": cfg.time_mode,
             "tolerance_h": cfg.time_tolerance_h,
             "tolerance_policy": "soft-warning",
-            "per_batch": cfg.time_per_batch,
-            "on_missing_time": cfg.on_missing_time,
-            "chosen_times": sel_logic.chosen_times,  # same as sel_int
-            "dropped_batches": sorted(set(sel_logic.dropped_batches) | set(sel_int.dropped_batches)),
-            "out_of_tolerance": tol_notes,
+            "chosen_time": sel_logic.chosen_time,
+            "out_of_tolerance": tol_note,
         },
         "reference": {
-            "genotype": cfg.reference.genotype,
-            "scope": cfg.reference.scope,
+            "design_id": cfg.reference.design_id,
+            "design_id_resolved": ref_raw,
             "stat": cfg.reference.stat,
+            "anchors": _anchors_payload(
+                compute_reference_table(
+                    sel_int.per_corner,
+                    design_by=cfg.design_by,
+                    ref_design_id=ref_raw,
+                    stat=cfg.reference.stat,
+                )
+                if ref_raw is not None
+                else None,
+            ),
         },
         "eps": {
             "ratio": cfg.eps_ratio,
@@ -253,7 +291,7 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
                 "delta": cfg.log2_offset_delta,
             },
             "r_logic": {
-                "definition": "per (design×batch) dynamic range on LOGIC (linear, ε-guarded): max(L_i)/min(L_i)",
+                "definition": "per design dynamic range on LOGIC (linear, ε-guarded): max(L_i)/min(L_i)",
                 "epsilon_guard_ratio": cfg.eps_ratio,
                 "stats_over_vec8": r_desc,
             },
@@ -267,10 +305,32 @@ def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None
         },
     }
 
-    # 6) Write
-    write_outputs(
+    return SFXIBuildResult(
         vec8=vec8_out,
         log=log_payload,
+        cfg=cfg,
+        sel_logic=sel_logic,
+        sel_int=sel_int,
+        ref_design_id=ref_raw,
+    )
+
+
+def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None:
+    """
+    Called by reader.main. Consumes the in-memory tidy table and the YAML XForm
+    block (or XForm object), writes vec8 + log to disk inside out_dir/sfxi/.
+    """
+    result = build_vec8_from_tidy(tidy_df, xform_cfg)
+
+    # Emit soft warnings (once, from logic selection)
+    if result.sel_logic.time_warning:
+        warnings.warn(f"SFXI: {result.sel_logic.time_warning}", stacklevel=2)
+
+    # Write
+    cfg = result.cfg
+    write_outputs(
+        vec8=result.vec8,
+        log=result.log,
         out_dir=out_dir,
         subdir=cfg.output_subdir,
         vec8_filename=(f"{cfg.filename_prefix}_{cfg.vec8_filename}" if cfg.filename_prefix else cfg.vec8_filename),

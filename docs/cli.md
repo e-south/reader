@@ -88,6 +88,18 @@ Run plot specs only (saves files to `outputs/plots`):
 reader plot CONFIG|DIR|INDEX
 ```
 
+Run plots for all experiments in a year (expects `experiments/YYYY`):
+
+```bash
+reader plot --year 2025
+```
+
+Override the experiments root when using `--year`:
+
+```bash
+reader plot --year 2025 --root /path/to/experiments
+```
+
 List resolved plot spec ids:
 
 ```bash
@@ -144,7 +156,7 @@ reader export CONFIG|DIR|INDEX --only export_ratios --set with.path="exports/rat
 ## Notebooks
 
 Scaffold a marimo notebook (no pipeline execution). If `--preset` is omitted, the CLI
-uses `notebook.preset` from config, otherwise auto-picks `notebook/plots` when plots
+uses `notebook.preset` from config, otherwise auto-picks `notebook/eda` when plots
 exist or `notebook/basic` (both presets currently scaffold the same minimal notebook):
 
 Notebooks are written under `outputs/notebooks/`.

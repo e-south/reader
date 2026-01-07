@@ -27,8 +27,8 @@ from reader.core.config_model import ReaderSpec
 from reader.core.engine import explain as explain_job
 from reader.core.engine import run_job, run_spec
 from reader.core.engine import validate as validate_job
-from reader.core.errors import ConfigError, ReaderError
-from reader.core.notebooks import list_notebook_presets, write_experiment_notebook
+from reader.core.errors import ArtifactError, ConfigError, ReaderError
+from reader.core.notebooks import list_notebook_presets, normalize_notebook_preset, write_experiment_notebook
 from reader.core.presets import describe_preset, list_presets
 from reader.core.registry import load_entry_points
 from reader.core.specs import materialize_specs, resolve_export_specs, resolve_plot_specs
@@ -93,12 +93,12 @@ NOTEBOOK_MODE_OPTION = typer.Option(
 NOTEBOOK_PLOT_ONLY_OPTION = typer.Option(
     None,
     "--only",
-    help="Filter plot ids when using --preset notebook/plots (repeatable).",
+    help="Filter plot ids when using --preset notebook/eda (repeatable).",
 )
 NOTEBOOK_PLOT_EXCLUDE_OPTION = typer.Option(
     None,
     "--exclude",
-    help="Exclude plot ids when using --preset notebook/plots (repeatable).",
+    help="Exclude plot ids when using --preset notebook/eda (repeatable).",
 )
 
 
@@ -224,6 +224,30 @@ def _config_has_notebooks_override(path: Path) -> bool:
     return isinstance(paths, dict) and "notebooks" in paths
 
 
+def _has_sfxi_step(spec: ReaderSpec) -> bool:
+    return any(str(getattr(step, "uses", "")) == "transform/sfxi" for step in spec.pipeline.steps)
+
+
+def _has_sfxi_artifacts(outputs_dir: Path) -> bool:
+    manifest_path = outputs_dir / "manifests" / "manifest.json"
+    if not manifest_path.exists():
+        return False
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    artifacts = payload.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        return False
+    for entry in artifacts.values():
+        if not isinstance(entry, dict):
+            continue
+        contract = str(entry.get("contract", ""))
+        if contract == "tidy+map.v1" or contract.startswith("sfxi.vec8."):
+            return True
+    return False
+
+
 def _default_notebook_name() -> str:
     return f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
 
@@ -277,10 +301,18 @@ def _scaffold_notebook(
         if not selected_preset and getattr(spec, "notebook", None) and getattr(spec.notebook, "preset", None):
             selected_preset = spec.notebook.preset
         if not selected_preset:
-            selected_preset = "notebook/plots" if resolve_plot_specs(spec) else "notebook/basic"
-        if (plot_only or plot_exclude) and selected_preset != "notebook/plots":
-            raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/plots.")
+            selected_preset = "notebook/eda" if resolve_plot_specs(spec) else "notebook/basic"
+        selected_preset = normalize_notebook_preset(selected_preset)
+        if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
+            raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
         outputs_dir = Path(spec.paths.outputs)
+        if selected_preset == "notebook/sfxi_eda":
+            if not (_has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)):
+                raise typer.BadParameter(
+                    "Preset notebook/sfxi_eda requires a transform/sfxi step in config.yaml "
+                    "or existing SFXI artifacts (tidy+map or vec8). "
+                    "See docs/sfxi_vec8_in_reader.md."
+                )
         notebooks_cfg = spec.paths.notebooks
         nb_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
         if not _config_has_notebooks_override(job_path):
@@ -308,7 +340,7 @@ def _scaffold_notebook(
         has_fcs = any(p.suffix.lower() == ".fcs" for p in exp_dir.rglob("*.fcs"))
         existed = target.exists()
         plot_specs_payload = None
-        if selected_preset == "notebook/plots":
+        if selected_preset == "notebook/eda":
             plot_specs = resolve_plot_specs(spec)
             selected = _select_steps(plot_specs, only=plot_only or [], exclude=plot_exclude or [], kind="plot spec")
             plot_specs_payload = [_spec_to_dict(s) for s in selected]
@@ -486,6 +518,43 @@ def _find_jobs(root: Path) -> list[Path]:
     for p in root.glob("**/config.yaml"):
         out.append(p.resolve())
     return sorted(out)
+
+
+def _find_year_jobs(year: str, root: Path) -> list[Path]:
+    year_str = str(year).strip()
+    if not year_str:
+        raise typer.BadParameter("--year cannot be empty")
+    if not year_str.isdigit() or len(year_str) != 4:
+        raise typer.BadParameter("--year expects a 4-digit year (e.g., 2025).")
+    if not root.exists() or not root.is_dir():
+        raise typer.BadParameter(f"Experiments root not found: {root}")
+    year_dir = root / year_str
+    if not year_dir.exists() or not year_dir.is_dir():
+        raise typer.BadParameter(f"No experiments directory for year {year_str} under {root}.")
+    jobs = _find_jobs(year_dir)
+    if not jobs:
+        raise typer.BadParameter(f"No experiments found under {year_dir}.")
+    return jobs
+
+
+def _require_plot_artifacts(spec: ReaderSpec, job_path: Path) -> None:
+    outputs_dir = Path(spec.paths.outputs)
+    manifest_path = outputs_dir / "manifests" / "manifest.json"
+    if not manifest_path.exists():
+        raise ArtifactError(
+            f"No outputs/manifests/manifest.json found. Run 'reader run {job_path}' first to generate artifacts."
+        )
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ArtifactError(
+            f"Could not read artifacts manifest at {manifest_path}. Run 'reader run {job_path}' first."
+        ) from exc
+    artifacts = payload.get("artifacts") or {}
+    if not artifacts:
+        raise ArtifactError(
+            f"No artifacts listed in outputs/manifests/manifest.json. Run 'reader run {job_path}' first."
+        )
 
 
 def _append_journal(job_path: Path, command_line: str) -> None:
@@ -750,39 +819,52 @@ def run(
         _handle_reader_error(e)
 
 
-@app.command(help="Save plot files from plot specs using existing artifacts.")
-def plot(
-    job: str | None = typer.Argument(
-        None,
-        metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'reader ls'.",
-    ),
-    only: list[str] = PLOT_ONLY_OPTION,
-    exclude: list[str] = PLOT_EXCLUDE_OPTION,
-    list_only: bool = typer.Option(
-        False,
-        "--list",
-        help="List plot specs for this config and exit.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Plan only: validate and print the plot plan without executing.",
-    ),
-    log_level: str = typer.Option(
-        "INFO",
-        "--log-level",
-        metavar="LEVEL",
-        help="Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO).",
-    ),
-    inputs: list[str] = PLOT_INPUT_OPTION,
-    sets: list[str] = PLOT_SET_OPTION,
-):
-    try:
-        job_path = _infer_job_path(job)
-        spec = ReaderSpec.load(job_path)
-    except ReaderError as e:
-        _handle_reader_error(e)
+def _build_plot_command(
+    job_path: Path,
+    *,
+    only: list[str] | None,
+    exclude: list[str] | None,
+    list_only: bool,
+    dry_run: bool,
+    log_level: str,
+    inputs: list[str] | None,
+    sets: list[str] | None,
+) -> list[str]:
+    parts = ["reader plot", str(job_path)]
+    if list_only:
+        parts += ["--list"]
+    if only:
+        for v in only:
+            parts += ["--only", v]
+    if exclude:
+        for v in exclude:
+            parts += ["--exclude", v]
+    if dry_run:
+        parts += ["--dry-run"]
+    if log_level and log_level != "INFO":
+        parts += ["--log-level", log_level]
+    for raw in inputs or []:
+        parts += ["--input", raw]
+    for raw in sets or []:
+        parts += ["--set", raw]
+    return parts
+
+
+def _run_plot_job(
+    job_path: Path,
+    *,
+    job_hint: str | None,
+    only: list[str] | None,
+    exclude: list[str] | None,
+    list_only: bool,
+    dry_run: bool,
+    log_level: str,
+    inputs: list[str] | None,
+    sets: list[str] | None,
+) -> None:
+    spec = ReaderSpec.load(job_path)
+    if not list_only:
+        _require_plot_artifacts(spec, job_path)
     plot_specs = resolve_plot_specs(spec)
     if not plot_specs:
         if list_only:
@@ -824,47 +906,155 @@ def plot(
         value = yaml.safe_load(value_raw)
         set_overrides.append((path, value))
     selected = _apply_step_overrides(selected, input_overrides=input_overrides, set_overrides=set_overrides)
-    parts = ["reader plot", str(job_path)]
-    if only:
-        for v in only:
-            parts += ["--only", v]
-    if exclude:
-        for v in exclude:
-            parts += ["--exclude", v]
-    if dry_run:
-        parts += ["--dry-run"]
-    if log_level and log_level != "INFO":
-        parts += ["--log-level", log_level]
-    for raw in inputs or []:
-        parts += ["--input", raw]
-    for raw in sets or []:
-        parts += ["--set", raw]
+    parts = _build_plot_command(
+        job_path,
+        only=only,
+        exclude=exclude,
+        list_only=False,
+        dry_run=dry_run,
+        log_level=log_level,
+        inputs=inputs,
+        sets=sets,
+    )
     _append_journal(job_path, " ".join(parts))
+    run_spec(
+        spec,
+        dry_run=dry_run,
+        log_level=log_level,
+        console=console,
+        include_pipeline=False,
+        include_plots=True,
+        include_exports=False,
+        plot_specs=selected,
+    )
+    if not dry_run:
+        job_hint = _format_job_arg(job_hint)
+        outputs_dir = Path(spec.paths.outputs)
+        plots_cfg = spec.paths.plots
+        plots_dir = outputs_dir if plots_cfg in ("", ".", "./") else outputs_dir / str(plots_cfg)
+
+        def _cmd(base: str, tail: str = "") -> str:
+            return f"{base} {job_hint}{tail}" if job_hint else f"{base}{tail}"
+
+        lines = [f"Plots saved in [path]{plots_dir}[/path]", "", "Next steps:"]
+        lines.append(f"  {_cmd('reader notebook')}")
+        if resolve_export_specs(spec):
+            lines.append(f"  {_cmd('reader export')}")
+        console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
+
+
+@app.command(help="Save plot files from plot specs using existing artifacts.")
+def plot(
+    job: str | None = typer.Argument(
+        None,
+        metavar="CONFIG|DIR|INDEX",
+        help="Experiment config path, directory, or index from 'reader ls'.",
+    ),
+    year: str | None = typer.Option(
+        None,
+        "--year",
+        metavar="YYYY",
+        help="Run plots for all experiments under experiments/YYYY.",
+    ),
+    root: str | None = typer.Option(
+        None,
+        "--root",
+        metavar="DIR",
+        help="Override experiments root when using --year (default: nearest experiments/).",
+    ),
+    only: list[str] = PLOT_ONLY_OPTION,
+    exclude: list[str] = PLOT_EXCLUDE_OPTION,
+    list_only: bool = typer.Option(
+        False,
+        "--list",
+        help="List plot specs for this config and exit.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Plan only: validate and print the plot plan without executing.",
+    ),
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        metavar="LEVEL",
+        help="Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO).",
+    ),
+    inputs: list[str] = PLOT_INPUT_OPTION,
+    sets: list[str] = PLOT_SET_OPTION,
+):
+    if root and not year:
+        raise typer.BadParameter("--root is only valid with --year")
+    if year:
+        if job is not None:
+            raise typer.BadParameter("--year cannot be combined with CONFIG|DIR|INDEX")
+        root_path = _find_nearest_experiments_dir(Path.cwd()) if root is None else Path(root).resolve()
+        jobs = _find_year_jobs(year, root_path)
+        console.print(
+            Panel.fit(
+                f"Plotting {len(jobs)} experiment(s) for {year} under [path]{root_path}[/path].",
+                border_style="accent",
+                box=box.ROUNDED,
+            )
+        )
+        failures: list[tuple[Path, str]] = []
+        total = len(jobs)
+        for idx, job_path in enumerate(jobs, 1):
+            exp_name = job_path.parent.name
+            cmd_line = " ".join(
+                _build_plot_command(
+                    job_path,
+                    only=only,
+                    exclude=exclude,
+                    list_only=list_only,
+                    dry_run=dry_run,
+                    log_level=log_level,
+                    inputs=inputs,
+                    sets=sets,
+                )
+            )
+            console.print(f"[accent]{idx}/{total}[/accent] {exp_name}")
+            console.print(f"[muted]{cmd_line}[/muted]")
+            try:
+                _run_plot_job(
+                    job_path,
+                    job_hint=str(job_path),
+                    only=only,
+                    exclude=exclude,
+                    list_only=list_only,
+                    dry_run=dry_run,
+                    log_level=log_level,
+                    inputs=inputs,
+                    sets=sets,
+                )
+            except (ReaderError, typer.BadParameter) as exc:
+                failures.append((job_path, str(exc)))
+                console.print(
+                    Panel.fit(
+                        f"[error]✗ {exp_name}: {exc}[/error]",
+                        border_style="error",
+                        box=box.ROUNDED,
+                    )
+                )
+        if failures:
+            lines = [f"{len(failures)} experiment(s) failed while plotting year {year}:"]
+            lines += [f"- {path.parent.name}: {msg}" for path, msg in failures]
+            _abort("\n".join(lines))
+        return
+
     try:
-        run_spec(
-            spec,
+        job_path = _infer_job_path(job)
+        _run_plot_job(
+            job_path,
+            job_hint=job,
+            only=only,
+            exclude=exclude,
+            list_only=list_only,
             dry_run=dry_run,
             log_level=log_level,
-            console=console,
-            include_pipeline=False,
-            include_plots=True,
-            include_exports=False,
-            plot_specs=selected,
+            inputs=inputs,
+            sets=sets,
         )
-        if not dry_run:
-            job_hint = _format_job_arg(job)
-            outputs_dir = Path(spec.paths.outputs)
-            plots_cfg = spec.paths.plots
-            plots_dir = outputs_dir if plots_cfg in ("", ".", "./") else outputs_dir / str(plots_cfg)
-
-            def _cmd(base: str, tail: str = "") -> str:
-                return f"{base} {job_hint}{tail}" if job_hint else f"{base}{tail}"
-
-            lines = [f"Plots saved in [path]{plots_dir}[/path]", "", "Next steps:"]
-            lines.append(f"  {_cmd('reader notebook')}")
-            if resolve_export_specs(spec):
-                lines.append(f"  {_cmd('reader export')}")
-            console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
     except ReaderError as e:
         _handle_reader_error(e)
 

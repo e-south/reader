@@ -218,6 +218,9 @@ uv run reader plugins --category plot
 uv run reader plugins --category export
 ```
 
+Export plugins are intentionally permissive about input contracts; the built‑in
+`export/csv` and `export/xlsx` accept any DataFrame artifact and write it to disk.
+
 Example export spec:
 
 ```yaml
@@ -227,6 +230,10 @@ exports:
       uses: "export/csv"
       reads: { df: "sfxi_vec8/df" }
       with: { path: "sfxi_vec8.csv" }
+    - id: export_vec8_xlsx
+      uses: "export/xlsx"
+      reads: { df: "sfxi_vec8/df" }
+      with: { path: "sfxi_vec8.xlsx", sheet_name: "vec8" }
 ```
 
 ---

@@ -11,7 +11,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -21,11 +21,10 @@ REQUIRED_COLS = ["position", "time", "channel", "value", "treatment"]
 
 @dataclass(frozen=True)
 class CornerizeResult:
-    per_corner: pd.DataFrame  # one row per (design×batch×corner)
-    points: pd.DataFrame  # wide one row per (design×batch) with b00.., sd00.., n00..
-    chosen_times: dict[object, float]
-    dropped_batches: list[object]
-    time_warnings: dict[object, str] = field(default_factory=dict)
+    per_corner: pd.DataFrame  # one row per (design×corner)
+    points: pd.DataFrame  # wide one row per design with b00.., sd00.., n00..
+    chosen_time: float | None
+    time_warning: str | None = None
 
 
 def _normalize(s: pd.Series) -> pd.Series:
@@ -52,18 +51,16 @@ def _choose_treatment_column(df: pd.DataFrame, treatment_map: dict[str, str], *,
     return best
 
 
-def _enforce_columns(df: pd.DataFrame, design_by: list[str], batch_col: str) -> None:
+def _enforce_columns(df: pd.DataFrame, design_by: list[str]) -> None:
     miss = [c for c in REQUIRED_COLS if c not in df.columns]
     if miss:
         raise ValueError(f"SFXI: tidy data missing required columns: {miss}")
     m2 = [c for c in design_by if c not in df.columns]
     if m2:
         raise ValueError(f"SFXI: missing design_by columns: {m2}")
-    if batch_col not in df.columns:
-        raise ValueError(f"SFXI: missing batch column '{batch_col}'")
 
 
-def _pick_time_for_batch(times: np.ndarray, target: float | None, mode: str) -> float | None:
+def _pick_time(times: np.ndarray, target: float | None, mode: str) -> float | None:
     if times.size == 0:
         return None
     times = np.unique(times.astype(float))
@@ -89,13 +86,10 @@ def select_times(
     channel: str,
     treatment_map: dict[str, str],
     case_sensitive: bool,
-    batch_col: str,
     target_time_h: float | None,
     time_mode: str,
     tolerance_h: float | None,
-    per_batch: bool,
-    on_missing: str,
-) -> tuple[pd.DataFrame, dict[object, float], list[object]]:
+) -> tuple[pd.DataFrame, float | None, str | None]:
     work = df[df["channel"] == channel].copy()
     # Decide which column to match against (raw preferred; alias tolerated).
     treatment_col = _choose_treatment_column(work, treatment_map, case_sensitive=case_sensitive)
@@ -129,47 +123,29 @@ def select_times(
             "match the values in the chosen treatment column."
         )
 
-    chosen: dict[object, float] = {}
-    dropped: list[object] = []
+    t = _pick_time(work["time"].to_numpy(dtype=float), target_time_h, time_mode)
+    if t is None:
+        raise ValueError("SFXI: could not choose a global time.")
+    out = work[np.isclose(work["time"].astype(float), float(t), rtol=0, atol=1e-9)].copy()
 
-    if per_batch:
-        for b, g in work.groupby(batch_col, dropna=False):
-            t = _pick_time_for_batch(g["time"].to_numpy(dtype=float), target_time_h, time_mode)
-            # tolerance is a soft warning; only a missing candidate is an error/drop
-            if t is None:
-                if on_missing == "error":
-                    raise ValueError(
-                        f"SFXI: could not choose time for batch={b!r} (mode={time_mode}, target={target_time_h})"
-                    )
-                dropped.append(b)
-                continue
-            chosen[b] = float(t)
-        if not chosen and on_missing == "error":
-            raise ValueError("SFXI: no batches met the time selection rule.")
-        mask = work[batch_col].map(chosen).notna() & np.isclose(
-            work["time"].astype(float),
-            work[batch_col].map(chosen).astype(float),
-            rtol=0,
-            atol=1e-9,
-        )
-        out = work[mask].copy()
-    else:
-        t = _pick_time_for_batch(work["time"].to_numpy(dtype=float), target_time_h, time_mode)
-        if t is None:
-            if on_missing == "error":
-                raise ValueError("SFXI: could not choose a global time.")
-            return work.iloc[0:0].copy(), {}, []
-        chosen["__global__"] = float(t)
-        out = work[np.isclose(work["time"].astype(float), float(t), rtol=0, atol=1e-9)].copy()
+    warn_note = None
+    if tolerance_h is not None and target_time_h is not None:
+        tol = float(tolerance_h)
+        tgt = float(target_time_h)
+        delta = abs(float(t) - tgt)
+        if delta > tol:
+            warn_note = (
+                f"Config requested time={tgt:.3f} h (mode={time_mode}, tol={tol:.3f} h) "
+                f"but closest time={float(t):.3f} h (|Δ|={delta:.3f} h); using {float(t):.3f} h."
+            )
 
-    return out, chosen, dropped
+    return out, float(t), warn_note
 
 
 def cornerize_and_aggregate(
     df: pd.DataFrame,
     *,
     design_by: list[str],
-    batch_col: str,
     treatment_map: dict[str, str],
     case_sensitive: bool,
     time_column: str,
@@ -177,47 +153,24 @@ def cornerize_and_aggregate(
     target_time_h: float | None,
     time_mode: str,
     time_tolerance_h: float | None,
-    time_per_batch: bool,
-    on_missing_time: str,
     require_all_corners_per_design: bool,
 ) -> CornerizeResult:
-    _enforce_columns(df, design_by, batch_col)
+    _enforce_columns(df, design_by)
 
     if time_column != "time":
         if time_column not in df.columns:
             raise ValueError(f"SFXI: time column '{time_column}' not found.")
         df = df.rename(columns={time_column: "time"})
 
-    snap, chosen, dropped = select_times(
+    snap, chosen_time, warn_note = select_times(
         df,
         channel=channel,
         treatment_map=treatment_map,
         case_sensitive=case_sensitive,
-        batch_col=batch_col,
         target_time_h=target_time_h,
         time_mode=time_mode,
         tolerance_h=time_tolerance_h,
-        per_batch=time_per_batch,
-        on_missing=on_missing_time,
     )
-
-    time_warnings: dict[object, str] = {}
-    if time_tolerance_h is not None and target_time_h is not None:
-        tol = float(time_tolerance_h)
-        tgt = float(target_time_h)
-        for b, t in chosen.items():
-            delta = abs(float(t) - tgt)
-            if delta > tol:
-                who = f"batch={b!r}" if b != "__global__" else "global selection"
-                time_warnings[b] = (
-                    f"Config requested time={tgt:.3f} h (mode={time_mode}, tol={tol:.3f} h) "
-                    f"but {who} had closest time={float(t):.3f} h (|Δ|={delta:.3f} h); using {float(t):.3f} h."
-                )
-
-    if time_per_batch and dropped and on_missing_time == "drop-all":
-        snap = snap.iloc[0:0].copy()
-        chosen = {}
-
     if snap.empty:
         raise ValueError("SFXI: no rows remain after time selection.")
 
@@ -239,10 +192,10 @@ def cornerize_and_aggregate(
         rev_keys = {str(k).strip().casefold(): v for k, v in rev.items()}
     snap["corner"] = corner_values.map(rev_keys)
 
-    chk = snap.groupby(design_by + [batch_col, "corner"])["time"].nunique().reset_index(name="n_times")
+    chk = snap.groupby(design_by + ["corner"])["time"].nunique().reset_index(name="n_times")
     bad = chk[chk["n_times"] > 1]
     if not bad.empty:
-        raise ValueError("SFXI: more than one time within (design×batch×corner) after selection.")
+        raise ValueError("SFXI: more than one time within (design×corner) after selection.")
 
     def _agg_mean(series: pd.Series) -> float:
         s = pd.to_numeric(series, errors="coerce").dropna()
@@ -255,13 +208,13 @@ def cornerize_and_aggregate(
     def _agg_n(series: pd.Series) -> int:
         return int(pd.to_numeric(series, errors="coerce").dropna().size)
 
-    grp_cols = design_by + [batch_col, "corner"]
+    grp_cols = design_by + ["corner"]
     g = snap.groupby(grp_cols, dropna=False)
     per_corner = g.agg(
         time=("time", "first"), y_mean=("value", _agg_mean), y_sd=("value", _agg_sd), y_n=("value", _agg_n)
     ).reset_index()
 
-    idx_cols = design_by + [batch_col]
+    idx_cols = design_by
     m = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_mean", aggfunc="first")
     s = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_sd", aggfunc="first")
     n = per_corner.pivot_table(index=idx_cols, columns="corner", values="y_n", aggfunc="first")
@@ -287,7 +240,6 @@ def cornerize_and_aggregate(
     return CornerizeResult(
         per_corner=per_corner,
         points=points,
-        chosen_times=chosen,
-        dropped_batches=dropped,
-        time_warnings=time_warnings,
+        chosen_time=chosen_time,
+        time_warning=warn_note,
     )

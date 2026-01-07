@@ -21,7 +21,7 @@ def _reduce(series: pd.Series, stat: Literal["mean", "median"]) -> float:
     return float(s.median()) if stat == "median" else float(s.mean())
 
 
-def resolve_reference_genotype_label(
+def resolve_reference_design_id(
     df: pd.DataFrame,
     *,
     design_by: list[str],
@@ -36,7 +36,7 @@ def resolve_reference_genotype_label(
     """
     if ref_label is None:
         return None
-    label_col = design_by[0] if design_by else "genotype"
+    label_col = design_by[0] if design_by else "design_id"
     alias_col = f"{label_col}_alias"
     want = str(ref_label)
 
@@ -50,7 +50,7 @@ def resolve_reference_genotype_label(
             return str(matches[0])  # unique alias→raw mapping
         if len(matches) > 1:
             raise ValueError(
-                f"sfxi: reference.design_id {want!r} resolves via {alias_col!r} to multiple {label_col!r} values: "
+                f"sfxi: reference.{label_col} {want!r} resolves via {alias_col!r} to multiple {label_col!r} values: "
                 f"{sorted(map(str, matches))!r}"
             )
 
@@ -60,7 +60,7 @@ def resolve_reference_genotype_label(
     raw_prev = ", ".join(sorted(raw_vals)[:8]) + (" …" if len(raw_vals) > 8 else "")
     alias_prev = ", ".join(sorted(alias_vals)[:8]) + (" …" if len(alias_vals) > 8 else "")
     raise ValueError(
-        f"sfxi: reference.design_id {want!r} not found under {label_col!r} or {alias_col!r}.\n"
+        f"sfxi: reference.{label_col} {want!r} not found under {label_col!r} or {alias_col!r}.\n"
         f"   available raw:   [{raw_prev}]\n"
         f"   available alias: [{alias_prev or '—'}]"
     )
@@ -70,29 +70,25 @@ def compute_reference_table(
     per_corner: pd.DataFrame,
     *,
     design_by: list[str],
-    batch_col: str,
-    ref_genotype: str,
-    scope: Literal["batch", "global"] = "batch",
+    ref_design_id: str,
     stat: Literal["mean", "median"] = "mean",
 ) -> pd.DataFrame:
     """
     Build a table of reference b00/b10/b01/b11 values.
 
     Returns a DataFrame:
-      scope == "batch": columns = [batch_col, 'b00','b10','b01','b11']
-      scope == "global": one row with columns ['b00','b10','b01','b11']
+      one row with columns ['b00','b10','b01','b11']
     """
     if not design_by:
         raise ValueError("design_by must contain at least one column to locate the reference")
 
     label_col = design_by[0]
-    ref_rows = per_corner[per_corner[label_col].astype(str) == str(ref_genotype)].copy()
+    ref_rows = per_corner[per_corner[label_col].astype(str) == str(ref_design_id)].copy()
     if ref_rows.empty:
-        raise ValueError(f"Reference genotype {ref_genotype!r} has no rows in per-corner table.")
+        raise ValueError(f"Reference design_id {ref_design_id!r} has no rows in per-corner table.")
 
-    idx = [batch_col] if scope == "batch" else []
-    mean = ref_rows.pivot_table(index=idx, columns="corner", values="y_mean", aggfunc=lambda s: _reduce(s, stat))
-
-    # Rename columns to b00..b11 and reset index
-    mean = mean.rename(columns={"00": "b00", "10": "b10", "01": "b01", "11": "b11"}).reset_index()
+    agg = ref_rows.groupby("corner")["y_mean"].agg(lambda s: _reduce(s, stat))
+    mean = pd.DataFrame([agg.to_dict()])
+    # Rename columns to b00..b11
+    mean = mean.rename(columns={"00": "b00", "10": "b10", "01": "b01", "11": "b11"})
     return mean

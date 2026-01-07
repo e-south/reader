@@ -18,6 +18,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import polars as pl
 import seaborn as sns
 from matplotlib.lines import Line2D
 
@@ -138,15 +139,20 @@ def plot_ts_and_snap(
     require_columns(df, required, where="ts_and_snap")
 
     # Base numerics
-    work = df.copy()
-    work["value"] = pd.to_numeric(work["value"], errors="coerce")
-    work["time"] = pd.to_numeric(work["time"], errors="coerce")
+    work_pl = pl.from_pandas(df)
+    value_expr = pl.col("value").cast(pl.Float64, strict=False)
+    value_expr = pl.when(value_expr.is_nan()).then(None).otherwise(value_expr)
+    time_expr = pl.col("time").cast(pl.Float64, strict=False)
+    time_expr = pl.when(time_expr.is_nan()).then(None).otherwise(time_expr)
+    work_pl = work_pl.with_columns(
+        value_expr.alias("value"),
+        time_expr.alias("time"),
+    )
     if ts_time_window:
         lo, hi = float(ts_time_window[0]), float(ts_time_window[1])
-        work = work[
-            (pd.to_numeric(work[ts_x_col], errors="coerce") >= lo)
-            & (pd.to_numeric(work[ts_x_col], errors="coerce") <= hi)
-        ].copy()
+        ts_x_num = pl.col(ts_x_col).cast(pl.Float64, strict=False)
+        work_pl = work_pl.filter((ts_x_num >= lo) & (ts_x_num <= hi))
+    work = work_pl.to_pandas(use_pyarrow_extension_array=False)
     if warn_if_empty(work, where="ts_and_snap", detail="after time_window filter"):
         return []
 
@@ -330,6 +336,8 @@ def plot_ts_and_snap(
                         preview,
                         float(delta),
                     )
+            times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna() if not snapped.empty else pd.Series([])
+            t_used = float(times_used.median()) if not times_used.empty else float(snap_time)
             if not snapped.empty:
                 ax = ax_snap
 
@@ -447,7 +455,7 @@ def plot_ts_and_snap(
                 ax.set_xticklabels(x_order, rotation=45, ha="right")
                 ax.set_xlabel("")
                 ax.set_ylabel(ch_snap)
-                ax.set_title(f"t≈{float(snap_time):.2f} h", fontweight="normal")
+                ax.set_title(f"t={t_used:.2f} h", fontweight="normal")
 
                 if snap_show_legend and snap_hue_col and len(hue_levels_snap) > 1 and legend_handles:
                     ax.legend(

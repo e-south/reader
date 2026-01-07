@@ -18,6 +18,7 @@ from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from reader.core.plot_sinks import PlotFigure
 
@@ -124,6 +125,9 @@ def plot_snapshot_barplot(
     hue_col = alias_column(df, hue) if hue else None
     group_col = alias_column(df, group_on) if group_on else None
     y_list = [y] if isinstance(y, str) else list(y)
+    if panel_by == "channel" and channel_select:
+        # Treat channel_select as an explicit override for channel panels.
+        y_list = [channel_select]
     required = ["time", "channel", "value", "position", x_col]
     if hue_col:
         required.append(hue_col)
@@ -147,7 +151,7 @@ def plot_snapshot_barplot(
 
     if panel_by in {"x", "group"} and not channel_select:
         raise ValueError("snapshot_barplot: channel_select is required when panel_by != 'channel'")
-    if channel_select:
+    if channel_select and panel_by in {"x", "group"}:
         available = sorted(work["channel"].astype(str).unique().tolist())
         if str(channel_select) not in available:
             raise ValueError(
@@ -157,6 +161,7 @@ def plot_snapshot_barplot(
     # Pick nearest-time replicates per (groupby?, x, hue?, channel, position)
     key_cols: list[str] = [c for c in [group_col, x_col, hue_col, "channel", "position"] if c]
     snapped = nearest_time_per_key(work, target_time=float(time), keys=key_cols, tol=time_tolerance)
+    times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna()
     if snapped.empty:
         log = logging.getLogger("reader")
         # Fall back to the nearest rows per key (no tolerance), with a clear warning.
@@ -182,6 +187,8 @@ def plot_snapshot_barplot(
         )
 
     snapped["value"] = pd.to_numeric(snapped["value"], errors="coerce")
+    times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna()
+    t_used = float(times_used.median()) if not times_used.empty else float(time)
 
     # Drop None-like group labels
     if group_col:
@@ -195,25 +202,38 @@ def plot_snapshot_barplot(
     # -------------- aggregate once: heights + error stats from replicates --------------
 
     base_group_cols: list[str] = [c for c in [group_col, x_col, hue_col, "channel"] if c]
-
-    # Aggregate on DataFrameGroupBy (named aggregations require DataFrame groupby)
-    stats = (
-        snapped.groupby(base_group_cols, dropna=False)
+    # Deduplicate while preserving order (avoids alias collisions like design_id_alias twice).
+    seen_cols: set[str] = set()
+    base_group_cols = [c for c in base_group_cols if not (c in seen_cols or seen_cols.add(c))]
+    snapped_pl = pl.from_pandas(snapped)
+    value_expr = pl.col("value").cast(pl.Float64, strict=False)
+    value_expr = pl.when(value_expr.is_nan()).then(None).otherwise(value_expr)
+    snapped_pl = snapped_pl.with_columns(value_expr.alias("value"))
+    stats_pl = (
+        snapped_pl.group_by(base_group_cols)
         .agg(
-            n=("value", "count"),
-            mean=("value", "mean"),
-            median=("value", "median"),
-            std=("value", "std"),
-            sem=("value", "sem"),
+            pl.col("value").count().alias("n"),
+            pl.col("value").mean().alias("mean"),
+            pl.col("value").median().alias("median"),
+            pl.col("value").std(ddof=1).alias("std"),
         )
-        .reset_index()
+        .with_columns(
+            pl.when(pl.col("n") > 0)
+            .then(pl.col("std") / pl.col("n").cast(pl.Float64).sqrt())
+            .otherwise(None)
+            .alias("sem")
+        )
     )
 
     # Quantiles for IQR (merged later, only used when err="iqr")
     if err == "iqr":
-        g_series = snapped.groupby(base_group_cols, dropna=False)["value"]
-        q = g_series.quantile([0.25, 0.75]).unstack(-1).reset_index().rename(columns={0.25: "q1", 0.75: "q3"})
-        stats = stats.merge(q, on=base_group_cols, how="left")
+        q_pl = snapped_pl.group_by(base_group_cols).agg(
+            pl.col("value").quantile(0.25, interpolation="linear").alias("q1"),
+            pl.col("value").quantile(0.75, interpolation="linear").alias("q3"),
+        )
+        stats_pl = stats_pl.join(q_pl, on=base_group_cols, how="left")
+
+    stats = stats_pl.sort(base_group_cols).to_pandas(use_pyarrow_extension_array=False)
 
     def _row_for(
         tab: pd.DataFrame,
@@ -328,6 +348,7 @@ def plot_snapshot_barplot(
             )
         colors = _colors_for(max(1, len(hue_levels_union)), palette_book)
         color_map = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels_union)}
+        use_hue_colors = hue_col is not None and show_legend
 
         # Global width so every panel uses identical bar widths
         num_hues = len(hue_levels_union) if hue_col else 1
@@ -346,11 +367,11 @@ def plot_snapshot_barplot(
 
             # Title
             if panel_by == "channel" and group_col and members and members[0] is not None:
-                fig.suptitle(f"{members[0]} • t≈{float(time):.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
+                fig.suptitle(f"{members[0]} • t={t_used:.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
             elif panel_by == "group":
-                fig.suptitle(f"{selected_channel} • t≈{float(time):.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
+                fig.suptitle(f"{selected_channel} • t={t_used:.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
             else:
-                fig.suptitle(f"{fig_label} • t≈{float(time):.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
+                fig.suptitle(f"{fig_label} • t={t_used:.2f} h", y=float(fig_kwargs.get("suptitle_y", 1.04)))
 
             # --- optional: compute global y-lims when all panels share a channel ---
             unify_same_channel = (panel_by in ("group", "x")) and len(panels) > 1
@@ -503,7 +524,8 @@ def plot_snapshot_barplot(
                 # Draw bars ONE x-category at a time → simple, robust alignment
                 for j, xv in enumerate(x_order):
                     x_center = base_pos[j]
-                    for _i, hval in enumerate(hue_levels):
+                    entries: list[tuple[str, pd.Series]] = []
+                    for hval in hue_levels:
                         row = _row_for(
                             sbar,
                             x_val=xv,
@@ -513,7 +535,20 @@ def plot_snapshot_barplot(
                         )
                         if row is None or not np.isfinite(float(row[agg])):
                             continue
+                        entries.append((hval, row))
 
+                    if not entries:
+                        continue
+
+                    # Center bars for the x-group based on the hues actually present
+                    n_present = len(entries)
+                    offsets_local = (
+                        (np.arange(n_present) - (n_present - 1) / 2.0) * width_global
+                        if (hue_col and n_present > 1)
+                        else np.array([0.0])
+                    )
+
+                    for idx, (hval, row) in enumerate(entries):
                         height = float(row[agg])
 
                         # Error bars (native yerr)
@@ -535,12 +570,12 @@ def plot_snapshot_barplot(
                         # errorbar style (compatible across Matplotlib versions)
                         error_kw = {"capsize": 3, "elinewidth": 1.0, "alpha": 0.9} if yerr is not None else None
 
-                        xpos = x_center + offsets[hue_index_panel[hval]]
+                        xpos = x_center + offsets_local[idx]
                         bars = ax.bar(
                             [xpos],
                             [height],
                             width=width,
-                            color=color_map[hval] if hue_col else "#D9D9D9",
+                            color=color_map[hval] if use_hue_colors else "#D9D9D9",
                             edgecolor="#C0C0C0",
                             zorder=1,
                             yerr=yerr,
@@ -557,7 +592,7 @@ def plot_snapshot_barplot(
                         rr = rr[rr["channel"].astype(str) == channel_key]
                         if not rr.empty:
                             rng = np.random.default_rng()
-                            has_hue_here = hue_col is not None and len(hue_levels) > 1
+                            has_hue_here = hue_col is not None and n_present > 1
                             jitter = float(width) * (0.08 if has_hue_here else 0.12)
                             xj = xpos + (rng.random(len(rr)) - 0.5) * (2.0 * jitter)
                             ax.scatter(

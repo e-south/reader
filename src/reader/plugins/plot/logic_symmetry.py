@@ -21,7 +21,7 @@ from reader.core.registry import Plugin, PluginConfig
 
 class LogicSymCfg(PluginConfig):
     response_channel: str
-    design_by: list[str] = Field(default_factory=lambda: ["genotype"])
+    design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
     treatment_map: dict[str, str]
     treatment_case_sensitive: bool = True

@@ -38,6 +38,7 @@ from rich.text import Text
 from reader.core.artifacts import ArtifactStore
 from reader.core.config_model import ReaderSpec
 from reader.core.context import RunContext
+from reader.core.notebooks import normalize_notebook_preset
 from reader.core.contracts import BUILTIN, validate_df
 from reader.core.errors import ConfigError, ContractError, ExecutionError, ReaderError
 from reader.core.mpl import ensure_mpl_cache_dir
@@ -271,9 +272,9 @@ def build_next_steps(spec: ReaderSpec, *, job_label: str | None = None) -> list[
     export_specs = resolve_export_specs(spec)
     notebook_preset = None
     if getattr(spec, "notebook", None) and getattr(spec.notebook, "preset", None):
-        notebook_preset = spec.notebook.preset
+        notebook_preset = normalize_notebook_preset(spec.notebook.preset)
     if not notebook_preset:
-        notebook_preset = "notebook/plots" if plot_specs else "notebook/basic"
+        notebook_preset = "notebook/eda" if plot_specs else "notebook/basic"
     steps.append((_cmd("reader artifacts"), "Review generated artifacts (QC)"))
     if plot_specs:
         steps.append((_cmd("reader plot"), "Save plot files to outputs/plots"))
@@ -298,7 +299,7 @@ def explain(
     categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
         out_dir = Path(spec.paths.outputs)
-        ensure_mpl_cache_dir(base_dir=out_dir)
+        ensure_mpl_cache_dir()
     registry = registry or load_entry_points(categories=categories)
     if pipeline_steps:
         pipeline = _plan_table(pipeline_steps, registry, title="Pipeline")
@@ -341,7 +342,7 @@ def validate(spec: ReaderSpec, *, console: Console, check_files: bool = False, e
     categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
         out_dir = Path(spec.paths.outputs)
-        ensure_mpl_cache_dir(base_dir=out_dir)
+        ensure_mpl_cache_dir()
     registry = load_entry_points(categories=categories)
 
     def _validate_steps(items: list[Any], label: str, *, available_labels: set[str] | None = None) -> set[str]:
@@ -635,7 +636,7 @@ def run_spec(
     all_steps = pipeline_steps + plot_steps + export_steps
 
     if plot_steps:
-        ensure_mpl_cache_dir(base_dir=out_dir)
+        ensure_mpl_cache_dir()
 
     palette = spec.plotting.palette if spec.plotting else None
     if palette is not None:

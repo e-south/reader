@@ -51,17 +51,14 @@ class SFXIResponseCfg:
 
 @dataclass(frozen=True)
 class SFXIReferenceCfg:
-    genotype: str | None = None  # name of reference genotype in tidy data
-    scope: Literal["batch", "global"] = "batch"
+    design_id: str | None = None  # name of reference design_id in tidy data
     stat: Literal["mean", "median"] = "mean"
-    on_missing: Literal["error", "skip"] = "error"
 
 
 @dataclass(frozen=True)
 class SFXIConfig:
     # experiment structure
     design_by: list[str]
-    batch_col: str
     time_column: str
 
     # channels
@@ -75,9 +72,6 @@ class SFXIConfig:
     target_time_h: float | None = None
     time_mode: Literal["nearest", "last_before", "first_after", "exact"] = "nearest"
     time_tolerance_h: float | None = 0.51
-    time_per_batch: bool = True
-    on_missing_time: Literal["error", "skip-batch", "drop-all"] = "error"
-
     # misc rules
     require_all_corners_per_design: bool = True
 
@@ -113,8 +107,9 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
     Requires explicit 'response.logic_channel' and 'response.intensity_channel'.
     """
     # top-level
-    design_by = list(_get(xform_cfg, "design_by", ["genotype"]))
-    batch_col = str(_get(xform_cfg, "batch_col", "batch"))
+    design_by = list(_get(xform_cfg, "design_by", ["design_id"]))
+    if not design_by or design_by[0] != "design_id":
+        raise ValueError("sfxi.design_by must start with 'design_id' to align with the SFXI spec.")
     time_column = str(_get(xform_cfg, "time_column", "time"))
 
     # response (explicit only; no back-compat keys)
@@ -140,22 +135,29 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
     target_time_h = _get(xform_cfg, "target_time_h", None)
     time_mode = str(_get(xform_cfg, "time_mode", "nearest")).lower()
     tol = _get(xform_cfg, "time_tolerance_h", 0.51)
-    time_per_batch = bool(_get(xform_cfg, "time_per_batch", True))
-    on_missing_time = str(_get(xform_cfg, "on_missing_time", "error")).lower()
     if time_mode not in {"nearest", "last_before", "first_after", "exact"}:
         raise ValueError(f"Invalid sfxi.time_mode='{time_mode}'")
+    if _get(xform_cfg, "on_missing_time", None) is not None:
+        raise ValueError("sfxi.on_missing_time is no longer supported; missing times are errors.")
 
     # misc
     require_all = bool(_get(xform_cfg, "require_all_corners_per_design", True))
 
     # reference
     ref = _sub(xform_cfg, "reference")
+    if "genotype" in ref:
+        raise ValueError("sfxi.reference.genotype is no longer supported; use reference.design_id.")
+    if "scope" in ref:
+        raise ValueError("sfxi.reference.scope is no longer supported; SFXI uses global anchors only.")
+    ref_label = ref.get("design_id")
     reference = SFXIReferenceCfg(
-        genotype=ref.get("genotype"),
-        scope=str(ref.get("scope", "batch")).lower() if ref.get("scope") else "batch",
+        design_id=ref_label,
         stat=str(ref.get("stat", "mean")).lower() if ref.get("stat") else "mean",
-        on_missing=str(ref.get("on_missing", "error")).lower() if ref.get("on_missing") else "error",
     )
+    if reference.stat not in {"mean", "median"}:
+        raise ValueError(f"Invalid sfxi.reference.stat='{reference.stat}'")
+    if "on_missing" in ref and str(ref.get("on_missing")).lower() != "error":
+        raise ValueError("sfxi.reference.on_missing currently supports only 'error'.")
 
     # eps / output
     eps_ratio = float(_get(xform_cfg, "eps_ratio", 1e-9))
@@ -177,7 +179,6 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
 
     cfg = SFXIConfig(
         design_by=design_by,
-        batch_col=batch_col,
         time_column=time_column,
         response=response,
         treatment_map=tmap,
@@ -185,8 +186,6 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
         target_time_h=(float(target_time_h) if target_time_h is not None else None),
         time_mode=time_mode,
         time_tolerance_h=(float(tol) if tol is not None else None),
-        time_per_batch=time_per_batch,
-        on_missing_time=on_missing_time,
         require_all_corners_per_design=require_all,
         reference=reference,
         eps_ratio=eps_ratio,

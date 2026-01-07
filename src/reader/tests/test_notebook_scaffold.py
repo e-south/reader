@@ -39,7 +39,7 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     }
     cfg_path = _write_config(tmp_path, cfg)
     runner = CliRunner()
-    result = runner.invoke(app, ["notebook", str(cfg_path), "--preset", "notebook/plots", "--mode", "none"])
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--preset", "notebook/eda", "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / _default_notebook_name()
     assert nb_path.exists()

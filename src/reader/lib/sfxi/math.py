@@ -5,7 +5,7 @@ src/reader/lib/sfxi/math.py
 
 SFXI math: build vec8 from logic/intensity per-corner points.
 
-Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per (design x batch).
+Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per design.
 
 - v* are computed from the LOGIC CHANNEL (e.g., YFP/CFP):
     # r_logic and v computation are derived from the LOGIC channel corner means.
@@ -18,7 +18,7 @@ Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per (design x batch).
     y_linear_i = (b_i + eps_abs) / max(anchor_i + ref_add_alpha, eps_ref)
     y*_i       = log2( max(y_linear_i + log2_offset_delta, eps_ratio) )
 
-Anchors are computed from the INTENSITY per-corner table for the reference genotype.
+Anchors are computed from the INTENSITY per-corner table for the reference design_id.
 
 Author(s): Eric J. South (updated)
 --------------------------------------------------------------------------------
@@ -65,9 +65,7 @@ def compute_vec8(
     points_intensity: pd.DataFrame,  # b00..b11 from INTENSITY channel
     per_corner_intensity: pd.DataFrame,  # per-corner table for anchors
     design_by: list[str],
-    batch_col: str,
-    reference_genotype: str | None,
-    reference_scope: str,
+    reference_design_id: str | None,
     reference_stat: str,
     eps_ratio: float,
     eps_range: float,
@@ -78,18 +76,19 @@ def compute_vec8(
 ) -> pd.DataFrame:
     label_col = design_by[0]
 
-    # anchors from INTENSITY per-corner table for the reference genotype
+    # anchors from INTENSITY per-corner table for the reference design_id
     ref_tab: pd.DataFrame | None = None
-    if reference_genotype:
-        ref_rows = per_corner_intensity[per_corner_intensity[label_col].astype(str) == str(reference_genotype)].copy()
+    if reference_design_id:
+        ref_rows = per_corner_intensity[
+            per_corner_intensity[label_col].astype(str) == str(reference_design_id)
+        ].copy()
         if not ref_rows.empty:
-            grp = [batch_col, "corner"] if reference_scope == "batch" else ["corner"]
             agg_fun = "median" if reference_stat == "median" else "mean"
             ref_tab = (
-                ref_rows.groupby(grp)["y_mean"].agg(agg_fun).reset_index().rename(columns={"y_mean": "anchor_mean"})
+                ref_rows.groupby(["corner"])["y_mean"].agg(agg_fun).reset_index().rename(columns={"y_mean": "anchor_mean"})
             )
 
-    idx_cols = design_by + [batch_col]
+    idx_cols = design_by
     L = points_logic.set_index(idx_cols)
     I_vec = points_intensity.set_index(idx_cols)
     merged = (
@@ -108,8 +107,7 @@ def compute_vec8(
 
         anchors: dict[str, float] = {"00": np.nan, "10": np.nan, "01": np.nan, "11": np.nan}
         if ref_tab is not None and not ref_tab.empty:
-            sub = ref_tab[ref_tab[batch_col] == row[batch_col]] if reference_scope == "batch" else ref_tab
-            for _, rr in sub.iterrows():
+            for _, rr in ref_tab.iterrows():
                 anchors[str(rr["corner"])] = float(rr["anchor_mean"])
 
         def ystar(b: float, a: float) -> float:

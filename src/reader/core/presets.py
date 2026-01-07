@@ -101,7 +101,6 @@ _PRESETS: dict[str, dict[str, Any]] = {
                 "with": {
                     "response": {"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
                     "design_by": ["design_id"],
-                    "batch_col": "batch",
                     "treatment_map": {
                         "00": "EtOH 0%, 0 nM cipro",
                         "10": "EtOH 3%, 0 nM cipro",

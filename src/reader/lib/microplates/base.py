@@ -16,6 +16,7 @@ from collections.abc import Iterable, Sequence
 from typing import Literal
 
 import pandas as pd
+import polars as pl
 
 from reader.core import plot_utils as _plot_utils
 
@@ -127,13 +128,22 @@ def nearest_time_per_key(
     For each key combination, choose the row at time nearest to target_time.
     Rows with |dt|>tol are dropped.
     """
-    w = df.copy()
-    w[time_col] = pd.to_numeric(w[time_col], errors="coerce")
-    w = w.dropna(subset=[time_col])
-    w["__dt__"] = (w[time_col] - float(target_time)).abs()
-    idx = w.groupby(list(keys))["__dt__"].idxmin()
-    picked = w.loc[idx].copy()
-    return picked.loc[picked["__dt__"] <= float(tol)].drop(columns="__dt__")
+    missing = [c for c in [time_col, *keys] if c not in df.columns]
+    if missing:
+        raise KeyError(missing[0])
+
+    w = pl.from_pandas(df).with_row_count("__row__")
+    time_expr = pl.col(time_col).cast(pl.Float64, strict=False)
+    time_expr = pl.when(time_expr.is_nan()).then(None).otherwise(time_expr)
+    w = w.with_columns(time_expr.alias(time_col))
+    w = w.filter(pl.col(time_col).is_not_null())
+    w = w.with_columns((pl.col(time_col) - float(target_time)).abs().alias("__dt__"))
+    w = w.with_columns(pl.col("__dt__").min().over(list(keys)).alias("__dt_min__"))
+    w = w.filter(pl.col("__dt__") == pl.col("__dt_min__"))
+    w = w.sort("__row__").unique(subset=list(keys), keep="first")
+    w = w.filter(pl.col("__dt__") <= float(tol))
+    w = w.drop(["__dt__", "__dt_min__", "__row__"])
+    return w.to_pandas(use_pyarrow_extension_array=False)
 
 
 # -------------------- subplot layout + smart string ordering --------------------

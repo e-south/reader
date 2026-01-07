@@ -24,7 +24,7 @@ class HeatmapCfg(PluginConfig):
     channel: str
     time: float
     x: str = "treatment"
-    y: str = "genotype"
+    y: str = "design_id"
     order_x: list[str] | None = None
     order_y: list[str] | None = None
     square: bool = True
@@ -104,11 +104,11 @@ class SnapshotHeatmapPlot(Plugin):
                 )
             sub = tab[pd.to_numeric(tab["time"], errors="coerce") == tsel].copy()
             # Build a tidy-like dataframe that plot_snapshot_heatmap expects:
-            # time, channel, value, treatment, genotype(,_alias)…
+            # time, channel, value, treatment, design_id(,_alias)…
             sub = sub.rename(columns={use_col: "value"})
             sub["channel"] = channel
             # keep only necessary columns (+ any alias columns)
-            keep = ["time", "channel", "value", "treatment", "genotype", "genotype_alias"]
+            keep = ["time", "channel", "value", "treatment", "design_id", "design_id_alias"]
             df = sub[[c for c in keep if c in sub.columns]].copy()
 
             # Choose a descriptive default filename that includes the time actually used.

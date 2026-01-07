@@ -15,9 +15,20 @@ from pathlib import Path
 from reader.core.errors import ConfigError
 
 
+def _find_repo_root() -> Path | None:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return None
+
+
 def _default_cache_dir(base_dir: Path | None) -> Path:
     if base_dir is not None:
         return Path(base_dir).expanduser().resolve() / ".cache" / "matplotlib"
+    repo_root = _find_repo_root()
+    if repo_root is not None:
+        return repo_root / ".cache" / "matplotlib"
     xdg = os.environ.get("XDG_CACHE_HOME")
     if xdg:
         return Path(xdg).expanduser().resolve() / "reader" / "matplotlib"
@@ -32,7 +43,8 @@ def ensure_mpl_cache_dir(*, base_dir: Path | None = None) -> Path:
       1) MPLCONFIGDIR (if set)
       2) READER_MPLCONFIGDIR (if set)
       3) base_dir/.cache/matplotlib (if base_dir provided)
-      4) $XDG_CACHE_HOME/reader/matplotlib or ~/.cache/reader/matplotlib
+      4) <repo>/.cache/matplotlib (if running from a reader checkout)
+      5) $XDG_CACHE_HOME/reader/matplotlib or ~/.cache/reader/matplotlib
     """
     env = os.environ.get("MPLCONFIGDIR") or os.environ.get("READER_MPLCONFIGDIR")
     cache_dir = Path(env).expanduser() if env else _default_cache_dir(base_dir)
