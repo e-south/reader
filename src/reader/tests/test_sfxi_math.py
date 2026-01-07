@@ -551,7 +551,7 @@ def test_flat_logic_warns_and_sets_v(tmp_path):
     assert bool(vec8["flat_logic"].iloc[0]) is True
     assert np.allclose(vec8["intensity_log2_offset_delta"].to_numpy(dtype=float), 0.25)
 
-    with open(log_path, "r", encoding="utf-8") as fh:
+    with open(log_path, encoding="utf-8") as fh:
         payload = json.load(fh)
     assert payload.get("flat_logic_count", 0) == 1
     assert payload.get("flat_logic_fraction", 0.0) > 0.0

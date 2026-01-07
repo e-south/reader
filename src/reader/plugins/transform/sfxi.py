@@ -16,6 +16,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 from pydantic import Field
+
 from reader.core.registry import Plugin, PluginConfig
 from reader.lib.sfxi.run import build_vec8_from_tidy
 

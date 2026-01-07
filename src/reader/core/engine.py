@@ -38,10 +38,10 @@ from rich.text import Text
 from reader.core.artifacts import ArtifactStore
 from reader.core.config_model import ReaderSpec
 from reader.core.context import RunContext
-from reader.core.notebooks import normalize_notebook_preset
 from reader.core.contracts import BUILTIN, validate_df
 from reader.core.errors import ConfigError, ContractError, ExecutionError, ReaderError
 from reader.core.mpl import ensure_mpl_cache_dir
+from reader.core.notebooks import normalize_notebook_preset
 from reader.core.registry import Plugin, load_entry_points
 from reader.core.specs import ensure_unique_spec_ids, resolve_export_specs, resolve_plot_specs
 
@@ -343,7 +343,6 @@ def explain(
     ensure_unique_spec_ids(pipeline_steps, plot_specs, export_specs)
     categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
-        out_dir = Path(spec.paths.outputs)
         ensure_mpl_cache_dir()
     registry = registry or load_entry_points(categories=categories)
     if pipeline_steps:
@@ -386,7 +385,6 @@ def validate(spec: ReaderSpec, *, console: Console, check_files: bool = False, e
     ensure_unique_spec_ids(pipeline_steps, plot_specs, export_specs)
     categories = _collect_categories(pipeline_steps + plot_specs + export_specs)
     if "plot" in categories:
-        out_dir = Path(spec.paths.outputs)
         ensure_mpl_cache_dir()
     registry = load_entry_points(categories=categories)
 

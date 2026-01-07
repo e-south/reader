@@ -306,13 +306,14 @@ def _scaffold_notebook(
         if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
             raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
         outputs_dir = Path(spec.paths.outputs)
-        if selected_preset == "notebook/sfxi_eda":
-            if not (_has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)):
-                raise typer.BadParameter(
-                    "Preset notebook/sfxi_eda requires a transform/sfxi step in config.yaml "
-                    "or existing SFXI artifacts (tidy+map or vec8). "
-                    "See docs/sfxi_vec8_in_reader.md."
-                )
+        if selected_preset == "notebook/sfxi_eda" and not (
+            _has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)
+        ):
+            raise typer.BadParameter(
+                "Preset notebook/sfxi_eda requires a transform/sfxi step in config.yaml "
+                "or existing SFXI artifacts (tidy+map or vec8). "
+                "See docs/sfxi_vec8_in_reader.md."
+            )
         notebooks_cfg = spec.paths.notebooks
         nb_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
         if not _config_has_notebooks_override(job_path):

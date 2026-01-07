@@ -504,14 +504,6 @@ def plot_snapshot_barplot(
                 n_x = len(x_order)
                 base_pos = np.arange(n_x, dtype=float)
                 width = width_global
-                # Center bars within each x slot even when a subset of hues is present in this panel
-                n_here = len(hue_levels) if (hue_col and len(hue_levels) > 0) else 1
-                offsets = (
-                    (np.arange(n_here) - (n_here - 1) / 2.0) * width_global
-                    if (hue_col and n_here > 1)
-                    else np.array([0.0])
-                )
-                hue_index_panel = {h: i for i, h in enumerate(hue_levels)}
 
                 # Axes cosmetics: horizontal grid only (cleaner)
                 ax.grid(False)
