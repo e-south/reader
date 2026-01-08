@@ -536,61 +536,50 @@ def compute_crosstalk_pairs(
                     )
 
                 passes = True
-                if require_self_treatment:
-                    if not (np.isfinite(a_self) and np.isfinite(b_self)):
-                        passes = False
-                    if not (np.isfinite(a_cross) and np.isfinite(b_cross)):
-                        passes = False
-                if require_self_is_top1:
-                    if not (bool(a_row["self_is_top1"]) and bool(b_row["self_is_top1"])):
-                        passes = False
-                if min_self is not None:
-                    if not (np.isfinite(a_self) and np.isfinite(b_self)) or a_self < float(min_self) or b_self < float(min_self):
-                        passes = False
-                if max_cross is not None:
-                    if not (np.isfinite(a_cross) and np.isfinite(b_cross)) or a_cross > float(max_cross) or b_cross > float(max_cross):
-                        passes = False
-                if min_selectivity_delta is not None:
-                    if (
-                        not (np.isfinite(a_row["selectivity_delta"]) and np.isfinite(b_row["selectivity_delta"]))
-                        or float(a_row["selectivity_delta"]) < float(min_selectivity_delta)
-                        or float(b_row["selectivity_delta"]) < float(min_selectivity_delta)
-                    ):
-                        passes = False
-                if min_selectivity_ratio is not None:
-                    if (
-                        not (np.isfinite(a_row["selectivity_ratio"]) and np.isfinite(b_row["selectivity_ratio"]))
-                        or float(a_row["selectivity_ratio"]) < float(min_selectivity_ratio)
-                        or float(b_row["selectivity_ratio"]) < float(min_selectivity_ratio)
-                    ):
-                        passes = False
-                if max_other is not None:
-                    if (
-                        not (np.isfinite(a_row["best_other_value"]) and np.isfinite(b_row["best_other_value"]))
-                        or float(a_row["best_other_value"]) > float(max_other)
-                        or float(b_row["best_other_value"]) > float(max_other)
-                    ):
-                        passes = False
-                if min_self_minus_best_other is not None:
-                    if (
-                        not (
-                            np.isfinite(a_row["self_minus_best_other"])
-                            and np.isfinite(b_row["self_minus_best_other"])
-                        )
-                        or float(a_row["self_minus_best_other"]) < float(min_self_minus_best_other)
-                        or float(b_row["self_minus_best_other"]) < float(min_self_minus_best_other)
-                    ):
-                        passes = False
-                if min_self_ratio_best_other is not None:
-                    if (
-                        not (
-                            np.isfinite(a_row["self_ratio_best_other"])
-                            and np.isfinite(b_row["self_ratio_best_other"])
-                        )
-                        or float(a_row["self_ratio_best_other"]) < float(min_self_ratio_best_other)
-                        or float(b_row["self_ratio_best_other"]) < float(min_self_ratio_best_other)
-                    ):
-                        passes = False
+                if require_self_treatment and (
+                    not (np.isfinite(a_self) and np.isfinite(b_self) and np.isfinite(a_cross) and np.isfinite(b_cross))
+                ):
+                    passes = False
+                if require_self_is_top1 and not (bool(a_row["self_is_top1"]) and bool(b_row["self_is_top1"])):
+                    passes = False
+                if min_self is not None and (
+                    not (np.isfinite(a_self) and np.isfinite(b_self)) or a_self < float(min_self) or b_self < float(min_self)
+                ):
+                    passes = False
+                if max_cross is not None and (
+                    not (np.isfinite(a_cross) and np.isfinite(b_cross)) or a_cross > float(max_cross) or b_cross > float(max_cross)
+                ):
+                    passes = False
+                if min_selectivity_delta is not None and (
+                    not (np.isfinite(a_row["selectivity_delta"]) and np.isfinite(b_row["selectivity_delta"]))
+                    or float(a_row["selectivity_delta"]) < float(min_selectivity_delta)
+                    or float(b_row["selectivity_delta"]) < float(min_selectivity_delta)
+                ):
+                    passes = False
+                if min_selectivity_ratio is not None and (
+                    not (np.isfinite(a_row["selectivity_ratio"]) and np.isfinite(b_row["selectivity_ratio"]))
+                    or float(a_row["selectivity_ratio"]) < float(min_selectivity_ratio)
+                    or float(b_row["selectivity_ratio"]) < float(min_selectivity_ratio)
+                ):
+                    passes = False
+                if max_other is not None and (
+                    not (np.isfinite(a_row["best_other_value"]) and np.isfinite(b_row["best_other_value"]))
+                    or float(a_row["best_other_value"]) > float(max_other)
+                    or float(b_row["best_other_value"]) > float(max_other)
+                ):
+                    passes = False
+                if min_self_minus_best_other is not None and (
+                    not (np.isfinite(a_row["self_minus_best_other"]) and np.isfinite(b_row["self_minus_best_other"]))
+                    or float(a_row["self_minus_best_other"]) < float(min_self_minus_best_other)
+                    or float(b_row["self_minus_best_other"]) < float(min_self_minus_best_other)
+                ):
+                    passes = False
+                if min_self_ratio_best_other is not None and (
+                    not (np.isfinite(a_row["self_ratio_best_other"]) and np.isfinite(b_row["self_ratio_best_other"]))
+                    or float(a_row["self_ratio_best_other"]) < float(min_self_ratio_best_other)
+                    or float(b_row["self_ratio_best_other"]) < float(min_self_ratio_best_other)
+                ):
+                    passes = False
 
                 row = {
                     "design_a": a,

@@ -140,7 +140,7 @@ class CrosstalkPairs(Plugin):
         designs = result.designs
 
         try:
-            total_designs = int(designs["design_id"].nunique()) if "design_id" in designs.columns else int(0)
+            total_designs = int(designs["design_id"].nunique()) if "design_id" in designs.columns else 0
             time_count = len(result.times_used)
             total_pairs = total_designs * (total_designs - 1) // 2 * max(1, time_count)
             passing = int(pairs.shape[0])
