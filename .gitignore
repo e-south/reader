@@ -136,6 +136,7 @@ archived/
 # Docs are tracked (pipeline + plugins live here).
 !/docs/
 !/docs/**
+docs/**/.DS_Store
 
 # Raw instrument dumps and generated outputs (anywhere)
 raw/
