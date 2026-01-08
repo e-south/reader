@@ -140,9 +140,7 @@ def _mapping_from_column(
         if len(vals) == 0:
             continue
         if len(vals) > 1:
-            raise ValueError(
-                f"crosstalk_pairs: design {design!r} has multiple mapping values in {mapping_col}: {vals}"
-            )
+            raise ValueError(f"crosstalk_pairs: design {design!r} has multiple mapping values in {mapping_col}: {vals}")
         mapping[str(design)] = str(vals[0])
 
     overrides = overrides or {}
@@ -246,7 +244,9 @@ def _compute_design_summary(
         if value_scale == "log2":
             ratio = float(2**delta) if np.isfinite(delta) else float("nan")
         else:
-            ratio = float(top1_value) / float(top2_value) if np.isfinite(top2_value) and top2_value != 0 else float("nan")
+            ratio = (
+                float(top1_value) / float(top2_value) if np.isfinite(top2_value) and top2_value != 0 else float("nan")
+            )
 
         if mapping_mode == "top1":
             self_treatment = str(top1_treatment)
@@ -453,7 +453,9 @@ def compute_crosstalk_pairs(
 
     for tsel in selected_times:
         sub = work[pd.to_numeric(work[time_column], errors="coerce") == float(tsel)].copy()
-        grouped = _aggregate_values(sub, design_col=design_col, treatment_col=treatment_col, value_col=value_col, agg=agg)
+        grouped = _aggregate_values(
+            sub, design_col=design_col, treatment_col=treatment_col, value_col=value_col, agg=agg
+        )
         if grouped.empty:
             raise ValueError(f"crosstalk_pairs: no rows for time {tsel}")
 
@@ -475,7 +477,9 @@ def compute_crosstalk_pairs(
             int(len(mapping)) if mapping is not None else 0,
         )
 
-        _ensure_mapping_coverage(mapping, designs=matrix.index.tolist(), require=require_self_treatment, mapping_mode=mapping_mode)
+        _ensure_mapping_coverage(
+            mapping, designs=matrix.index.tolist(), require=require_self_treatment, mapping_mode=mapping_mode
+        )
 
         design_summary = _compute_design_summary(
             matrix,
@@ -513,8 +517,12 @@ def compute_crosstalk_pairs(
                 if treatment_a in matrix.columns and b in matrix.index:
                     b_cross = float(matrix.loc[b, treatment_a])
 
-                min_self_val = float(np.nanmin([a_self, b_self])) if np.isfinite([a_self, b_self]).all() else float("nan")
-                max_cross_val = float(np.nanmax([a_cross, b_cross])) if np.isfinite([a_cross, b_cross]).all() else float("nan")
+                min_self_val = (
+                    float(np.nanmin([a_self, b_self])) if np.isfinite([a_self, b_self]).all() else float("nan")
+                )
+                max_cross_val = (
+                    float(np.nanmax([a_cross, b_cross])) if np.isfinite([a_cross, b_cross]).all() else float("nan")
+                )
 
                 if value_scale == "log2":
                     pair_score = (
@@ -543,11 +551,15 @@ def compute_crosstalk_pairs(
                 if require_self_is_top1 and not (bool(a_row["self_is_top1"]) and bool(b_row["self_is_top1"])):
                     passes = False
                 if min_self is not None and (
-                    not (np.isfinite(a_self) and np.isfinite(b_self)) or a_self < float(min_self) or b_self < float(min_self)
+                    not (np.isfinite(a_self) and np.isfinite(b_self))
+                    or a_self < float(min_self)
+                    or b_self < float(min_self)
                 ):
                     passes = False
                 if max_cross is not None and (
-                    not (np.isfinite(a_cross) and np.isfinite(b_cross)) or a_cross > float(max_cross) or b_cross > float(max_cross)
+                    not (np.isfinite(a_cross) and np.isfinite(b_cross))
+                    or a_cross > float(max_cross)
+                    or b_cross > float(max_cross)
                 ):
                     passes = False
                 if min_selectivity_delta is not None and (
