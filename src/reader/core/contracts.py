@@ -213,6 +213,53 @@ _register(
     )
 )
 
+# crosstalk_pairs.v1
+_register(
+    DataFrameContract(
+        id="crosstalk_pairs.v1",
+        description="Pairwise crosstalk summary for design pairs at a single time/target.",
+        columns=[
+            ColumnRule("design_a", "string"),
+            ColumnRule("design_b", "string"),
+            ColumnRule("treatment_a", "string", allow_nan=True),
+            ColumnRule("treatment_b", "string", allow_nan=True),
+            ColumnRule("target", "string", allow_nan=True),
+            ColumnRule("time", "float", nonnegative=True, allow_nan=True),
+            ColumnRule("value_column", "string"),
+            ColumnRule("value_scale", "string", allowed_values=["log2", "linear"]),
+            ColumnRule("a_self_value", "float", allow_nan=True),
+            ColumnRule("b_self_value", "float", allow_nan=True),
+            ColumnRule("a_cross_to_b", "float", allow_nan=True),
+            ColumnRule("b_cross_to_a", "float", allow_nan=True),
+            ColumnRule("a_best_other_treatment", "string", required=False, allow_nan=True),
+            ColumnRule("b_best_other_treatment", "string", required=False, allow_nan=True),
+            ColumnRule("a_best_other_value", "float", required=False, allow_nan=True),
+            ColumnRule("b_best_other_value", "float", required=False, allow_nan=True),
+            ColumnRule("a_self_minus_best_other", "float", required=False, allow_nan=True),
+            ColumnRule("b_self_minus_best_other", "float", required=False, allow_nan=True),
+            ColumnRule("a_self_ratio_best_other", "float", required=False, allow_nan=True),
+            ColumnRule("b_self_ratio_best_other", "float", required=False, allow_nan=True),
+            ColumnRule("a_self_is_top1", "bool"),
+            ColumnRule("b_self_is_top1", "bool"),
+            ColumnRule("a_top1_treatment", "string", allow_nan=True),
+            ColumnRule("a_top2_treatment", "string", allow_nan=True),
+            ColumnRule("b_top1_treatment", "string", allow_nan=True),
+            ColumnRule("b_top2_treatment", "string", allow_nan=True),
+            ColumnRule("a_top1_value", "float", allow_nan=True),
+            ColumnRule("a_top2_value", "float", allow_nan=True),
+            ColumnRule("b_top1_value", "float", allow_nan=True),
+            ColumnRule("b_top2_value", "float", allow_nan=True),
+            ColumnRule("a_selectivity_delta", "float", allow_nan=True),
+            ColumnRule("b_selectivity_delta", "float", allow_nan=True),
+            ColumnRule("a_selectivity_ratio", "float", allow_nan=True),
+            ColumnRule("b_selectivity_ratio", "float", allow_nan=True),
+            ColumnRule("pair_score", "float", allow_nan=True),
+            ColumnRule("pair_ratio", "float", allow_nan=True),
+            ColumnRule("passes_filters", "bool"),
+        ],
+        unique_keys=[],
+    )
+)
 
 _register(
     DataFrameContract(

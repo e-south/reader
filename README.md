@@ -142,12 +142,13 @@ uv run reader notebook     experiments/my_experiment/config.yaml
 
 ### More documentation
 
-1. [CLI reference](./docs/cli.md)
-2. [Configuring pipelines](./docs/pipeline.md)
-3. [Notebooks](./docs/notebooks.md)
-4. [Plugin development](./docs/plugins.md)
-5. [Spec / architecture](./docs/spec.md)
-6. [End-to-end demo](./docs/demo.md)
+1. [Docs index](./docs/index.md)
+2. [CLI reference](./docs/core/cli.md)
+3. [Configuring pipelines](./docs/core/pipeline.md)
+4. [Notebooks](./docs/guides/notebooks.md)
+5. [Plugin development](./docs/core/plugins.md)
+6. [Spec / architecture](./docs/core/spec.md)
+7. [End-to-end demo](./docs/guides/demo.md)
 
 ---
 

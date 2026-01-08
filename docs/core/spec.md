@@ -17,7 +17,12 @@ This document is the developer‑oriented source of truth for how **reader** is 
 ```text
 reader/
   experiments/          # workbench directories (inputs, notebooks, outputs)
-  docs/                 # narrative + reference docs
+  docs/                 # documentation (index + grouped references)
+    index.md            # docs map
+    core/               # core reference (CLI, pipeline, plugins, spec)
+    guides/             # how-to + walkthroughs
+    lib/                # library-level references
+    audits/             # audits and investigations
   src/reader/            # library + CLI
     core/               # engine, config, manifests, CLI
     plugins/            # ingest/merge/transform/plot/export/validator

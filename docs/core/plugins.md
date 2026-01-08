@@ -160,6 +160,75 @@ class ScaleValues(Plugin):
 
 ---
 
+### Crosstalk pairing (transform/crosstalk_pairs)
+
+Compute pairwise crosstalk-safe design pairings using a `fold_change.v1` table. This transform
+summarizes per-design selectivity and evaluates pairs where each design responds strongly to its
+own treatment while responding weakly to others (including non-self treatments).
+If your design-to-treatment mapping lives in metadata, include that column in the fold-change
+step via `attach_metadata` so it is available to this transform.
+
+Time selection is explicit and assertive:
+- `time_mode: single` requires exactly one time in the fold-change table.
+- `time_mode: exact|nearest` requires `time` or `times` to be provided (tolerance applies only to `nearest`).
+- `time_mode: latest` uses the latest time present in the fold-change table.
+- `time_mode: all` evaluates every time present in the fold-change table.
+- `time_policy: all` (optional) keeps only pairs that pass at *every* evaluated time.
+
+Mapping strategies are explicit and documented in config:
+- `mapping_mode: explicit` uses `design_treatment_map` (stable, recommended for ground-truth mapping).
+- `mapping_mode: column` uses a metadata column (keeps mapping in data; good for reuse).
+- `mapping_mode: top1` uses the top response in the data (data-driven, but can change across runs/time).
+  Use `top1_tie_policy` and `top1_tie_tolerance` to control how ties are handled.
+
+For library-level API details and column semantics, see `docs/lib/crosstalk_pairs.md`.
+
+```yaml
+pipeline:
+  steps:
+    - id: fold_change__yfp_over_cfp
+      uses: transform/fold_change
+      reads: { df: ratio_yfp_cfp/df }
+      with:
+        target: YFP/CFP
+        report_times: [12.0]
+        treatment_column: treatment
+        group_by: [design_id]
+        use_global_baseline: true
+        global_baseline_value: negative
+
+    - id: crosstalk_pairs
+      uses: transform/crosstalk_pairs
+      reads: { table: fold_change__yfp_over_cfp/table }
+      with:
+        value_column: log2FC
+        value_scale: log2
+        target: YFP/CFP
+        time_mode: all
+        time_policy: per_time
+        mapping_mode: column
+        design_treatment_column: cognate_treatment   # mapping_mode: explicit -> use design_treatment_map
+        min_self: 1.0
+        max_cross: 0.5
+        max_other: 0.5             # max response to any non-self treatment
+        min_self_minus_best_other: 1.0
+        min_selectivity_delta: 1.0
+        require_self_is_top1: true
+```
+
+To export pairings:
+
+```yaml
+exports:
+  specs:
+    - id: export_crosstalk_pairs
+      uses: export/csv
+      reads: { df: crosstalk_pairs/table }
+      with: { path: "crosstalk_pairs.csv" }
+```
+
+---
+
 ### Adding a plot/export plugin
 
 Plot specs live under `plots:` and export specs under `exports:` in config (optionally bundled via

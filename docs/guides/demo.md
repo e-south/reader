@@ -65,7 +65,7 @@ reader notebook 1
 
 If you want a specific preset, pass `--preset <name>` (otherwise reader uses `notebook.preset` from config or auto-picks).
 
-See [docs/notebooks.md](./notebooks.md) for opening and dependency setup.
+See the [Notebooks guide](./notebooks.md) for opening and dependency setup.
 
 ---
 
