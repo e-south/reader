@@ -229,6 +229,10 @@ def _has_sfxi_step(spec: ReaderSpec) -> bool:
     return any(str(getattr(step, "uses", "")) == "transform/sfxi" for step in spec.pipeline.steps)
 
 
+def _has_cytometry_step(spec: ReaderSpec) -> bool:
+    return any(str(getattr(step, "uses", "")) == "ingest/flow_cytometer" for step in spec.pipeline.steps)
+
+
 def _has_sfxi_artifacts(outputs_dir: Path) -> bool:
     manifest_path = outputs_dir / "manifests" / "manifest.json"
     if not manifest_path.exists():
@@ -298,11 +302,17 @@ def _scaffold_notebook(
         job_path = _infer_job_path(job)
         exp_dir = job_path.parent
         spec = ReaderSpec.load(job_path)
+        plot_specs = resolve_plot_specs(spec)
         selected_preset = preset
         if not selected_preset and getattr(spec, "notebook", None) and getattr(spec.notebook, "preset", None):
             selected_preset = spec.notebook.preset
         if not selected_preset:
-            selected_preset = "notebook/eda" if resolve_plot_specs(spec) else "notebook/basic"
+            if plot_specs:
+                selected_preset = "notebook/eda"
+            elif _has_cytometry_step(spec):
+                selected_preset = "notebook/cytometry"
+            else:
+                selected_preset = "notebook/basic"
         selected_preset = normalize_notebook_preset(selected_preset)
         if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
             raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
@@ -341,7 +351,6 @@ def _scaffold_notebook(
         existed = target.exists()
         plot_specs_payload = None
         if selected_preset == "notebook/eda":
-            plot_specs = resolve_plot_specs(spec)
             selected = _select_steps(plot_specs, only=plot_only or [], exclude=plot_exclude or [], kind="plot spec")
             plot_specs_payload = [_spec_to_dict(s) for s in selected]
         target, created = write_experiment_notebook(

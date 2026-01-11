@@ -55,7 +55,7 @@ class SnapshotHeatmapPlot(Plugin):
     def render(self, ctx, inputs, cfg: HeatmapCfg) -> list[PlotFigure]:
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
-        from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap
+        from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap  # noqa: PLC0415
 
         channel = str(cfg.channel)
         wants_fc = channel.startswith("FC_") or channel.startswith("log2FC_")

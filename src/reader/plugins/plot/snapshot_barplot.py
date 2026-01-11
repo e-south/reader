@@ -54,7 +54,7 @@ class SnapshotBarplot(Plugin):
 
     def render(self, ctx, inputs, cfg: SnapshotBarCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot
+        from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot  # noqa: PLC0415
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
