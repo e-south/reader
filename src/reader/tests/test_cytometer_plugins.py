@@ -33,9 +33,12 @@ def test_flow_cytometer_ingest_basic():
     cfg = FlowCytometerCfg(print_summary=False)
     outputs = plugin.run(_ctx(fcs_path.parent.parent), {"raw": fcs_path}, cfg)
     df = outputs["df"]
+    channels = outputs["channels"]
     assert {"position", "time", "channel", "value", "sample_id"} <= set(df.columns)
     assert df["sample_id"].nunique() == 1
     assert df["position"].nunique() == 1
+    assert {"sample_id", "channel_index", "channel_name"} <= set(channels.columns)
+    assert channels["sample_id"].nunique() == 1
 
 
 def test_sample_metadata_merge_basic(tmp_path: Path):

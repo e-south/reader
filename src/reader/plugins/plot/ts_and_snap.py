@@ -73,7 +73,7 @@ class TSAndSnapPlot(Plugin):
 
     def render(self, ctx, inputs, cfg: TSAndSnapCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap
+        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):

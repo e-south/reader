@@ -59,7 +59,7 @@ class FlowCytometerIngest(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+        return {"df": "tidy.v1", "channels": "cytometer.channels.v1"}
 
     def _auto_pick_one(self, files: list[Path], mode: str) -> Path:
         if mode == "single":
@@ -109,7 +109,7 @@ class FlowCytometerIngest(Plugin):
 
     def run(self, ctx, inputs, cfg: FlowCytometerCfg):
         try:
-            from flowio import FlowData
+            from flowio import FlowData  # noqa: PLC0415
         except Exception as e:  # pragma: no cover - environment-specific
             raise ParseError(
                 "flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry"
@@ -120,12 +120,48 @@ class FlowCytometerIngest(Plugin):
         channel_map = {str(k): str(v) for k, v in (cfg.channel_map or {}).items()}
         drop_channels = {str(c) for c in (cfg.drop_channels or [])}
 
+        def _to_float(value) -> float:
+            if value is None:
+                return float("nan")
+            try:
+                return float(value)
+            except Exception:
+                return float("nan")
+
+        def _parse_pne(value) -> tuple[float, float]:
+            if value is None:
+                return (float("nan"), float("nan"))
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                return (_to_float(value[0]), _to_float(value[1]))
+            text = str(value).strip()
+            if "," in text:
+                left, right = text.split(",", 1)
+                return (_to_float(left.strip()), _to_float(right.strip()))
+            return (float("nan"), float("nan"))
+
+        def _clean_text(value) -> str | None:
+            if value is None:
+                return None
+            if isinstance(value, bytes):
+                try:
+                    return value.decode("utf-8", errors="ignore")
+                except Exception:
+                    return value.decode(errors="ignore")
+            return str(value)
+
         frames: list[pd.DataFrame] = []
+        channel_meta_frames: list[pd.DataFrame] = []
         for f in files:
             flow = FlowData(str(f))
             event_count = int(flow.event_count)
             channel_count = int(flow.channel_count)
-            values = np.asarray(flow.events, dtype=float).reshape(event_count, channel_count)
+            raw_events = np.asarray(flow.events, dtype=float)
+            if raw_events.size != event_count * channel_count:
+                raise ParseError(
+                    f"Unexpected event buffer size for {f.name}: "
+                    f"{raw_events.size} values for {event_count} events × {channel_count} channels."
+                )
+            values = raw_events.reshape(event_count, channel_count)
             channel_names = self._channel_names(flow.channels, field=field)
             if len(channel_names) != channel_count:
                 raise ParseError(
@@ -147,6 +183,30 @@ class FlowCytometerIngest(Plugin):
             long["time"] = float(cfg.time_value)
             frames.append(long)
 
+            channel_rows = []
+            channel_indices = sorted(flow.channels)
+            for idx, name in zip(channel_indices, channel_names, strict=False):
+                meta = flow.channels.get(idx, {})
+                pne_decades, pne_zero = _parse_pne(meta.get("pne"))
+                row = {
+                    "sample_id": sample_id,
+                    "channel_index": int(idx),
+                    "channel_name": str(name),
+                    "pns": _clean_text(meta.get("pns")),
+                    "pnn": _clean_text(meta.get("pnn")),
+                    "pnt": _clean_text(meta.get("pnt")),
+                    "pnf": _clean_text(meta.get("pnf")),
+                    "pnl": _clean_text(meta.get("pnl")),
+                    "pnr": _to_float(meta.get("pnr")),
+                    "pnb": _to_float(meta.get("pnb")),
+                    "png": _to_float(meta.get("png")),
+                    "pne_decades": pne_decades,
+                    "pne_zero": pne_zero,
+                }
+                channel_rows.append(row)
+            if channel_rows:
+                channel_meta_frames.append(pd.DataFrame(channel_rows))
+
         if not frames:
             raise ParseError("No cytometer frames parsed from selected files")
         out = pd.concat(frames, ignore_index=True)
@@ -161,4 +221,9 @@ class FlowCytometerIngest(Plugin):
                     out["sample_id"].nunique(),
                 )
 
-        return {"df": out}
+        if channel_meta_frames:
+            channels_meta = pd.concat(channel_meta_frames, ignore_index=True)
+        else:
+            channels_meta = pd.DataFrame(columns=["sample_id", "channel_index", "channel_name"])
+
+        return {"df": out, "channels": channels_meta}

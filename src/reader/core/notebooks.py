@@ -15,7 +15,7 @@ from reader.core.errors import ConfigError
 
 EXPERIMENT_EDA_BASE_TEMPLATE = """import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.19.1"
 app = marimo.App(width="medium")
 
 @app.cell(hide_code=True)
@@ -281,13 +281,14 @@ def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
         _design_table = mo.ui.table(design_treatment_rows, page_size=len(design_treatment_rows))
     else:
         _design_table = mo.md(design_treatment_note or "No design/treatment summary available.")
-    mo.vstack(
+    eda_overview_panel = mo.vstack(
         [
             mo.md(f"# {_exp_title}\\n**Experiment id:** `{_exp_id}`"),
             mo.md("**Design IDs + treatments**"),
             _design_table,
         ]
     )
+    return eda_overview_panel
 
 @app.cell(hide_code=True)
 def _(artifact_dropdown, artifact_note, df_error, mo):
@@ -298,7 +299,8 @@ def _(artifact_dropdown, artifact_note, df_error, mo):
         _elements.append(artifact_dropdown)
         if df_error:
             _elements.append(mo.md(f"**Load error:** `{df_error}`"))
-    mo.vstack(_elements)
+    eda_dataset_panel = mo.vstack(_elements)
+    return eda_dataset_panel
 
 @app.cell(hide_code=True)
 def _(df, df_error, mo, selected_label):
@@ -320,12 +322,26 @@ def _(df, data_ready, mo, pl):
             df_table = df.select(_display_cols)
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
     _elements.append(mo.ui.table(df_table, page_size=10))
-    mo.vstack(_elements)
+    eda_table_panel = mo.vstack(_elements)
+    return eda_table_panel
 
-@app.cell
-def _():
-    return
+@app.cell(hide_code=True)
+def _(eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
+    eda_base_panel = mo.vstack(
+        [
+            eda_overview_panel,
+            eda_dataset_panel,
+            eda_table_panel,
+        ]
+    )
+    return eda_base_panel
 
+"""
+
+EXPERIMENT_EDA_BASE_LAYOUT_TEMPLATE = """
+@app.cell(hide_code=True)
+def _(eda_base_panel):
+    eda_base_panel
 """
 
 EXPERIMENT_EDA_TEMPLATE_FOOTER = """
@@ -333,9 +349,1556 @@ if __name__ == "__main__":
     app.run()
 """
 
-EXPERIMENT_EDA_BASIC_TEMPLATE = EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
+EXPERIMENT_EDA_CYTOMETRY_EXTENSION_TEMPLATE = '''
+@app.cell(hide_code=True)
+def _():
+    try:
+        import numpy as np
+    except Exception:
+        np = None
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        plt = None
+    return np, pd, plt
+
+@app.cell(hide_code=True)
+def _(data_ready, df, mo, pl):
+    _columns = list(df.columns) if hasattr(df, "columns") else []
+    _required = ["channel", "value", "sample_id", "event_index"]
+    _missing = [c for c in _required if c not in _columns]
+    if _missing:
+        mo.stop(
+            True,
+            mo.md(
+                "Cytometry EDA requires columns: "
+                f"{', '.join(_missing)}. Select a tidy cytometry dataset with "
+                "`channel`, `value`, `sample_id`, and `event_index` "
+                "(plus optional `treatment`, `design_id`, or `sample_label`)."
+            ),
+        )
+
+    _channels = []
+    if pl is not None and df.__class__.__module__.startswith("polars"):
+        try:
+            _series = df.select(pl.col("channel").drop_nulls().unique()).to_series()
+            _channels = [str(_c) for _c in _series.to_list() if _c is not None]
+        except Exception:
+            _channels = []
+    else:
+        try:
+            _channels = [str(_c) for _c in df["channel"].dropna().unique().tolist()]
+        except Exception:
+            _channels = []
+    _channels = sorted({c for c in _channels if c})
+    if not _channels:
+        mo.stop(True, mo.md("No channel values found in the selected dataset."))
+
+    def _unique_values(col):
+        values = []
+        if col not in _columns:
+            return values
+        try:
+            if pl is not None and df.__class__.__module__.startswith("polars"):
+                _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
+                values = _series.to_list()
+            else:
+                values = df[col].dropna().unique().tolist()
+        except Exception:
+            values = []
+        values = [str(_v) for _v in values if _v is not None]
+        return sorted({v for v in values if v})
+
+    _treatment_vals = _unique_values("treatment")
+    _design_vals = _unique_values("design_id")
+    _sample_vals = _unique_values("sample_id")
+    _sample_label_vals = _unique_values("sample_label")
+    _hue_candidates = [
+        c
+        for c in ("sample_label", "sample_id", "treatment", "design_id")
+        if c in _columns
+    ]
+    if not _hue_candidates:
+        _hue_candidates = ["sample_id"]
+
+    if "treatment" in _hue_candidates:
+        _hue_default = "treatment"
+    elif "sample_id" in _hue_candidates:
+        _hue_default = "sample_id"
+    elif "sample_label" in _hue_candidates:
+        _hue_default = "sample_label"
+    else:
+        _hue_default = _hue_candidates[0]
+
+    _threshold_group_default = "sample_id"
+    for _candidate in ("treatment", "sample_label", "sample_id"):
+        if _candidate in _columns:
+            _threshold_group_default = _candidate
+            break
+
+    cyto_channel_values = _channels
+    cyto_hue_candidates = _hue_candidates
+    cyto_hue_default = _hue_default
+    cyto_design_values = _design_vals
+    cyto_treatment_values = _treatment_vals
+    cyto_sample_values = _sample_vals
+    cyto_sample_label_values = _sample_label_vals
+    cyto_threshold_group_default = _threshold_group_default
+    return (
+        cyto_channel_values,
+        cyto_hue_candidates,
+        cyto_hue_default,
+        cyto_design_values,
+        cyto_treatment_values,
+        cyto_sample_values,
+        cyto_sample_label_values,
+        cyto_threshold_group_default,
+    )
+
+@app.cell(hide_code=True)
+def _(
+    cyto_channel_values,
+    cyto_design_values,
+    cyto_sample_label_values,
+    cyto_sample_values,
+    cyto_treatment_values,
+    mo,
+):
+    _parts = []
+    if cyto_treatment_values:
+        _parts.append(f"{len(cyto_treatment_values)} treatment(s)")
+    if cyto_design_values:
+        _parts.append(f"{len(cyto_design_values)} design_id(s)")
+    if cyto_sample_label_values:
+        _parts.append(f"{len(cyto_sample_label_values)} sample label(s)")
+    if cyto_sample_values:
+        _parts.append(f"{len(cyto_sample_values)} sample_id(s)")
+    _channel_list = ", ".join(f"`{c}`" for c in cyto_channel_values)
+    _facet_note = (
+        "Faceting is optional; choose a small-cardinality column when needed."
+        if _parts
+        else ""
+    )
+    cyto_intro_panel = mo.md(
+        f"""## Cytometer exploratory data analysis
+Detected `{len(cyto_channel_values)}` channel(s): {_channel_list}. {_facet_note}
+
+This notebook starts from a tidy, event-level cytometry table (typically derived upstream from raw FCS) and supports a standard flow:
+- **Filter** to a subset of samples (design/treatment/sample_id)
+- **Choose channels** for cell selection, singlet isolation, and a fluorescence channel of interest
+- **Gate events** (cells → singlets), then inspect **scatter + fluorescence distributions**
+- Review **per-sample** and **group** summaries, including `% positive` from a configurable threshold
+
+Operational note: set **Filters → Channels → Gates** first, then inspect plots and stats. Plot-only controls (downsampling, low-clip, colors/facets, axis scales) affect visualization but do not change gate counts or summary statistics.
+
+Histogram note: binning and transforms matter. Most histogram functions bin in **linear** space, even if you later display the x-axis on a **log** scale. With a wide range, early bins can span multiple decades and appear as one big, flat rectangle. This notebook uses **log-spaced bins** for `log` histograms and applies **asinh/symlog** transforms before binning when selected. If many values are ≤ 0 (common in compensated cytometry), prefer **symlog/asinh/logicle** rather than a strict log axis; compensation/logicle transforms are not performed here yet.
+"""
+    )
+    return cyto_intro_panel
+
+@app.cell(hide_code=True)
+def _(
+    cyto_channel_values,
+    cyto_design_values,
+    cyto_hue_candidates,
+    cyto_hue_default,
+    cyto_sample_label_values,
+    cyto_sample_values,
+    cyto_treatment_values,
+    cyto_threshold_group_default,
+    mo,
+):
+    def _pick_channel(needles):
+        for needle in needles:
+            for name in cyto_channel_values:
+                if needle in name.lower():
+                    return name
+        return cyto_channel_values[0]
+
+    def _pick_distinct(primary, fallback):
+        if primary != fallback:
+            return fallback
+        for name in cyto_channel_values:
+            if name != primary:
+                return name
+        return fallback
+
+    _cells_x_default = _pick_channel(["fsc-a", "fsc"])
+    _cells_y_default = _pick_channel(["ssc-a", "ssc"])
+    _cells_y_default = _pick_distinct(_cells_x_default, _cells_y_default)
+
+    _scatter_x_default = _cells_x_default
+    _scatter_y_default = _cells_y_default
+
+    _singlet_x_default = _pick_channel(["fsc-a", "fsc"])
+    _singlet_y_default = _pick_channel(["fsc-h", "fsc-w", "fsc"])
+    _singlet_y_default = _pick_distinct(_singlet_x_default, _singlet_y_default)
+
+    _fluor_default = _pick_channel(["mcherry-a", "mcherry", "rfp", "dsred", "texas", "tx-red"])
+    _fluor_options = [c for c in cyto_channel_values if c.lower() not in {"time"}]
+    if not _fluor_options:
+        _fluor_options = cyto_channel_values
+
+    _facet_options = ["None"]
+    for _col, _values in (
+        ("design_id", cyto_design_values),
+        ("treatment", cyto_treatment_values),
+        ("sample_label", cyto_sample_label_values),
+        ("sample_id", cyto_sample_values),
+    ):
+        if _values:
+            _facet_options.append(_col)
+
+    _facet_default = "design_id" if "design_id" in _facet_options else "None"
+
+    cyto_cells_x_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_cells_x_default,
+        label="Cells gate X channel",
+        full_width=True,
+    )
+    cyto_cells_y_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_cells_y_default,
+        label="Cells gate Y channel",
+        full_width=True,
+    )
+    cyto_singlet_x_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_singlet_x_default,
+        label="Singlets gate X channel",
+        full_width=True,
+    )
+    cyto_singlet_y_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_singlet_y_default,
+        label="Singlets gate Y channel",
+        full_width=True,
+    )
+    cyto_scatter_x_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_scatter_x_default,
+        label="Scatter X channel",
+        full_width=True,
+    )
+    cyto_scatter_y_dropdown = mo.ui.dropdown(
+        options=cyto_channel_values,
+        value=_scatter_y_default,
+        label="Scatter Y channel",
+        full_width=True,
+    )
+    cyto_hue_dropdown = mo.ui.dropdown(
+        options=cyto_hue_candidates,
+        value=cyto_hue_default,
+        label="Color by",
+        full_width=True,
+    )
+    cyto_scatter_scale_x = mo.ui.dropdown(
+        options=["linear", "log", "symlog"],
+        value="linear",
+        label="Scatter X scale",
+        full_width=True,
+    )
+    cyto_scatter_scale_y = mo.ui.dropdown(
+        options=["linear", "log", "symlog"],
+        value="linear",
+        label="Scatter Y scale",
+        full_width=True,
+    )
+    cyto_fluor_dropdown = mo.ui.dropdown(
+        options=_fluor_options,
+        value=_fluor_default if _fluor_default in _fluor_options else _fluor_options[0],
+        label="Fluorescence channel",
+        full_width=True,
+    )
+    cyto_hist_scale = mo.ui.dropdown(
+        options=["log", "linear", "symlog", "asinh"],
+        value="log",
+        label="Fluorescence scale",
+        full_width=True,
+    )
+    cyto_facet_dropdown = mo.ui.dropdown(
+        options=_facet_options,
+        value=_facet_default,
+        label="Facet by",
+        full_width=True,
+    )
+    cyto_design_filter = mo.ui.dropdown(
+        options=["All"] + cyto_design_values,
+        value="All",
+        label="Filter: design_id",
+        full_width=True,
+    )
+    cyto_treatment_filter = mo.ui.dropdown(
+        options=["All"] + cyto_treatment_values,
+        value="All",
+        label="Filter: treatment",
+        full_width=True,
+    )
+    cyto_sample_filter = mo.ui.dropdown(
+        options=["All"] + cyto_sample_values,
+        value="All",
+        label="Filter: sample_id",
+        full_width=True,
+    )
+    cyto_downsample_target = mo.ui.slider(
+        1_000,
+        50_000,
+        value=25_000,
+        step=1_000,
+        label="Max events to plot",
+        full_width=True,
+    )
+    cyto_low_clip_dropdown = mo.ui.dropdown(
+        options=["off", "0.001", "0.01", "0.05"],
+        value="off",
+        label="Scatter low-clip quantile",
+        full_width=True,
+    )
+    cyto_cells_gate_enabled = mo.ui.checkbox(
+        label="Enable cells gate", value=True
+    )
+    cyto_singlet_gate_enabled = mo.ui.checkbox(
+        label="Enable singlets gate", value=True
+    )
+    cyto_threshold_mode = mo.ui.dropdown(
+        options=["manual", "from_control_quantile"],
+        value="manual",
+        label="Positive threshold mode",
+        full_width=True,
+    )
+    cyto_threshold_value = mo.ui.number(
+        value=0.0,
+        label="Manual threshold (a.u.)",
+        full_width=True,
+    )
+    cyto_threshold_quantile = mo.ui.slider(
+        0.5,
+        0.999,
+        value=0.99,
+        step=0.001,
+        label="Control quantile",
+        full_width=True,
+    )
+    _threshold_options = [
+        opt
+        for opt in ("treatment", "sample_label", "sample_id")
+        if (
+            (opt == "treatment" and cyto_treatment_values)
+            or (opt == "sample_label" and cyto_sample_label_values)
+            or opt == "sample_id"
+        )
+    ]
+    _threshold_default = (
+        cyto_threshold_group_default
+        if cyto_threshold_group_default in _threshold_options
+        else _threshold_options[0]
+    )
+    cyto_threshold_group_dropdown = mo.ui.dropdown(
+        options=_threshold_options,
+        value=_threshold_default,
+        label="Control group column",
+        full_width=True,
+    )
+
+    _filters_row = mo.hstack(
+        [cyto_design_filter, cyto_treatment_filter, cyto_sample_filter],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _channels_row_1 = mo.hstack(
+        [
+            cyto_cells_x_dropdown,
+            cyto_cells_y_dropdown,
+            cyto_singlet_x_dropdown,
+            cyto_singlet_y_dropdown,
+        ],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _channels_row_2 = mo.hstack(
+        [
+            cyto_scatter_x_dropdown,
+            cyto_scatter_y_dropdown,
+            cyto_fluor_dropdown,
+        ],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _display_row_1 = mo.hstack(
+        [
+            cyto_hue_dropdown,
+            cyto_facet_dropdown,
+            cyto_scatter_scale_x,
+            cyto_scatter_scale_y,
+        ],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _display_row_2 = mo.hstack(
+        [
+            cyto_hist_scale,
+            cyto_downsample_target,
+            cyto_low_clip_dropdown,
+        ],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+
+    cyto_controls_panel = mo.vstack(
+        [
+            mo.md("### Filters"),
+            mo.md("Subset the dataset before pivoting/gating. Filters affect plots, stats, QC, and exports."),
+            _filters_row,
+            mo.md("### Channels"),
+            mo.md("Choose channels used for gates and which fluorescence channel to summarize."),
+            _channels_row_1,
+            _channels_row_2,
+            mo.md("### Display"),
+            mo.md("Plot-only controls: coloring, faceting, axis scales, clipping, and downsampling."),
+            _display_row_1,
+            _display_row_2,
+        ]
+    )
+    return (
+        cyto_scatter_x_dropdown,
+        cyto_scatter_y_dropdown,
+        cyto_cells_x_dropdown,
+        cyto_cells_y_dropdown,
+        cyto_singlet_x_dropdown,
+        cyto_singlet_y_dropdown,
+        cyto_hue_dropdown,
+        cyto_scatter_scale_x,
+        cyto_scatter_scale_y,
+        cyto_fluor_dropdown,
+        cyto_hist_scale,
+        cyto_facet_dropdown,
+        cyto_design_filter,
+        cyto_treatment_filter,
+        cyto_sample_filter,
+        cyto_downsample_target,
+        cyto_low_clip_dropdown,
+        cyto_threshold_mode,
+        cyto_threshold_value,
+        cyto_threshold_quantile,
+        cyto_threshold_group_dropdown,
+        cyto_controls_panel,
+        cyto_cells_gate_enabled,
+        cyto_singlet_gate_enabled,
+    )
+
+@app.cell(hide_code=True)
+def _(
+    cyto_sample_label_values,
+    cyto_sample_values,
+    cyto_threshold_group_dropdown,
+    cyto_treatment_values,
+    mo,
+):
+    _group = str(cyto_threshold_group_dropdown.value)
+    if _group == "treatment":
+        _options = cyto_treatment_values
+    elif _group == "sample_label":
+        _options = cyto_sample_label_values
+    else:
+        _options = cyto_sample_values
+    if not _options:
+        _options = ["(none)"]
+    cyto_threshold_control_dropdown = mo.ui.dropdown(
+        options=_options,
+        value=_options[0],
+        label="Control group value",
+        full_width=True,
+    )
+    return cyto_threshold_control_dropdown
+
+@app.cell(hide_code=True)
+def _(
+    cyto_cells_x_dropdown,
+    cyto_cells_y_dropdown,
+    cyto_design_filter,
+    cyto_fluor_dropdown,
+    cyto_sample_filter,
+    cyto_scatter_x_dropdown,
+    cyto_scatter_y_dropdown,
+    cyto_singlet_x_dropdown,
+    cyto_singlet_y_dropdown,
+    cyto_treatment_filter,
+    df,
+    mo,
+    np,
+    pd,
+    pl,
+):
+    if pd is None or np is None:
+        mo.stop(True, mo.md("Pandas and NumPy are required for cytometry plots."))
+
+    _scatter_x = str(cyto_scatter_x_dropdown.value)
+    _scatter_y = str(cyto_scatter_y_dropdown.value)
+    _cells_x = str(cyto_cells_x_dropdown.value)
+    _cells_y = str(cyto_cells_y_dropdown.value)
+    _singlet_x = str(cyto_singlet_x_dropdown.value)
+    _singlet_y = str(cyto_singlet_y_dropdown.value)
+    _fluor = str(cyto_fluor_dropdown.value)
+
+    if _scatter_x == _scatter_y:
+        mo.stop(True, mo.md("Scatter X and Y channels must be different."))
+    if _cells_x == _cells_y:
+        mo.stop(True, mo.md("Cells gate X and Y channels must be different."))
+    if _singlet_x == _singlet_y:
+        mo.stop(True, mo.md("Singlets gate X and Y channels must be different."))
+
+    _channels = sorted({_scatter_x, _scatter_y, _cells_x, _cells_y, _singlet_x, _singlet_y, _fluor})
+
+    _meta_cols = ["treatment", "design_id", "sample_label"]
+    _meta_cols = [c for c in _meta_cols if c in getattr(df, "columns", [])]
+    _index_cols = ["sample_id", "event_index"] + _meta_cols
+
+    _is_polars = pl is not None and df.__class__.__module__.startswith("polars")
+    if _is_polars:
+        _df = df.filter(pl.col("channel").is_in(_channels))
+        if cyto_design_filter.value != "All" and "design_id" in df.columns:
+            _df = _df.filter(pl.col("design_id") == cyto_design_filter.value)
+        if cyto_treatment_filter.value != "All" and "treatment" in df.columns:
+            _df = _df.filter(pl.col("treatment") == cyto_treatment_filter.value)
+        if cyto_sample_filter.value != "All" and "sample_id" in df.columns:
+            _df = _df.filter(pl.col("sample_id") == cyto_sample_filter.value)
+        _df = _df.with_columns(pl.col("value").cast(pl.Float64))
+        _wide = _df.pivot(values="value", index=_index_cols, on="channel", aggregate_function="first")
+        cyto_event_wide = _wide.to_pandas(use_pyarrow_extension_array=False)
+    else:
+        _df_pd = df.copy()
+        if cyto_design_filter.value != "All" and "design_id" in _df_pd.columns:
+            _df_pd = _df_pd[_df_pd["design_id"] == cyto_design_filter.value]
+        if cyto_treatment_filter.value != "All" and "treatment" in _df_pd.columns:
+            _df_pd = _df_pd[_df_pd["treatment"] == cyto_treatment_filter.value]
+        if cyto_sample_filter.value != "All" and "sample_id" in _df_pd.columns:
+            _df_pd = _df_pd[_df_pd["sample_id"] == cyto_sample_filter.value]
+        _df_pd = _df_pd[_df_pd["channel"].astype(str).isin(_channels)].copy()
+        _df_pd["value"] = pd.to_numeric(_df_pd["value"], errors="coerce")
+        _wide = _df_pd.pivot_table(index=_index_cols, columns="channel", values="value", aggfunc="first")
+        _wide = _wide.reset_index()
+        if isinstance(_wide.columns, pd.MultiIndex):
+            _flat_cols = []
+            for _col in _wide.columns:
+                if isinstance(_col, tuple):
+                    _parts = [c for c in _col if c not in (None, "")]
+                    _flat_cols.append(str(_parts[-1]) if _parts else "")
+                else:
+                    _flat_cols.append(str(_col))
+            _wide.columns = _flat_cols
+        cyto_event_wide = _wide
+
+    if cyto_event_wide.empty:
+        mo.stop(True, mo.md("No events remain after filtering."))
+
+    _missing = [c for c in _channels if c not in cyto_event_wide.columns]
+    if _missing:
+        mo.stop(True, mo.md(f"Missing channels after pivot: {', '.join(_missing)}."))
+
+    cyto_meta_cols = _meta_cols
+    return cyto_event_wide, cyto_meta_cols
+
+@app.cell(hide_code=True)
+def _(
+    cyto_cells_gate_enabled,
+    cyto_cells_x_dropdown,
+    cyto_cells_y_dropdown,
+    cyto_event_wide,
+    cyto_singlet_gate_enabled,
+    cyto_singlet_x_dropdown,
+    cyto_singlet_y_dropdown,
+    mo,
+    np,
+    pd,
+):
+    def _safe_range(values, low_q=0.01, high_q=0.99):
+        _vals = np.asarray(pd.to_numeric(values, errors="coerce"))
+        _vals = _vals[np.isfinite(_vals)]
+        if _vals.size == 0:
+            mo.stop(True, mo.md("No finite values available for gate defaults."))
+        _min = float(np.nanmin(_vals))
+        _max = float(np.nanmax(_vals))
+        if not np.isfinite(_min) or not np.isfinite(_max):
+            mo.stop(True, mo.md("Gate range could not be determined."))
+        if _max <= _min:
+            _max = _min + 1e-6
+        _q = np.nanquantile(_vals, [low_q, high_q])
+        _q_low = float(_q[0])
+        _q_high = float(_q[1])
+        _q_low = max(_q_low, _min)
+        _q_high = min(_q_high, _max)
+        if _q_high <= _q_low:
+            _q_low, _q_high = _min, _max
+        return _min, _max, (_q_low, _q_high)
+
+    _cells_x = str(cyto_cells_x_dropdown.value)
+    _cells_y = str(cyto_cells_y_dropdown.value)
+    _singlet_x = str(cyto_singlet_x_dropdown.value)
+    _singlet_y = str(cyto_singlet_y_dropdown.value)
+
+    _cells_x_min, _cells_x_max, _cells_x_default = _safe_range(cyto_event_wide[_cells_x])
+    _cells_y_min, _cells_y_max, _cells_y_default = _safe_range(cyto_event_wide[_cells_y])
+
+    _singlet_x_vals = pd.to_numeric(cyto_event_wide[_singlet_x], errors="coerce").to_numpy()
+    _singlet_y_vals = pd.to_numeric(cyto_event_wide[_singlet_y], errors="coerce").to_numpy()
+    _ratio = np.divide(
+        _singlet_y_vals,
+        _singlet_x_vals,
+        out=np.full_like(_singlet_y_vals, np.nan),
+        where=_singlet_x_vals != 0,
+    )
+    _ratio_min, _ratio_max, _ratio_default = _safe_range(_ratio)
+
+    cyto_cells_x_range = mo.ui.range_slider(
+        _cells_x_min,
+        _cells_x_max,
+        value=_cells_x_default,
+        label="Cells gate X range",
+        full_width=True,
+    )
+    cyto_cells_y_range = mo.ui.range_slider(
+        _cells_y_min,
+        _cells_y_max,
+        value=_cells_y_default,
+        label="Cells gate Y range",
+        full_width=True,
+    )
+    cyto_singlet_ratio_range = mo.ui.range_slider(
+        _ratio_min,
+        _ratio_max,
+        value=_ratio_default,
+        label="Singlets ratio (Y / X)",
+        full_width=True,
+    )
+
+    _cells_gate_row = mo.hstack(
+        [cyto_cells_gate_enabled, cyto_cells_x_range, cyto_cells_y_range],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _singlet_gate_row = mo.hstack(
+        [cyto_singlet_gate_enabled, cyto_singlet_ratio_range],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+
+    cyto_gate_panel = mo.vstack(
+        [
+            mo.md("### Gates"),
+            mo.md(
+                "Define gates in order: **cells** (FSC/SSC rectangle) → **singlets** (FSC-H/FSC-A ratio band). These gates affect downstream plots and statistics."
+            ),
+            _cells_gate_row,
+            _singlet_gate_row,
+        ]
+    )
+    return (
+        cyto_cells_x_range,
+        cyto_cells_y_range,
+        cyto_singlet_ratio_range,
+        cyto_gate_panel,
+    )
+
+@app.cell(hide_code=True)
+def _(
+    cyto_cells_gate_enabled,
+    cyto_cells_x_dropdown,
+    cyto_cells_x_range,
+    cyto_cells_y_dropdown,
+    cyto_cells_y_range,
+    cyto_design_filter,
+    cyto_event_wide,
+    cyto_facet_dropdown,
+    cyto_fluor_dropdown,
+    cyto_hist_scale,
+    cyto_hue_dropdown,
+    cyto_low_clip_dropdown,
+    cyto_meta_cols,
+    cyto_sample_filter,
+    cyto_scatter_scale_x,
+    cyto_scatter_scale_y,
+    cyto_scatter_x_dropdown,
+    cyto_scatter_y_dropdown,
+    cyto_singlet_gate_enabled,
+    cyto_singlet_ratio_range,
+    cyto_singlet_x_dropdown,
+    cyto_singlet_y_dropdown,
+    cyto_treatment_filter,
+    cyto_threshold_control_dropdown,
+    cyto_threshold_group_dropdown,
+    cyto_threshold_mode,
+    cyto_threshold_quantile,
+    cyto_threshold_value,
+    cyto_downsample_target,
+    mo,
+    np,
+    pd,
+):
+    _df = cyto_event_wide.copy()
+
+    _cells_x = str(cyto_cells_x_dropdown.value)
+    _cells_y = str(cyto_cells_y_dropdown.value)
+    _singlet_x = str(cyto_singlet_x_dropdown.value)
+    _singlet_y = str(cyto_singlet_y_dropdown.value)
+    _fluor = str(cyto_fluor_dropdown.value)
+
+    _cells_x_vals = pd.to_numeric(_df[_cells_x], errors="coerce").to_numpy()
+    _cells_y_vals = pd.to_numeric(_df[_cells_y], errors="coerce").to_numpy()
+    _singlet_x_vals = pd.to_numeric(_df[_singlet_x], errors="coerce").to_numpy()
+    _singlet_y_vals = pd.to_numeric(_df[_singlet_y], errors="coerce").to_numpy()
+
+    _cells_mask = np.isfinite(_cells_x_vals) & np.isfinite(_cells_y_vals)
+    if cyto_cells_gate_enabled.value:
+        _x_lo, _x_hi = cyto_cells_x_range.value
+        _y_lo, _y_hi = cyto_cells_y_range.value
+        _cells_mask &= (_cells_x_vals >= _x_lo) & (_cells_x_vals <= _x_hi)
+        _cells_mask &= (_cells_y_vals >= _y_lo) & (_cells_y_vals <= _y_hi)
+
+    _ratio = np.divide(
+        _singlet_y_vals,
+        _singlet_x_vals,
+        out=np.full_like(_singlet_y_vals, np.nan),
+        where=_singlet_x_vals != 0,
+    )
+    _singlet_mask = np.isfinite(_ratio)
+    if cyto_singlet_gate_enabled.value:
+        _r_lo, _r_hi = cyto_singlet_ratio_range.value
+        _singlet_mask &= (_ratio >= _r_lo) & (_ratio <= _r_hi)
+
+    _gate_mask = _cells_mask & _singlet_mask
+    if not _gate_mask.any():
+        mo.stop(True, mo.md("No events remain after gating. Adjust ranges."))
+
+    cyto_gated_events = _df.loc[_gate_mask].copy()
+
+    _count_cols = ["sample_id"] + [c for c in cyto_meta_cols if c in _df.columns]
+    _df_counts = _df[_count_cols].copy()
+    _df_counts["_cells_mask"] = _cells_mask
+    _df_counts["_gate_mask"] = _gate_mask
+
+    _counts = (
+        _df_counts.groupby("sample_id", dropna=False)
+        .agg(
+            n_total_events=("_cells_mask", "size"),
+            n_cells_gate=("_cells_mask", "sum"),
+            n_singlets=("_gate_mask", "sum"),
+        )
+        .reset_index()
+    )
+
+    _meta = (
+        _df_counts.groupby("sample_id", dropna=False)[cyto_meta_cols]
+        .first()
+        .reset_index()
+        if cyto_meta_cols
+        else _counts[["sample_id"]]
+    )
+
+    cyto_gate_counts_sample = _meta.merge(_counts, on="sample_id", how="right")
+    cyto_gate_counts_sample["pct_cells"] = np.where(
+        cyto_gate_counts_sample["n_total_events"] > 0,
+        100.0 * cyto_gate_counts_sample["n_cells_gate"] / cyto_gate_counts_sample["n_total_events"],
+        np.nan,
+    )
+    cyto_gate_counts_sample["pct_singlets_of_cells"] = np.where(
+        cyto_gate_counts_sample["n_cells_gate"] > 0,
+        100.0 * cyto_gate_counts_sample["n_singlets"] / cyto_gate_counts_sample["n_cells_gate"],
+        np.nan,
+    )
+    cyto_gate_counts_sample["pct_final"] = np.where(
+        cyto_gate_counts_sample["n_total_events"] > 0,
+        100.0 * cyto_gate_counts_sample["n_singlets"] / cyto_gate_counts_sample["n_total_events"],
+        np.nan,
+    )
+
+    _threshold_mode = str(cyto_threshold_mode.value)
+    _threshold_value = float(cyto_threshold_value.value)
+    if _threshold_mode == "from_control_quantile":
+        _group_col = str(cyto_threshold_group_dropdown.value)
+        if _group_col not in cyto_gated_events.columns:
+            mo.stop(True, mo.md(f"Control column `{_group_col}` is missing."))
+        _control_value = str(cyto_threshold_control_dropdown.value)
+        _control_mask = cyto_gated_events[_group_col].astype(str) == _control_value
+        _control_vals = pd.to_numeric(
+            cyto_gated_events.loc[_control_mask, _fluor], errors="coerce"
+        ).to_numpy()
+        _control_vals = _control_vals[np.isfinite(_control_vals)]
+        if _control_vals.size == 0:
+            mo.stop(True, mo.md("No control events available for thresholding."))
+        _q = float(cyto_threshold_quantile.value)
+        _threshold_value = float(np.nanquantile(_control_vals, _q))
+
+    if not np.isfinite(_threshold_value):
+        mo.stop(True, mo.md("Threshold value is not finite."))
+
+    def _summarize(values):
+        _vals = pd.to_numeric(values, errors="coerce").to_numpy()
+        _vals = _vals[np.isfinite(_vals)]
+        if _vals.size == 0:
+            return pd.Series(
+                {
+                    "fluor_median": np.nan,
+                    "fluor_mean": np.nan,
+                    "fluor_geomean": np.nan,
+                    "fluor_p90": np.nan,
+                    "fluor_p99": np.nan,
+                    "pct_positive": np.nan,
+                }
+            )
+        _pos = _vals[_vals > 0]
+        _geom = float(np.exp(np.mean(np.log(_pos)))) if _pos.size else np.nan
+        return pd.Series(
+            {
+                "fluor_median": float(np.nanmedian(_vals)),
+                "fluor_mean": float(np.nanmean(_vals)),
+                "fluor_geomean": _geom,
+                "fluor_p90": float(np.nanpercentile(_vals, 90)),
+                "fluor_p99": float(np.nanpercentile(_vals, 99)),
+                "pct_positive": float(100.0 * np.mean(_vals > _threshold_value)),
+            }
+        )
+
+    _applied = cyto_gated_events.groupby("sample_id", dropna=False)[_fluor].apply(_summarize)
+    if isinstance(_applied, pd.Series):
+        _sample_stats = _applied.unstack().reset_index()
+    else:
+        _sample_stats = _applied.reset_index()
+    _required_stats = [
+        "fluor_median",
+        "fluor_mean",
+        "fluor_geomean",
+        "fluor_p90",
+        "fluor_p99",
+        "pct_positive",
+    ]
+    for _col in _required_stats:
+        if _col not in _sample_stats.columns:
+            _sample_stats[_col] = np.nan
+    _sample_stats = _sample_stats[["sample_id"] + _required_stats]
+    cyto_stats_sample = cyto_gate_counts_sample.merge(_sample_stats, on="sample_id", how="left")
+
+    cyto_stats_group = None
+    _group_col = None
+    for _candidate in ("treatment", "design_id"):
+        if _candidate in cyto_stats_sample.columns:
+            _group_col = _candidate
+            break
+    _needed_for_group = {"fluor_median", "fluor_geomean", "pct_positive"}
+    if _group_col and _needed_for_group.issubset(set(cyto_stats_sample.columns)):
+        cyto_stats_group = (
+            cyto_stats_sample.groupby(_group_col, dropna=False)
+            .agg(
+                n_samples=("sample_id", "nunique"),
+                fluor_median_mean=("fluor_median", "mean"),
+                fluor_median_std=("fluor_median", "std"),
+                fluor_geomean_mean=("fluor_geomean", "mean"),
+                pct_positive_mean=("pct_positive", "mean"),
+            )
+            .reset_index()
+        )
+
+    def _nonpositive_pct(values):
+        _vals = pd.to_numeric(values, errors="coerce").to_numpy()
+        _vals = _vals[np.isfinite(_vals)]
+        if _vals.size == 0:
+            return np.nan
+        return float(100.0 * np.mean(_vals <= 0))
+
+    cyto_qc_table = (
+        _df.groupby("sample_id", dropna=False)
+        .agg(
+            pct_nonpositive=(_fluor, _nonpositive_pct),
+        )
+        .reset_index()
+    )
+
+    cyto_gate_config = {
+        "filters": {
+            "design_id": str(cyto_design_filter.value),
+            "treatment": str(cyto_treatment_filter.value),
+            "sample_id": str(cyto_sample_filter.value),
+        },
+        "scatter": {
+            "x_channel": str(cyto_scatter_x_dropdown.value),
+            "y_channel": str(cyto_scatter_y_dropdown.value),
+            "x_scale": str(cyto_scatter_scale_x.value),
+            "y_scale": str(cyto_scatter_scale_y.value),
+        },
+        "hue": str(cyto_hue_dropdown.value),
+        "facet_by": str(cyto_facet_dropdown.value),
+        "histogram": {
+            "scale": str(cyto_hist_scale.value),
+            "low_clip_quantile": str(cyto_low_clip_dropdown.value),
+        },
+        "downsample_target": int(cyto_downsample_target.value),
+        "cells_gate": {
+            "enabled": bool(cyto_cells_gate_enabled.value),
+            "x_channel": _cells_x,
+            "y_channel": _cells_y,
+            "x_range": list(cyto_cells_x_range.value),
+            "y_range": list(cyto_cells_y_range.value),
+        },
+        "singlets_gate": {
+            "enabled": bool(cyto_singlet_gate_enabled.value),
+            "x_channel": _singlet_x,
+            "y_channel": _singlet_y,
+            "ratio_range": list(cyto_singlet_ratio_range.value),
+        },
+        "fluor": {
+            "channel": _fluor,
+        },
+        "threshold": {
+            "mode": _threshold_mode,
+            "value": _threshold_value,
+            "group_column": str(cyto_threshold_group_dropdown.value),
+            "control_value": str(cyto_threshold_control_dropdown.value),
+            "quantile": float(cyto_threshold_quantile.value),
+        },
+    }
+
+    cyto_threshold_value_final = _threshold_value
+    return (
+        cyto_gated_events,
+        cyto_gate_counts_sample,
+        cyto_stats_sample,
+        cyto_stats_group,
+        cyto_threshold_value_final,
+        cyto_gate_config,
+        cyto_qc_table,
+    )
+
+@app.cell
+def _(
+    cyto_cells_x_dropdown,
+    cyto_cells_x_range,
+    cyto_cells_y_dropdown,
+    cyto_cells_y_range,
+    cyto_event_wide,
+    cyto_facet_dropdown,
+    cyto_fluor_dropdown,
+    cyto_gated_events,
+    cyto_hue_dropdown,
+    cyto_hist_scale,
+    cyto_low_clip_dropdown,
+    cyto_scatter_scale_x,
+    cyto_scatter_scale_y,
+    cyto_scatter_x_dropdown,
+    cyto_scatter_y_dropdown,
+    cyto_singlet_ratio_range,
+    cyto_singlet_x_dropdown,
+    cyto_singlet_y_dropdown,
+    cyto_threshold_value_final,
+    cyto_downsample_target,
+    mo,
+    np,
+    pd,
+    plt,
+):
+    if pd is None or np is None:
+        mo.stop(True, mo.md("Pandas and NumPy are required for cytometry plots."))
+    if plt is None:
+        mo.stop(True, mo.md("Matplotlib is required for cytometry plots."))
+
+    _hue_col = str(cyto_hue_dropdown.value)
+    _facet_col = str(cyto_facet_dropdown.value)
+    if _facet_col == "None":
+        _facet_col = None
+
+    def _downsample(df, max_events, group_cols):
+        if df is None or df.empty:
+            return df
+        if len(df) <= max_events:
+            return df
+        if group_cols:
+            _grouped = df.groupby(group_cols, dropna=False, group_keys=False)
+            _per_group = max(1, int(max_events / max(_grouped.ngroups, 1)))
+            return (
+                _grouped.apply(
+                    lambda g: g.sample(n=min(len(g), _per_group), random_state=0)
+                )
+                .reset_index(drop=True)
+            )
+        return df.sample(n=max_events, random_state=0).reset_index(drop=True)
+
+    def _unique_cols(cols):
+        seen = set()
+        out = []
+        for col in cols:
+            if col in seen:
+                continue
+            seen.add(col)
+            out.append(col)
+        return out
+
+    def _col_series(df, col):
+        _data = df[col]
+        if isinstance(_data, pd.DataFrame):
+            return _data.iloc[:, 0]
+        return _data
+
+    _palette = [
+        "#1f77b4",
+        "#d62728",
+        "#2ca02c",
+        "#ff7f0e",
+        "#9467bd",
+        "#17becf",
+        "#bcbd22",
+        "#7f7f7f",
+        "#8c564b",
+        "#e377c2",
+    ]
+
+    _cells_x = str(cyto_cells_x_dropdown.value)
+    _cells_y = str(cyto_cells_y_dropdown.value)
+    _singlet_x = str(cyto_singlet_x_dropdown.value)
+    _singlet_y = str(cyto_singlet_y_dropdown.value)
+
+    _gating_cols = _unique_cols([_cells_x, _cells_y, _singlet_x, _singlet_y, "sample_id"])
+    if _hue_col in cyto_event_wide.columns:
+        _gating_cols.append(_hue_col)
+    if _facet_col and _facet_col in cyto_event_wide.columns:
+        _gating_cols.append(_facet_col)
+    _gating_df = cyto_event_wide[_gating_cols].copy()
+    if _gating_df.columns.duplicated().any():
+        _gating_df = _gating_df.loc[:, ~_gating_df.columns.duplicated()]
+
+    _max_events = int(cyto_downsample_target.value)
+    _gating_df = _downsample(_gating_df, _max_events, [c for c in [_facet_col, _hue_col] if c])
+
+    _hue_values = sorted({str(v) for v in _gating_df[_hue_col].dropna().unique()}) if _hue_col in _gating_df.columns else ["all"]
+    if not _hue_values:
+        _hue_values = ["all"]
+        _gating_df["_hue"] = "all"
+        _hue_col = "_hue"
+    _color_map = {hue: _palette[idx % len(_palette)] for idx, hue in enumerate(_hue_values)}
+
+    cyto_gating_fig, axes = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
+    _ax_cells, _ax_singlets = axes
+    _ax_cells.set_facecolor("white")
+    _ax_singlets.set_facecolor("white")
+
+    for _hue in _hue_values:
+        _group = _gating_df[_gating_df[_hue_col].astype(str) == _hue]
+        if _group.empty:
+            continue
+        _x_vals = pd.to_numeric(_col_series(_group, _cells_x), errors="coerce")
+        _y_vals = pd.to_numeric(_col_series(_group, _cells_y), errors="coerce")
+        _mask = np.isfinite(_x_vals) & np.isfinite(_y_vals)
+        if not _mask.any():
+            continue
+        _ax_cells.scatter(
+            _x_vals[_mask],
+            _y_vals[_mask],
+            s=10,
+            alpha=0.35,
+            color=_color_map.get(_hue, "#000000"),
+            label=_hue,
+        )
+    _x_lo, _x_hi = cyto_cells_x_range.value
+    _y_lo, _y_hi = cyto_cells_y_range.value
+    _ax_cells.add_patch(
+        plt.Rectangle(
+            (_x_lo, _y_lo),
+            _x_hi - _x_lo,
+            _y_hi - _y_lo,
+            fill=False,
+            edgecolor="black",
+            linewidth=1.5,
+        )
+    )
+    _ax_cells.set_xlabel(_cells_x, color="black")
+    _ax_cells.set_ylabel(_cells_y, color="black")
+    _ax_cells.set_title("Cells gate", color="black")
+    _ax_cells.tick_params(colors="black")
+    for _spine in ("left", "bottom", "right", "top"):
+        _ax_cells.spines[_spine].set_visible(True)
+        _ax_cells.spines[_spine].set_color("black")
+    _cells_leg = _ax_cells.legend(loc="upper right", frameon=False, fontsize=8)
+    if _cells_leg is not None:
+        for _text in _cells_leg.get_texts():
+            _text.set_color("black")
+
+    for _hue in _hue_values:
+        _group = _gating_df[_gating_df[_hue_col].astype(str) == _hue]
+        if _group.empty:
+            continue
+        _x_vals = pd.to_numeric(_col_series(_group, _singlet_x), errors="coerce")
+        _y_vals = pd.to_numeric(_col_series(_group, _singlet_y), errors="coerce")
+        _mask = np.isfinite(_x_vals) & np.isfinite(_y_vals)
+        if not _mask.any():
+            continue
+        _ax_singlets.scatter(
+            _x_vals[_mask],
+            _y_vals[_mask],
+            s=10,
+            alpha=0.35,
+            color=_color_map.get(_hue, "#000000"),
+            label=_hue,
+        )
+    _r_lo, _r_hi = cyto_singlet_ratio_range.value
+    _x_vals = pd.to_numeric(_col_series(_gating_df, _singlet_x), errors="coerce")
+    _x_vals = _x_vals[np.isfinite(_x_vals)].to_numpy()
+    if _x_vals.size:
+        _x_min = float(np.nanmin(_x_vals))
+        _x_max = float(np.nanmax(_x_vals))
+        _line_x = np.linspace(_x_min, _x_max, 200)
+        _ax_singlets.plot(_line_x, _r_lo * _line_x, color="black", linewidth=1.0)
+        _ax_singlets.plot(_line_x, _r_hi * _line_x, color="black", linewidth=1.0)
+    _ax_singlets.set_xlabel(_singlet_x, color="black")
+    _ax_singlets.set_ylabel(_singlet_y, color="black")
+    _ax_singlets.set_title("Singlets gate", color="black")
+    _ax_singlets.tick_params(colors="black")
+    for _spine in ("left", "bottom", "right", "top"):
+        _ax_singlets.spines[_spine].set_visible(True)
+        _ax_singlets.spines[_spine].set_color("black")
+    _singlet_leg = _ax_singlets.legend(loc="upper right", frameon=False, fontsize=8)
+    if _singlet_leg is not None:
+        for _text in _singlet_leg.get_texts():
+            _text.set_color("black")
+    cyto_gating_fig.patch.set_facecolor("white")
+
+    _scatter_x = str(cyto_scatter_x_dropdown.value)
+    _scatter_y = str(cyto_scatter_y_dropdown.value)
+    _fluor = str(cyto_fluor_dropdown.value)
+
+    _plot_cols = _unique_cols([_scatter_x, _scatter_y, _fluor, "sample_id"])
+    if _hue_col in cyto_gated_events.columns:
+        _plot_cols.append(_hue_col)
+    if _facet_col and _facet_col in cyto_gated_events.columns:
+        _plot_cols.append(_facet_col)
+    _plot_df = cyto_gated_events[_plot_cols].copy()
+    if _plot_df.columns.duplicated().any():
+        _plot_df = _plot_df.loc[:, ~_plot_df.columns.duplicated()]
+
+    _plot_df[_scatter_x] = pd.to_numeric(_col_series(_plot_df, _scatter_x), errors="coerce")
+    _plot_df[_scatter_y] = pd.to_numeric(_col_series(_plot_df, _scatter_y), errors="coerce")
+    _plot_df[_fluor] = pd.to_numeric(_col_series(_plot_df, _fluor), errors="coerce")
+    _plot_df = _plot_df[np.isfinite(_plot_df[_scatter_x]) & np.isfinite(_plot_df[_scatter_y])]
+
+    _low_clip = str(cyto_low_clip_dropdown.value)
+    if _low_clip != "off":
+        _q = float(_low_clip)
+        if _facet_col:
+            _mask = np.zeros(len(_plot_df), dtype=bool)
+            for _, _group in _plot_df.groupby(_facet_col, dropna=False):
+                _x = _group[_scatter_x].to_numpy()
+                _y = _group[_scatter_y].to_numpy()
+                _x_lo = float(np.nanquantile(_x, _q))
+                _y_lo = float(np.nanquantile(_y, _q))
+                _mask[_group.index] = (_x >= _x_lo) & (_y >= _y_lo)
+            _plot_df = _plot_df.loc[_mask]
+        else:
+            _x = _plot_df[_scatter_x].to_numpy()
+            _y = _plot_df[_scatter_y].to_numpy()
+            _x_lo = float(np.nanquantile(_x, _q))
+            _y_lo = float(np.nanquantile(_y, _q))
+            _plot_df = _plot_df[(_plot_df[_scatter_x] >= _x_lo) & (_plot_df[_scatter_y] >= _y_lo)]
+
+    _x_scale = str(cyto_scatter_scale_x.value)
+    _y_scale = str(cyto_scatter_scale_y.value)
+    if _x_scale == "log":
+        _plot_df = _plot_df[_plot_df[_scatter_x] > 0]
+    if _y_scale == "log":
+        _plot_df = _plot_df[_plot_df[_scatter_y] > 0]
+    if _plot_df.empty:
+        mo.stop(True, mo.md("No scatter data available after filtering."))
+
+    _plot_df = _downsample(_plot_df, _max_events, [c for c in [_facet_col, _hue_col] if c])
+
+    _plot_df["legend_hue"] = _plot_df[_hue_col].fillna("(missing)").astype(str) if _hue_col in _plot_df.columns else "(missing)"
+    _hue_values = sorted({str(v) for v in _plot_df["legend_hue"].dropna().unique()})
+    if not _hue_values:
+        _hue_values = ["(missing)"]
+        _plot_df["legend_hue"] = "(missing)"
+
+    _color_map = {hue: _palette[idx % len(_palette)] for idx, hue in enumerate(_hue_values)}
+    _fallback_title = None
+    if _facet_col is None and "design_id" in _plot_df.columns:
+        _design_vals = [str(v) for v in _plot_df["design_id"].dropna().unique()]
+        if len(_design_vals) == 1:
+            _fallback_title = f"design_id: {_design_vals[0]}"
+
+    _hist_df = _plot_df.copy()
+    _hist_scale = str(cyto_hist_scale.value)
+    _xlabel = f"{_fluor} (a.u.)"
+    _hist_value_col = _fluor
+    _hist_xscale = "linear"
+    if _hist_scale == "log":
+        _hist_df = _hist_df[_hist_df[_fluor] > 0].copy()
+        if _hist_df.empty:
+            mo.stop(True, mo.md("Log scale requires positive fluor values."))
+        _xlabel = f"{_fluor} (log)"
+        _hist_xscale = "log"
+    elif _hist_scale == "asinh":
+        _cofactor = 150.0
+        _hist_df["fluor_plot_value"] = np.arcsinh(_hist_df[_fluor].to_numpy() / _cofactor)
+        _xlabel = f"asinh({_fluor}/{_cofactor:g})"
+        _hist_value_col = "fluor_plot_value"
+    elif _hist_scale == "symlog":
+        _linthresh = 50.0
+        _vals = _hist_df[_fluor].to_numpy()
+        _hist_df["fluor_plot_value"] = np.sign(_vals) * np.log10(1 + np.abs(_vals) / _linthresh)
+        _xlabel = f"symlog({_fluor})"
+        _hist_value_col = "fluor_plot_value"
+
+    _hist_values = _hist_df[_hist_value_col].to_numpy()
+    _hist_values = _hist_values[np.isfinite(_hist_values)]
+    if _hist_values.size == 0:
+        mo.stop(True, mo.md("No finite histogram values available."))
+    _hist_min = float(np.nanmin(_hist_values))
+    _hist_max = float(np.nanmax(_hist_values))
+    if not np.isfinite(_hist_min) or not np.isfinite(_hist_max):
+        mo.stop(True, mo.md("Histogram range could not be determined."))
+    if _hist_max <= _hist_min:
+        _hist_max = _hist_min + 1e-6
+    if _hist_xscale == "log":
+        _hist_bins = np.logspace(np.log10(_hist_min), np.log10(_hist_max), 201)
+    else:
+        _hist_bins = np.linspace(_hist_min, _hist_max, 201)
+
+    _facet_values = [None]
+    if _facet_col and _facet_col in _plot_df.columns:
+        _facet_values = sorted({str(v) for v in _plot_df[_facet_col].dropna().unique()})
+        if not _facet_values:
+            _facet_values = [None]
+
+    _ncols = max(len(_facet_values), 1)
+    cyto_marker_fig, axes = plt.subplots(
+        nrows=2,
+        ncols=_ncols,
+        figsize=(4.0 * _ncols, 6.0),
+        constrained_layout=True,
+    )
+    if _ncols == 1:
+        axes = np.array(axes).reshape(2, 1)
+
+    _hist_ylabel = "Count"
+    for _col_idx, _facet in enumerate(_facet_values):
+        _scatter_ax = axes[0, _col_idx]
+        _hist_ax = axes[1, _col_idx]
+
+        _scatter_ax.set_facecolor("white")
+        _hist_ax.set_facecolor("white")
+
+        _facet_plot = _plot_df
+        _facet_hist = _hist_df
+        if _facet is not None and _facet_col:
+            _facet_plot = _facet_plot[_facet_plot[_facet_col].astype(str) == _facet]
+            _facet_hist = _facet_hist[_facet_hist[_facet_col].astype(str) == _facet]
+
+        for _hue in _hue_values:
+            _group = _facet_plot[_facet_plot["legend_hue"] == _hue]
+            if _group.empty:
+                continue
+            _x_vals = pd.to_numeric(_col_series(_group, _scatter_x), errors="coerce")
+            _y_vals = pd.to_numeric(_col_series(_group, _scatter_y), errors="coerce")
+            _mask = np.isfinite(_x_vals) & np.isfinite(_y_vals)
+            if not _mask.any():
+                continue
+            _scatter_ax.scatter(
+                _x_vals[_mask],
+                _y_vals[_mask],
+                s=12,
+                alpha=0.35,
+                color=_color_map.get(_hue, "#000000"),
+                label=_hue,
+            )
+
+        if _x_scale == "log":
+            _scatter_ax.set_xscale("log")
+        elif _x_scale == "symlog":
+            _scatter_ax.set_xscale("symlog", linthresh=50.0)
+        if _y_scale == "log":
+            _scatter_ax.set_yscale("log")
+        elif _y_scale == "symlog":
+            _scatter_ax.set_yscale("symlog", linthresh=50.0)
+
+        _scatter_ax.set_xlabel(_scatter_x, color="black")
+        _scatter_ax.set_ylabel(_scatter_y, color="black")
+        _scatter_ax.tick_params(colors="black")
+        _scatter_ax.spines["left"].set_visible(True)
+        _scatter_ax.spines["bottom"].set_visible(True)
+        for _spine in ("left", "bottom"):
+            _scatter_ax.spines[_spine].set_color("black")
+
+        _title_text = None
+        if _facet is not None and _facet_col:
+            _title_text = f"{_facet_col}: {_facet}"
+        elif _facet is not None:
+            _title_text = _facet
+        elif _fallback_title:
+            _title_text = _fallback_title
+        if _title_text is not None:
+            _scatter_ax.set_title(_title_text, color="black")
+
+        _scatter_leg = _scatter_ax.legend(
+            loc="upper right",
+            frameon=False,
+            fontsize=8,
+        )
+        if _scatter_leg is not None:
+            for _text in _scatter_leg.get_texts():
+                _text.set_color("black")
+
+        for _hue in _hue_values:
+            _group = _facet_hist[_facet_hist["legend_hue"] == _hue]
+            if _group.empty:
+                continue
+            _values = _group[_hist_value_col].to_numpy()
+            _hist_ax.hist(
+                _values,
+                bins=_hist_bins,
+                alpha=0.25,
+                histtype="stepfilled",
+                color=_color_map.get(_hue, "#000000"),
+                label=_hue,
+            )
+
+        if _hist_xscale == "log":
+            _hist_ax.set_xscale("log")
+        _hist_ax.set_xlabel(_xlabel, color="black")
+        _hist_ax.set_ylabel(_hist_ylabel, color="black")
+        _hist_ax.tick_params(colors="black")
+        _hist_ax.spines["left"].set_visible(True)
+        _hist_ax.spines["bottom"].set_visible(True)
+        for _spine in ("left", "bottom"):
+            _hist_ax.spines[_spine].set_color("black")
+
+        _threshold_plot = cyto_threshold_value_final
+        if np.isfinite(_threshold_plot):
+            if _hist_scale == "asinh":
+                _threshold_plot = np.arcsinh(_threshold_plot / 150.0)
+            elif _hist_scale == "symlog":
+                _threshold_plot = np.sign(_threshold_plot) * np.log10(
+                    1 + np.abs(_threshold_plot) / 50.0
+                )
+            _hist_ax.axvline(_threshold_plot, color="black", linestyle="--", linewidth=1.0)
+
+        _hist_leg = _hist_ax.legend(
+            loc="upper right",
+            frameon=False,
+            fontsize=8,
+        )
+        if _hist_leg is not None:
+            for _text in _hist_leg.get_texts():
+                _text.set_color("black")
+
+    cyto_marker_fig.patch.set_facecolor("white")
+    return cyto_gating_fig, cyto_marker_fig
+
+@app.cell(hide_code=True)
+def _(
+    cyto_stats_group,
+    cyto_stats_sample,
+    cyto_threshold_control_dropdown,
+    cyto_threshold_group_dropdown,
+    cyto_threshold_mode,
+    cyto_threshold_quantile,
+    cyto_threshold_value,
+    mo,
+):
+    _threshold_row_1 = mo.hstack(
+        [
+            cyto_threshold_mode,
+            cyto_threshold_group_dropdown,
+            cyto_threshold_control_dropdown,
+        ],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _threshold_row_2 = mo.hstack(
+        [cyto_threshold_quantile, cyto_threshold_value],
+        gap=1,
+        align="start",
+        justify="start",
+    )
+    _elements = [
+        mo.md("### Statistics and thresholding"),
+        mo.md(
+            "Threshold sets `% positive` and the dashed histogram line. **Manual** uses the numeric threshold; **control quantile** derives the threshold from the selected control group."
+        ),
+        _threshold_row_1,
+        _threshold_row_2,
+        mo.md("### Per-sample statistics"),
+        mo.ui.table(cyto_stats_sample, page_size=10),
+    ]
+    if cyto_stats_group is not None:
+        _elements.extend(
+            [
+                mo.md("### Group summary statistics"),
+                mo.ui.table(cyto_stats_group, page_size=10),
+            ]
+        )
+    cyto_stats_panel = mo.vstack(_elements)
+    return cyto_stats_panel
+
+@app.cell(hide_code=True)
+def _(cyto_qc_table, mo):
+    cyto_qc_panel = mo.vstack(
+        [
+            mo.md("### Quality control summary"),
+            mo.md(
+                "`pct_nonpositive` is computed on the selected fluorescence channel before gating; high values often indicate compensated data and can break strict log plots."
+            ),
+            mo.ui.table(cyto_qc_table, page_size=10),
+        ]
+    )
+    return cyto_qc_panel
+
+@app.cell(hide_code=True)
+def _(mo, outputs_dir, spec):
+    exports_cfg = spec.paths.exports
+    exports_dir = outputs_dir if exports_cfg in ("", ".", "./") else outputs_dir / str(exports_cfg)
+    cyto_export_format = mo.ui.dropdown(
+        options=["pdf", "png", "svg"],
+        value="pdf",
+        label="Plot format",
+        full_width=True,
+    )
+    cyto_plot_export_path = mo.ui.text(
+        value=str(exports_dir / "cytometry_eda.pdf"),
+        label="Plot export path",
+        full_width=True,
+    )
+    cyto_stats_export_path = mo.ui.text(
+        value=str(exports_dir / "cytometry_stats.csv"),
+        label="Stats export path (CSV)",
+        full_width=True,
+    )
+    cyto_gate_export_path = mo.ui.text(
+        value=str(exports_dir / "cytometry_gates.json"),
+        label="Gate config path (JSON)",
+        full_width=True,
+    )
+    cyto_export_button = mo.ui.run_button(
+        label="Export cytometry outputs",
+        kind="success",
+    )
+    cyto_export_panel = mo.vstack(
+        [
+            cyto_export_format,
+            cyto_plot_export_path,
+            cyto_stats_export_path,
+            cyto_gate_export_path,
+            cyto_export_button,
+        ]
+    )
+    return (
+        exports_dir,
+        cyto_export_format,
+        cyto_plot_export_path,
+        cyto_stats_export_path,
+        cyto_gate_export_path,
+        cyto_export_button,
+        cyto_export_panel,
+    )
+
+@app.cell
+def _(
+    Path,
+    cyto_export_button,
+    cyto_export_format,
+    cyto_gate_config,
+    cyto_gate_export_path,
+    cyto_marker_fig,
+    cyto_plot_export_path,
+    cyto_stats_export_path,
+    cyto_stats_sample,
+    exports_dir,
+    json,
+    mo,
+):
+    if cyto_marker_fig is None:
+        mo.stop(True, mo.md("No cytometry plot available to export."))
+    if cyto_stats_sample is None:
+        mo.stop(True, mo.md("No cytometry stats available to export."))
+    _export_message = None
+    if cyto_export_button.value:
+        _format = str(cyto_export_format.value).lower()
+
+        _plot_target = Path(str(cyto_plot_export_path.value)).expanduser()
+        if not _plot_target.is_absolute():
+            _plot_target = (exports_dir / _plot_target).resolve()
+        if _plot_target.suffix and _plot_target.suffix.lower() != f".{_format}":
+            mo.stop(True, mo.md("Plot export path extension must match selected format."))
+        _plot_target.parent.mkdir(parents=True, exist_ok=True)
+        cyto_marker_fig.savefig(_plot_target, format=_format, bbox_inches="tight", facecolor="white")
+
+        _stats_target = Path(str(cyto_stats_export_path.value)).expanduser()
+        if not _stats_target.is_absolute():
+            _stats_target = (exports_dir / _stats_target).resolve()
+        _stats_target.parent.mkdir(parents=True, exist_ok=True)
+        cyto_stats_sample.to_csv(_stats_target, index=False)
+
+        _gate_target = Path(str(cyto_gate_export_path.value)).expanduser()
+        if not _gate_target.is_absolute():
+            _gate_target = (exports_dir / _gate_target).resolve()
+        _gate_target.parent.mkdir(parents=True, exist_ok=True)
+        _gate_target.write_text(json.dumps(cyto_gate_config, indent=2), encoding="utf-8")
+
+        _export_message = (
+            f"Saved plot to `{_plot_target}`; stats to `{_stats_target}`; gate config to `{_gate_target}`."
+        )
+    if _export_message is not None:
+        _ = mo.md(_export_message)
+    return
+
+@app.cell(hide_code=True)
+def _(
+    cyto_intro_panel,
+    cyto_controls_panel,
+    cyto_gate_panel,
+    cyto_gating_fig,
+    cyto_marker_fig,
+    cyto_qc_panel,
+    cyto_stats_panel,
+    cyto_export_panel,
+    eda_base_panel,
+    mo,
+):
+    cyto_tabs = mo.vstack(
+        [
+            eda_base_panel,
+            cyto_intro_panel,
+            mo.md("## Controls"),
+            cyto_controls_panel,
+            mo.md("## Gating"),
+            cyto_gate_panel,
+            cyto_gating_fig,
+            mo.md("## Fluorescence"),
+            cyto_marker_fig,
+            mo.md("## Statistics"),
+            cyto_stats_panel,
+            cyto_qc_panel,
+            mo.md("## Export"),
+            cyto_export_panel,
+        ],
+        gap=1,
+    )
+    cyto_tabs
+'''
+
+EXPERIMENT_EDA_BASIC_TEMPLATE = (
+    EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_EDA_BASE_LAYOUT_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
+)
 EXPERIMENT_EDA_MICROPLATE_TEMPLATE = EXPERIMENT_EDA_BASIC_TEMPLATE
-EXPERIMENT_EDA_CYTOMETRY_TEMPLATE = EXPERIMENT_EDA_BASIC_TEMPLATE
+EXPERIMENT_EDA_CYTOMETRY_TEMPLATE = (
+    EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_EDA_CYTOMETRY_EXTENSION_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
+)
 EXPERIMENT_NOTEBOOK_EDA_TEMPLATE = EXPERIMENT_EDA_BASIC_TEMPLATE
 EXPERIMENT_SFXI_EXTENSION_TEMPLATE = '''
 @app.cell(hide_code=True)
@@ -1052,7 +2615,10 @@ def _(export_button, export_path, json, log_name, mo, vec8_result):
     mo.md(f"Exported 8-vector to `{export_path}` and log to `{log_path}`.")
 '''
 EXPERIMENT_SFXI_EDA_TEMPLATE = (
-    EXPERIMENT_EDA_BASE_TEMPLATE + EXPERIMENT_SFXI_EXTENSION_TEMPLATE + EXPERIMENT_EDA_TEMPLATE_FOOTER
+    EXPERIMENT_EDA_BASE_TEMPLATE
+    + EXPERIMENT_EDA_BASE_LAYOUT_TEMPLATE
+    + EXPERIMENT_SFXI_EXTENSION_TEMPLATE
+    + EXPERIMENT_EDA_TEMPLATE_FOOTER
 )
 
 NOTEBOOK_PRESETS: dict[str, dict[str, str]] = {
@@ -1069,7 +2635,7 @@ NOTEBOOK_PRESETS: dict[str, dict[str, str]] = {
         "template": EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
     },
     "notebook/cytometry": {
-        "description": "Minimal artifact explorer (same scaffold as notebook/basic).",
+        "description": "Cytometry EDA scaffold (FSC/SSC scatter + fluorophore histograms).",
         "template": EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
     },
     "notebook/sfxi_eda": {

@@ -52,7 +52,7 @@ class DistributionsPlot(Plugin):
     def render(self, ctx, inputs, cfg: DistributionsCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks: pd.DataFrame = inputs.get("blanks", df.iloc[0:0])
-        from reader.lib.microplates.distributions import plot_distributions
+        from reader.lib.microplates.distributions import plot_distributions  # noqa: PLC0415
 
         # --- Resolve pool_sets (DRY via data.groupings) ----------------
         # Accept:

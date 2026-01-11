@@ -55,7 +55,7 @@ class TimeSeriesPlot(Plugin):
     def render(self, ctx, inputs, cfg: TimeSeriesCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
-        from reader.lib.microplates.time_series import plot_time_series
+        from reader.lib.microplates.time_series import plot_time_series  # noqa: PLC0415
 
         # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
         def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):

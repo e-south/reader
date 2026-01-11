@@ -49,7 +49,7 @@ def save_plot_figures(figures: list[PlotFigure], output_dir: Path) -> list[Path]
     if not figures:
         return saved
     try:
-        import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - dependency guard
         raise ExecutionError("Plot saving requires matplotlib.") from exc
     seen_figs: list[Any] = []

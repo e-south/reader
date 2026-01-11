@@ -73,6 +73,10 @@ def _collect_categories(steps: list[Any]) -> set[str]:
     return cats
 
 
+def _has_cytometry_step(spec: ReaderSpec) -> bool:
+    return any(str(getattr(step, "uses", "")) == "ingest/flow_cytometer" for step in spec.pipeline.steps)
+
+
 def _snapshot_dir(root: Path) -> dict[Path, float]:
     if not root.exists():
         return {}
@@ -311,7 +315,12 @@ def build_next_steps(spec: ReaderSpec, *, job_label: str | None = None) -> list[
     if getattr(spec, "notebook", None) and getattr(spec.notebook, "preset", None):
         notebook_preset = normalize_notebook_preset(spec.notebook.preset)
     if not notebook_preset:
-        notebook_preset = "notebook/eda" if plot_specs else "notebook/basic"
+        if plot_specs:
+            notebook_preset = "notebook/eda"
+        elif _has_cytometry_step(spec):
+            notebook_preset = "notebook/cytometry"
+        else:
+            notebook_preset = "notebook/basic"
     steps.append((_cmd("reader artifacts"), "Review generated artifacts (QC)"))
     if plot_specs:
         steps.append((_cmd("reader plot"), "Save plot files to outputs/plots"))
