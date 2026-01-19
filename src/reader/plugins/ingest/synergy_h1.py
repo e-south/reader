@@ -35,6 +35,10 @@ class SynergyH1UnifiedCfg(PluginConfig):
     sheet_names: Sequence[str] | None = None
     add_sheet: bool = False
 
+    # time normalization
+    time_round_decimals: int | None = 12
+    time_step_h: float | None = None
+
     # auto-discovery knobs
     auto_roots: list[str] | None = None
     auto_include: list[str] = list(DEFAULT_INCLUDE)
@@ -187,6 +191,8 @@ class SynergyH1(Plugin):
                         channel_map=cfg.channel_map,
                         sheet_names=cfg.sheet_names,
                         add_sheet=cfg.add_sheet,
+                        time_round_decimals=cfg.time_round_decimals,
+                        time_step_h=cfg.time_step_h,
                     )
                 elif effective_mode == "snapshot_only":
                     df = parse_snapshot_and_timeseries(
@@ -195,6 +201,8 @@ class SynergyH1(Plugin):
                         channel_map=cfg.channel_map,
                         sheet_names=cfg.sheet_names,
                         add_sheet=cfg.add_sheet,
+                        time_round_decimals=cfg.time_round_decimals,
+                        time_step_h=cfg.time_step_h,
                         include_snapshot=True,
                         include_kinetic=False,
                     )
@@ -206,6 +214,8 @@ class SynergyH1(Plugin):
                         channel_map=cfg.channel_map,
                         sheet_names=cfg.sheet_names,
                         add_sheet=cfg.add_sheet,
+                        time_round_decimals=cfg.time_round_decimals,
+                        time_step_h=cfg.time_step_h,
                         include_snapshot=True,
                         include_kinetic=True,
                     )

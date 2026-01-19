@@ -1,4 +1,5 @@
 # reader
+[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
 
 `reader` is a workbench for analyzing experimental data and a library/CLI that provides supporting commands.
 
@@ -23,7 +24,7 @@
             inputs/         # raw files + metadata (e.g., metadata.xlsx)
             outputs/        # pipeline outputs, plots, exports, notebooks
     ```
-2. Run config-driven pipelines that process data and produce structured outputs. 
+2. Run config-driven pipelines that process data and produce structured outputs.
 
     ```bash
     outputs/
