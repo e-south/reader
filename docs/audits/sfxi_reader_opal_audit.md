@@ -30,7 +30,7 @@ Scope: align Reader vec8 generation, OPAL ingest-y transform, and OPAL objective
 3) **id_column too strict (must be literal “id”)**
    - **Mismatch:** OPAL transform refused `id_column: design_id` despite Reader exporting design_id.
    - **Fix location:** OPAL transform_y + schema.
-   - **File/function:** 
+   - **File/function:**
      - `dnadesign/src/dnadesign/opal/src/transforms_y/sfxi_vec8_from_table_v1.py::sfxi_vec8_from_table_v1`
      - `dnadesign/src/dnadesign/opal/src/config/plugin_schemas.py::_Vec8TableParams`
    - **Status:** Fixed in this change. Any source column is allowed; output column is standardized to `id`.
@@ -38,7 +38,7 @@ Scope: align Reader vec8 generation, OPAL ingest-y transform, and OPAL objective
 4) **Flat‑logic warning missing**
    - **Mismatch:** Reader set `flat_logic=True` and `v=0.25` but emitted no warning and no run‑level summary in logs.
    - **Fix location:** Reader.
-   - **File/function:** 
+   - **File/function:**
      - `reader/src/reader/lib/sfxi/run.py::build_vec8_from_tidy` (log stats)
      - `reader/src/reader/lib/sfxi/run.py::run_sfxi` (aggregated warning)
    - **Status:** Fixed in this change. One warning per run + log stats.
@@ -52,8 +52,7 @@ Scope: align Reader vec8 generation, OPAL ingest-y transform, and OPAL objective
 6) **Cross‑system risk: delta must match between Reader and OPAL**
    - **Mismatch:** There’s no enforcement that Reader’s `log2_offset_delta` matches OPAL’s `intensity_log2_offset_delta`.
    - **Fix location:** OPAL (ingest-time validation) or project‑level config conventions.
-   - **File/function:** 
+   - **File/function:**
      - Reader config: `reader/src/reader/lib/sfxi/api.py::SFXIConfig`
      - OPAL objective: `dnadesign/src/dnadesign/opal/src/objectives/sfxi_v1.py::sfxi_v1`
    - **Status:** Not enforced; recommend validating against Reader’s `sfxi_log.json` when available.
-

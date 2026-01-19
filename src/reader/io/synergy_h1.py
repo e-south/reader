@@ -57,6 +57,24 @@ def _extract_sheet_datetime(xl: pd.ExcelFile, sheet: str) -> datetime:
     return datetime.combine(d, t)
 
 
+def _normalize_time_series(
+    time: pd.Series,
+    *,
+    time_round_decimals: int | None,
+    time_step_h: float | None,
+) -> pd.Series:
+    t = pd.to_numeric(time, errors="raise")
+    if time_step_h is not None:
+        step = float(time_step_h)
+        _require(step > 0, "time_step_h must be > 0")
+        t = (t / step).round() * step
+    if time_round_decimals is not None:
+        dec = int(time_round_decimals)
+        _require(dec >= 0, "time_round_decimals must be >= 0")
+        t = t.round(dec)
+    return t
+
+
 # ---- channel canonicalization tolerant to "OD600 B", trailing letters, spaces, colons
 
 
@@ -320,6 +338,8 @@ def parse_snapshot_and_timeseries(
     channel_map: Mapping[str, str] | None = None,
     sheet_names: Sequence[str] | None = None,
     add_sheet: bool = False,
+    time_round_decimals: int | None = 12,
+    time_step_h: float | None = None,
     include_snapshot: bool = True,
     include_kinetic: bool = True,
 ) -> pd.DataFrame:
@@ -344,7 +364,8 @@ def parse_snapshot_and_timeseries(
         _require(s in xl.sheet_names, f"Sheet {s!r} not found in workbook")
 
     frames: list[pd.DataFrame] = []
-    t0: datetime | None = None
+    sheet_dts = {s: _extract_sheet_datetime(xl, s) for s in sheets}
+    t0 = min(sheet_dts.values())
 
     def _split_snapshot_vs_kinetic(df: pd.DataFrame) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         def _row_has(idx: int, keyword: str) -> bool:
@@ -366,8 +387,7 @@ def parse_snapshot_and_timeseries(
         return snap, kin
 
     for sidx, sheet in enumerate(sheets):
-        dt = _extract_sheet_datetime(xl, sheet)
-        t0 = t0 or dt
+        dt = sheet_dts[sheet]
         elapsed = (dt - t0).total_seconds() / 3600.0
 
         raw = xl.parse(sheet_name=sheet, header=None, dtype=str)
@@ -414,7 +434,11 @@ def parse_snapshot_and_timeseries(
     if channels:
         out = out[out["channel"].isin(channels)].reset_index(drop=True)
 
-    out["time"] = pd.to_numeric(out["time"], errors="raise")
+    out["time"] = _normalize_time_series(
+        out["time"],
+        time_round_decimals=time_round_decimals,
+        time_step_h=time_step_h,
+    )
     out["value"] = pd.to_numeric(out["value"], errors="raise")
     _require(out["time"].ge(0).all(), "Internal error: negative time encountered after alignment")
     _require(out["time"].notna().all(), "Internal error: time contains NaN after alignment")
@@ -436,6 +460,8 @@ def parse_kinetic_only(
     channel_map: Mapping[str, str] | None = None,
     sheet_names: Sequence[str] | None = None,
     add_sheet: bool = False,
+    time_round_decimals: int | None = 12,
+    time_step_h: float | None = None,
 ) -> pd.DataFrame:
     p = Path(path)
     _ensure_excel_path(p)
@@ -449,7 +475,8 @@ def parse_kinetic_only(
         _require(s in xl.sheet_names, f"Sheet {s!r} not found in workbook")
 
     frames: list[pd.DataFrame] = []
-    t0: datetime | None = None
+    sheet_dts = {s: _extract_sheet_datetime(xl, s) for s in sheets}
+    t0 = min(sheet_dts.values())
 
     def _find_kinetic_section(df: pd.DataFrame) -> pd.DataFrame | None:
         for i in df.index:
@@ -466,8 +493,7 @@ def parse_kinetic_only(
         return None
 
     for sidx, sheet in enumerate(sheets):
-        dt = _extract_sheet_datetime(xl, sheet)
-        t0 = t0 or dt
+        dt = sheet_dts[sheet]
         elapsed = (dt - t0).total_seconds() / 3600.0
 
         raw = xl.parse(sheet_name=sheet, header=None, dtype=str)
@@ -496,7 +522,11 @@ def parse_kinetic_only(
 
     out["position"] = out["position"].astype(str)
     out["channel"] = out["channel"].astype(str)
-    out["time"] = pd.to_numeric(out["time"], errors="raise")
+    out["time"] = _normalize_time_series(
+        out["time"],
+        time_round_decimals=time_round_decimals,
+        time_step_h=time_step_h,
+    )
     out["value"] = pd.to_numeric(out["value"], errors="raise")
     _require(out["time"].ge(0).all(), "Internal error: negative time encountered after alignment")
     _require(out["time"].notna().all(), "Internal error: time contains NaN after alignment")

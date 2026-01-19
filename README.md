@@ -23,7 +23,7 @@
             inputs/         # raw files + metadata (e.g., metadata.xlsx)
             outputs/        # pipeline outputs, plots, exports, notebooks
     ```
-2. Run config-driven pipelines that process data and produce structured outputs. 
+2. Run config-driven pipelines that process data and produce structured outputs.
 
     ```bash
     outputs/
