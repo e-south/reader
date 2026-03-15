@@ -17,7 +17,11 @@ def _parse_step_dir(step_dir: str) -> tuple[str, str, str]:
     return base, step_id, plugin_key
 
 
-def discover_dataframe_records(outputs_dir: Path) -> tuple[dict[str, dict[str, Any]], list[str], str, str]:
+def discover_dataframe_records(
+    outputs_dir: Path,
+    *,
+    allow_scan: bool = False,
+) -> tuple[dict[str, dict[str, Any]], list[str], str, str]:
     record_info: dict[str, dict[str, Any]] = {}
     record_note = ""
     record_warning = ""
@@ -55,7 +59,7 @@ def discover_dataframe_records(outputs_dir: Path) -> tuple[dict[str, dict[str, A
         except RecordError as exc:
             record_note = f"Failed to read records.json: {exc}"
 
-    if not record_info:
+    if not record_info and allow_scan:
         if not artifacts_dir.exists():
             if not record_note:
                 record_note = "No outputs/artifacts directory found. Run `reader run` first."
@@ -73,8 +77,14 @@ def discover_dataframe_records(outputs_dir: Path) -> tuple[dict[str, dict[str, A
             if not record_info and not record_note:
                 record_note = "No dataframe records found yet. Run `reader run` first."
 
+    if not record_info and not record_note:
+        if records_path.exists():
+            record_note = "No dataframe records listed in outputs/manifests/records.json."
+        else:
+            record_note = "No outputs/manifests/records.json found. Run `reader run` first."
+
     labels = sorted(record_info)
-    if any(info.get("source") == "scan" for info in record_info.values()):
+    if allow_scan and any(info.get("source") == "scan" for info in record_info.values()):
         record_warning = (
             "Warning: dataset list was built by scanning outputs/artifacts because "
             "outputs/manifests/records.json was missing, unreadable, or incomplete. "

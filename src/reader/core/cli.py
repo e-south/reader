@@ -28,6 +28,7 @@ from reader.core.engine import explain as explain_job
 from reader.core.engine import run_job, run_spec
 from reader.core.engine import validate as validate_job
 from reader.core.errors import ConfigError, ReaderError, RecordError
+from reader.core.experiments import discover_experiment_configs
 from reader.core.notebooks import (
     list_notebook_presets,
     normalize_notebook_preset,
@@ -220,17 +221,6 @@ def presets(
         raise typer.BadParameter(str(e)) from e
 
 
-def _config_has_notebooks_override(path: Path) -> bool:
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    if not isinstance(data, dict):
-        return False
-    paths = data.get("paths")
-    return isinstance(paths, dict) and "notebooks" in paths
-
-
 def _has_sfxi_step(spec: ReaderSpec) -> bool:
     return any(str(getattr(step, "uses", "")) == "transform/sfxi" for step in resolve_workbench(spec).pipeline)
 
@@ -285,6 +275,7 @@ def _scaffold_notebook(
     mode: str,
     plot_only: list[str] | None,
     plot_exclude: list[str] | None,
+    scan_records: bool,
 ) -> None:
     try:
         if list_presets:
@@ -318,11 +309,6 @@ def _scaffold_notebook(
             else:
                 selected_preset = "notebook/basic"
         selected_preset = normalize_notebook_preset(selected_preset)
-        if configured_notebook is not None and configured_notebook.with_:
-            raise typer.BadParameter(
-                "Configured notebook specs do not support with: yet. "
-                "Remove notebooks.specs[*].with until notebook config semantics are implemented."
-            )
         if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
             raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
         outputs_dir = Path(spec.paths.outputs)
@@ -335,17 +321,6 @@ def _scaffold_notebook(
         resolve_notebook_template_descriptor(selected_preset)
         notebooks_cfg = spec.paths.notebooks
         nb_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
-        if not _config_has_notebooks_override(job_path):
-            legacy_dir = exp_dir / "notebooks"
-            if legacy_dir.exists() and not nb_dir.exists():
-                nb_dir = legacy_dir
-                console.print(
-                    Panel.fit(
-                        f"Legacy notebooks/ detected; using [path]{legacy_dir}[/path].",
-                        border_style="warn",
-                        box=box.ROUNDED,
-                    )
-                )
         target_name = name or _default_notebook_name()
         target = nb_dir / target_name
         if new:
@@ -368,6 +343,7 @@ def _scaffold_notebook(
             preset=selected_preset,
             overwrite=overwrite,
             plot_specs=plot_specs_payload,
+            allow_record_scan=scan_records,
         )
         if created:
             if existed and overwrite:
@@ -434,6 +410,11 @@ def notebook(
         "--refresh",
         help="Regenerate the notebook even if it exists (same as --overwrite).",
     ),
+    scan_records: bool = typer.Option(
+        False,
+        "--scan-records",
+        help="Allow notebook presets to scan outputs/artifacts when records.json is missing.",
+    ),
     mode: str = NOTEBOOK_MODE_OPTION,
     only: list[str] = NOTEBOOK_PLOT_ONLY_OPTION,
     exclude: list[str] = NOTEBOOK_PLOT_EXCLUDE_OPTION,
@@ -446,6 +427,7 @@ def notebook(
         overwrite=overwrite,
         new=new,
         refresh=refresh,
+        scan_records=scan_records,
         mode=mode,
         plot_only=only,
         plot_exclude=exclude,
@@ -532,11 +514,8 @@ def _format_job_arg(job: str | None) -> str | None:
     return value or None
 
 
-def _find_jobs(root: Path) -> list[Path]:
-    out: list[Path] = []
-    for p in root.glob("**/config.yaml"):
-        out.append(p.resolve())
-    return sorted(out)
+def _find_jobs(root: Path, *, include_scaffolds: bool = False) -> list[Path]:
+    return discover_experiment_configs(root, include_scaffolds=include_scaffolds)
 
 
 def _find_year_jobs(year: str, root: Path) -> list[Path]:
@@ -595,7 +574,12 @@ def ls(
         "./experiments",
         "--root",
         metavar="DIR",
-        help="Directory to search recursively for **/config.yaml.",
+        help="Directory to search recursively for experiment directories.",
+    ),
+    include_scaffolds: bool = typer.Option(
+        False,
+        "--all",
+        help="Include scaffold/template directories alongside runnable experiments.",
     ),
 ):
     # If user didn't override --root, auto-detect nearest experiments/ so this
@@ -604,11 +588,11 @@ def ls(
         root_path = _find_nearest_experiments_dir(Path.cwd())
     else:
         root_path = Path(root).resolve()
-    jobs = _find_jobs(root_path)
+    jobs = _find_jobs(root_path, include_scaffolds=include_scaffolds)
     if not jobs:
         console.print(
             Panel.fit(
-                f"No experiments found under [path]{root_path}[/path] (looked for **/config.yaml).",
+                f"No experiments found under [path]{root_path}[/path].",
                 border_style="warn",
                 box=box.ROUNDED,
             )

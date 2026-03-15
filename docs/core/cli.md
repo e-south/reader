@@ -8,16 +8,23 @@ reader <command> CONFIG|DIR|INDEX [options]
 
 If `CONFIG|DIR|INDEX` is omitted, `reader` searches upward from the current working directory for
 `config.yaml`. If a numeric index is provided, it is resolved against the nearest `experiments/`
-directory (or `./experiments` if none is found).
+directory (or `./experiments` if none is found) using the same runnable-experiment listing as
+`reader ls`.
 
 ---
 
 ## Discovery
 
-List experiments (searches for `config.yaml`):
+List runnable experiments:
 
 ```bash
 reader ls --root experiments
+```
+
+Include scaffold/template directories too:
+
+```bash
+reader ls --root experiments --all
 ```
 
 If `--root` is omitted, `reader` auto-detects the nearest `experiments/` directory.
@@ -88,6 +95,8 @@ Slice the pipeline:
 reader run CONFIG|DIR|INDEX --from step_a --until step_c
 reader run CONFIG|DIR|INDEX --only step_b
 ```
+
+`reader run` fails fast if `--from` comes after `--until` in pipeline order.
 
 Useful flags:
 
@@ -200,6 +209,12 @@ Choose a preset explicitly:
 
 ```bash
 reader notebook CONFIG|DIR|INDEX --preset notebook/eda
+```
+
+Allow explicit record scanning when the canonical catalog is missing:
+
+```bash
+reader notebook CONFIG|DIR|INDEX --scan-records
 ```
 
 Name the notebook explicitly:

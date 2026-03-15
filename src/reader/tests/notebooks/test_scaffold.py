@@ -79,15 +79,15 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert "Source artifact" not in content
 
 
-def test_notebook_scaffold_uses_legacy_dir_when_present(tmp_path: Path) -> None:
+def test_notebook_scaffold_ignores_legacy_dir_when_present(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
     legacy_dir = tmp_path / "notebooks"
     legacy_dir.mkdir()
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
-    assert "Legacy notebooks/ detected" in result.output
-    nb_path = legacy_dir / default_notebook_name()
+    assert "Legacy notebooks/ detected" not in result.output
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     assert nb_path.exists()
 
 
@@ -117,3 +117,23 @@ def test_notebook_scaffold_uses_configured_notebook_spec(tmp_path: Path) -> None
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "Cytometry" in content
+
+
+def test_notebook_scaffold_disables_record_scan_by_default(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+    assert "allow_scan=False" in content
+
+
+def test_notebook_scaffold_can_enable_record_scan(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none", "--scan-records"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+    assert "allow_scan=True" in content

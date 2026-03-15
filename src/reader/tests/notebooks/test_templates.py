@@ -93,9 +93,10 @@ def test_notebook_templates_parse() -> None:
             raise AssertionError(f"{name} template has invalid syntax: {exc}") from exc
 
 
-def test_notebook_template_parquet_fallbacks() -> None:
+def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
     template = notebook_templates.EXPERIMENT_EDA_BASIC_TEMPLATE
     assert "pl.read_parquet" in template
     assert "pd.read_parquet" not in template
     assert "Polars is required to read parquet" in template
     assert "discover_dataframe_records" in template
+    assert "allow_scan=__ALLOW_RECORD_SCAN__" in template

@@ -75,7 +75,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     assert len(store.record_history("plot:qc_plot")) == 1
 
 
-def test_discover_dataframe_records_falls_back_to_scan(tmp_path) -> None:
+def test_discover_dataframe_records_is_catalog_only_by_default(tmp_path) -> None:
     outputs = tmp_path / "outputs"
     data_dir = outputs / "artifacts" / "ratio.transform_ratio"
     data_dir.mkdir(parents=True)
@@ -83,6 +83,20 @@ def test_discover_dataframe_records_falls_back_to_scan(tmp_path) -> None:
     df.to_parquet(data_dir / "df.parquet", index=False)
 
     info, labels, note, warning = discover_dataframe_records(outputs)
+    assert info == {}
+    assert labels == []
+    assert "records.json" in note
+    assert warning == ""
+
+
+def test_discover_dataframe_records_can_fall_back_to_scan(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    data_dir = outputs / "artifacts" / "ratio.transform_ratio"
+    data_dir.mkdir(parents=True)
+    df = pd.DataFrame({"value": [1.0]})
+    df.to_parquet(data_dir / "df.parquet", index=False)
+
+    info, labels, note, warning = discover_dataframe_records(outputs, allow_scan=True)
     assert labels
     assert note == ""
     assert "scanning outputs/artifacts" in warning

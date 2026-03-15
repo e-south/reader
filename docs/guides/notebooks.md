@@ -73,15 +73,15 @@ uv run reader notebook experiments/my_experiment/config.yaml
 
 What the scaffolded notebook includes:
 
-* dataframe record discovery via `outputs/manifests/records.json`; if the catalog is missing or unreadable, the notebook
-  will warn and scan `outputs/artifacts/**/*.parquet` to populate the dataset list
+* dataframe record discovery via `outputs/manifests/records.json`
 * a dataset dropdown labeled “Dataset (dataframe record)” (defaults to the most downstream step when possible)
-* a canonical `df_active` variable populated from the selected dataframe record (polars required to read parquet)
-* dataset status (backend, rows/columns, parquet path)
+* a canonical dataframe selection variable backed by the chosen parquet file (polars required to read parquet)
+* a compact experiment overview with experiment id/title plus a `design_id` / `treatment` summary when those columns exist
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
-* a top header with experiment id/title, resolved outputs path, and a conditions/treatments table
-* a design + treatment summary panel (`design_id` / `treatment` if present)
-* an ad-hoc EDA panel with x/y/hue/groupby dropdowns and Altair plotting
+* load-status messaging when no records exist yet or parquet loading fails
+
+The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` presets are intentionally minimal record explorers.
+They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
 
 The dataset dropdown drives the canonical `df_active` variable.
 
@@ -96,12 +96,13 @@ Notes:
 * `reader notebook` only scaffolds the notebook; it does not run the pipeline.
 * `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
+* Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `reader run` or opt in with `reader notebook --scan-records`.
 * Common presets include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda` (SFXI vec8 builder scaffold; requires a `transform/sfxi` step or existing SFXI dataframe records).
 * The SFXI preset draws a red dashed induction marker on the time-series plot when an induction time can be inferred from dataframe records:
   - preferred: an explicit column like `induction_time_h` (or `induction_time`) in the tidy dataframe
   - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time
   If neither is present, the induction marker is omitted.
-* If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new <FILE>` to create a second notebook.
+* If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new` to create a second notebook with an automatic numeric suffix.
 * If `--preset` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it auto-selects `notebook/eda` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
 
 See also: [SFXI vec8 in reader](sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook preset aligns with the code.

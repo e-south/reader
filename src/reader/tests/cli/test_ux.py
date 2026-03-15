@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rich.console import Console
+from typer.testing import CliRunner
 
 from reader.core import cli
 from reader.core.config import ReaderSpec
@@ -40,11 +41,60 @@ def test_ls_compact_name_column(monkeypatch, tmp_path: Path) -> None:
 
     test_console = Console(width=60, record=True, theme=cli.THEME, force_terminal=True)
     monkeypatch.setattr(cli, "console", test_console)
-    cli.ls(root=str(exp_root))
+    cli.ls(root=str(exp_root), include_scaffolds=False)
 
     output = test_console.export_text()
     max_line = max(len(line) for line in output.splitlines()) if output else 0
     assert max_line <= 80
+
+
+def test_ls_excludes_template_dirs_by_default(monkeypatch, tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    year_dir = exp_root / "2025" / "real_exp"
+    template_dir = exp_root / "template"
+    year_dir.mkdir(parents=True)
+    template_dir.mkdir(parents=True)
+    write_config(year_dir / "config.yaml", _base_config())
+    write_config(template_dir / "config.yaml", _base_config())
+
+    test_console = Console(width=80, record=True, theme=cli.THEME, force_terminal=True)
+    monkeypatch.setattr(cli, "console", test_console)
+    cli.ls(root=str(exp_root), include_scaffolds=False)
+
+    output = test_console.export_text()
+    assert "real_exp" in output
+    assert "template" not in output
+
+
+def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    template_dir = exp_root / "template"
+    year_dir = exp_root / "2025" / "real_exp"
+    template_dir.mkdir(parents=True)
+    year_dir.mkdir(parents=True)
+    write_config(template_dir / "config.yaml", _base_config())
+    write_config(year_dir / "config.yaml", _base_config())
+
+    monkeypatch.chdir(tmp_path)
+    assert cli._infer_job_path("1") == (year_dir / "config.yaml").resolve()
+
+
+def test_ls_all_includes_template_dirs(monkeypatch, tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    year_dir = exp_root / "2025" / "real_exp"
+    template_dir = exp_root / "template"
+    year_dir.mkdir(parents=True)
+    template_dir.mkdir(parents=True)
+    write_config(year_dir / "config.yaml", _base_config())
+    write_config(template_dir / "config.yaml", _base_config())
+
+    test_console = Console(width=80, record=True, theme=cli.THEME, force_terminal=True)
+    monkeypatch.setattr(cli, "console", test_console)
+    cli.ls(root=str(exp_root), include_scaffolds=True)
+
+    output = test_console.export_text()
+    assert "real_exp" in output
+    assert "template" in output
 
 
 def test_next_steps_commands_are_clean() -> None:
@@ -109,3 +159,22 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     assert "test_plot" in output
     assert "Synthetic plot plugin" in output
     assert "for CLI tests." in output
+
+
+def test_presets_command_filters_by_category() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["presets", "--category", "plot"])
+    assert result.exit_code == 0
+    assert "plots/plate_reader_yfp_full" in result.output
+    assert "plate_reader/synergy_h1" not in result.output
+
+
+def test_demo_command_lists_expected_workbench_lifecycle() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["demo"])
+    assert result.exit_code == 0
+    assert "reader ls" in result.output
+    assert "reader validate 1" in result.output
+    assert "reader run 1" in result.output
+    assert "reader records 1" in result.output
+    assert "reader notebook 1" in result.output

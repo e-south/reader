@@ -75,7 +75,10 @@ def _(Path, ReaderSpec, resolve_workbench):
 
 @app.cell(hide_code=True)
 def _(discover_dataframe_records, outputs_dir):
-    record_info, record_labels, record_note, record_warning = discover_dataframe_records(outputs_dir)
+    record_info, record_labels, record_note, record_warning = discover_dataframe_records(
+        outputs_dir,
+        allow_scan=__ALLOW_RECORD_SCAN__,
+    )
     return record_info, record_labels, record_note, record_warning
 
 @app.cell(hide_code=True)

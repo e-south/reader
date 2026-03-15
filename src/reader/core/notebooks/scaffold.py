@@ -11,6 +11,7 @@ def write_experiment_notebook(
     preset: str = "notebook/eda",
     overwrite: bool = False,
     plot_specs: list[dict] | None = None,
+    allow_record_scan: bool = False,
 ) -> tuple[Path, bool]:
     if target.exists() and not overwrite:
         return target, False
@@ -19,6 +20,8 @@ def write_experiment_notebook(
     if descriptor.uses == "notebook/eda" and "__PLOT_SPECS__" in template:
         payload = plot_specs or []
         template = template.replace("__PLOT_SPECS__", repr(payload))
+    if "__ALLOW_RECORD_SCAN__" in template:
+        template = template.replace("__ALLOW_RECORD_SCAN__", repr(bool(allow_record_scan)))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(template, encoding="utf-8")
     return target, True
