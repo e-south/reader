@@ -22,16 +22,22 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
-from reader.core.artifacts import ArtifactStore
-from reader.core.config_model import ReaderSpec
+from reader.core.config import ReaderSpec
+from reader.core.contracts import contract_satisfies
 from reader.core.engine import explain as explain_job
 from reader.core.engine import run_job, run_spec
 from reader.core.engine import validate as validate_job
-from reader.core.errors import ArtifactError, ConfigError, ReaderError
-from reader.core.notebooks import list_notebook_presets, normalize_notebook_preset, write_experiment_notebook
+from reader.core.errors import ConfigError, ReaderError, RecordError
+from reader.core.notebooks import (
+    list_notebook_presets,
+    normalize_notebook_preset,
+    resolve_notebook_template_descriptor,
+    write_experiment_notebook,
+)
 from reader.core.presets import describe_preset, list_presets
+from reader.core.records import RecordStore
 from reader.core.registry import load_entry_points
-from reader.core.specs import materialize_specs, resolve_export_specs, resolve_plot_specs
+from reader.core.workbench import materialize_workbench, resolve_workbench, select_workbench_specs
 
 THEME = Theme(
     {
@@ -50,7 +56,7 @@ app = typer.Typer(
     invoke_without_command=True,
     help=(
         "reader — experiment pipeline runner.\n\n"
-        "Run pipelines to generate artifacts, then render plots, exports, or notebooks. "
+        "Run pipelines to generate dataframe records, then render plots, exports, or notebooks. "
         "Start with 'reader demo' or 'reader ls'."
     ),
 )
@@ -226,29 +232,26 @@ def _config_has_notebooks_override(path: Path) -> bool:
 
 
 def _has_sfxi_step(spec: ReaderSpec) -> bool:
-    return any(str(getattr(step, "uses", "")) == "transform/sfxi" for step in spec.pipeline.steps)
+    return any(str(getattr(step, "uses", "")) == "transform/sfxi" for step in resolve_workbench(spec).pipeline)
 
 
 def _has_cytometry_step(spec: ReaderSpec) -> bool:
-    return any(str(getattr(step, "uses", "")) == "ingest/flow_cytometer" for step in spec.pipeline.steps)
+    return any(str(getattr(step, "uses", "")) == "ingest/flow_cytometer" for step in resolve_workbench(spec).pipeline)
 
 
-def _has_sfxi_artifacts(outputs_dir: Path) -> bool:
-    manifest_path = outputs_dir / "manifests" / "manifest.json"
-    if not manifest_path.exists():
+def _has_sfxi_records(outputs_dir: Path) -> bool:
+    store = RecordStore(outputs_dir, create=False)
+    if not store.catalog_exists():
         return False
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception:
+        records = store.iter_latest_records(kind="dataframe_artifact")
+    except RecordError:
         return False
-    artifacts = payload.get("artifacts", {})
-    if not isinstance(artifacts, dict):
-        return False
-    for entry in artifacts.values():
-        if not isinstance(entry, dict):
-            continue
-        contract = str(entry.get("contract", ""))
-        if contract == "tidy+map.v1" or contract.startswith("sfxi.vec8."):
+    for record in records:
+        contract = record.contract_id
+        if contract_satisfies(actual=contract, expected="plate_reader.annotated.v1") or contract.startswith(
+            "sfxi.vec8."
+        ):
             return True
     return False
 
@@ -302,10 +305,11 @@ def _scaffold_notebook(
         job_path = _infer_job_path(job)
         exp_dir = job_path.parent
         spec = ReaderSpec.load(job_path)
-        plot_specs = resolve_plot_specs(spec)
-        selected_preset = preset
-        if not selected_preset and getattr(spec, "notebook", None) and getattr(spec.notebook, "preset", None):
-            selected_preset = spec.notebook.preset
+        workbench = resolve_workbench(spec)
+        plot_specs = list(workbench.plots)
+        notebook_specs = list(workbench.notebooks)
+        configured_notebook = notebook_specs[0] if notebook_specs and not preset else None
+        selected_preset = preset or (configured_notebook.uses if configured_notebook is not None else None)
         if not selected_preset:
             if plot_specs:
                 selected_preset = "notebook/eda"
@@ -314,15 +318,21 @@ def _scaffold_notebook(
             else:
                 selected_preset = "notebook/basic"
         selected_preset = normalize_notebook_preset(selected_preset)
+        if configured_notebook is not None and configured_notebook.with_:
+            raise typer.BadParameter(
+                "Configured notebook specs do not support with: yet. "
+                "Remove notebooks.specs[*].with until notebook config semantics are implemented."
+            )
         if (plot_only or plot_exclude) and selected_preset != "notebook/eda":
             raise typer.BadParameter("--only/--exclude are only supported with --preset notebook/eda.")
         outputs_dir = Path(spec.paths.outputs)
-        if selected_preset == "notebook/sfxi_eda" and not (_has_sfxi_step(spec) or _has_sfxi_artifacts(outputs_dir)):
+        if selected_preset == "notebook/sfxi_eda" and not (_has_sfxi_step(spec) or _has_sfxi_records(outputs_dir)):
             raise typer.BadParameter(
                 "Preset notebook/sfxi_eda requires a transform/sfxi step in config.yaml "
-                "or existing SFXI artifacts (tidy+map or vec8). "
+                "or existing SFXI dataframe records (annotated plate-reader data or vec8). "
                 "See docs/sfxi_vec8_in_reader.md."
             )
+        resolve_notebook_template_descriptor(selected_preset)
         notebooks_cfg = spec.paths.notebooks
         nb_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
         if not _config_has_notebooks_override(job_path):
@@ -401,7 +411,7 @@ def notebook(
     preset: str | None = typer.Option(
         None,
         "--preset",
-        help="Notebook preset (defaults to config notebook.preset, else auto-picks).",
+        help="Notebook preset (defaults to the first configured notebooks.specs entry, else auto-picks).",
     ),
     list_presets: bool = typer.Option(
         False,
@@ -546,23 +556,22 @@ def _find_year_jobs(year: str, root: Path) -> list[Path]:
     return jobs
 
 
-def _require_plot_artifacts(spec: ReaderSpec, job_path: Path) -> None:
+def _require_dataframe_records(spec: ReaderSpec, job_path: Path) -> None:
     outputs_dir = Path(spec.paths.outputs)
-    manifest_path = outputs_dir / "manifests" / "manifest.json"
-    if not manifest_path.exists():
-        raise ArtifactError(
-            f"No outputs/manifests/manifest.json found. Run 'reader run {job_path}' first to generate artifacts."
+    store = RecordStore(outputs_dir, plots_subdir=spec.paths.plots, exports_subdir=spec.paths.exports, create=False)
+    if not store.catalog_exists():
+        raise RecordError(
+            f"No outputs/manifests/records.json found. Run 'reader run {job_path}' first to generate dataframe records."
         )
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise ArtifactError(
-            f"Could not read artifacts manifest at {manifest_path}. Run 'reader run {job_path}' first."
+        records = store.iter_latest_records(kind="dataframe_artifact")
+    except RecordError as exc:
+        raise RecordError(
+            f"Could not read record catalog at {store.records_path}. Run 'reader run {job_path}' first."
         ) from exc
-    artifacts = payload.get("artifacts") or {}
-    if not artifacts:
-        raise ArtifactError(
-            f"No artifacts listed in outputs/manifests/manifest.json. Run 'reader run {job_path}' first."
+    if not records:
+        raise RecordError(
+            f"No dataframe records listed in outputs/manifests/records.json. Run 'reader run {job_path}' first."
         )
 
 
@@ -618,7 +627,7 @@ def ls(
         outputs_ok = False
         try:
             spec = ReaderSpec.load(p)
-            man = Path(spec.paths.outputs) / "manifests" / "manifest.json"
+            man = Path(spec.paths.outputs) / "manifests" / "records.json"
             outputs_ok = man.exists()
         except ReaderError:
             outputs_ok = False
@@ -694,11 +703,15 @@ def config(
         _handle_reader_error(e)
     fmt = str(format).strip().lower()
     payload = spec.model_dump(by_alias=True)
-    materialized = materialize_specs(spec)
+    materialized = materialize_workbench(spec)
+    payload.setdefault("pipeline", {})
+    payload["pipeline"]["steps"] = materialized["pipeline"]
     payload.setdefault("plots", {})
     payload.setdefault("exports", {})
+    payload.setdefault("notebooks", {})
     payload["plots"]["specs"] = materialized["plots"]
     payload["exports"]["specs"] = materialized["exports"]
+    payload["notebooks"]["specs"] = materialized["notebooks"]
     if fmt == "json":
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
@@ -708,7 +721,7 @@ def config(
     raise typer.BadParameter("format must be 'yaml' or 'json'")
 
 
-@app.command(help="Run pipeline to generate artifacts.")
+@app.command(help="Run pipeline to generate dataframe records.")
 def run(
     job: str | None = typer.Argument(
         None,
@@ -864,9 +877,10 @@ def _run_plot_job(
     sets: list[str] | None,
 ) -> None:
     spec = ReaderSpec.load(job_path)
+    workbench = resolve_workbench(spec)
     if not list_only:
-        _require_plot_artifacts(spec, job_path)
-    plot_specs = resolve_plot_specs(spec)
+        _require_dataframe_records(spec, job_path)
+    plot_specs = list(workbench.plots)
     if not plot_specs:
         if list_only:
             console.print(
@@ -939,12 +953,12 @@ def _run_plot_job(
 
         lines = [f"Plots saved in [path]{plots_dir}[/path]", "", "Next steps:"]
         lines.append(f"  {_cmd('reader notebook')}")
-        if resolve_export_specs(spec):
+        if workbench.exports:
             lines.append(f"  {_cmd('reader export')}")
         console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
 
 
-@app.command(help="Save plot files from plot specs using existing artifacts.")
+@app.command(help="Save plot files from plot specs using existing dataframe records.")
 def plot(
     job: str | None = typer.Argument(
         None,
@@ -1060,7 +1074,7 @@ def plot(
         _handle_reader_error(e)
 
 
-@app.command(help="Run export specs using existing artifacts.")
+@app.command(help="Run export specs using existing dataframe records.")
 def export(
     job: str | None = typer.Argument(
         None,
@@ -1093,7 +1107,8 @@ def export(
         spec = ReaderSpec.load(job_path)
     except ReaderError as e:
         _handle_reader_error(e)
-    export_specs = resolve_export_specs(spec)
+    workbench = resolve_workbench(spec)
+    export_specs = list(workbench.exports)
     if not export_specs:
         if list_only:
             console.print(
@@ -1122,35 +1137,36 @@ def export(
             )
         )
         return
-    input_overrides = _parse_input_overrides(inputs or [])
-    set_overrides: list[tuple[str, object]] = []
-    for raw in sets or []:
-        if "=" not in raw:
-            raise typer.BadParameter("--set expects PATH=VALUE")
-        path, value_raw = raw.split("=", 1)
-        path = path.strip()
-        if not path:
-            raise typer.BadParameter("--set path cannot be empty")
-        value = yaml.safe_load(value_raw)
-        set_overrides.append((path, value))
-    selected = _apply_step_overrides(selected, input_overrides=input_overrides, set_overrides=set_overrides)
-    parts = ["reader export", str(job_path)]
-    if only:
-        for v in only:
-            parts += ["--only", v]
-    if exclude:
-        for v in exclude:
-            parts += ["--exclude", v]
-    if dry_run:
-        parts += ["--dry-run"]
-    if log_level and log_level != "INFO":
-        parts += ["--log-level", log_level]
-    for raw in inputs or []:
-        parts += ["--input", raw]
-    for raw in sets or []:
-        parts += ["--set", raw]
-    _append_journal(job_path, " ".join(parts))
     try:
+        _require_dataframe_records(spec, job_path)
+        input_overrides = _parse_input_overrides(inputs or [])
+        set_overrides: list[tuple[str, object]] = []
+        for raw in sets or []:
+            if "=" not in raw:
+                raise typer.BadParameter("--set expects PATH=VALUE")
+            path, value_raw = raw.split("=", 1)
+            path = path.strip()
+            if not path:
+                raise typer.BadParameter("--set path cannot be empty")
+            value = yaml.safe_load(value_raw)
+            set_overrides.append((path, value))
+        selected = _apply_step_overrides(selected, input_overrides=input_overrides, set_overrides=set_overrides)
+        parts = ["reader export", str(job_path)]
+        if only:
+            for v in only:
+                parts += ["--only", v]
+        if exclude:
+            for v in exclude:
+                parts += ["--exclude", v]
+        if dry_run:
+            parts += ["--dry-run"]
+        if log_level and log_level != "INFO":
+            parts += ["--log-level", log_level]
+        for raw in inputs or []:
+            parts += ["--input", raw]
+        for raw in sets or []:
+            parts += ["--set", raw]
+        _append_journal(job_path, " ".join(parts))
         run_spec(
             spec,
             dry_run=dry_run,
@@ -1171,7 +1187,7 @@ def export(
                 return f"{base} {job_hint}{tail}" if job_hint else f"{base}{tail}"
 
             lines = [f"Exports saved in [path]{exports_dir}[/path]", "", "Next steps:"]
-            if resolve_plot_specs(spec):
+            if workbench.plots:
                 lines.append(f"  {_cmd('reader plot')}")
             lines.append(f"  {_cmd('reader notebook')}")
             console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
@@ -1179,8 +1195,8 @@ def export(
         _handle_reader_error(e)
 
 
-@app.command(help="List emitted artifacts from outputs/manifests/manifest.json.")
-def artifacts(
+@app.command(help="List emitted workbench records from outputs/manifests/records.json.")
+def records(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
@@ -1191,45 +1207,66 @@ def artifacts(
     try:
         spec = ReaderSpec.load(_infer_job_path(job))
         outputs_dir = Path(spec.paths.outputs)
-        manifest_path = outputs_dir / "manifests" / "manifest.json"
-        if not manifest_path.exists():
-            _abort("No outputs/manifests/manifest.json found. Run 'reader run' first to produce artifacts.")
-        store = ArtifactStore(outputs_dir, plots_subdir=spec.paths.plots, exports_subdir=spec.paths.exports)
-        man = store._read_manifest()
+        store = RecordStore(outputs_dir, plots_subdir=spec.paths.plots, exports_subdir=spec.paths.exports, create=False)
+        if not store.catalog_exists():
+            _abort("No outputs/manifests/records.json found. Run 'reader run' first to produce records.")
+    except ReaderError as e:
+        _handle_reader_error(e)
+
+    try:
+        latest_records = store.iter_latest_records()
     except ReaderError as e:
         _handle_reader_error(e)
 
     if all:
-        if not man.get("history"):
+        if not latest_records:
             console.print(
                 Panel.fit(
-                    "No artifact history listed in outputs/manifests/manifest.json. Run 'reader run' first.",
+                    "No record history listed in outputs/manifests/records.json. Run 'reader run' first.",
                     border_style="warn",
                     box=box.ROUNDED,
                 )
             )
             return
-        t = _table("Artifacts • history")
-        t.add_column("Label")
+        try:
+            revision_counts = {
+                record.record_id: len(store.record_history(record.record_id)) for record in latest_records
+            }
+        except ReaderError as e:
+            _handle_reader_error(e)
+        t = _table("Records • history")
+        t.add_column("Record")
+        t.add_column("Kind", style="accent")
+        t.add_column("Producer")
         t.add_column("Revisions", justify="right")
-        for k, hist in man["history"].items():
-            t.add_row(k, str(len(hist)))
+        for record in latest_records:
+            t.add_row(
+                record.record_id,
+                record.kind,
+                f"{record.producer.kind}:{record.producer.id}",
+                str(revision_counts[record.record_id]),
+            )
     else:
-        if not man.get("artifacts"):
+        if not latest_records:
             console.print(
                 Panel.fit(
-                    "No artifacts listed in outputs/manifests/manifest.json. Run 'reader run' first.",
+                    "No records listed in outputs/manifests/records.json. Run 'reader run' first.",
                     border_style="warn",
                     box=box.ROUNDED,
                 )
             )
             return
-        t = _table("Artifacts • latest")
-        t.add_column("Label")
-        t.add_column("Contract", style="accent")
-        t.add_column("Path", style="path")
-        for k, entry in man["artifacts"].items():
-            t.add_row(k, entry["contract"], str(store.artifacts_dir / entry["step_dir"] / entry["filename"]))
+        t = _table("Records • latest")
+        t.add_column("Record")
+        t.add_column("Kind", style="accent")
+        t.add_column("Producer")
+        t.add_column("Details", style="path")
+        for record in latest_records:
+            if record.kind == "dataframe_artifact":
+                detail = f"{record.contract_id} • {record.path}"
+            else:
+                detail = ", ".join(str(path) for path in record.files)
+            t.add_row(record.record_id, record.kind, f"{record.producer.kind}:{record.producer.id}", detail)
     console.print(Panel(t, border_style="accent", box=box.ROUNDED))
 
 
@@ -1245,23 +1282,24 @@ def steps(
         spec = ReaderSpec.load(_infer_job_path(job))
     except ReaderError as e:
         _handle_reader_error(e)
+    pipeline = list(resolve_workbench(spec).pipeline)
     t = _table("Steps")
     t.add_column("#", justify="right", style="muted")
     t.add_column("id", style="accent")
     t.add_column("uses")
-    for i, s in enumerate(spec.pipeline.steps, 1):
+    for i, s in enumerate(pipeline, 1):
         t.add_row(str(i), s.id, s.uses)
     console.print(
         Panel(
             t,
             border_style="accent",
             box=box.ROUNDED,
-            subtitle=f"[muted]{len(spec.pipeline.steps)} total[/muted]",
+            subtitle=f"[muted]{len(pipeline)} total[/muted]",
         )
     )
 
 
-@app.command(help="List plugins by category.")
+@app.command(help="List plugins by workbench ontology: category, domain, and family.")
 def plugins(
     category: str | None = typer.Option(
         None,
@@ -1269,29 +1307,46 @@ def plugins(
         metavar="NAME",
         help="Filter by category: ingest | merge | transform | plot | export | validator",
     ),
+    domain: str | None = typer.Option(
+        None,
+        "--domain",
+        metavar="NAME",
+        help="Filter by semantic domain, for example: plate_reader | cytometry | logic | generic",
+    ),
+    family: str | None = typer.Option(
+        None,
+        "--family",
+        metavar="NAME",
+        help="Filter by semantic family, for example: time_series | metadata_merge | workbook_ingest",
+    ),
 ):
     try:
         reg = load_entry_points()
     except ReaderError as e:
         _handle_reader_error(e)
-    cats = reg.categories()
-    if category:
-        cats = {category: cats.get(category, {})}
+    descriptors = reg.catalog().filter(category=category, domain=domain, family=family)
     t = _table("Plugins")
     t.add_column("category", style="accent")
+    t.add_column("domain")
+    t.add_column("family")
     t.add_column("key")
+    t.add_column("summary", overflow="fold")
     t.add_column("class", style="muted", overflow="fold")
-    total = 0
-    for cat, m in cats.items():
-        for key, cls in sorted(m.items(), key=lambda kv: kv[0]):
-            t.add_row(cat, key, f"{cls.__module__}.{cls.__name__}")
-        total += len(m)
+    for descriptor in descriptors:
+        t.add_row(
+            descriptor.category,
+            descriptor.domain,
+            descriptor.family,
+            descriptor.key,
+            descriptor.summary,
+            f"{descriptor.cls.__module__}.{descriptor.cls.__name__}",
+        )
     console.print(
         Panel(
             t,
             border_style="accent",
             box=box.ROUNDED,
-            subtitle=f"[muted]{total} plugin(s) discovered[/muted]",
+            subtitle=f"[muted]{len(descriptors)} plugin(s) discovered[/muted]",
         )
     )
 
@@ -1301,16 +1356,19 @@ def plugins(
 
 def _resolve_pipeline_step_id(spec: ReaderSpec, which: str) -> str:
     which_str = str(which).strip()
-    if any(s.id == which_str for s in spec.pipeline.steps):
+    pipeline = list(resolve_workbench(spec).pipeline)
+    if any(s.id == which_str for s in pipeline):
         return which_str
-    options = ", ".join(s.id for s in spec.pipeline.steps[:12])
+    options = ", ".join(s.id for s in pipeline[:12])
     raise typer.BadParameter(
         f"Unknown pipeline step id '{which_str}'. Tip: use 'reader steps' to list ids "
-        f"(first few: {options}{' …' if len(spec.pipeline.steps) > 12 else ''})."
+        f"(first few: {options}{' …' if len(pipeline) > 12 else ''})."
     )
 
 
 def _spec_to_dict(spec_obj) -> dict:
+    if hasattr(spec_obj, "to_dict"):
+        return spec_obj.to_dict()
     return {
         "id": spec_obj.id,
         "uses": spec_obj.uses,
@@ -1321,20 +1379,10 @@ def _spec_to_dict(spec_obj) -> dict:
 
 
 def _select_steps(steps, *, only: list[str], exclude: list[str], kind: str):
-    ids = [s.id for s in steps]
-    if only:
-        missing = sorted(set(only) - set(ids))
-        if missing:
-            raise typer.BadParameter(f"Unknown {kind} id(s): {missing}. Use --list to see valid ids.")
-        selected = [s for s in steps if s.id in set(only)]
-    else:
-        selected = list(steps)
-    if exclude:
-        missing = sorted(set(exclude) - set(ids))
-        if missing:
-            raise typer.BadParameter(f"Unknown {kind} id(s): {missing}. Use --list to see valid ids.")
-        selected = [s for s in selected if s.id not in set(exclude)]
-    return selected
+    try:
+        return select_workbench_specs(steps, only=only, exclude=exclude, kind_label=kind)
+    except ConfigError as err:
+        raise typer.BadParameter(f"{err} Use --list to see valid ids.") from err
 
 
 def _parse_input_overrides(raw_inputs: list[str]) -> dict[str, str]:
@@ -1400,16 +1448,17 @@ def _apply_step_overrides(steps, *, input_overrides: dict[str, str], set_overrid
             s.writes = writes
             updated.append(s)
         else:
-            updated.append(
-                step.__class__(
-                    id=step.id,
-                    uses=step.uses,
-                    reads=reads,
-                    with_=with_block,
-                    writes=writes,
-                    preset_meta=getattr(step, "preset_meta", None),
-                )
-            )
+            payload = {
+                "id": step.id,
+                "uses": step.uses,
+                "reads": reads,
+                "with_": with_block,
+                "writes": writes,
+                "preset_meta": getattr(step, "preset_meta", None),
+            }
+            if hasattr(step, "kind"):
+                payload["kind"] = step.kind
+            updated.append(step.__class__(**payload))
     return updated
 
 
@@ -1420,8 +1469,8 @@ def demo():
         ("2", "List presets", "reader presets"),
         ("3", "Explain plan", "reader explain 1"),
         ("4", "Validate config + inputs", "reader validate 1"),
-        ("5", "Run pipeline (artifacts)", "reader run 1"),
-        ("6", "See artifacts", "reader artifacts 1"),
+        ("5", "Run pipeline (records)", "reader run 1"),
+        ("6", "See records", "reader records 1"),
         ("7", "List plot specs", "reader plot 1 --list"),
         ("8", "Save plots", "reader plot 1"),
         ("9", "Run exports", "reader export 1"),

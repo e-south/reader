@@ -22,6 +22,7 @@ from pydantic import Field
 
 from reader.core.errors import ParseError
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 from reader.io.discovery import DEFAULT_EXCLUDE, DEFAULT_ROOTS, discover_files
 
 DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
@@ -51,6 +52,13 @@ class FlowCytometerIngest(Plugin):
 
     key = "flow_cytometer"
     category = "ingest"
+    semantics = PluginSemantics(
+        category="ingest",
+        domain="cytometry",
+        family="fcs_ingest",
+        summary="Parse FCS cytometry files into tidy event tables and channel metadata.",
+        tags=("fcs", "events", "channels"),
+    )
     ConfigModel = FlowCytometerCfg
 
     @classmethod

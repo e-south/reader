@@ -18,6 +18,7 @@ from pydantic import Field
 
 from reader.core.errors import ExecutionError
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 
 
 class ExportCsvCfg(PluginConfig):
@@ -30,6 +31,13 @@ class ExportCsvCfg(PluginConfig):
 class ExportCsv(Plugin):
     key = "csv"
     category = "export"
+    semantics = PluginSemantics(
+        category="export",
+        domain="generic",
+        family="table_export",
+        summary="Write dataframe records to CSV files.",
+        tags=("csv", "files"),
+    )
     ConfigModel = ExportCsvCfg
 
     @classmethod

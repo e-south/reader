@@ -24,10 +24,8 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
-from reader.lib.microplates.base import (
-    nearest_time_per_key,
-    smart_string_numeric_key,
-)
+from reader.core.workbench import PluginSemantics
+from reader.lib.microplates.support import nearest_time_per_key, smart_string_numeric_key
 
 # ----------------------------- small helpers -----------------------------
 
@@ -181,6 +179,13 @@ class FoldChange(Plugin):
 
     key = "fold_change"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="plate_reader",
+        family="summary_transform",
+        summary="Summarize nearest-time fold-change tables from tidy signals.",
+        tags=("fold_change", "snapshot_summary"),
+    )
     ConfigModel = FoldChangeCfg
 
     @classmethod

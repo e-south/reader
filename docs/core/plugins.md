@@ -20,6 +20,20 @@ A good plugin is thin orchestration:
 - keep instrument/file parsing in `io/` (raw → tidy tables)
 - keep reusable computation in `lib/` (domain logic)
 - keep plugins focused on wiring inputs → computation → declared outputs
+- for plotting, keep figure selection/layout in `lib/microplates/support/` or a
+  figure-specific package, keep axes rendering in `lib/microplates/panels/`,
+  and keep plugin modules as config adapters only
+- if a plot needs semantic input preparation, keep that in the plotting library
+  next to the figure package rather than in a plugin-private helper
+
+Each plugin now also declares a small workbench ontology entry:
+
+- `category` = execution stage (`ingest`, `merge`, `transform`, `validator`, `plot`, `export`)
+- `domain` = problem domain (`plate_reader`, `cytometry`, `logic`, `generic`, ...)
+- `family` = semantic plugin type within that domain (`time_series`, `metadata_merge`, `derived_channel`, ...)
+
+That ontology is first-class in the registry and CLI. `reader plugins` is no longer
+just a flat key dump; it is the package’s semantic catalog.
 
 Built-in plugins live under:
 
@@ -62,6 +76,7 @@ You’ll typically see plugins grouped as:
   # src/reader/plugins/ingest/my_format.py
   from typing import Mapping, Dict, Any
   from reader.core.registry import Plugin, PluginConfig
+  from reader.core.workbench import PluginSemantics
   from reader.io.my_format import parse_my_format
 
   class MyCfg(PluginConfig):
@@ -70,6 +85,12 @@ You’ll typically see plugins grouped as:
   class MyIngest(Plugin):
       key = "my_format"
       category = "ingest"
+      semantics = PluginSemantics(
+          category="ingest",
+          domain="plate_reader",
+          family="workbook_ingest",
+          summary="Parse my custom workbook format into tidy traces.",
+      )
       ConfigModel = MyCfg
 
       @classmethod
@@ -123,18 +144,29 @@ To attach metadata keyed by `sample_id`:
     require_columns: ["design_id", "treatment"]
 ```
 
+If the merged table satisfies the annotated plate-reader contract, reader
+stores it as `plate_reader.annotated.v1` instead of plain `tidy.v1`.
+
+`reader explain` shows this as a minimum contract with a possible runtime
+promotion; execution decides the actual stored contract from the emitted data.
+
 **Note:** install cytometry extras with `uv sync --locked --group cytometry`.
 
 ---
 
 ### Adding a transform plugin
 
-Transforms typically accept a `tidy.v1` table and emit a `tidy.v1` table.
+Transforms typically declare a minimal table contract such as `tidy.v1`.
+When a transform preserves richer metadata semantics, it can resolve a stricter
+runtime output contract instead of collapsing back to the minimum.
+If that promotion matters to users, expose it in `output_contract_surfaces()`
+so `reader explain` reports the planned semantic range instead of only the floor.
 
 ```python
 from typing import Mapping, Dict, Any
 import pandas as pd
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 
 class Cfg(PluginConfig):
     factor: float = 2.0
@@ -142,6 +174,12 @@ class Cfg(PluginConfig):
 class ScaleValues(Plugin):
     key = "scale"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="generic",
+        family="value_transform",
+        summary="Scale tidy values by a constant factor.",
+    )
     ConfigModel = Cfg
 
     @classmethod
@@ -151,6 +189,22 @@ class ScaleValues(Plugin):
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}
+
+    @classmethod
+    def output_contract_surfaces(cls):
+        return cls.passthrough_output_contract_surfaces(
+            passthrough={"df": "df"},
+            promoted_examples={"df": ("plate_reader.annotated.v1",)},
+        )
+
+    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+        del cfg
+        return self.inherit_dataframe_output_contracts(
+            inputs=inputs,
+            outputs=outputs,
+            passthrough={"df": "df"},
+            where=where,
+        )
 
     def run(self, ctx, inputs: Dict[str, Any], cfg: Cfg):
         df = inputs["df"].copy()
@@ -246,7 +300,7 @@ Guidelines:
 * Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
 * Plot specs are assertive: missing required columns raise an error.
 * If a selection is empty, emit a warning and skip (don’t silently write an empty plot).
-* Plot/export outputs are tracked in `outputs/manifests/plots_manifest.json` and `outputs/manifests/exports_manifest.json`.
+* Plot/export outputs are tracked as `file_bundle` records in `outputs/manifests/records.json`.
 
 Plot plugins implement a **single render path** that powers file output:
 
@@ -284,11 +338,12 @@ Inspect plugins:
 ```bash
 uv run reader plugins
 uv run reader plugins --category plot
-uv run reader plugins --category export
+uv run reader plugins --domain plate_reader
+uv run reader plugins --family time_series
 ```
 
 Export plugins are intentionally permissive about input contracts; the built‑in
-`export/csv` and `export/xlsx` accept any DataFrame artifact and write it to disk.
+`export/csv` and `export/xlsx` accept any dataframe record and write it to disk.
 
 Example export spec:
 

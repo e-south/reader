@@ -27,9 +27,9 @@ class RunContext:
     artifacts_dir: Path
     plots_dir: Path
     exports_dir: Path
-    manifest_path: Path
+    records_path: Path
     logger: logging.Logger
     palette_book: PaletteBook | None
     strict: bool = True
-    groupings: Mapping[str, Any] | None = None
-    aliases: Mapping[str, Any] | None = None
+    groups: Mapping[str, Any] | None = None
+    assay: Mapping[str, Any] | None = None

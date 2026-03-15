@@ -18,6 +18,7 @@ from pydantic import Field
 
 from reader.core.errors import ExecutionError
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 
 
 class ExportXlsxCfg(PluginConfig):
@@ -29,6 +30,13 @@ class ExportXlsxCfg(PluginConfig):
 class ExportXlsx(Plugin):
     key = "xlsx"
     category = "export"
+    semantics = PluginSemantics(
+        category="export",
+        domain="generic",
+        family="table_export",
+        summary="Write dataframe records to XLSX workbooks.",
+        tags=("xlsx", "files"),
+    )
     ConfigModel = ExportXlsxCfg
 
     @classmethod

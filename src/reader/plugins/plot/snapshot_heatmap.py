@@ -12,12 +12,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import numpy as np
 import pandas as pd
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.core.plot_sinks import PlotFigure
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.semantics import resolve_assay_order_arg
+from reader.core.workbench import PluginSemantics
+from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
+from reader.plugins.plot._shared import save_rendered_figures
 
 
 class HeatmapCfg(PluginConfig):
@@ -27,6 +30,8 @@ class HeatmapCfg(PluginConfig):
     y: str = "design_id"
     order_x: list[str] | None = None
     order_y: list[str] | None = None
+    order_x_ref: str | None = None
+    order_y_ref: str | None = None
     square: bool = True
     vmin: float | None = None
     vmax: float | None = None
@@ -35,10 +40,25 @@ class HeatmapCfg(PluginConfig):
     fig: dict[str, Any] = Field(default_factory=dict)
     filename: str | None = None
 
+    @model_validator(mode="after")
+    def validate_order_sources(self) -> HeatmapCfg:
+        if self.order_x is not None and self.order_x_ref is not None:
+            raise ValueError("snapshot_heatmap: order_x and order_x_ref are mutually exclusive")
+        if self.order_y is not None and self.order_y_ref is not None:
+            raise ValueError("snapshot_heatmap: order_y and order_y_ref are mutually exclusive")
+        return self
+
 
 class SnapshotHeatmapPlot(Plugin):
     key = "snapshot_heatmap"
     category = "plot"
+    semantics = PluginSemantics(
+        category="plot",
+        domain="plate_reader",
+        family="snapshot_heatmap",
+        summary="Render heatmaps for snapshot or fold-change plate-reader summaries.",
+        tags=("snapshot", "heatmap"),
+    )
     ConfigModel = HeatmapCfg
 
     @classmethod
@@ -55,80 +75,26 @@ class SnapshotHeatmapPlot(Plugin):
     def render(self, ctx, inputs, cfg: HeatmapCfg) -> list[PlotFigure]:
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
-        from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap  # noqa: PLC0415
 
+        prepared = prepare_snapshot_heatmap_inputs(ctx=ctx, df_in=df_in, fc_in=fc_in, cfg=cfg)
         channel = str(cfg.channel)
-        wants_fc = channel.startswith("FC_") or channel.startswith("log2FC_")
-
-        # Make a working copy of fig kwargs; ensure unified tolerance handling.
-        fig_kwargs = dict(cfg.fig or {})
-        fig_kwargs.setdefault("time_tolerance", cfg.time_tolerance)
-
-        def _auto_cbar_label(ch: str, value_transform: str | None) -> str:
-            vtx = (value_transform or "none").lower()
-            if ch.startswith("log2FC_"):
-                return f"log2FC ({ch.split('_', 1)[1]})"
-            if ch.startswith("FC_"):
-                return f"FC ({ch.split('_', 1)[1]})"
-            if vtx == "log2":
-                return f"log2({ch})"
-            if vtx == "log10":
-                return f"log10({ch})"
-            return ch
-
-        if wants_fc:
-            if fc_in is None:
-                raise ValueError(f"snapshot_heatmap: channel={channel!r} requires a fold_change.v1 input (reads.fc)")
-            # Derive tidy-like frame from the FC table
-            target = channel.split("_", 1)[1]  # after "FC_" or "log2FC_"
-            use_col = "log2FC" if channel.startswith("log2FC_") else "FC"
-
-            tab = fc_in.copy()
-            tab = tab[tab["target"].astype(str) == target]
-            if tab.empty:
-                raise ValueError(f"snapshot_heatmap: fold_change table has no rows for target={target!r}")
-            # pick nearest available FC time to cfg.time within tolerance
-            times = np.asarray(sorted(pd.to_numeric(tab["time"], errors="coerce").dropna().unique()), float)
-            if times.size == 0:
-                raise ValueError("snapshot_heatmap: fold_change table has no time values")
-            deltas = np.abs(times - float(cfg.time))
-            j = int(np.nanargmin(deltas))
-            tsel = float(times[j])
-            if deltas[j] > float(cfg.time_tolerance):
-                # INFO (not WARNING) per request; clearly highlight in styling.
-                ctx.logger.info(
-                    "[warn]snapshot_heatmap[/warn] • requested t=%.2f h; nearest available t=%.2f h (Δ=%.2f h) — using nearest",
-                    float(cfg.time),
-                    float(tsel),
-                    float(deltas[j]),
-                )
-            sub = tab[pd.to_numeric(tab["time"], errors="coerce") == tsel].copy()
-            # Build a tidy-like dataframe that plot_snapshot_heatmap expects:
-            # time, channel, value, treatment, design_id(,_alias)…
-            sub = sub.rename(columns={use_col: "value"})
-            sub["channel"] = channel
-            # keep only necessary columns (+ any alias columns)
-            keep = ["time", "channel", "value", "treatment", "design_id", "design_id_alias"]
-            df = sub[[c for c in keep if c in sub.columns]].copy()
-
-            # Choose a descriptive default filename that includes the time actually used.
-            filename = cfg.filename or f"snapshot_heatmap__{channel}__t{tsel:g}h"
-            fig_kwargs.setdefault("cbar_label", _auto_cbar_label(channel, None))
-        else:
-            if df_in is None:
-                raise ValueError("snapshot_heatmap: tidy df is required when channel is not FC_/log2FC_-prefixed")
-            # Optional: apply log transform to the selected tidy channel
-            df = df_in.copy()
-            if cfg.value_transform and str(cfg.value_transform).lower() in {"log2", "log10"}:
-                mask = df["channel"].astype(str) == channel
-                vals = pd.to_numeric(df.loc[mask, "value"], errors="coerce")
-                if str(cfg.value_transform).lower() == "log2":
-                    df.loc[mask, "value"] = np.where(vals > 0, np.log2(vals), np.nan)
-                else:  # log10
-                    df.loc[mask, "value"] = np.where(vals > 0, np.log10(vals), np.nan)
-            # For tidy mode, the library time chooser now logs & proceeds as well.
-            filename = cfg.filename  # let the library default if not provided
-            fig_kwargs.setdefault("cbar_label", _auto_cbar_label(channel, cfg.value_transform))
+        df = prepared["df"]
+        filename = prepared["filename"]
+        fig_kwargs = prepared["fig_kwargs"]
+        resolved_order_x = resolve_assay_order_arg(
+            order=cfg.order_x,
+            order_ref=cfg.order_x_ref,
+            column=cfg.x,
+            assay=dict(getattr(ctx, "assay", {}) or {}),
+            arg_name="order_x",
+        )
+        resolved_order_y = resolve_assay_order_arg(
+            order=cfg.order_y,
+            order_ref=cfg.order_y_ref,
+            column=cfg.y,
+            assay=dict(getattr(ctx, "assay", {}) or {}),
+            arg_name="order_y",
+        )
         return plot_snapshot_heatmap(
             df=df,
             blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time", "channel", "value"]),
@@ -137,8 +103,8 @@ class SnapshotHeatmapPlot(Plugin):
             time=cfg.time,
             x=cfg.x,
             y=cfg.y,
-            order_x=cfg.order_x,
-            order_y=cfg.order_y,
+            order_x=resolved_order_x,
+            order_y=resolved_order_y,
             square=cfg.square,
             vmin=cfg.vmin,
             vmax=cfg.vmax,
@@ -147,6 +113,4 @@ class SnapshotHeatmapPlot(Plugin):
         )
 
     def run(self, ctx, inputs, cfg: HeatmapCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}
+        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

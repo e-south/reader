@@ -100,6 +100,11 @@ addopts = [
   "-ra"
 ]
 
+markers = [
+  "integration: repo-level or multi-surface integration coverage",
+  "optional_dependency: requires an optional dependency group",
+]
+
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
   "outputs", "plots", "raw_data", "_scratch"

@@ -16,6 +16,7 @@ import pandas as pd
 
 from reader.core.errors import ParseError
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 from reader.io.discovery import (
     DEFAULT_EXCLUDE,
     DEFAULT_INCLUDE,
@@ -59,6 +60,13 @@ class SynergyH1(Plugin):
 
     key = "synergy_h1"
     category = "ingest"
+    semantics = PluginSemantics(
+        category="ingest",
+        domain="plate_reader",
+        family="workbook_ingest",
+        summary="Parse Synergy H1 workbooks into tidy plate-reader traces.",
+        tags=("xlsx", "kinetic", "snapshot"),
+    )
     ConfigModel = SynergyH1UnifiedCfg
 
     @classmethod

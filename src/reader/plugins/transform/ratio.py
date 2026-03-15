@@ -16,6 +16,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 
 
 class RatioCfg(PluginConfig):
@@ -28,6 +29,13 @@ class RatioCfg(PluginConfig):
 class RatioTransform(Plugin):
     key = "ratio"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="plate_reader",
+        family="derived_channel",
+        summary="Create derived ratio channels from aligned tidy measurements.",
+        tags=("ratios", "derived_signal"),
+    )
     ConfigModel = RatioCfg
 
     @classmethod
@@ -37,6 +45,22 @@ class RatioTransform(Plugin):
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}
+
+    @classmethod
+    def output_contract_surfaces(cls) -> Mapping[str, object]:
+        return cls.passthrough_output_contract_surfaces(
+            passthrough={"df": "df"},
+            promoted_examples={"df": ("plate_reader.annotated.v1",)},
+        )
+
+    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+        del cfg
+        return self.inherit_dataframe_output_contracts(
+            inputs=inputs,
+            outputs=outputs,
+            passthrough={"df": "df"},
+            where=where,
+        )
 
     def run(self, ctx, inputs, cfg: RatioCfg):
         df: pd.DataFrame = inputs["df"].copy()

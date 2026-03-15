@@ -1,0 +1,41 @@
+"""
+--------------------------------------------------------------------------------
+<reader project>
+src/reader/tests/plugins/ingest/test_flow_cytometer.py
+
+Integration coverage for flow-cytometer ingest.
+--------------------------------------------------------------------------------
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from reader.plugins.ingest.flow_cytometer import FlowCytometerCfg, FlowCytometerIngest
+
+pytestmark = [pytest.mark.integration, pytest.mark.optional_dependency]
+
+
+def _ctx(exp_dir: Path):
+    return SimpleNamespace(exp_dir=exp_dir, logger=logging.getLogger("reader.tests"))
+
+
+def test_flow_cytometer_ingest_basic():
+    pytest.importorskip("flowio")
+    fcs_path = Path("experiments/2026/20260101_cytometer_retron/inputs/retron-26-neg_Data Source - 1.fcs")
+    if not fcs_path.exists():
+        pytest.skip("Cytometer fixture file missing")
+    plugin = FlowCytometerIngest()
+    cfg = FlowCytometerCfg(print_summary=False)
+    outputs = plugin.run(_ctx(fcs_path.parent.parent), {"raw": fcs_path}, cfg)
+    df = outputs["df"]
+    channels = outputs["channels"]
+    assert {"position", "time", "channel", "value", "sample_id"} <= set(df.columns)
+    assert df["sample_id"].nunique() == 1
+    assert df["position"].nunique() == 1
+    assert {"sample_id", "channel_index", "channel_name"} <= set(channels.columns)
+    assert channels["sample_id"].nunique() == 1

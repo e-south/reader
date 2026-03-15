@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import contextlib
+import logging
+from importlib import import_module
+from pathlib import Path
+from typing import Any
+
+from rich.console import Console
+from rich.logging import RichHandler
+
+from reader.core.config import ReaderSpec
+from reader.core.context import RunContext
+from reader.core.errors import ConfigError
+from reader.core.records import RecordStore
+
+from ._shared import needs_plot_palette
+
+
+def configure_logger(*, out_dir: Path, log_level: str, verbose: bool, console: Console) -> logging.Logger:
+    level_name = str(log_level).upper()
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if level_name not in valid_levels:
+        raise ConfigError(f"Invalid log level {log_level!r}. Choose one of: {sorted(valid_levels)}")
+
+    logger = logging.getLogger("reader")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        with contextlib.suppress(Exception):
+            handler.close()
+    logger.setLevel(getattr(logging, level_name))
+
+    try:
+        file_handler = logging.FileHandler(out_dir / "reader.log", encoding="utf-8")
+    except OSError as err:
+        raise ConfigError(f"Cannot write reader.log in outputs directory: {out_dir}") from err
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+
+    rich_handler = RichHandler(
+        console=console, markup=True, rich_tracebacks=True, show_level=True, show_time=False, show_path=False
+    )
+    rich_handler.setLevel(getattr(logging, level_name) if verbose else logging.WARNING)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(rich_handler)
+    return logger
+
+
+def resolve_palette_book(*, spec: ReaderSpec, steps: list[Any], dry_run: bool) -> Any:
+    palette = spec.plotting.palette if spec.plotting else None
+    if palette is not None:
+        if not isinstance(palette, str) or not palette.strip():
+            raise ConfigError("plotting.palette must be a non-empty string or null")
+        palette = palette.strip()
+
+    if dry_run or not needs_plot_palette(steps, palette):
+        return None
+
+    try:
+        mod = import_module("reader.lib.microplates.style")
+        palette_book_cls = getattr(mod, "PaletteBook", None)
+        available_palettes = getattr(mod, "available_palettes", None)
+        if palette_book_cls is None or available_palettes is None:
+            raise ImportError("PaletteBook or available_palettes not found in style module")
+    except Exception as err:
+        raise ConfigError(
+            "Plot palettes require matplotlib; install plotting dependencies or set plotting.palette: null."
+        ) from err
+
+    if palette not in available_palettes():
+        raise ConfigError(
+            f"Unknown palette {palette!r}. Available: {available_palettes()} (or set plotting.palette: null)."
+        )
+    return palette_book_cls(palette)
+
+
+def build_run_context(
+    *,
+    spec: ReaderSpec,
+    out_dir: Path,
+    store: RecordStore,
+    logger: logging.Logger,
+    palette_book: Any,
+) -> RunContext:
+    return RunContext(
+        exp_dir=Path(spec.experiment.root or out_dir.parent),
+        outputs_dir=out_dir,
+        artifacts_dir=store.artifacts_dir,
+        plots_dir=store.plots_dir,
+        exports_dir=store.exports_dir,
+        records_path=store.records_path,
+        logger=logger,
+        palette_book=palette_book,
+        strict=bool(spec.pipeline.runtime.get("strict", True)) if isinstance(spec.pipeline.runtime, dict) else True,
+        groups=(spec.semantics.groups or {}),
+        assay={
+            "labels": dict(spec.assay.labels or {}),
+            "orders": dict(spec.assay.orders or {}),
+            "logic_maps": dict(spec.assay.logic_maps or {}),
+        },
+    )
+
+
+def slice_pipeline_steps(steps: list[Any], *, resume_from: str | None, until: str | None) -> list[Any]:
+    selected = list(steps)
+    if resume_from:
+        try:
+            index = next(i for i, step in enumerate(selected) if step.id == resume_from)
+            selected = selected[index:]
+        except StopIteration:
+            raise ConfigError(f"--from: step id '{resume_from}' not found") from None
+    if until:
+        try:
+            index = next(i for i, step in enumerate(selected) if step.id == until)
+            selected = selected[: index + 1]
+        except StopIteration:
+            raise ConfigError(f"--until: step id '{until}' not found") from None
+    return selected

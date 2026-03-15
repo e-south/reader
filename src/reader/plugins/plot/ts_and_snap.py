@@ -17,8 +17,11 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.core.plot_sinks import PlotFigure
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.semantics import resolve_pool_sets_arg
+from reader.core.workbench import PluginSemantics
+from reader.plugins.plot._shared import save_rendered_figures
 
 
 class TSAndSnapCfg(PluginConfig):
@@ -61,6 +64,13 @@ class TSAndSnapCfg(PluginConfig):
 class TSAndSnapPlot(Plugin):
     key = "ts_and_snap"
     category = "plot"
+    semantics = PluginSemantics(
+        category="plot",
+        domain="plate_reader",
+        family="composite_plot",
+        summary="Render paired time-series and snapshot summary panels.",
+        tags=("time_series", "snapshot"),
+    )
     ConfigModel = TSAndSnapCfg
 
     @classmethod
@@ -75,32 +85,7 @@ class TSAndSnapPlot(Plugin):
         df: pd.DataFrame = inputs["df"]
         from reader.lib.microplates.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
 
-        # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
-            if pool_sets is None:
-                return None
-            if isinstance(pool_sets, list):
-                return pool_sets
-            if isinstance(pool_sets, str):
-                ref = pool_sets.strip()
-                if ":" in ref:
-                    col, set_name = [s.strip() for s in ref.split(":", 1)]
-                else:
-                    if not group_on_col:
-                        raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
-                    col, set_name = str(group_on_col), ref
-                cat = (ctx.groupings or {}).get(col)
-                if not isinstance(cat, dict) or set_name not in cat:
-                    opts = ", ".join(sorted((cat or {}).keys())) if isinstance(cat, dict) else "—"
-                    raise ValueError(
-                        f"Unknown pool_sets reference '{ref}'. "
-                        "Define it under data.groupings.<column>.<set_name> in config. "
-                        f"(available for {col!r}: {opts})"
-                    )
-                return cat[set_name]
-            raise ValueError("pool_sets must be a list[...] or '<column>:<set>' string")
-
-        resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
+        resolved_pools = resolve_pool_sets_arg(pool_sets=cfg.pool_sets, group_on=cfg.group_on, groups=ctx.groups)
 
         return plot_ts_and_snap(
             df=df,
@@ -139,6 +124,4 @@ class TSAndSnapPlot(Plugin):
         )
 
     def run(self, ctx, inputs, cfg: TSAndSnapCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}
+        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

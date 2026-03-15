@@ -17,21 +17,22 @@ from collections.abc import Mapping
 import pandas as pd
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 
 
 class AliasCfg(PluginConfig):
     """
-    aliases:
+    mappings:
       <column_name>:
         <raw_value>: <alias_value>
         ...
-    aliases_ref:   reference key under data.aliases (used if aliases is omitted)
+    refs:         reference keys under assay.labels
     in_place:      if true, mutate <column_name> directly; else create <column_name>_alias
     case_insensitive: map using casefold() on incoming values (keys in 'aliases' are matched case-insensitively)
     """
 
-    aliases: Mapping[str, Mapping[str, str]] | None = None
-    aliases_ref: str | None = None
+    mappings: Mapping[str, Mapping[str, str]] | None = None
+    refs: list[str] = []
     in_place: bool = False
     case_insensitive: bool = True
     suffix: str = "_alias"
@@ -40,15 +41,38 @@ class AliasCfg(PluginConfig):
 class AliasTransform(Plugin):
     key = "alias"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="generic",
+        family="label_enrichment",
+        summary="Add alias columns for configured categorical metadata.",
+        tags=("aliases", "annotation"),
+    )
     ConfigModel = AliasCfg
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}  # works equally well on tidy+map
+        return {"df": "tidy.v1"}  # works equally well on annotated plate-reader tables
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}
+
+    @classmethod
+    def output_contract_surfaces(cls) -> Mapping[str, object]:
+        return cls.passthrough_output_contract_surfaces(
+            passthrough={"df": "df"},
+            promoted_examples={"df": ("plate_reader.annotated.v1",)},
+        )
+
+    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+        del cfg
+        return self.inherit_dataframe_output_contracts(
+            inputs=inputs,
+            outputs=outputs,
+            passthrough={"df": "df"},
+            where=where,
+        )
 
     # ---------------- internal helpers ----------------
 
@@ -104,27 +128,42 @@ class AliasTransform(Plugin):
     def run(self, ctx, inputs, cfg: AliasCfg):
         df: pd.DataFrame = inputs["df"].copy()
 
-        aliases = cfg.aliases
-        if aliases is None:
-            if not cfg.aliases_ref:
-                raise ValueError("alias: provide with.aliases or with.aliases_ref")
-            if not ctx.aliases or cfg.aliases_ref not in ctx.aliases:
-                raise ValueError(f"alias: data.aliases missing key '{cfg.aliases_ref}'")
-            aliases = ctx.aliases[cfg.aliases_ref]
-        if not isinstance(aliases, Mapping):
-            raise ValueError("alias: aliases must be a mapping of column -> {raw: alias}")
-        if aliases:
-            if all(not isinstance(v, Mapping) for v in aliases.values()):
-                if not cfg.aliases_ref:
-                    raise ValueError(
-                        "alias: aliases_ref is required when aliases is a raw->alias mapping (single column)"
-                    )
-                aliases = {cfg.aliases_ref: aliases}
-        elif cfg.aliases_ref:
-            # allow empty alias maps to create <col>_alias columns without changes
-            aliases = {cfg.aliases_ref: {}}
+        if cfg.mappings is not None and cfg.refs:
+            raise ValueError("alias: mappings and refs are mutually exclusive")
+        if cfg.mappings is None and not cfg.refs:
+            raise ValueError("alias: provide with.mappings or with.refs")
 
-        for col, mapping in aliases.items():
+        mappings: dict[str, Mapping[str, str]] = {}
+        output_names: dict[str, str] = {}
+        if cfg.mappings is not None:
+            if not isinstance(cfg.mappings, Mapping):
+                raise ValueError("alias: mappings must be a mapping of column -> {raw: alias}")
+            mappings = {str(col): mapping for col, mapping in cfg.mappings.items()}
+            output_names = {str(col): f"{col}{cfg.suffix}" for col in mappings}
+        else:
+            assay = ctx.assay or {}
+            label_specs = (assay.get("labels") or {}) if isinstance(assay, Mapping) else {}
+            for ref in cfg.refs:
+                label_spec = label_specs.get(ref)
+                if label_spec is None:
+                    raise ValueError(f"alias: assay.labels missing key '{ref}'")
+                if hasattr(label_spec, "model_dump"):
+                    label_spec = label_spec.model_dump()
+                if not isinstance(label_spec, Mapping):
+                    raise ValueError(f"alias: assay.labels.{ref} must resolve to a mapping")
+                source = str(label_spec.get("source") or "").strip()
+                if not source:
+                    raise ValueError(f"alias: assay.labels.{ref}.source must be a non-empty string")
+                values = label_spec.get("values", {}) or {}
+                if not isinstance(values, Mapping):
+                    raise ValueError(f"alias: assay.labels.{ref}.values must be a mapping")
+                mappings[source] = {str(k): str(v) for k, v in values.items()}
+                output = label_spec.get("output")
+                output_names[source] = (
+                    str(output) if isinstance(output, str) and output.strip() else f"{source}{cfg.suffix}"
+                )
+
+        for col, mapping in mappings.items():
             if col not in df.columns:
                 raise ValueError(f"alias: column '{col}' not found in dataframe")
 
@@ -143,7 +182,7 @@ class AliasTransform(Plugin):
             after_series = mapped.fillna(before)  # keep original where no rule
 
             # write output column
-            out_col = col if cfg.in_place else f"{col}{cfg.suffix}"
+            out_col = col if cfg.in_place else output_names.get(col, f"{col}{cfg.suffix}")
             if cfg.in_place:
                 df[col] = after_series
             else:

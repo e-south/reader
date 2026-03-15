@@ -16,33 +16,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import polars as pl
-import seaborn as sns
-from matplotlib.lines import Line2D
 
 from reader.core.plot_sinks import PlotFigure
 
-from .base import (
+from .panels import draw_time_series_panel, marker_map_for_levels
+from .style import PaletteBook, use_style
+from .support import (
     GroupMatch,
     alias_column,
     best_subplot_grid,
+    emit_plot_figure,
+    order_levels,
     pretty_name,
     require_columns,
     resolve_groups,
-    save_figure,
     warn_if_empty,
 )
-from .style import PaletteBook, use_style
-
-# Fixed palette of distinct marker shapes (mapped 1:1 to hue levels)
-_MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
-
-
-def _maybe_log(ax, enable: bool):
-    if enable:
-        ax.set_yscale("log")
-        ymin, ymax = ax.get_ylim()
-        if ymin <= 0:
-            ax.set_ylim(bottom=max(1e-12, ymin))
 
 
 def plot_time_series(
@@ -116,7 +105,7 @@ def plot_time_series(
         if warn_if_empty(base, where="time_series", detail="after group_on filter"):
             return []
     if group_col:
-        universe = base[group_col].astype(str).unique().tolist()
+        universe = order_levels(base[group_col].astype(str).unique().tolist())
         fig_groups = (
             resolve_groups(universe, pool_sets, match=pool_match) if pool_sets else [(g, [g]) for g in universe]
         )
@@ -161,8 +150,8 @@ def plot_time_series(
         if d.empty:
             continue
 
-        hue_levels = list(d[hue_col].astype(str).unique())
-        marker_map = {h: _MARKERS[i % len(_MARKERS)] for i, h in enumerate(hue_levels)}
+        hue_levels = order_levels(d[hue_col].astype(str).unique().tolist())
+        marker_map = marker_map_for_levels(hue_levels)
         colors = _colors(len(hue_levels))
         color_map = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels)}
         rows, cols = best_subplot_grid(len(y_feats))
@@ -187,112 +176,40 @@ def plot_time_series(
                     continue
 
                 # Start clean; show horizontal + vertical major grid lines
-                ax.grid(False)
-                ax.yaxis.grid(True, which="major")
-                ax.xaxis.grid(True, which="major")
-
-                # Optional replicate dots
-                if show_replicates:
-                    for h in hue_levels:
-                        rr = sub[sub[hue_col].astype(str) == h]
-                        ax.scatter(
-                            rr[xcol],
-                            rr["value"],
-                            s=18,
-                            alpha=replicate_alpha,
-                            zorder=3,  # zorder=3 to rasterize if rz > 2
-                            linewidths=0.0,
-                            edgecolors="none",  # ← no marker edge
-                            marker=marker_map[h],
-                            c=color_map[h],
-                        )
-
-                sns.lineplot(
+                draw_time_series_panel(
+                    ax,
                     data=sub,
-                    x=xcol,
-                    y="value",
-                    hue=hue_col,
-                    hue_order=hue_levels,
-                    estimator="mean",
-                    errorbar=("ci", float(ci)),
-                    err_style="band",
-                    err_kws={"alpha": float(ci_alpha)},
-                    lw=1.8,
-                    alpha=line_alpha,
-                    legend=False,
-                    ax=ax,
-                    palette=[color_map[h] for h in hue_levels],
-                    marker=None,
-                    zorder=1,
+                    x_col=xcol,
+                    hue_col=hue_col,
+                    hue_levels=hue_levels,
+                    color_map=color_map,
+                    marker_map=marker_map,
+                    show_replicates=show_replicates,
+                    ci=ci,
+                    ci_alpha=ci_alpha,
+                    line_alpha=line_alpha,
+                    mean_marker_alpha=mean_marker_alpha,
+                    replicate_alpha=replicate_alpha,
+                    add_sheet_lines=bool(sheet_lines),
+                    sheet_lines=sheet_lines,
+                    sheet_line_kwargs=sheet_line_kwargs,
+                    log_y=(ch in log_transform) if isinstance(log_transform, list) else bool(log_transform),
+                    xlabel=("Time (h)" if str(x).lower() == "time" else pretty_name(str(xcol))),
+                    ylabel=str(ch),
+                    legend_loc=legend_loc,
+                    show_legend=(idx == 0),
                 )
-
-                # Mean points (bold)
-                means = sub.groupby([hue_col, xcol], dropna=False)["value"].mean().reset_index()
-                for h in hue_levels:
-                    mm = means[means[hue_col].astype(str) == h]
-                    ax.scatter(
-                        mm[xcol],
-                        mm["value"],
-                        s=36,
-                        zorder=2.5,
-                        marker=marker_map[h],
-                        alpha=mean_marker_alpha,
-                        edgecolors="none",
-                        linewidths=0.0,  # ← remove white edge
-                        c=color_map[h],
-                    )
-
-                # Sheet markers
-                if sheet_lines:
-                    style = {"color": "#9E9E9E", "linestyle": "--", "linewidth": 0.8, "alpha": 0.9, "zorder": 0.5}
-                    style.update(sheet_line_kwargs or {})
-                    for sx in sheet_lines:
-                        ax.axvline(float(sx), **style)
-
-                # Log selection
-                if isinstance(log_transform, list):
-                    ax.set_yscale("log" if (ch in log_transform) else "linear")
-                else:
-                    _maybe_log(ax, bool(log_transform))
-
-                # Labels & legend
-                ax.set_xlabel("Time (h)" if str(x).lower() == "time" else pretty_name(str(xcol)))
-                ax.set_ylabel(str(ch))
                 with suppress(Exception):
                     ax.set_box_aspect(1.0)
-
-                # Custom legend — place it on the first subplot only
-                if idx == 0:
-                    handles = [
-                        Line2D(
-                            [0],
-                            [0],
-                            color=color_map[h],
-                            marker=marker_map[h],
-                            markersize=7,
-                            linestyle="-",
-                            linewidth=1.8,
-                            alpha=mean_marker_alpha,
-                            label=str(h),
-                        )
-                        for h in hue_levels
-                    ]
-                    ax.legend(handles=handles, loc=legend_loc, title=None)
 
             # Hide extra axes if any
             for j in range(len(y_feats), len(axes)):
                 axes[j].set_visible(False)
 
             # Allow file type override via fig.ext ("pdf" | "png" | "svg", etc.)
-            ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
-            dpi = (fig_kwargs or {}).get("dpi", None)
             group_tag = None
             if group_col and members != [None]:
                 group_tag = f"__{str(group_col)}={str(label)}"
             stub = (f"{filename}{group_tag}" if group_tag else filename) if filename else f"ts__{label}"
-            if output_dir is None:
-                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
-            else:
-                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-                plt.close(fig)
+            figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
     return figures

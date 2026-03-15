@@ -15,16 +15,18 @@ from typing import Any
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.core.plot_sinks import PlotFigure
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.semantics import resolve_logic_map_ref
+from reader.core.workbench import PluginSemantics
+from reader.plugins.plot._shared import save_rendered_figures
 
 
 class LogicSymCfg(PluginConfig):
     response_channel: str
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
-    treatment_map: dict[str, str]
-    treatment_case_sensitive: bool = True
+    logic_map_ref: str
     aggregation: dict[str, Any] = Field(default_factory=dict)
     encodings: dict[str, Any] = Field(default_factory=dict)
     ideals_overlay: dict[str, Any] = Field(default_factory=dict)
@@ -38,12 +40,18 @@ class LogicSymCfg(PluginConfig):
 class LogicSymmetryPlot(Plugin):
     key = "logic_symmetry"
     category = "plot"
+    semantics = PluginSemantics(
+        category="plot",
+        domain="logic",
+        family="geometry_plot",
+        summary="Render logic symmetry plots from annotated plate-reader summaries.",
+        tags=("logic", "geometry"),
+    )
     ConfigModel = LogicSymCfg
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        # tidy+map helps ensure design_by & batch present; for leniency accept tidy.v1 in earlier range
-        return {"df": "tidy+map.v1"}
+        return {"df": "plate_reader.annotated.v1"}
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
@@ -53,6 +61,7 @@ class LogicSymmetryPlot(Plugin):
         df: pd.DataFrame = inputs["df"]
         from reader.lib.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
 
+        logic_map = resolve_logic_map_ref(ref=cfg.logic_map_ref, assay=dict(ctx.assay or {}))
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],
@@ -60,8 +69,8 @@ class LogicSymmetryPlot(Plugin):
             response_channel=cfg.response_channel,
             design_by=cfg.design_by,
             batch_col=cfg.batch_col,
-            treatment_map=cfg.treatment_map,
-            treatment_case_sensitive=cfg.treatment_case_sensitive,
+            treatment_map=logic_map["corners"],
+            treatment_case_sensitive=logic_map["case_sensitive"],
             aggregation=cfg.aggregation,
             encodings=cfg.encodings,
             ideals_overlay=cfg.ideals_overlay,
@@ -78,6 +87,4 @@ class LogicSymmetryPlot(Plugin):
         return [PlotFigure(fig=result.fig, filename=base, ext=ext, dpi=dpi) for ext in formats]
 
     def run(self, ctx, inputs, cfg: LogicSymCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}
+        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

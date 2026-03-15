@@ -1,6 +1,6 @@
 ## reader demo
 
-This walkthrough shows a typical flow from discovery to artifacts, then plots/exports or notebooks. Replace the index (`1`) with a config path or experiment directory as needed.
+This walkthrough shows a typical flow from discovery to dataframe records, then plots/exports or notebooks. Replace the index (`1`) with a config path or experiment directory as needed.
 
 ---
 
@@ -31,16 +31,16 @@ reader explain 1
 reader validate 1
 ```
 
-4) Run the pipeline (artifacts only)
+4) Run the pipeline (records only)
 
 ```bash
 reader run 1
 ```
 
-5) Inspect artifacts
+5) Inspect records
 
 ```bash
-reader artifacts 1
+reader records 1
 ```
 
 6) Generate plots
@@ -63,7 +63,7 @@ reader export 1
 reader notebook 1
 ```
 
-If you want a specific preset, pass `--preset <name>` (otherwise reader uses `notebook.preset` from config or auto-picks).
+If you want a specific preset, pass `--preset <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).
 
 See the [Notebooks guide](./notebooks.md) for opening and dependency setup.
 

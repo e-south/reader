@@ -18,6 +18,7 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 from reader.lib.crosstalk import compute_crosstalk_pairs
 
 
@@ -81,6 +82,13 @@ class CrosstalkPairs(Plugin):
 
     key = "crosstalk_pairs"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="plate_reader",
+        family="summary_transform",
+        summary="Derive pairwise crosstalk rankings from fold-change tables.",
+        tags=("pairs", "summary"),
+    )
     ConfigModel = CrosstalkPairsCfg
 
     @classmethod

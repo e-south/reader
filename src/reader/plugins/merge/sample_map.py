@@ -21,8 +21,10 @@ from pathlib import Path
 import pandas as pd
 from pydantic import Field
 
+from reader.core.contracts import BUILTIN, validate_df
 from reader.core.errors import MergeError
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.workbench import PluginSemantics
 from reader.io.sample_map import parse_sample_map
 
 
@@ -40,6 +42,13 @@ class SampleMapCfg(PluginConfig):
 class SampleMapMerge(Plugin):
     key = "sample_map"
     category = "merge"
+    semantics = PluginSemantics(
+        category="merge",
+        domain="plate_reader",
+        family="metadata_merge",
+        summary="Attach well-position sample maps to tidy plate-reader traces.",
+        tags=("well_map", "annotation"),
+    )
     ConfigModel = SampleMapCfg
 
     @classmethod
@@ -49,9 +58,29 @@ class SampleMapMerge(Plugin):
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
-        # Emit the essential tidy contract; extra metadata columns are allowed.
-        # This keeps downstream transforms decoupled from experiment-specific metadata.
+        # Declare the minimum contract; runtime promotion upgrades to
+        # plate_reader.annotated.v1 when mapped metadata satisfies it.
         return {"df": "tidy.v1"}
+
+    @classmethod
+    def output_contract_surfaces(cls) -> Mapping[str, object]:
+        return cls.promoted_output_contract_surfaces(
+            promotions={"df": ("plate_reader.annotated.v1",)},
+            note="promotion requires mapped metadata columns that satisfy the richer contract",
+        )
+
+    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+        del inputs, cfg
+        resolved = dict(self.output_contracts())
+        merged = outputs.get("df")
+        if not isinstance(merged, pd.DataFrame):
+            return resolved
+        try:
+            validate_df(merged, BUILTIN["plate_reader.annotated.v1"], where=f"{where}:df")
+        except Exception:
+            return resolved
+        resolved["df"] = "plate_reader.annotated.v1"
+        return resolved
 
     def _clean_plate_map(self, plate_map: pd.DataFrame) -> pd.DataFrame:
         if "position" not in plate_map.columns:

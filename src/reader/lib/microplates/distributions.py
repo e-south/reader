@@ -18,32 +18,18 @@ import seaborn as sns
 
 from reader.core.plot_sinks import PlotFigure
 
-from .base import (
+from .style import PaletteBook, use_style
+from .support import (
     GroupMatch,
     alias_column,
     best_subplot_grid,
+    colors_for,
+    emit_plot_figure,
+    order_levels,
     require_columns,
     resolve_groups,
-    save_figure,
-    smart_string_numeric_key,
     warn_if_empty,
 )
-from .style import PaletteBook, use_style
-
-
-def _colors_for(n: int, palette_book: PaletteBook | None) -> list[str]:
-    if palette_book:
-        pal = palette_book.colors(max(2, n))
-        # avoid pure black as the only color in single‑trace figures
-        if n == 1 and str(pal[0]).lower() in {"#000000", "black"}:
-            return [pal[1]]
-        return pal[:n]
-    cyc = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if not cyc:
-        raise RuntimeError("No color cycle available; configure Matplotlib rc or provide a PaletteBook.")
-    if n == 1 and str(cyc[0]).lower() in {"#000000", "black"} and len(cyc) > 1:
-        return [cyc[1]]
-    return cyc[:n]
 
 
 def _figure_groups(
@@ -63,7 +49,7 @@ def _figure_groups(
     if not group_on:
         return [("all", [None])]
     gcol = str(group_on)
-    universe = sorted(df[gcol].astype(str).unique().tolist(), key=smart_string_numeric_key)
+    universe = order_levels(df[gcol].astype(str).unique().tolist())
     if pool_sets:
         resolved = resolve_groups(universe, pool_sets, match=pool_match)
         return resolved or [("all", universe)]
@@ -139,7 +125,7 @@ def plot_distributions(
                 continue
 
             # overlay colors per member (multiple overlays if members>1)
-            colors = _colors_for(max(1, len(members)), palette_book)
+            colors = colors_for(max(1, len(members)), palette_book)
             with use_style(rc=fig_kwargs.get("rc"), color_cycle=colors):
                 fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), constrained_layout=True)
                 axes = np.atleast_1d(axes).ravel()
@@ -156,8 +142,8 @@ def plot_distributions(
 
                     if hue:
                         hue_col = alias_column(dch, hue)
-                        hue_levels = sorted(dch[hue_col].astype(str).unique().tolist(), key=smart_string_numeric_key)
-                        colors = _colors_for(max(1, len(hue_levels)), palette_book)
+                        hue_levels = order_levels(dch[hue_col].astype(str).unique().tolist())
+                        colors = colors_for(max(1, len(hue_levels)), palette_book)
                         cmap = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels)}
                         place_legend_here = (not legend_shown) and (len(hue_levels) > 1)
                         for h in hue_levels:
@@ -197,15 +183,9 @@ def plot_distributions(
                 for k in range(len(ch_list), len(axes)):
                     axes[k].set_visible(False)
 
-                ext = str(fig_kwargs.get("ext", "pdf")).lower()
-                dpi = fig_kwargs.get("dpi", None)
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                if output_dir is None:
-                    figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
-                else:
-                    save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-                    plt.close(fig)
+                figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
 
     else:  # panel_by == "group"
         if not gcol:
@@ -231,7 +211,7 @@ def plot_distributions(
         if sub.empty:
             return []
 
-        colors = _colors_for(1, palette_book)
+        colors = colors_for(1, palette_book)
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=colors):
             fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), constrained_layout=True)
             axes = np.atleast_1d(axes).ravel()
@@ -255,12 +235,6 @@ def plot_distributions(
             for k in range(len(members_union), len(axes)):
                 axes[k].set_visible(False)
 
-            ext = str(fig_kwargs.get("ext", "pdf")).lower()
-            dpi = fig_kwargs.get("dpi", None)
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            if output_dir is None:
-                figures.append(PlotFigure(fig=fig, filename=stub, ext=ext, dpi=dpi))
-            else:
-                save_figure(fig, Path(output_dir), stub, ext=ext, dpi=dpi)
-                plt.close(fig)
+            figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
     return figures

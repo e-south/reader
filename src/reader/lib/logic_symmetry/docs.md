@@ -6,7 +6,7 @@ A single-figure plotter that places each two-input promoter (per **design × bat
 * **y = A (asymmetry):** whether **A-only** or **B-only** is larger
 * Optional encodings for **size**, **hue**, **alpha**, and **shape** to summarize batch order, noise, categories, etc.
 
-It plugs into the `reader` plots section and renders a logic-symmetry figure. It does not emit artifacts; if you need a table, derive it in the pipeline or export it explicitly.
+It plugs into the `reader` plots section and renders a logic-symmetry figure. It does not emit dataframe records; if you need a table, derive it in the pipeline or export it explicitly.
 
 ---
 

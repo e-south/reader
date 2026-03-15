@@ -7,11 +7,11 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
-from .base import nearest_time_per_key, resolve_groups, save_figure, slugify
 from .distributions import plot_distributions
 from .snapshot_barplot import plot_snapshot_barplot
 from .snapshot_heatmap import plot_snapshot_heatmap
 from .style import PaletteBook, new_fig_ax, use_style
+from .support import nearest_time_per_key, resolve_groups, save_figure, slugify
 from .time_series import plot_time_series
 from .ts_and_snap import plot_ts_and_snap
 

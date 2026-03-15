@@ -74,9 +74,9 @@ reader explain CONFIG|DIR|INDEX
 
 ---
 
-## Pipeline (artifacts)
+## Pipeline (records)
 
-Run the pipeline section only (produces artifacts + `outputs/manifests/manifest.json`):
+Run the pipeline section only (produces dataframe records + `outputs/manifests/records.json`):
 
 ```bash
 reader run CONFIG|DIR|INDEX
@@ -187,7 +187,7 @@ reader export CONFIG|DIR|INDEX --only export_ratios --set with.path="exports/rat
 ## Notebooks
 
 Scaffold a marimo notebook (no pipeline execution). If `--preset` is omitted, the CLI
-uses `notebook.preset` from config, otherwise auto-picks `notebook/eda` when plots
+uses the first configured `notebooks.specs` entry, otherwise auto-picks `notebook/eda` when plots
 exist or `notebook/basic` (both presets currently scaffold the same minimal notebook):
 
 Notebooks are written under `outputs/notebooks/`.
@@ -255,16 +255,16 @@ List pipeline steps (resolved):
 reader steps CONFIG|DIR|INDEX
 ```
 
-List artifacts from `outputs/manifests/manifest.json`:
+List workbench records from `outputs/manifests/records.json`:
 
 ```bash
-reader artifacts CONFIG|DIR|INDEX
+reader records CONFIG|DIR|INDEX
 ```
 
-Show artifact history counts:
+Show record history counts:
 
 ```bash
-reader artifacts CONFIG|DIR|INDEX --all
+reader records CONFIG|DIR|INDEX --all
 ```
 
 List step ids and plugins:

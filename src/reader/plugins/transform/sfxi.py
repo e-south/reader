@@ -18,6 +18,8 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.registry import Plugin, PluginConfig
+from reader.core.semantics import resolve_logic_map_ref
+from reader.core.workbench import PluginSemantics
 from reader.lib.sfxi.run import build_vec8_from_tidy
 
 
@@ -28,9 +30,8 @@ class SFXICfg(PluginConfig):
     time_mode: str = "nearest"  # nearest|last_before|first_after|exact
     target_time_h: float | None = None
     time_tolerance_h: float = 0.5
-    treatment_map: dict[str, str]
+    logic_map_ref: str
     reference: dict[str, str | None] = Field(default_factory=lambda: {"design_id": None, "stat": "mean"})
-    treatment_case_sensitive: bool = True
     require_all_corners_per_design: bool = True
     eps_ratio: float = 1e-9
     eps_range: float = 1e-12
@@ -45,11 +46,18 @@ class SFXICfg(PluginConfig):
 class SFXITransform(Plugin):
     key = "sfxi"
     category = "transform"
+    semantics = PluginSemantics(
+        category="transform",
+        domain="logic",
+        family="summary_transform",
+        summary="Compute SFXI vec8 logic summaries from annotated plate-reader traces.",
+        tags=("logic", "summary"),
+    )
     ConfigModel = SFXICfg
 
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy+map.v1"}
+        return {"df": "plate_reader.annotated.v1"}
 
     @classmethod
     def output_contracts(cls) -> Mapping[str, str]:
@@ -57,7 +65,11 @@ class SFXITransform(Plugin):
 
     def run(self, ctx, inputs, cfg: SFXICfg):
         df: pd.DataFrame = inputs["df"].copy()
-        result = build_vec8_from_tidy(df, cfg)
+        logic_map = resolve_logic_map_ref(ref=cfg.logic_map_ref, assay=dict(ctx.assay or {}))
+        run_cfg = cfg.model_dump()
+        run_cfg["treatment_map"] = logic_map["corners"]
+        run_cfg["treatment_case_sensitive"] = logic_map["case_sensitive"]
+        result = build_vec8_from_tidy(df, run_cfg)
         vec8 = result.vec8
         sfxi_cfg = result.cfg
         sel_logic = result.sel_logic
