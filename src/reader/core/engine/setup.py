@@ -92,10 +92,10 @@ def build_run_context(
         logger=logger,
         palette_book=palette_book,
         strict=bool(spec.pipeline.runtime.get("strict", True)) if isinstance(spec.pipeline.runtime, dict) else True,
-        groups=(spec.semantics.groups or {}),
         assay={
             "labels": dict(spec.assay.labels or {}),
             "orders": dict(spec.assay.orders or {}),
+            "collections": dict(spec.assay.collections or {}),
             "logic_maps": dict(spec.assay.logic_maps or {}),
         },
     )
@@ -103,16 +103,20 @@ def build_run_context(
 
 def slice_pipeline_steps(steps: list[Any], *, resume_from: str | None, until: str | None) -> list[Any]:
     selected = list(steps)
+    start_index = 0
     if resume_from:
         try:
-            index = next(i for i, step in enumerate(selected) if step.id == resume_from)
-            selected = selected[index:]
+            start_index = next(i for i, step in enumerate(selected) if step.id == resume_from)
+            selected = selected[start_index:]
         except StopIteration:
             raise ConfigError(f"--from: step id '{resume_from}' not found") from None
     if until:
         try:
-            index = next(i for i, step in enumerate(selected) if step.id == until)
-            selected = selected[: index + 1]
+            until_index = next(i for i, step in enumerate(steps) if step.id == until)
         except StopIteration:
             raise ConfigError(f"--until: step id '{until}' not found") from None
+        if resume_from and start_index > until_index:
+            raise ConfigError(f"--from '{resume_from}' comes after --until '{until}' in pipeline order")
+        relative_index = until_index - start_index
+        selected = selected[: relative_index + 1]
     return selected

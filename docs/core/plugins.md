@@ -20,11 +20,22 @@ A good plugin is thin orchestration:
 - keep instrument/file parsing in `io/` (raw → tidy tables)
 - keep reusable computation in `lib/` (domain logic)
 - keep plugins focused on wiring inputs → computation → declared outputs
+- if multiple plugins in one category share orchestration-only behavior, keep
+  that in `plugins/<category>/_*.py`; do not duplicate file discovery,
+  partition resolution, or figure-save plumbing across plugin modules
 - for plotting, keep figure selection/layout in `lib/microplates/support/` or a
   figure-specific package, keep axes rendering in `lib/microplates/panels/`,
   and keep plugin modules as config adapters only
 - if a plot needs semantic input preparation, keep that in the plotting library
   next to the figure package rather than in a plugin-private helper
+
+Current examples of this convention:
+
+- `plugins/ingest/_discovery.py` owns shared ingest auto-discovery and pick
+  logic
+- `plugins/plot/_shared.py` owns shared figure-plot adapter behavior
+- `plugins/transform/_*.py` owns transform-local support logic when extraction
+  into `lib/` would be premature
 
 Each plugin now also declares a small workbench ontology entry:
 
@@ -49,6 +60,10 @@ You’ll typically see plugins grouped as:
 * `validator/*` — enforce or upgrade schema/shape
 * `plot/*` — render plots (plot specs)
 * `export/*` — write exports (export specs)
+
+External plugins use matching entry-point groups for every advertised category:
+`reader.ingest`, `reader.merge`, `reader.transform`, `reader.validator`,
+`reader.plot`, and `reader.export`.
 
 ---
 
@@ -120,6 +135,9 @@ For flow cytometry `.fcs` files, use `ingest/flow_cytometer`. It emits a tidy ta
 * `sample_id` (from filename) and `position = sample_id`
 * `time` set to a constant (default `0.0`, since cytometry is snapshot data)
 * long-form `channel` / `value` pairs per event
+
+The raw FCS parsing lives in `reader.io.flow_cytometer`; the plugin is just the workbench adapter
+for config, auto-discovery, output contracts, and logging.
 
 Example:
 

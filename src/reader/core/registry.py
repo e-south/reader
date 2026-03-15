@@ -235,7 +235,7 @@ def load_entry_points(categories: set[str] | None = None) -> Registry:
                 continue
         module = importlib.import_module(modinfo.name)
         for _, obj in inspect.getmembers(module, inspect.isclass):
-            if issubclass(obj, Plugin) and obj is not Plugin:
+            if issubclass(obj, Plugin) and obj is not Plugin and not inspect.isabstract(obj):
                 reg.register(obj.category, obj.key, obj)
                 discovered += 1
     if discovered == 0:
@@ -253,7 +253,7 @@ def load_entry_points(categories: set[str] | None = None) -> Registry:
                 raise RegistryError(f"Entry point {ep.name} in {group} is not a Plugin subclass")
             reg.register(category, cls.key, cls)
 
-    for category in ("ingest", "merge", "transform", "plot", "export"):
+    for category in ("ingest", "merge", "transform", "plot", "export", "validator"):
         if wanted is not None and category not in wanted:
             continue
         _load(f"reader.{category}", category)
