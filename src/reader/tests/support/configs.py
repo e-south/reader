@@ -30,7 +30,7 @@ def base_reader_config(
     export_specs: list[dict] | None = None,
     notebook_specs: list[dict] | None = None,
     plotting: dict | None = None,
-    semantics: dict | None = None,
+    assay: dict | None = None,
 ) -> dict:
     payload = {
         "schema": "reader/v3",
@@ -46,6 +46,6 @@ def base_reader_config(
         payload["notebooks"] = {"specs": notebook_specs}
     if plotting is not None:
         payload["plotting"] = deepcopy(plotting)
-    if semantics is not None:
-        payload["semantics"] = deepcopy(semantics)
+    if assay is not None:
+        payload["assay"] = deepcopy(assay)
     return payload

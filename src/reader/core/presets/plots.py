@@ -19,7 +19,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
                 "with": {
-                    "group_on": "design_id_alias",
+                    "partition": {"by": "design_id_alias"},
                     "hue": "treatment_alias",
                     "y": ["OD600", "CFP", "YFP", "YFP/CFP", "CFP/OD600", "YFP/OD600"],
                     "add_sheet_line": True,
@@ -31,7 +31,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "with": {
                     "x": "treatment_alias",
                     "y": ["OD600", "CFP/OD600", "YFP/OD600", "YFP/CFP"],
-                    "group_on": "design_id_alias",
+                    "partition": {"by": "design_id_alias"},
                     "time": 14.0,
                 },
             },
@@ -39,7 +39,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "ts_and_snap__yfp_over_cfp",
                 "uses": "plot/ts_and_snap",
                 "with": {
-                    "group_on": "design_id_alias",
+                    "partition": {"by": "design_id_alias"},
                     "ts_channel": "OD600",
                     "ts_hue": "treatment_alias",
                     "ts_add_sheet_line": True,
@@ -58,7 +58,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "hue": "treatment",
                     "y": ["OD600", "YFP", "YFP/CFP", "YFP/OD600"],
                     "add_sheet_line": True,
@@ -67,7 +67,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "with": {"x": "treatment", "y": ["OD600", "YFP/OD600"], "group_on": "design_id", "time": 14.0},
+                "with": {"x": "treatment", "y": ["OD600", "YFP/OD600"], "partition": {"by": "design_id"}, "time": 14.0},
             },
             {
                 "id": "snapshot_bars_by_design_id",
@@ -78,7 +78,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "ts_and_snap__yfp_over_od600",
                 "uses": "plot/ts_and_snap",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "ts_channel": "YFP/OD600",
                     "ts_hue": "treatment",
                     "ts_add_sheet_line": True,
@@ -96,7 +96,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "hue": "treatment",
                     "y": ["OD600", "YFP", "YFP/CFP", "YFP/OD600"],
                     "add_sheet_line": True,
@@ -105,7 +105,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "distributions__by_design_id",
                 "uses": "plot/distributions",
-                "with": {"channels": ["YFP/CFP"], "group_on": "design_id"},
+                "with": {"channels": ["YFP/CFP"], "partition": {"by": "design_id"}},
             },
         ],
     },
@@ -115,7 +115,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "with": {"x": "treatment", "y": ["OD600", "YFP/OD600"], "group_on": "design_id", "time": 14.0},
+                "with": {"x": "treatment", "y": ["OD600", "YFP/OD600"], "partition": {"by": "design_id"}, "time": 14.0},
             },
             {
                 "id": "snapshot_bars_by_design_id",
@@ -131,7 +131,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "hue": "treatment",
                     "y": ["OD600", "RFP", "RFP/OD600"],
                     "add_sheet_line": True,
@@ -140,7 +140,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
             {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
-                "with": {"x": "treatment", "y": ["OD600", "RFP/OD600"], "group_on": "design_id", "time": 14.0},
+                "with": {"x": "treatment", "y": ["OD600", "RFP/OD600"], "partition": {"by": "design_id"}, "time": 14.0},
             },
             {
                 "id": "snapshot_bars_by_design_id",
@@ -151,7 +151,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "ts_and_snap__rfp_over_od600",
                 "uses": "plot/ts_and_snap",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "ts_channel": "RFP/OD600",
                     "ts_hue": "treatment",
                     "ts_add_sheet_line": True,
@@ -169,7 +169,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "plot_time_series",
                 "uses": "plot/time_series",
                 "with": {
-                    "group_on": "design_id",
+                    "partition": {"by": "design_id"},
                     "hue": "treatment",
                     "y": ["OD600", "RFP", "RFP/OD600"],
                     "add_sheet_line": True,
@@ -179,7 +179,7 @@ PLOT_PRESETS: dict[str, dict[str, Any]] = {
                 "id": "snapshot_bars_by_channel",
                 "uses": "plot/snapshot_barplot",
                 "reads": {"df": "ratio_rfp_od600/df"},
-                "with": {"x": "treatment", "y": ["OD600", "RFP/OD600"], "group_on": "design_id", "time": 14.0},
+                "with": {"x": "treatment", "y": ["OD600", "RFP/OD600"], "partition": {"by": "design_id"}, "time": 14.0},
             },
             {
                 "id": "snapshot_bars_by_design_id",

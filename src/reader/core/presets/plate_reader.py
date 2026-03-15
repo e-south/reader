@@ -29,9 +29,8 @@ PLATE_READER_PRESETS: dict[str, dict[str, Any]] = {
             },
             {
                 "id": "labels",
-                "uses": "transform/alias",
+                "uses": "transform/assay_labels",
                 "reads": {"df": "merge_map/df"},
-                "with": {"in_place": False, "case_insensitive": True, "refs": ["design_id", "treatment"]},
             },
             {
                 "id": "blank",

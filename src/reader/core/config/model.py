@@ -84,6 +84,13 @@ class AssayOrderSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AssayCollectionSpec(BaseModel):
+    column: str
+    items: dict[str, list[str]] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
 class AssayLogicMapSpec(BaseModel):
     column: str
     corners: dict[str, str]
@@ -95,13 +102,8 @@ class AssayLogicMapSpec(BaseModel):
 class AssaySpec(BaseModel):
     labels: dict[str, AssayLabelSpec] = Field(default_factory=dict)
     orders: dict[str, AssayOrderSpec] = Field(default_factory=dict)
+    collections: dict[str, AssayCollectionSpec] = Field(default_factory=dict)
     logic_maps: dict[str, AssayLogicMapSpec] = Field(default_factory=dict)
-
-    model_config = {"extra": "forbid"}
-
-
-class SemanticsSpec(BaseModel):
-    groups: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
@@ -143,20 +145,11 @@ class ExportSection(BaseModel):
 class NotebookSpec(BaseModel):
     id: str
     uses: str
-    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
-
-    model_config = {"populate_by_name": True, "extra": "forbid"}
-
-
-class NotebookDefaults(BaseModel):
-    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
 
     model_config = {"extra": "forbid"}
 
 
 class NotebookSection(BaseModel):
-    overrides: dict[str, Any] = Field(default_factory=dict)
-    defaults: NotebookDefaults = Field(default_factory=NotebookDefaults)
     specs: list[NotebookSpec] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
@@ -169,7 +162,6 @@ class ReaderSpec(BaseModel):
     plotting: PlottingSpec = Field(default_factory=PlottingSpec)
     resources: ResourcesSpec = Field(default_factory=ResourcesSpec)
     assay: AssaySpec = Field(default_factory=AssaySpec)
-    semantics: SemanticsSpec = Field(default_factory=SemanticsSpec)
     pipeline: PipelineSpec
     plots: PlotSection = Field(default_factory=PlotSection)
     exports: ExportSection = Field(default_factory=ExportSection)

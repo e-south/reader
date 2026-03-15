@@ -1,15 +1,6 @@
 schema: reader/v3
 experiment:
   title: biosensor_panel_M9_glu
-semantics:
-  groups:
-    design_id:
-      group_ab:
-      - Group A:
-        - g1
-        - g2
-      - Group B:
-        - g3
 pipeline:
   runtime:
     strict: true
@@ -106,8 +97,8 @@ plots:
       - CFP
       - YFP
       hue: treatment
-      group_on: design_id
-      pool_sets: design_id:group_ab
+      partition:
+        collection_ref: group_ab
       fig:
         rc:
           savefig_dpi: 300
@@ -146,11 +137,16 @@ notebooks:
   specs:
   - id: default
     uses: notebook/eda
-resources:
-  sample_map:
-    kind: file
-    path: ./inputs/metadata.xlsx
 assay:
+  collections:
+    group_ab:
+      column: design_id
+      items:
+        Group A:
+        - g1
+        - g2
+        Group B:
+        - g3
   orders:
     induction_stress_2x2:
       column: treatment

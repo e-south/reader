@@ -16,10 +16,10 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import Plugin, PluginConfig
+from reader.core.registry import PluginConfig
 from reader.core.semantics import resolve_logic_map_ref
 from reader.core.workbench import PluginSemantics
-from reader.plugins.plot._shared import save_rendered_figures
+from reader.plugins.plot._shared import FigurePlotPlugin
 
 
 class LogicSymCfg(PluginConfig):
@@ -37,7 +37,7 @@ class LogicSymCfg(PluginConfig):
     filename: str | None = None
 
 
-class LogicSymmetryPlot(Plugin):
+class LogicSymmetryPlot(FigurePlotPlugin):
     key = "logic_symmetry"
     category = "plot"
     semantics = PluginSemantics(
@@ -52,10 +52,6 @@ class LogicSymmetryPlot(Plugin):
     @classmethod
     def input_contracts(cls) -> Mapping[str, str]:
         return {"df": "plate_reader.annotated.v1"}
-
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
 
     def render(self, ctx, inputs, cfg: LogicSymCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
@@ -85,6 +81,3 @@ class LogicSymmetryPlot(Plugin):
         dpi = (cfg.output or {}).get("dpi", 300)
         base = cfg.filename or "logic_symmetry"
         return [PlotFigure(fig=result.fig, filename=base, ext=ext, dpi=dpi) for ext in formats]
-
-    def run(self, ctx, inputs, cfg: LogicSymCfg):
-        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

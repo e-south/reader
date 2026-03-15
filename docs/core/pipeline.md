@@ -39,9 +39,6 @@ paths:
 plotting:
   palette: "colorblind"       # optional default; string or null
 
-semantics:
-  groups: {}                   # optional generic plot grouping sets
-
 pipeline:
   presets: []                  # optional
   runtime: {}                  # optional (e.g., strict: true)
@@ -65,20 +62,18 @@ exports:
   specs: []                    # optional (unordered)
 
 notebooks:
-  defaults:
-    with: {}
-  overrides: {}
   specs:
     - id: "default"
       uses: "notebook/basic"   # optional default for `reader notebook`
 
 resources:
-  sample_map:
+  optional_extra_input:
     kind: file
-    path: "./inputs/metadata.xlsx"
+    path: "./inputs/custom.xlsx"
 
 assay:
-  labels: {}                   # optional reusable label maps for transform/alias
+  labels: {}                   # optional reusable label maps for transform/assay_labels
+  collections: {}              # optional reusable plot partitions for conditions/designs/treatments
   orders: {}                   # optional reusable categorical orders for plots
   logic_maps: {}               # optional reusable corner/state maps (for SFXI etc.)
 ```
@@ -87,6 +82,7 @@ Notes:
 
 - `paths.outputs` is resolved relative to the config file and stored as an absolute path.
 - `paths.plots`, `paths.exports`, and `paths.notebooks` must be relative to `paths.outputs`.
+- `paths.plots`, `paths.exports`, and `paths.notebooks` may not escape `paths.outputs` via `..`.
 - Omit `paths` entirely when you want the defaults shown above.
 - Omit `plotting.palette` when you want the default `colorblind` palette.
 - Omit `experiment` entirely when the directory name is the id you want and you do not need a custom title.
@@ -95,9 +91,9 @@ Notes:
 - `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
 - Step/spec ids must be unique across pipeline, plots, exports, and notebooks.
 - Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
-- `notebooks.specs` is declarative today: use `id`, `uses`, and keep `with` empty until notebook config semantics are implemented.
+- `notebooks.specs` is declarative-only in `reader/v3`: use `id` and `uses`.
 - Plot/export defaults apply after preset expansion and before per-id overrides.
-- `resources` is the canonical place for reusable external inputs such as `sample_map` or cytometer files; use `resource:<id>` in `reads` instead of repeating `file:./...` in multiple places.
+- `resource:sample_map` and `resource:metadata` are conventional handles that resolve to `./inputs/metadata.xlsx` and `./inputs/metadata.csv` without explicit `resources:` entries. Use `resources:` only for non-conventional external inputs.
 - `assay` is the canonical place for reusable experiment semantics. Keep resource handles under `resources:` and reusable meaning under `assay:` rather than hiding both inside free-form step config.
 - Internally, `reader` materializes all three sections into one shared
   `WorkbenchSpec` model before planning, validation, runtime execution, and CLI
@@ -163,13 +159,13 @@ names to the ingest step’s `auto_exclude` list.
 
 **Resources**
 
-Use `resources` for files that multiple steps or presets need:
+Use `resources` only when you need a non-conventional external input:
 
 ```yaml
 resources:
-  sample_map:
+  custom_map:
     kind: file
-    path: "./inputs/metadata.xlsx"
+    path: "./inputs/custom_map.xlsx"
 
 pipeline:
   steps:
@@ -177,12 +173,20 @@ pipeline:
       uses: merge/sample_map
       reads:
         df: ingest/df
-        sample_map: resource:sample_map
+        sample_map: resource:custom_map
+```
+
+The conventional handles below do not need declarations:
+
+```yaml
+reads:
+  sample_map: resource:sample_map   # ./inputs/metadata.xlsx
+  metadata: resource:metadata       # ./inputs/metadata.csv
 ```
 
 **Assay labels**
 
-The `transform/alias` plugin now resolves reusable label maps from `assay.labels` via `refs`:
+The `transform/assay_labels` plugin materializes reusable label maps from `assay.labels`. By default it applies every defined label:
 
 ```yaml
 assay:
@@ -202,13 +206,11 @@ assay:
 pipeline:
   steps:
     - id: labels
-      uses: transform/alias
+      uses: transform/assay_labels
       reads: { df: "final/df" }
-      with:
-        refs: ["design_id", "treatment"]
 ```
 
-One alias step can apply multiple reusable label refs. Keep one `labels` step unless there is a concrete need to split the transformations.
+If you only want a subset, pass `with.refs`. Keep one `labels` step unless there is a concrete need to split the transformations.
 
 **Assay orders**
 
@@ -267,7 +269,34 @@ pipeline:
         logic_map_ref: induction_logic
 ```
 
-Use `semantics.groups` only for generic plotting groups that are not assay-specific, such as “Group A/Group B” slices reused across multiple plot types.
+**Assay collections**
+
+Grouped plot plugins (`plot/time_series`, `plot/distributions`, `plot/ts_and_snap`, `plot/snapshot_barplot`) now use an explicit `partition` block plus reusable `assay.collections` when you want experiment-specific plot composition:
+
+```yaml
+assay:
+  collections:
+    group_ab:
+      column: design_id
+      items:
+        Group A: ["g1", "g2"]
+        Group B: ["g3"]
+
+plots:
+  specs:
+    - id: plot_ts
+      uses: plot/time_series
+      with:
+        partition:
+          collection_ref: group_ab
+        hue: treatment
+        y: ["OD600", "YFP"]
+```
+
+- `partition.by` groups one figure/panel per distinct value of a column.
+- `partition.collection_ref` reuses a named assay collection with labeled subsets.
+- `partition.match` controls membership matching (`exact`, `contains`, `startswith`, `endswith`, `regex`).
+- `partition.collection_ref` fails fast if the named collection is missing or targets a different column than `partition.by`.
 
 ---
 
@@ -280,18 +309,6 @@ experiment:
   id: "20250512_panel_M9_glu"       # optional if the directory name already matches
   title: "Cell line panel — M9"     # optional display name
 
-semantics:
-  groups:
-    genotype:                       # grouping name used by plots
-      group_ab:
-        - {"Group A": ["g1", "g2"]} # label -> members
-        - {"Group B": ["g3"]}
-
-resources:
-  sample_map:
-    kind: file
-    path: "./inputs/metadata.xlsx"
-
 assay:
   labels:
     design_id:
@@ -299,6 +316,12 @@ assay:
       output: design_id_alias
       values:
         ctrl: control               # rename raw labels once
+  collections:
+    group_ab:
+      column: design_id_alias
+      items:
+        Group A: ["control", "g1"]
+        Group B: ["g2"]
   orders:
     induction_stress_2x2:
       column: treatment
@@ -331,10 +354,8 @@ pipeline:
       # runtime promotion path when the plugin advertises it.
 
     - id: labels
-      uses: transform/alias
+      uses: transform/assay_labels
       reads: { df: "merge_map/df" }
-      with:
-        refs: ["design_id"]
 
     - id: ratio_yfp_od600
       uses: transform/ratio
@@ -355,6 +376,8 @@ plots:
         x: time                     # x-axis column
         y: ["OD600", "YFP"]         # y-series
         hue: treatment              # color by treatment
+        partition:
+          collection_ref: group_ab  # reusable labeled plot partition
 
     - id: heatmap
       uses: plot/snapshot_heatmap

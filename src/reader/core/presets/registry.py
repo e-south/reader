@@ -19,10 +19,25 @@ from .plate_reader import PLATE_READER_PRESETS
 from .plots import PLOT_PRESETS
 from .sfxi import SFXI_PRESETS
 
-PRESETS: dict[str, dict[str, Any]] = {}
-PRESETS.update(PLATE_READER_PRESETS)
-PRESETS.update(SFXI_PRESETS)
-PRESETS.update(PLOT_PRESETS)
+
+def _build_preset_registry(*sources: tuple[str, dict[str, dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    registry: dict[str, dict[str, Any]] = {}
+    owners: dict[str, str] = {}
+    for owner, source in sources:
+        for name, info in source.items():
+            previous = owners.get(name)
+            if previous is not None:
+                raise ConfigError(f"Duplicate preset {name!r} declared in both {previous} and {owner}.")
+            registry[name] = info
+            owners[name] = owner
+    return registry
+
+
+PRESETS: dict[str, dict[str, Any]] = _build_preset_registry(
+    ("plate_reader", PLATE_READER_PRESETS),
+    ("sfxi", SFXI_PRESETS),
+    ("plots", PLOT_PRESETS),
+)
 
 
 def infer_category(steps: list[dict[str, Any]]) -> str:

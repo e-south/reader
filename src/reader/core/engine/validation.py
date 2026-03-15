@@ -12,7 +12,7 @@ from reader.core.errors import ConfigError, ExecutionError
 from reader.core.mpl import ensure_mpl_cache_dir
 from reader.core.notebooks import resolve_notebook_template_descriptor
 from reader.core.registry import load_entry_points
-from reader.core.semantics import resolve_assay_order_arg, resolve_logic_map_ref, resolve_pool_sets_arg
+from reader.core.semantics import resolve_assay_order_arg, resolve_logic_map_ref, resolve_plot_partition
 from reader.core.workbench import ensure_unique_workbench_ids, resolve_workbench
 
 from ._shared import collect_categories
@@ -71,23 +71,14 @@ def _validate_step_config(*, label: str, step: Any, plugin_cls: Any) -> None:
         raise ConfigError(f"{label} {step.id}: invalid config for {step.uses}: {err}") from err
 
 
-def _validate_plot_semantic_refs(*, step: Any, groups: dict[str, Any], assay: dict[str, Any]) -> None:
+def _validate_plot_semantic_refs(*, step: Any, assay: dict[str, Any]) -> None:
     with_block = step.with_ or {}
-    group_on = with_block.get("group_on")
-    if group_on is not None and not isinstance(group_on, str):
-        raise ConfigError(f"plot {step.id}: group_on must be a string when used with semantic references.")
-
-    pool_sets = with_block.get("pool_sets")
-    if pool_sets is not None:
+    partition = with_block.get("partition")
+    if partition is not None:
         try:
-            resolve_pool_sets_arg(
-                pool_sets=pool_sets,
-                group_on=group_on,
-                groups=groups,
-                allow_reference_lists=(step.uses == "plot/distributions"),
-            )
+            resolve_plot_partition(partition=partition, assay=assay)
         except Exception as err:
-            raise ConfigError(f"plot {step.id}: invalid pool_sets semantic reference: {err}") from err
+            raise ConfigError(f"plot {step.id}: invalid plot partition: {err}") from err
 
     x_column = with_block.get("x")
     y_column = with_block.get("y")
@@ -159,7 +150,6 @@ def _validate_specs(
     label: str,
     registry: Any,
     available_labels: set[str],
-    groups: dict[str, Any] | None = None,
     assay: dict[str, Any] | None = None,
 ) -> None:
     for spec_item in items:
@@ -173,7 +163,6 @@ def _validate_specs(
         if label == "plot":
             _validate_plot_semantic_refs(
                 step=spec_item,
-                groups=dict(groups or {}),
                 assay=dict(assay or {}),
             )
         data_outputs = {key: value for key, value in plugin_cls.output_contracts().items() if value != "none"}
@@ -190,11 +179,6 @@ def _validate_notebook_specs(items: list[Any]) -> None:
             raise ConfigError(f"notebook {spec_item.id}: notebook specs must not declare reads.")
         if spec_item.writes:
             raise ConfigError(f"notebook {spec_item.id}: notebook specs must not declare writes.")
-        if spec_item.with_:
-            raise ConfigError(
-                f"notebook {spec_item.id}: with is not supported yet for notebook specs. "
-                "Keep notebooks.specs entries declarative until notebook config semantics are implemented."
-            )
         resolve_notebook_template_descriptor(spec_item.uses)
 
 
@@ -213,6 +197,7 @@ def validate(spec: ReaderSpec, *, console: Console, check_files: bool = False, e
     assay = {
         "labels": dict(spec.assay.labels or {}),
         "orders": dict(spec.assay.orders or {}),
+        "collections": dict(spec.assay.collections or {}),
         "logic_maps": dict(spec.assay.logic_maps or {}),
     }
     pipeline_labels = _validate_pipeline_steps(pipeline_steps, registry=registry, assay=assay)
@@ -224,7 +209,6 @@ def validate(spec: ReaderSpec, *, console: Console, check_files: bool = False, e
             label="plot",
             registry=registry,
             available_labels=pipeline_labels,
-            groups=dict(spec.semantics.groups or {}),
             assay=assay,
         )
     if export_specs:

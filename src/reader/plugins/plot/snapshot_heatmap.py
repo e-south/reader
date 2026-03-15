@@ -16,11 +16,11 @@ import pandas as pd
 from pydantic import Field, model_validator
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import Plugin, PluginConfig
+from reader.core.registry import PluginConfig
 from reader.core.semantics import resolve_assay_order_arg
 from reader.core.workbench import PluginSemantics
 from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
-from reader.plugins.plot._shared import save_rendered_figures
+from reader.plugins.plot._shared import FigurePlotPlugin
 
 
 class HeatmapCfg(PluginConfig):
@@ -49,7 +49,7 @@ class HeatmapCfg(PluginConfig):
         return self
 
 
-class SnapshotHeatmapPlot(Plugin):
+class SnapshotHeatmapPlot(FigurePlotPlugin):
     key = "snapshot_heatmap"
     category = "plot"
     semantics = PluginSemantics(
@@ -67,10 +67,6 @@ class SnapshotHeatmapPlot(Plugin):
         # - df? : tidy.v1    (OD600, YFP, YFP/OD600, YFP/CFP, …)
         # - fc? : fold_change.v1  (FC/log2FC for specific targets like YFP/CFP)
         return {"df?": "tidy.v1", "fc?": "fold_change.v1"}
-
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
 
     def render(self, ctx, inputs, cfg: HeatmapCfg) -> list[PlotFigure]:
         df_in: pd.DataFrame | None = inputs.get("df")
@@ -111,6 +107,3 @@ class SnapshotHeatmapPlot(Plugin):
             fig_kwargs=fig_kwargs,
             filename=filename,
         )
-
-    def run(self, ctx, inputs, cfg: HeatmapCfg):
-        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

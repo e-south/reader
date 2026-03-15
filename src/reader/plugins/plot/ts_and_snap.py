@@ -18,17 +18,14 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.semantics import resolve_pool_sets_arg
+from reader.core.registry import PluginConfig
 from reader.core.workbench import PluginSemantics
-from reader.plugins.plot._shared import save_rendered_figures
+from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
 
 
 class TSAndSnapCfg(PluginConfig):
     # grouping
-    group_on: str | None = None
-    pool_sets: str | list[dict[str, list[str]]] | None = None
-    pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
+    partition: PlotPartitionCfg = Field(default_factory=PlotPartitionCfg)
 
     # time series (left)
     ts_x: str = "time"
@@ -61,7 +58,7 @@ class TSAndSnapCfg(PluginConfig):
     filename: str | None = None
 
 
-class TSAndSnapPlot(Plugin):
+class TSAndSnapPlot(FigurePlotPlugin):
     key = "ts_and_snap"
     category = "plot"
     semantics = PluginSemantics(
@@ -77,22 +74,18 @@ class TSAndSnapPlot(Plugin):
     def input_contracts(cls) -> Mapping[str, str]:
         return {"df": "tidy.v1"}  # blanks not required here
 
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
-
     def render(self, ctx, inputs, cfg: TSAndSnapCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         from reader.lib.microplates.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
 
-        resolved_pools = resolve_pool_sets_arg(pool_sets=cfg.pool_sets, group_on=cfg.group_on, groups=ctx.groups)
+        partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 
         return plot_ts_and_snap(
             df=df,
             output_dir=None,
-            group_on=cfg.group_on,
-            pool_sets=resolved_pools,
-            pool_match=cfg.pool_match,
+            group_on=partition.group_by,
+            pool_sets=partition.collection_items,
+            pool_match=partition.match,
             # ts (left)
             ts_x=cfg.ts_x,
             ts_channel=cfg.ts_channel,
@@ -122,6 +115,3 @@ class TSAndSnapPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-
-    def run(self, ctx, inputs, cfg: TSAndSnapCfg):
-        return save_rendered_figures(ctx=ctx, figures=self.render(ctx, inputs, cfg), plot_key=self.key)

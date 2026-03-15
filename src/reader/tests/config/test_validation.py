@@ -108,11 +108,11 @@ def test_load_rejects_removed_data_section(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
-def test_load_rejects_semantics_groupings_key(tmp_path: Path) -> None:
+def test_load_rejects_legacy_semantics_section(tmp_path: Path) -> None:
     data = _base_config()
-    data["semantics"] = {"groupings": {}}
+    data["semantics"] = {"groups": {"design_id": {"singletons": [{"A": ["a"]}]}}}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="semantics.groups"):
+    with pytest.raises(ConfigError, match="Unsupported legacy/removed"):
         ReaderSpec.load(path)
 
 
@@ -120,7 +120,7 @@ def test_load_rejects_legacy_semantics_orderings(tmp_path: Path) -> None:
     data = _base_config()
     data["semantics"] = {"orderings": {"treatment": "bad"}}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="assay.orders"):
+    with pytest.raises(ConfigError, match="Unsupported legacy/removed"):
         ReaderSpec.load(path)
 
 
@@ -131,6 +131,28 @@ def test_load_normalizes_assay_orders_to_string_lists(tmp_path: Path) -> None:
     spec = ReaderSpec.load(path)
     assert spec.assay.orders["states"].column == "treatment_alias"
     assert spec.assay.orders["states"].values == ["A", "2", "True"]
+
+
+def test_load_normalizes_assay_collections_to_string_lists(tmp_path: Path) -> None:
+    data = _base_config()
+    data["assay"] = {
+        "collections": {
+            "group_ab": {
+                "column": "design_id",
+                "items": {
+                    "Group A": ["g1", 2],
+                    "Group B": [True],
+                },
+            }
+        }
+    }
+    path = write_config(tmp_path, data)
+    spec = ReaderSpec.load(path)
+    assert spec.assay.collections["group_ab"].column == "design_id"
+    assert spec.assay.collections["group_ab"].items == {
+        "Group A": ["g1", "2"],
+        "Group B": ["True"],
+    }
 
 
 def test_load_normalizes_resource_paths(tmp_path: Path) -> None:
@@ -158,6 +180,25 @@ def test_load_rejects_exports_steps(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_load_rejects_notebook_defaults(tmp_path: Path) -> None:
+    data = _base_config()
+    data["notebooks"] = {"defaults": {"with": {"theme": "x"}}, "specs": [{"id": "default", "uses": "notebook/eda"}]}
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="notebooks only supports specs"):
+        ReaderSpec.load(path)
+
+
+def test_load_rejects_notebook_overrides(tmp_path: Path) -> None:
+    data = _base_config()
+    data["notebooks"] = {
+        "overrides": {"default": {"uses": "notebook/basic"}},
+        "specs": [{"id": "default", "uses": "notebook/eda"}],
+    }
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="notebooks only supports specs"):
+        ReaderSpec.load(path)
+
+
 def test_load_requires_pipeline_steps_key(tmp_path: Path) -> None:
     data = _base_config()
     data["pipeline"].pop("steps")
@@ -172,6 +213,24 @@ def test_load_rejects_absolute_subdirs(tmp_path: Path) -> None:
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError):
         ReaderSpec.load(path)
+
+
+def test_load_rejects_subdirs_that_escape_outputs(tmp_path: Path) -> None:
+    data = _base_config()
+    data["paths"]["notebooks"] = "../notebooks"
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="may not escape via '\\.\\.'"):
+        ReaderSpec.load(path)
+
+
+def test_load_normalizes_outputs_relative_subdirs(tmp_path: Path) -> None:
+    data = _base_config()
+    data["paths"]["plots"] = "plots/../figures"
+    path = write_config(tmp_path, data)
+
+    spec = ReaderSpec.load(path)
+
+    assert spec.paths.plots == "figures"
 
 
 def test_workbench_resolves_file_reads_absolute_paths(tmp_path: Path) -> None:
@@ -199,6 +258,36 @@ def test_workbench_resolves_resource_reads_to_files(tmp_path: Path) -> None:
     path = write_config(exp_dir, data)
     spec = ReaderSpec.load(path)
     assert resolve_workbench(spec).pipeline[0].reads["sample_map"] == f"file:{data_path.resolve()}"
+
+
+def test_workbench_resolves_conventional_sample_map_resource(tmp_path: Path) -> None:
+    exp_dir = tmp_path / "exp"
+    inputs = exp_dir / "inputs"
+    inputs.mkdir(parents=True)
+    data_path = inputs / "metadata.xlsx"
+    data_path.write_text("stub", encoding="utf-8")
+    data = _base_config()
+    data["pipeline"]["steps"] = [
+        {"id": "merge", "uses": "merge/sample_map", "reads": {"df": "raw/df", "sample_map": "resource:sample_map"}}
+    ]
+    path = write_config(exp_dir, data)
+    spec = ReaderSpec.load(path)
+    assert resolve_workbench(spec).pipeline[0].reads["sample_map"] == f"file:{data_path.resolve()}"
+
+
+def test_workbench_resolves_conventional_metadata_resource(tmp_path: Path) -> None:
+    exp_dir = tmp_path / "exp"
+    inputs = exp_dir / "inputs"
+    inputs.mkdir(parents=True)
+    data_path = inputs / "metadata.csv"
+    data_path.write_text("stub", encoding="utf-8")
+    data = _base_config()
+    data["pipeline"]["steps"] = [
+        {"id": "merge", "uses": "merge/sample_metadata", "reads": {"df": "raw/df", "metadata": "resource:metadata"}}
+    ]
+    path = write_config(exp_dir, data)
+    spec = ReaderSpec.load(path)
+    assert resolve_workbench(spec).pipeline[0].reads["metadata"] == f"file:{data_path.resolve()}"
 
 
 def test_validate_rejects_unexpected_reads(tmp_path: Path) -> None:
@@ -307,10 +396,93 @@ def test_plot_presets_expand_dual_reporter_screen_core(tmp_path: Path) -> None:
     ]
 
 
-def test_validate_rejects_notebook_with_config_until_semantics_exist(tmp_path: Path) -> None:
+def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:
+    data = _base_config()
+    data["pipeline"]["steps"] = [{"id": "ingest", "uses": "ingest/synergy_h1", "writes": {"df": "raw/df"}}]
+    data["plots"] = {
+        "defaults": {"reads": {"df": "raw/df"}},
+        "specs": [
+            {
+                "id": "plot_time_series",
+                "uses": "plot/time_series",
+                "with": {
+                    "partition": {"collection_ref": "group_ab"},
+                    "hue": "treatment",
+                    "y": ["OD600"],
+                },
+            }
+        ],
+    }
+    data["assay"] = {
+        "collections": {
+            "group_ab": {
+                "column": "design_id",
+                "items": {"Group A": ["g1", "g2"], "Group B": ["g3"]},
+            }
+        }
+    }
+    path = write_config(tmp_path, data)
+    spec = ReaderSpec.load(path)
+    validate_job(spec, console=Console())
+
+
+def test_validate_rejects_unknown_partition_collection_ref(tmp_path: Path) -> None:
+    data = _base_config()
+    data["pipeline"]["steps"] = [{"id": "ingest", "uses": "ingest/synergy_h1", "writes": {"df": "raw/df"}}]
+    data["plots"] = {
+        "defaults": {"reads": {"df": "raw/df"}},
+        "specs": [
+            {
+                "id": "plot_time_series",
+                "uses": "plot/time_series",
+                "with": {
+                    "partition": {"collection_ref": "missing"},
+                    "hue": "treatment",
+                    "y": ["OD600"],
+                },
+            }
+        ],
+    }
+    path = write_config(tmp_path, data)
+    spec = ReaderSpec.load(path)
+    with pytest.raises(ConfigError, match="collection_ref"):
+        validate_job(spec, console=Console())
+
+
+def test_validate_rejects_partition_collection_column_mismatch(tmp_path: Path) -> None:
+    data = _base_config()
+    data["pipeline"]["steps"] = [{"id": "ingest", "uses": "ingest/synergy_h1", "writes": {"df": "raw/df"}}]
+    data["plots"] = {
+        "defaults": {"reads": {"df": "raw/df"}},
+        "specs": [
+            {
+                "id": "plot_time_series",
+                "uses": "plot/time_series",
+                "with": {
+                    "partition": {"by": "design_id_alias", "collection_ref": "group_ab"},
+                    "hue": "treatment",
+                    "y": ["OD600"],
+                },
+            }
+        ],
+    }
+    data["assay"] = {
+        "collections": {
+            "group_ab": {
+                "column": "design_id",
+                "items": {"Group A": ["g1"]},
+            }
+        }
+    }
+    path = write_config(tmp_path, data)
+    spec = ReaderSpec.load(path)
+    with pytest.raises(ConfigError, match="partition.collection_ref"):
+        validate_job(spec, console=Console())
+
+
+def test_load_rejects_notebook_with_config(tmp_path: Path) -> None:
     data = _base_config()
     data["notebooks"] = {"specs": [{"id": "eda", "uses": "notebook/eda", "with": {"theme": "lab"}}]}
     path = write_config(tmp_path, data)
-    spec = ReaderSpec.load(path)
-    with pytest.raises(ConfigError, match="notebook specs"):
-        validate_job(spec, console=Console())
+    with pytest.raises(ConfigError, match="notebooks.specs.0.with"):
+        ReaderSpec.load(path)

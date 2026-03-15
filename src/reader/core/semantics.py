@@ -1,49 +1,95 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 
-def resolve_pool_sets_arg(
+@dataclass(frozen=True)
+class ResolvedPlotPartition:
+    group_by: str | None
+    collection_items: list[dict[str, list[str]]] | None
+    match: str
+
+
+def resolve_assay_collection_ref(
     *,
-    pool_sets: str | list[str] | list[dict[str, list[str]]] | None,
-    group_on: str | None,
-    groups: dict[str, Any] | None,
-    allow_reference_lists: bool = False,
-) -> list[dict[str, list[str]]] | None:
-    if pool_sets is None:
-        return None
-    if isinstance(pool_sets, list) and (not pool_sets or isinstance(pool_sets[0], dict)):
-        return pool_sets  # type: ignore[return-value]
+    ref: str,
+    assay: dict[str, Any] | None,
+) -> dict[str, Any]:
+    collections = (assay or {}).get("collections") or {}
+    collection_ref = str(ref).strip()
+    if not collection_ref:
+        raise ValueError("collection_ref must be a non-empty string")
+    spec = collections.get(collection_ref)
+    if spec is None:
+        options = ", ".join(sorted(collections)) if isinstance(collections, dict) else "—"
+        raise ValueError(
+            f"Unknown collection_ref '{collection_ref}'. "
+            f"Define it under assay.collections.{collection_ref}. (available: {options})"
+        )
+    if hasattr(spec, "model_dump"):
+        spec = spec.model_dump()
+    if not isinstance(spec, dict):
+        raise ValueError(f"assay.collections.{collection_ref} must resolve to a mapping")
+    column = spec.get("column")
+    if not isinstance(column, str) or not column.strip():
+        raise ValueError(f"assay.collections.{collection_ref}.column must be a non-empty string")
+    items = spec.get("items")
+    if not isinstance(items, dict) or not items:
+        raise ValueError(f"assay.collections.{collection_ref}.items must be a non-empty mapping")
 
-    refs: list[str]
-    if isinstance(pool_sets, str):
-        refs = [pool_sets]
-    elif isinstance(pool_sets, list) and allow_reference_lists:
-        refs = [str(item) for item in pool_sets]
-    else:
-        raise ValueError("pool_sets must be a list[dict] or '<column>:<set>' reference")
+    normalized_items: list[dict[str, list[str]]] = []
+    for label, values in items.items():
+        if not isinstance(values, list) or not values:
+            raise ValueError(f"assay.collections.{collection_ref}.items.{label} must be a non-empty list")
+        normalized_items.append({str(label): [str(value) for value in values]})
 
-    resolved: list[dict[str, list[str]]] = []
-    for ref in refs:
-        if ":" in ref:
-            column, set_name = [segment.strip() for segment in ref.split(":", 1)]
-        else:
-            if not group_on:
-                raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
-            column, set_name = str(group_on), ref.strip()
-        category = (groups or {}).get(column)
-        if not isinstance(category, dict) or set_name not in category:
-            options = ", ".join(sorted((category or {}).keys())) if isinstance(category, dict) else "—"
-            raise ValueError(
-                f"Unknown pool_sets reference '{ref}'. "
-                f"Define it under semantics.groups.{column}.{set_name} in config. "
-                f"(available for {column!r}: {options})"
-            )
-        sets_list = category[set_name]
-        if not isinstance(sets_list, list):
-            raise ValueError(f"semantics.groups.{column}.{set_name} must be a list of single-key dict objects")
-        resolved.extend(sets_list)
-    return resolved
+    return {"column": str(column), "items": normalized_items}
+
+
+def resolve_plot_partition(
+    *,
+    partition: dict[str, Any] | Any | None,
+    assay: dict[str, Any] | None,
+) -> ResolvedPlotPartition:
+    if partition is None:
+        return ResolvedPlotPartition(group_by=None, collection_items=None, match="exact")
+
+    if hasattr(partition, "model_dump"):
+        partition = partition.model_dump()
+    if not isinstance(partition, dict):
+        raise ValueError("partition must resolve to a mapping")
+
+    group_by_raw = partition.get("by")
+    if group_by_raw is not None and (not isinstance(group_by_raw, str) or not group_by_raw.strip()):
+        raise ValueError("partition.by must be a non-empty string when provided")
+    group_by = str(group_by_raw).strip() if isinstance(group_by_raw, str) else None
+
+    collection_ref_raw = partition.get("collection_ref")
+    if collection_ref_raw is not None and (not isinstance(collection_ref_raw, str) or not collection_ref_raw.strip()):
+        raise ValueError("partition.collection_ref must be a non-empty string when provided")
+    collection_ref = str(collection_ref_raw).strip() if isinstance(collection_ref_raw, str) else None
+
+    match = partition.get("match", "exact")
+    valid_match = {"exact", "contains", "startswith", "endswith", "regex"}
+    if not isinstance(match, str) or match not in valid_match:
+        raise ValueError(f"partition.match must be one of {sorted(valid_match)}")
+
+    if collection_ref is None:
+        return ResolvedPlotPartition(group_by=group_by, collection_items=None, match=match)
+
+    collection = resolve_assay_collection_ref(ref=collection_ref, assay=assay)
+    collection_column = collection["column"]
+    if group_by is not None and group_by != collection_column:
+        raise ValueError(
+            f"partition.collection_ref '{collection_ref}' targets column {collection_column!r}, "
+            f"but partition.by uses column {group_by!r}"
+        )
+    return ResolvedPlotPartition(
+        group_by=collection_column,
+        collection_items=collection["items"],
+        match=match,
+    )
 
 
 def resolve_assay_label_refs(

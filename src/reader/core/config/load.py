@@ -33,6 +33,7 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         "deliverable_overrides",
         "notebook",
         "data",
+        "semantics",
     }
     removed_experiment_keys = {"name", "outputs", "plots_dir", "palette"}
     illegal = sorted(key for key in removed_top_level_keys if key in data)
@@ -72,15 +73,6 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
     data.setdefault("assay", {})
     if not isinstance(data["assay"], dict):
         raise ConfigError("assay must be a mapping")
-    data.setdefault("semantics", {})
-    if not isinstance(data["semantics"], dict):
-        raise ConfigError("semantics must be a mapping")
-    if "groupings" in data["semantics"]:
-        raise ConfigError("semantics.groupings is not supported in reader/v3. Use semantics.groups.")
-    if "aliases" in data["semantics"]:
-        raise ConfigError("semantics.aliases is not supported in reader/v3. Use assay.labels.")
-    if "orderings" in data["semantics"]:
-        raise ConfigError("semantics.orderings is not supported in reader/v3. Use assay.orders.")
     data.setdefault("plots", {})
     if not isinstance(data["plots"], dict):
         raise ConfigError("plots must be a mapping")
@@ -96,6 +88,11 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         raise ConfigError("exports.steps is not supported in reader/v3. Use exports.specs.")
     if "steps" in data["notebooks"]:
         raise ConfigError("notebooks.steps is not supported in reader/v3. Use notebooks.specs.")
+    notebook_removed = sorted(key for key in ("defaults", "overrides") if key in data["notebooks"])
+    if notebook_removed:
+        raise ConfigError(
+            f"notebooks only supports specs in reader/v3. Remove notebooks.{', notebooks.'.join(notebook_removed)}."
+        )
 
     for section in ("plots", "exports"):
         defaults = data[section].get("defaults", {}) or {}
@@ -112,18 +109,6 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         if not isinstance(overrides, dict):
             raise ConfigError(f"{section}.overrides must be a mapping of id -> overrides")
         data[section]["overrides"] = overrides
-
-    notebook_defaults = data["notebooks"].get("defaults", {}) or {}
-    if not isinstance(notebook_defaults, dict):
-        raise ConfigError("notebooks.defaults must be a mapping")
-    notebook_with_default = notebook_defaults.get("with", {}) or {}
-    if not isinstance(notebook_with_default, dict):
-        raise ConfigError("notebooks.defaults.with must be a mapping")
-    data["notebooks"]["defaults"] = {"with": notebook_with_default}
-    notebook_overrides = data["notebooks"].get("overrides", {}) or {}
-    if not isinstance(notebook_overrides, dict):
-        raise ConfigError("notebooks.overrides must be a mapping of id -> overrides")
-    data["notebooks"]["overrides"] = notebook_overrides
 
     outputs_raw = data["paths"].get("outputs", "./outputs")
     if not isinstance(outputs_raw, str) or not outputs_raw.strip():
@@ -142,8 +127,15 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
             raise ConfigError(f"paths.{key} must be a string subdirectory (use '.' to flatten).")
         if not isinstance(value, str):
             raise ConfigError(f"paths.{key} must be a string subdirectory")
-        if Path(value).is_absolute():
+        subdir = Path(value)
+        if subdir.is_absolute():
             raise ConfigError(f"paths.{key} must be relative to paths.outputs, not absolute.")
+        resolved_subdir = (outputs_path / subdir).resolve()
+        try:
+            normalized_subdir = resolved_subdir.relative_to(outputs_path)
+        except ValueError as exc:
+            raise ConfigError(f"paths.{key} must stay under paths.outputs and may not escape via '..'.") from exc
+        data["paths"][key] = str(normalized_subdir)
 
     palette_raw = data["plotting"].get("palette", None)
     if palette_raw is not None and (not isinstance(palette_raw, str) or not palette_raw.strip()):
@@ -205,6 +197,29 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
             raise ConfigError(f"assay.orders.{order_id}.values must not be empty")
         normalized_orders[str(order_id)] = {"column": column, "values": [str(item) for item in values]}
 
+    collections_raw = assay_raw.get("collections", {}) or {}
+    if not isinstance(collections_raw, dict):
+        raise ConfigError("assay.collections must be a mapping")
+    normalized_collections: dict[str, dict[str, Any]] = {}
+    for collection_id, collection_spec in collections_raw.items():
+        if not isinstance(collection_spec, dict):
+            raise ConfigError(f"assay.collections.{collection_id} must be a mapping")
+        column = collection_spec.get("column")
+        if not isinstance(column, str) or not column.strip():
+            raise ConfigError(f"assay.collections.{collection_id}.column must be a non-empty string")
+        items = collection_spec.get("items")
+        if not isinstance(items, dict) or not items:
+            raise ConfigError(f"assay.collections.{collection_id}.items must be a non-empty mapping")
+        normalized_items: dict[str, list[str]] = {}
+        for label, values in items.items():
+            if not isinstance(values, list) or not values:
+                raise ConfigError(f"assay.collections.{collection_id}.items.{label} must be a non-empty list")
+            normalized_items[str(label)] = [str(item) for item in values]
+        normalized_collections[str(collection_id)] = {
+            "column": column,
+            "items": normalized_items,
+        }
+
     logic_maps_raw = assay_raw.get("logic_maps", {}) or {}
     if not isinstance(logic_maps_raw, dict):
         raise ConfigError("assay.logic_maps must be a mapping")
@@ -234,13 +249,9 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
     data["assay"] = {
         "labels": normalized_labels,
         "orders": normalized_orders,
+        "collections": normalized_collections,
         "logic_maps": normalized_logic_maps,
     }
-
-    groups_raw = data["semantics"].get("groups", {}) or {}
-    if not isinstance(groups_raw, dict):
-        raise ConfigError("semantics.groups must be a mapping")
-    data["semantics"]["groups"] = groups_raw
 
     runtime_raw = data["pipeline"].get("runtime", {}) or {}
     if not isinstance(runtime_raw, dict):

@@ -299,36 +299,15 @@ def _resolve_specs(
 
 def _resolve_notebook_specs(spec: ReaderSpec) -> list[WorkbenchSpec]:
     semantics = get_workbench_spec_semantics("notebook")
-    default_with = spec.notebooks.defaults.with_ or {}
-    if not isinstance(default_with, dict):
-        raise ConfigError(f"{semantics.section}.defaults.with must be a mapping")
-
     raw_specs = [entry.model_dump(by_alias=True) for entry in (spec.notebooks.specs or [])]
     if not raw_specs:
         return []
-
-    overrides = spec.notebooks.overrides or {}
-    if not isinstance(overrides, dict):
-        raise ConfigError(f"{semantics.section}.overrides must be a mapping of id -> overrides")
-
-    ids = {entry.get("id") for entry in raw_specs}
-    unknown = sorted(set(overrides) - ids)
-    if unknown:
-        raise ConfigError(
-            f"{semantics.section}.overrides reference unknown id(s): {unknown}. "
-            "Check configured notebook ids or remove stale overrides."
-        )
 
     finalized: list[dict[str, Any]] = []
     for entry in raw_specs:
         step_id = entry.get("id")
         if not step_id or not isinstance(step_id, str):
             raise ConfigError(f"Every {semantics.section} spec must include an id.")
-        if step_id in overrides:
-            merged = _deep_merge(entry, overrides[step_id])
-            if merged.get("id") != step_id:
-                raise ConfigError(f"{semantics.section}.overrides for '{step_id}' cannot change the id.")
-            entry = merged
         uses = entry.get("uses")
         if not uses or not isinstance(uses, str):
             raise ConfigError(f"{semantics.section} {step_id}: uses must be a non-empty string")
@@ -338,10 +317,7 @@ def _resolve_notebook_specs(spec: ReaderSpec) -> list[WorkbenchSpec]:
             raise ConfigError(f"{semantics.section} {step_id}: uses must be {semantics.uses_category}/*")
         descriptor = resolve_notebook_template_descriptor(uses)
         uses = descriptor.uses
-        with_block = entry.get("with") or {}
-        if not isinstance(with_block, dict):
-            raise ConfigError(f"{semantics.section} {step_id}: with must be a mapping")
-        finalized.append({"id": step_id, "uses": uses, "with": {**default_with, **with_block}})
+        finalized.append({"id": step_id, "uses": uses})
 
     seen: set[str] = set()
     resolved: list[WorkbenchSpec] = []
@@ -355,7 +331,6 @@ def _resolve_notebook_specs(spec: ReaderSpec) -> list[WorkbenchSpec]:
                 kind="notebook",
                 id=step_id,
                 uses=entry["uses"],
-                with_=dict(entry.get("with") or {}),
             )
         )
     return resolved
@@ -370,6 +345,7 @@ def _normalize_external_reads(
     resources: dict[str, Any],
 ) -> dict[str, str]:
     normalized: dict[str, str] = {}
+    conventional_resources = _conventional_resource_paths(root)
     for key, value in reads.items():
         if isinstance(value, str) and value.startswith("file:"):
             raw = value.split("file:", 1)[1].strip()
@@ -383,7 +359,7 @@ def _normalize_external_reads(
             resource_id = value.split("resource:", 1)[1].strip()
             if not resource_id:
                 raise ConfigError(f"{section} {step_id}: reads '{key}' uses an empty resource: ref.")
-            resource = resources.get(resource_id)
+            resource = resources.get(resource_id) or conventional_resources.get(resource_id)
             if resource is None:
                 raise ConfigError(f"{section} {step_id}: reads '{key}' references unknown resource '{resource_id}'.")
             if hasattr(resource, "model_dump"):
@@ -398,6 +374,14 @@ def _normalize_external_reads(
             continue
         normalized[key] = value
     return normalized
+
+
+def _conventional_resource_paths(root: Path) -> dict[str, dict[str, str]]:
+    inputs = root / "inputs"
+    return {
+        "sample_map": {"kind": "file", "path": str((inputs / "metadata.xlsx").resolve())},
+        "metadata": {"kind": "file", "path": str((inputs / "metadata.csv").resolve())},
+    }
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

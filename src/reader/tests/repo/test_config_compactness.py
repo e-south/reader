@@ -17,14 +17,26 @@ DEFAULT_PATHS = {
     "exports": "exports",
     "notebooks": "notebooks",
 }
+CONVENTIONAL_RESOURCES = {
+    "sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"},
+    "metadata": {"kind": "file", "path": "./inputs/metadata.csv"},
+}
 
 
 @pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
 def test_repo_experiment_configs_omit_redundant_defaults(config_path: Path) -> None:
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
+    assert "semantics" not in data, (
+        f"{config_path}: use assay.collections / assay.orders / assay.logic_maps, not semantics"
+    )
     assert data.get("paths") != DEFAULT_PATHS, f"{config_path}: omit default paths block"
     assert data.get("plotting") != {"palette": "colorblind"}, f"{config_path}: omit default plotting.palette"
+    resources = data.get("resources") or {}
+    for resource_id, spec in CONVENTIONAL_RESOURCES.items():
+        assert resources.get(resource_id) != spec, (
+            f"{config_path}: omit resources.{resource_id}; reader/v3 resolves that conventional input path automatically"
+        )
 
     experiment = data.get("experiment") or {}
     if isinstance(experiment, dict):

@@ -1,11 +1,11 @@
 from .model import (
+    AssayCollectionSpec,
     AssayLabelSpec,
     AssayLogicMapSpec,
     AssayOrderSpec,
     AssaySpec,
     ExperimentSpec,
     ExportSection,
-    NotebookDefaults,
     NotebookSection,
     NotebookSpec,
     PathsSpec,
@@ -16,19 +16,18 @@ from .model import (
     ReaderSpec,
     ResourceSpec,
     ResourcesSpec,
-    SemanticsSpec,
     SpecDefaults,
     StepSpec,
 )
 
 __all__ = [
+    "AssayCollectionSpec",
     "AssayLabelSpec",
     "AssayLogicMapSpec",
     "AssayOrderSpec",
     "AssaySpec",
     "ExperimentSpec",
     "ExportSection",
-    "NotebookDefaults",
     "NotebookSection",
     "NotebookSpec",
     "PathsSpec",
@@ -39,7 +38,6 @@ __all__ = [
     "ReaderSpec",
     "ResourceSpec",
     "ResourcesSpec",
-    "SemanticsSpec",
     "SpecDefaults",
     "StepSpec",
 ]

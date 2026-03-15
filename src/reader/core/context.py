@@ -31,5 +31,4 @@ class RunContext:
     logger: logging.Logger
     palette_book: PaletteBook | None
     strict: bool = True
-    groups: Mapping[str, Any] | None = None
     assay: Mapping[str, Any] | None = None
