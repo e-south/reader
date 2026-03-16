@@ -20,8 +20,8 @@ import pandas as pd
 from pydantic import BaseModel
 
 from reader.contracts import ContractCatalog, ContractId, OutputContractSurface
-from reader.core.errors import ContractError, RegistryError
-from reader.core.mpl import ensure_mpl_cache_dir
+from reader.errors import ContractError, RegistryError
+from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.workbench.assets import AssetCatalog, AssetDescriptor
 from reader.workbench.ports import (
     InputPortSpec,

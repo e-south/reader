@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from reader.core.labeling import apply_label_mappings
+from reader.plugins.transform._labeling import apply_label_mappings
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 
 
-class AssayLabelsCfg(PluginConfig):
+class AnnotationLabelsCfg(PluginConfig):
     refs: list[str] | None = None
     in_place: bool = False
     case_insensitive: bool = True
     suffix: str = "_alias"
 
 
-class AssayLabelsTransform(Plugin):
-    ConfigModel = AssayLabelsCfg
+class AnnotationLabelsTransform(Plugin):
+    ConfigModel = AnnotationLabelsCfg
 
     @classmethod
     def input_ports(cls):
@@ -36,12 +36,12 @@ class AssayLabelsTransform(Plugin):
             where=where,
         )
 
-    def run(self, ctx, inputs, cfg: AssayLabelsCfg):
+    def run(self, ctx, inputs, cfg: AnnotationLabelsCfg):
         if ctx.experiment is None:
-            raise ValueError("assay_labels requires experiment semantics in the run context")
-        label_specs = ctx.experiment.assay.resolve_label_specs(cfg.refs)
+            raise ValueError("assay_labels requires experiment annotations in the run context")
+        label_specs = ctx.experiment.annotations.resolve_label_specs(cfg.refs)
         if not label_specs:
-            raise ValueError("assay_labels: no assay.labels are configured")
+            raise ValueError("assay_labels: no annotations.labels are configured")
 
         mappings: dict[str, dict[str, str]] = {}
         output_names: dict[str, str] = {}

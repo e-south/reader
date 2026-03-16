@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-from reader.core.errors import ConfigError
 from reader.domains.semantics import PluginDomain, validate_plugin_domain
-from reader.workbench.decl import PluginStepDecl
+from reader.errors import ConfigError
 from reader.workbench.ontology import PluginCategory, PluginSemantics
 
-AssetKind = Literal["plugin", "recipe", "template"]
-NotebookDefaultRule = Literal["has_plots", "has_cytometry", "fallback"]
+AssetKind = Literal["plugin", "template"]
 
 
 @dataclass(frozen=True)
@@ -36,7 +33,6 @@ class AssetRequirement:
 
 @dataclass(frozen=True)
 class AssetCapabilities:
-    default_for: tuple[NotebookDefaultRule, ...] = ()
     supports_plot_filters: bool = False
     inject_plot_specs: bool = False
     requires_any: tuple[AssetRequirement, ...] = ()
@@ -51,9 +47,7 @@ class AssetDescriptor:
     summary: str
     tags: tuple[str, ...] = ()
     plugin_cls: type[Any] | None = None
-    steps: tuple[PluginStepDecl, ...] = ()
     body: str | None = None
-    step_builder: Callable[[dict[str, Any]], list[PluginStepDecl]] | None = None
     capabilities: AssetCapabilities = field(default_factory=AssetCapabilities)
 
     def __post_init__(self) -> None:
@@ -64,14 +58,11 @@ class AssetDescriptor:
             plugin_category_from_id(self.name)
             if self.plugin_cls is None:
                 raise ValueError(f"Plugin asset {self.name!r} must declare a plugin class.")
-        elif self.kind == "recipe":
-            if self.body is not None or self.plugin_cls is not None:
-                raise ValueError(f"Recipe asset {self.name!r} cannot carry plugin/template fields.")
         elif self.kind == "template":
             if self.body is None:
                 raise ValueError(f"Template asset {self.name!r} must declare a body.")
-            if self.plugin_cls is not None or self.steps:
-                raise ValueError(f"Template asset {self.name!r} cannot carry plugin/recipe fields.")
+            if self.plugin_cls is not None:
+                raise ValueError(f"Template asset {self.name!r} cannot carry plugin fields.")
 
     @property
     def plugin(self) -> str:
@@ -82,12 +73,6 @@ class AssetDescriptor:
     @property
     def plugin_id(self) -> str:
         return self.plugin
-
-    @property
-    def recipe(self) -> str:
-        if self.kind != "recipe":
-            raise AttributeError("Only recipe assets expose .recipe")
-        return self.name
 
     @property
     def template(self) -> str:

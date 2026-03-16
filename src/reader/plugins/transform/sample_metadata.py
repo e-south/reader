@@ -16,7 +16,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import MergeError
+from reader.errors import MergeError
 from reader.workbench.ports import dataframe_input, dataframe_output, file_path_input
 from reader.workbench.registry import Plugin, PluginConfig
 

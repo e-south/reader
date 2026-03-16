@@ -6,7 +6,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 
 from .model import ReaderSpec
 
@@ -20,107 +20,85 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         raise ConfigError(
             f"Config must be a mapping (YAML object) in {path}. Check for empty files or top-level lists."
         )
+
     schema = data.get("schema")
-    if schema != "reader/v4":
-        raise ConfigError(f"Config schema must be 'reader/v4'. This repo only supports reader/v4 (found {schema!r}).")
+    if schema != "reader/v6":
+        raise ConfigError(f"Config schema must be 'reader/v6'. This repo only supports reader/v6 (found {schema!r}).")
 
     removed_top_level_keys = {
         "steps",
         "overrides",
         "collections",
-        "deliverables",
+        "graph_patch",
         "deliverable_presets",
         "deliverable_overrides",
         "notebook",
         "data",
         "semantics",
+        "assay",
+        "pipeline",
+        "plots",
+        "exports",
+        "notebooks",
     }
+    removed_protocol_keys = {"with", "plugins"}
     removed_experiment_keys = {"name", "outputs", "plots_dir", "palette"}
     illegal = sorted(key for key in removed_top_level_keys if key in data)
+    illegal_protocol = []
+    if "protocol" in data and isinstance(data["protocol"], dict):
+        illegal_protocol = sorted(key for key in removed_protocol_keys if key in data["protocol"])
+    illegal_exp = []
     if "experiment" in data and isinstance(data["experiment"], dict):
         illegal_exp = sorted(key for key in removed_experiment_keys if key in data["experiment"])
-    else:
-        illegal_exp = []
-    if illegal or illegal_exp:
+    if illegal or illegal_protocol or illegal_exp:
         parts = []
         if illegal:
             parts.append(f"top-level keys: {illegal}")
+        if illegal_protocol:
+            parts.append(f"protocol keys: {illegal_protocol}")
         if illegal_exp:
             parts.append(f"experiment keys: {illegal_exp}")
         raise ConfigError(
-            "Unsupported legacy/removed config keys are not supported in reader/v4. Remove/replace: " + "; ".join(parts)
+            "Unsupported legacy/removed config keys are not supported in reader/v6. Remove/replace: " + "; ".join(parts)
         )
-
-    if "pipeline" not in data or not isinstance(data["pipeline"], dict):
-        raise ConfigError("pipeline must be a mapping and include steps")
-    if "steps" not in data["pipeline"]:
-        raise ConfigError("pipeline.steps is required (use an empty list if there are no pipeline steps).")
-
-    root = path.parent.resolve()
 
     data.setdefault("experiment", {})
     if not isinstance(data["experiment"], dict):
         raise ConfigError("experiment must be a mapping when provided")
+    experiment_id = data["experiment"].get("id")
+    if not isinstance(experiment_id, str) or not experiment_id.strip():
+        raise ConfigError("experiment.id is required and must be a non-empty string")
+    data["experiment"].setdefault("title", experiment_id)
+
+    protocol = data.get("protocol")
+    if not isinstance(protocol, dict):
+        raise ConfigError("protocol is required and must be a mapping with id/parameters/analysis/deliverables")
+    protocol_id = protocol.get("id")
+    if not isinstance(protocol_id, str) or not protocol_id.strip():
+        raise ConfigError("protocol.id must be a non-empty string")
+    parameters = protocol.get("parameters", {}) or {}
+    analysis = protocol.get("analysis", {}) or {}
+    deliverables = protocol.get("deliverables", {}) or {}
+    if not isinstance(parameters, dict):
+        raise ConfigError("protocol.parameters must be a mapping")
+    if not isinstance(analysis, dict):
+        raise ConfigError("protocol.analysis must be a mapping")
+    if not isinstance(deliverables, dict):
+        raise ConfigError("protocol.deliverables must be a mapping")
+    data["protocol"] = {
+        "id": protocol_id.strip(),
+        "parameters": dict(parameters),
+        "analysis": dict(analysis),
+        "deliverables": _normalize_deliverables(deliverables),
+    }
+
     data.setdefault("paths", {})
     if not isinstance(data["paths"], dict):
         raise ConfigError("paths must be a mapping")
-    data.setdefault("plotting", {})
-    if not isinstance(data["plotting"], dict):
-        raise ConfigError("plotting must be a mapping")
-    data.setdefault("resources", {})
-    if not isinstance(data["resources"], dict):
-        raise ConfigError("resources must be a mapping of resource_id -> {kind, path}")
-    data.setdefault("assay", {})
-    if not isinstance(data["assay"], dict):
-        raise ConfigError("assay must be a mapping")
-    data.setdefault("plots", {})
-    if not isinstance(data["plots"], dict):
-        raise ConfigError("plots must be a mapping")
-    data.setdefault("exports", {})
-    if not isinstance(data["exports"], dict):
-        raise ConfigError("exports must be a mapping")
-    data.setdefault("notebooks", {})
-    if not isinstance(data["notebooks"], dict):
-        raise ConfigError("notebooks must be a mapping")
-    if "steps" in data["plots"]:
-        raise ConfigError("plots.steps is not supported in reader/v4. Use plots.specs.")
-    if "steps" in data["exports"]:
-        raise ConfigError("exports.steps is not supported in reader/v4. Use exports.specs.")
-    if "steps" in data["notebooks"]:
-        raise ConfigError("notebooks.steps is not supported in reader/v4. Use notebooks.specs.")
-    for section in ("pipeline", "plots", "exports"):
-        if "presets" in data[section]:
-            raise ConfigError(
-                f"{section}.presets was renamed to {section}.recipes. No compatibility alias is provided."
-            )
-    notebook_removed = sorted(key for key in ("defaults", "overrides") if key in data["notebooks"])
-    if notebook_removed:
-        raise ConfigError(
-            f"notebooks only supports specs in reader/v4. Remove notebooks.{', notebooks.'.join(notebook_removed)}."
-        )
-
-    for section in ("plots", "exports"):
-        defaults = data[section].get("defaults", {}) or {}
-        if not isinstance(defaults, dict):
-            raise ConfigError(f"{section}.defaults must be a mapping")
-        reads_default = defaults.get("reads", {}) or {}
-        if not isinstance(reads_default, dict):
-            raise ConfigError(f"{section}.defaults.reads must be a mapping")
-        _ensure_input_binding_map(reads_default, where=f"{section}.defaults.reads")
-        with_default = defaults.get("with", {}) or {}
-        if not isinstance(with_default, dict):
-            raise ConfigError(f"{section}.defaults.with must be a mapping")
-        data[section]["defaults"] = {"reads": reads_default, "with": with_default}
-        overrides = data[section].get("overrides", {}) or {}
-        if not isinstance(overrides, dict):
-            raise ConfigError(f"{section}.overrides must be a mapping of id -> overrides")
-        data[section]["overrides"] = overrides
-
     outputs_raw = data["paths"].get("outputs", "./outputs")
     if not isinstance(outputs_raw, str) or not outputs_raw.strip():
         raise ConfigError("paths.outputs must be a non-empty string path")
     data["paths"]["outputs"] = outputs_raw
-
     for key, value in (
         ("plots", data["paths"].get("plots", "plots")),
         ("exports", data["paths"].get("exports", "exports")),
@@ -138,13 +116,18 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
             raise ConfigError(f"paths.{key} must stay under paths.outputs and may not escape via '..'.")
         data["paths"][key] = value
 
+    data.setdefault("plotting", {})
+    if not isinstance(data["plotting"], dict):
+        raise ConfigError("plotting must be a mapping")
     palette_raw = data["plotting"].get("palette", None)
     if palette_raw is not None and (not isinstance(palette_raw, str) or not palette_raw.strip()):
         raise ConfigError("plotting.palette must be a non-empty string or null")
 
-    resources_raw = data["resources"] or {}
+    data.setdefault("resources", {})
+    if not isinstance(data["resources"], dict):
+        raise ConfigError("resources must be a mapping of resource_id -> {kind, path}")
     normalized_resources: dict[str, dict[str, str]] = {}
-    for resource_id, resource in resources_raw.items():
+    for resource_id, resource in (data["resources"] or {}).items():
         if not isinstance(resource, dict):
             raise ConfigError(f"resources.{resource_id} must be a mapping with kind/path")
         kind = resource.get("kind")
@@ -156,232 +139,149 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         normalized_resources[str(resource_id)] = {"kind": str(kind), "path": str(path_raw)}
     data["resources"] = {"by_id": normalized_resources}
 
-    assay_raw = data["assay"] or {}
-    labels_raw = assay_raw.get("labels", {}) or {}
+    data.setdefault("annotations", {})
+    if not isinstance(data["annotations"], dict):
+        raise ConfigError("annotations must be a mapping")
+    data["annotations"] = _normalize_annotations(data["annotations"])
+
+    try:
+        return cls.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
+    labels_raw = annotations_raw.get("labels", {}) or {}
     if not isinstance(labels_raw, dict):
-        raise ConfigError("assay.labels must be a mapping")
+        raise ConfigError("annotations.labels must be a mapping")
     normalized_labels: dict[str, dict[str, Any]] = {}
     for label_id, label_spec in labels_raw.items():
         if not isinstance(label_spec, dict):
-            raise ConfigError(f"assay.labels.{label_id} must be a mapping")
+            raise ConfigError(f"annotations.labels.{label_id} must be a mapping")
         source = label_spec.get("source")
         if not isinstance(source, str) or not source.strip():
-            raise ConfigError(f"assay.labels.{label_id}.source must be a non-empty string")
+            raise ConfigError(f"annotations.labels.{label_id}.source must be a non-empty string")
         values = label_spec.get("values", {}) or {}
         if not isinstance(values, dict):
-            raise ConfigError(f"assay.labels.{label_id}.values must be a mapping")
+            raise ConfigError(f"annotations.labels.{label_id}.values must be a mapping")
         output = label_spec.get("output")
         if output is not None and (not isinstance(output, str) or not output.strip()):
-            raise ConfigError(f"assay.labels.{label_id}.output must be a non-empty string when provided")
+            raise ConfigError(f"annotations.labels.{label_id}.output must be a non-empty string when provided")
         normalized_labels[str(label_id)] = {
             "source": source,
             "values": {str(k): str(v) for k, v in values.items()},
             "output": (str(output) if isinstance(output, str) else None),
         }
 
-    orders_raw = assay_raw.get("orders", {}) or {}
+    orders_raw = annotations_raw.get("orders", {}) or {}
     if not isinstance(orders_raw, dict):
-        raise ConfigError("assay.orders must be a mapping")
+        raise ConfigError("annotations.orders must be a mapping")
     normalized_orders: dict[str, dict[str, Any]] = {}
     for order_id, order_spec in orders_raw.items():
         if not isinstance(order_spec, dict):
-            raise ConfigError(f"assay.orders.{order_id} must be a mapping")
+            raise ConfigError(f"annotations.orders.{order_id} must be a mapping")
         column = order_spec.get("column")
         if not isinstance(column, str) or not column.strip():
-            raise ConfigError(f"assay.orders.{order_id}.column must be a non-empty string")
+            raise ConfigError(f"annotations.orders.{order_id}.column must be a non-empty string")
         values = order_spec.get("values", []) or []
         if not isinstance(values, list) or any(isinstance(item, (dict, list)) for item in values):
-            raise ConfigError(f"assay.orders.{order_id}.values must be a flat list of scalar labels")
+            raise ConfigError(f"annotations.orders.{order_id}.values must be a flat list of scalar labels")
         if not values:
-            raise ConfigError(f"assay.orders.{order_id}.values must not be empty")
+            raise ConfigError(f"annotations.orders.{order_id}.values must not be empty")
         normalized_orders[str(order_id)] = {"column": column, "values": [str(item) for item in values]}
 
-    collections_raw = assay_raw.get("collections", {}) or {}
+    collections_raw = annotations_raw.get("collections", {}) or {}
     if not isinstance(collections_raw, dict):
-        raise ConfigError("assay.collections must be a mapping")
+        raise ConfigError("annotations.collections must be a mapping")
     normalized_collections: dict[str, dict[str, Any]] = {}
     for collection_id, collection_spec in collections_raw.items():
         if not isinstance(collection_spec, dict):
-            raise ConfigError(f"assay.collections.{collection_id} must be a mapping")
+            raise ConfigError(f"annotations.collections.{collection_id} must be a mapping")
         column = collection_spec.get("column")
         if not isinstance(column, str) or not column.strip():
-            raise ConfigError(f"assay.collections.{collection_id}.column must be a non-empty string")
-        items = collection_spec.get("items")
-        if not isinstance(items, dict) or not items:
-            raise ConfigError(f"assay.collections.{collection_id}.items must be a non-empty mapping")
-        normalized_items: dict[str, list[str]] = {}
-        for label, values in items.items():
-            if not isinstance(values, list) or not values:
-                raise ConfigError(f"assay.collections.{collection_id}.items.{label} must be a non-empty list")
-            normalized_items[str(label)] = [str(item) for item in values]
+            raise ConfigError(f"annotations.collections.{collection_id}.column must be a non-empty string")
+        items = collection_spec.get("items", {}) or {}
+        if not isinstance(items, dict):
+            raise ConfigError(f"annotations.collections.{collection_id}.items must be a mapping")
         normalized_collections[str(collection_id)] = {
             "column": column,
-            "items": normalized_items,
+            "items": {
+                str(item_key): [str(item) for item in item_values]
+                for item_key, item_values in items.items()
+                if isinstance(item_values, list)
+            },
         }
 
-    logic_maps_raw = assay_raw.get("logic_maps", {}) or {}
+    logic_maps_raw = annotations_raw.get("logic_maps", {}) or {}
     if not isinstance(logic_maps_raw, dict):
-        raise ConfigError("assay.logic_maps must be a mapping")
+        raise ConfigError("annotations.logic_maps must be a mapping")
     normalized_logic_maps: dict[str, dict[str, Any]] = {}
     for logic_id, logic_spec in logic_maps_raw.items():
         if not isinstance(logic_spec, dict):
-            raise ConfigError(f"assay.logic_maps.{logic_id} must be a mapping")
+            raise ConfigError(f"annotations.logic_maps.{logic_id} must be a mapping")
         column = logic_spec.get("column")
         if not isinstance(column, str) or not column.strip():
-            raise ConfigError(f"assay.logic_maps.{logic_id}.column must be a non-empty string")
+            raise ConfigError(f"annotations.logic_maps.{logic_id}.column must be a non-empty string")
         corners = logic_spec.get("corners")
-        if not isinstance(corners, dict):
-            raise ConfigError(f"assay.logic_maps.{logic_id}.corners must be a mapping")
-        keys = set(corners)
-        if keys != {"00", "10", "01", "11"}:
-            raise ConfigError(
-                f"assay.logic_maps.{logic_id}.corners must have exactly the keys ['00', '01', '10', '11']"
-            )
-        case_sensitive = logic_spec.get("case_sensitive", True)
-        if not isinstance(case_sensitive, bool):
-            raise ConfigError(f"assay.logic_maps.{logic_id}.case_sensitive must be true/false")
+        if not isinstance(corners, dict) or not corners:
+            raise ConfigError(f"annotations.logic_maps.{logic_id}.corners must be a non-empty mapping")
         normalized_logic_maps[str(logic_id)] = {
             "column": column,
-            "corners": {str(k): str(v) for k, v in corners.items()},
-            "case_sensitive": case_sensitive,
+            "corners": {str(key): str(value) for key, value in corners.items()},
+            "case_sensitive": bool(logic_spec.get("case_sensitive", True)),
         }
-    data["assay"] = {
+
+    return {
         "labels": normalized_labels,
         "orders": normalized_orders,
         "collections": normalized_collections,
         "logic_maps": normalized_logic_maps,
     }
 
-    runtime_raw = data["pipeline"].get("runtime", {}) or {}
-    if not isinstance(runtime_raw, dict):
-        raise ConfigError("pipeline.runtime must be a mapping")
-    if "strict" in runtime_raw and not isinstance(runtime_raw["strict"], bool):
-        raise ConfigError("pipeline.runtime.strict must be a boolean (true/false)")
-    data["pipeline"]["runtime"] = runtime_raw
 
-    pipeline_recipes = _ensure_recipe_list(data["pipeline"].get("recipes", []) or [], section="pipeline")
-    plots_recipes = _ensure_recipe_list(data["plots"].get("recipes", []) or [], section="plots")
-    exports_recipes = _ensure_recipe_list(data["exports"].get("recipes", []) or [], section="exports")
+def _normalize_deliverables(raw: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    notebook = raw.get("notebook", {}) or {}
+    if not isinstance(notebook, dict):
+        raise ConfigError("protocol.deliverables.notebook must be a mapping")
+    template = notebook.get("template")
+    if template is not None and (not isinstance(template, str) or not template.strip()):
+        raise ConfigError("protocol.deliverables.notebook.template must be a non-empty string when provided")
+    normalized["notebook"] = {"template": template}
 
-    pipeline_steps = _ensure_step_list(data["pipeline"].get("steps", []) or [], section="pipeline", label="steps")
-    plots_specs = _ensure_step_list(data["plots"].get("specs", []) or [], section="plots", label="specs")
-    exports_specs = _ensure_step_list(data["exports"].get("specs", []) or [], section="exports", label="specs")
-    notebooks_specs = _ensure_step_list(data["notebooks"].get("specs", []) or [], section="notebooks", label="specs")
-
-    data["pipeline"]["recipes"] = pipeline_recipes
-    data["plots"]["recipes"] = plots_recipes
-    data["exports"]["recipes"] = exports_recipes
-    data["pipeline"]["steps"] = pipeline_steps
-    data["plots"]["specs"] = plots_specs
-    data["exports"]["specs"] = exports_specs
-    data["notebooks"]["specs"] = notebooks_specs
-
-    experiment = data["experiment"]
-    experiment_id = experiment.get("id")
-    if experiment_id is None or (isinstance(experiment_id, str) and not experiment_id.strip()):
-        experiment["id"] = root.name
-    experiment_title = experiment.get("title")
-    if experiment_title is None or (isinstance(experiment_title, str) and not experiment_title.strip()):
-        experiment["title"] = experiment["id"]
-    try:
-        return cls.model_validate(data)
-    except ValidationError as exc:
-        details = "; ".join(f"{'.'.join(map(str, err.get('loc', [])))}: {err.get('msg')}" for err in exc.errors())
-        raise ConfigError(f"Invalid config in {path}: {details}") from exc
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    out = dict(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict):
-            out[key] = _deep_merge(out[key], value)
-        else:
-            out[key] = value
-    return out
-
-
-def _ensure_step_list(raw_steps: Any, *, section: str, label: str) -> list[dict[str, Any]]:
-    if not isinstance(raw_steps, list):
-        raise ConfigError(f"{section}.{label} must be a list")
-    normalized: list[dict[str, Any]] = []
-    for index, entry in enumerate(raw_steps, 1):
-        if not isinstance(entry, dict):
-            raise ConfigError(f"{section}.{label} entry #{index} must be a mapping")
-        if section == "notebooks":
-            if "uses" in entry:
-                raise ConfigError(f"{section}.{label} entry #{index}: use template, not uses.")
-        elif "uses" in entry:
-            raise ConfigError(f"{section}.{label} entry #{index}: use plugin, not uses.")
-        if "preset" in entry or "recipe" in entry:
-            if section == "notebooks":
-                raise ConfigError(
-                    f"{section}.{label} does not support inline recipe expansion; use a notebook template in the template field instead."
+    for section in ("plots", "exports"):
+        block = raw.get(section, {}) or {}
+        if not isinstance(block, dict):
+            raise ConfigError(f"protocol.deliverables.{section} must be a mapping")
+        profile = block.get("profile")
+        if profile is not None and (not isinstance(profile, str) or not profile.strip()):
+            raise ConfigError(f"protocol.deliverables.{section}.profile must be a non-empty string when provided")
+        include = block.get("include", []) or []
+        exclude = block.get("exclude", []) or []
+        settings = block.get("settings", {}) or {}
+        if not isinstance(include, list) or not all(isinstance(item, str) and item.strip() for item in include):
+            raise ConfigError(f"protocol.deliverables.{section}.include must be a list of non-empty deliverable ids")
+        if not isinstance(exclude, list) or not all(isinstance(item, str) and item.strip() for item in exclude):
+            raise ConfigError(f"protocol.deliverables.{section}.exclude must be a list of non-empty deliverable ids")
+        if not isinstance(settings, dict):
+            raise ConfigError(f"protocol.deliverables.{section}.settings must be a mapping of id -> settings")
+        normalized[section] = {
+            "profile": profile,
+            "include": [str(item) for item in include],
+            "exclude": [str(item) for item in exclude],
+            "settings": {
+                str(deliverable_id): _normalize_mapping(
+                    settings_block, where=f"protocol.deliverables.{section}.settings"
                 )
-            raise ConfigError(
-                f"{section}.{label} does not support inline recipe expansion; use {section}.recipes instead."
-            )
-        if section != "notebooks":
-            reads = entry.get("reads", {}) or {}
-            writes = entry.get("writes", {}) or {}
-            if not isinstance(reads, dict):
-                raise ConfigError(f"{section}.{label} entry #{index}: reads must be a mapping")
-            if not isinstance(writes, dict):
-                raise ConfigError(f"{section}.{label} entry #{index}: writes must be a mapping")
-            _ensure_input_binding_map(reads, where=f"{section}.{label} entry #{index}.reads")
-            _ensure_output_binding_map(writes, where=f"{section}.{label} entry #{index}.writes")
-        normalized.append(entry)
+                for deliverable_id, settings_block in settings.items()
+            },
+        }
     return normalized
 
 
-def _ensure_recipe_list(raw_recipes: Any, *, section: str) -> list[str | dict[str, Any]]:
-    if not isinstance(raw_recipes, list):
-        raise ConfigError(f"{section}.recipes must be a list")
-    normalized: list[str | dict[str, Any]] = []
-    for index, entry in enumerate(raw_recipes, 1):
-        if isinstance(entry, str):
-            if not entry.strip():
-                raise ConfigError(f"{section}.recipes entry #{index} must be a non-empty string")
-            normalized.append(entry)
-            continue
-        if not isinstance(entry, dict):
-            raise ConfigError(f"{section}.recipes entry #{index} must be a string or mapping")
-        if "uses" in entry:
-            raise ConfigError(f"{section}.recipes entry #{index}: use recipe, not uses.")
-        recipe = entry.get("recipe")
-        if not isinstance(recipe, str) or not recipe.strip():
-            raise ConfigError(f"{section}.recipes entry #{index}: recipe must be a non-empty string")
-        with_block = entry.get("with", {}) or {}
-        if not isinstance(with_block, dict):
-            raise ConfigError(f"{section}.recipes entry #{index}: with must be a mapping")
-        normalized.append({"recipe": recipe, "with": with_block})
-    return normalized
-
-
-def _ensure_input_binding_map(raw_reads: dict[str, Any], *, where: str) -> None:
-    for key, value in raw_reads.items():
-        if not isinstance(value, dict):
-            raise ConfigError(
-                f"{where}.{key} must be a mapping with exactly one of record, file, or resource. "
-                "String read targets are not supported in reader/v4."
-            )
-        keys = {item for item in ("record", "file", "resource") if item in value}
-        if len(keys) != 1 or len(value) != 1:
-            raise ConfigError(f"{where}.{key} must contain exactly one of record, file, or resource")
-        selected = next(iter(keys))
-        selected_value = value.get(selected)
-        if not isinstance(selected_value, str) or not selected_value.strip():
-            raise ConfigError(f"{where}.{key}.{selected} must be a non-empty string")
-
-
-def _ensure_output_binding_map(raw_writes: dict[str, Any], *, where: str) -> None:
-    for key, value in raw_writes.items():
-        if not isinstance(value, dict):
-            raise ConfigError(
-                f"{where}.{key} must be a mapping with exactly one key: record. "
-                "String write targets are not supported in reader/v4."
-            )
-        if set(value) != {"record"}:
-            raise ConfigError(f"{where}.{key} must contain exactly one key: record")
-        record_value = value.get("record")
-        if not isinstance(record_value, str) or not record_value.strip():
-            raise ConfigError(f"{where}.{key}.record must be a non-empty string")
+def _normalize_mapping(raw: Any, *, where: str) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where} entries must be mappings")
+    return dict(raw)

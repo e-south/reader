@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from reader.core.errors import ExecutionError
+from reader.errors import ExecutionError
 from reader.plugins.validator.to_tidy_plus_map import PromoteCfg, PromoteToTidyPlusMap
 
 

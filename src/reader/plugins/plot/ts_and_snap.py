@@ -16,7 +16,7 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure
+from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
 from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig

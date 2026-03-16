@@ -20,12 +20,7 @@ from reader.workbench.cli import app
 def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     cfg_path = write_config(
         tmp_path,
-        base_reader_config(
-            experiment_id="exp_nb",
-            plot_specs=[
-                {"id": "plot_a", "plugin": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}}
-            ],
-        ),
+        base_reader_config(experiment_id="exp_nb"),
     )
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
@@ -108,7 +103,10 @@ def test_notebook_scaffold_uses_configured_notebook_spec(tmp_path: Path) -> None
     cfg_path = write_config(
         tmp_path,
         base_reader_config(
-            experiment_id="exp_nb", pipeline_steps=[], notebook_specs=[{"id": "cyto", "template": "notebook/cytometry"}]
+            experiment_id="exp_nb",
+            protocol_id="cytometry/flow_panel",
+            protocol_deliverables={"notebook": {"template": "notebook/cytometry"}},
+            resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
         ),
     )
     runner = CliRunner()

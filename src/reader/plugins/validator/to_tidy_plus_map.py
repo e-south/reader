@@ -14,7 +14,7 @@ from contextlib import suppress
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import ExecutionError
+from reader.errors import ExecutionError
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 

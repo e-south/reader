@@ -7,8 +7,8 @@ import pandas as pd
 
 def build_norm_map(mapping: Mapping[str, str], *, case_insensitive: bool) -> Mapping[str, str]:
     if case_insensitive:
-        return {str(k).casefold(): str(v) for k, v in mapping.items()}
-    return {str(k): str(v) for k, v in mapping.items()}
+        return {str(key).casefold(): str(value) for key, value in mapping.items()}
+    return {str(key): str(value) for key, value in mapping.items()}
 
 
 def log_label_summary(

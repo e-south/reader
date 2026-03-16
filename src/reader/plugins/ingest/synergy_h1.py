@@ -14,8 +14,8 @@ from typing import Literal
 
 import pandas as pd
 
-from reader.core.errors import ParseError
 from reader.domains.plate_reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
+from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 from reader.workbench.ports import dataframe_output, file_path_input

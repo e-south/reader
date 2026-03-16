@@ -14,11 +14,21 @@ from pathlib import Path
 import pandas as pd
 
 from reader.contracts import builtin_contract_catalog
+from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
-from reader.tests.support import base_reader_config, load_decl, write_config
 from reader.workbench import PluginSemantics, resolve_workbench
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
+from reader.workbench.decl.model import (
+    ExperimentDecl,
+    NotebookDecl,
+    PipelineDecl,
+    PluginStepDecl,
+    RecordInputDecl,
+    SurfaceDecl,
+    WorkbenchDecl,
+)
 from reader.workbench.engine import run_spec
+from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 from reader.workbench.ports import dataframe_input, file_bundle_output
 from reader.workbench.records import RecordStore
 from reader.workbench.registry import Plugin, PluginConfig, Registry
@@ -50,6 +60,7 @@ class _DummyPlot(Plugin):
 
 
 def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
+    del monkeypatch
     outputs = tmp_path / "outputs"
     store = RecordStore(
         outputs,
@@ -69,15 +80,33 @@ def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
         config_digest="sha256:test",
     )
 
-    cfg = base_reader_config(
-        experiment_id="exp_plot",
-        outputs=str(outputs),
-        pipeline_steps=[],
-        plot_specs=[{"id": "plot_dummy", "plugin": "plot/dummy_plot", "reads": {"df": "raw/df"}}],
-        plotting={"palette": None},
+    decl = WorkbenchDecl(
+        experiment=ExperimentDecl(id="exp_plot", title="exp_plot", root=tmp_path),
+        experiment_semantics=ExperimentSemantics(
+            protocol=ProtocolBinding(id="workbench/generic"),
+            annotations=AnnotationSemantics(),
+            resources=ResourceCatalog(),
+            layout=OutputLayout(
+                outputs_dir=outputs,
+                plots_subdir="plots",
+                exports_subdir="exports",
+                notebooks_subdir="notebooks",
+            ),
+        ),
+        plotting_palette=None,
+        pipeline=PipelineDecl(runtime={}, steps=()),
+        plots=SurfaceDecl(
+            specs=(
+                PluginStepDecl(
+                    id="plot_dummy",
+                    plugin="plot/dummy_plot",
+                    reads={"df": RecordInputDecl(record_id="raw/df")},
+                ),
+            )
+        ),
+        exports=SurfaceDecl(specs=()),
+        notebooks=NotebookDecl(specs=()),
     )
-    cfg_path = write_config(tmp_path, cfg)
-    decl = load_decl(cfg_path)
 
     reg = Registry(contracts=builtin_contract_catalog())
     reg.register(
@@ -87,7 +116,12 @@ def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
             plugin_cls=_DummyPlot,
         )
     )
-    runtime = ReaderRuntime(contracts=builtin_contract_catalog(), plugins=reg, assets=AssetCatalog([]))
+    runtime = ReaderRuntime(
+        contracts=builtin_contract_catalog(),
+        protocols=builtin_protocol_catalog(),
+        plugins=reg,
+        assets=AssetCatalog([]),
+    )
 
     plot_specs = resolve_workbench(decl).plots
     run_spec(

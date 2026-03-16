@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 from reader.tests.support.configs import base_reader_config, load_models, write_config
 from reader.workbench import PluginStep, resolve_workbench
 from reader.workbench.engine.setup import resolve_palette_book, slice_pipeline_steps
@@ -22,8 +22,10 @@ def test_resolve_palette_book_uses_shared_plot_style(tmp_path) -> None:
         tmp_path,
         base_reader_config(
             experiment_id="exp_plot_style",
-            pipeline_steps=[],
-            plot_specs=[{"id": "plot", "plugin": "plot/time_series", "reads": {"df": "raw/df", "blanks": "raw/df"}}],
+            protocol_id="plate_reader/dual_reporter_screen",
+            protocol_analysis={"include_fold_change": False},
+            protocol_deliverables={"plots": {"profile": "none", "include": ["time_series"]}},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
             plotting={"palette": "muted"},
         ),
     )

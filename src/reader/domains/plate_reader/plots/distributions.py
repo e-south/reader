@@ -16,8 +16,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from reader.core.plot_sinks import PlotFigure
-from reader.core.plot_style import PaletteBook, use_style
+from reader.plotting.sinks import PlotFigure
+from reader.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
 from .common import alias_column, best_subplot_grid, colors_for, emit_plot_figure, require_columns, warn_if_empty

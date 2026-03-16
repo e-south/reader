@@ -7,7 +7,7 @@ import pandas as pd
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from reader.core.errors import ExecutionError, ReaderError
+from reader.errors import ExecutionError, ReaderError
 from reader.workbench.context import RunContext
 from reader.workbench.graph import ProvenanceInput
 from reader.workbench.records import RecordStore
@@ -102,7 +102,10 @@ def _persist_file_bundle_record(
 def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, registry: Any) -> None:
     descriptor = registry.resolve_descriptor(step.plugin)
     plugin_cls = descriptor.cls
-    cfg = plugin_cls.ConfigModel.model_validate(step.with_ or {})
+    if ctx.protocol is None:
+        raise ExecutionError(f"{phase} {step.id}: run context is missing a bound protocol")
+    effective_with = ctx.protocol.effective_plugin_config(plugin_id=step.plugin, step_with=(step.with_ or {}))
+    cfg = plugin_cls.ConfigModel.model_validate(effective_with)
     plugin = plugin_cls()
     plugin.bind_runtime(descriptor=descriptor, contracts=registry.contracts)
     input_ports = plugin.input_ports()

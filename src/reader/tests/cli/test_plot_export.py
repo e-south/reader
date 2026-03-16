@@ -22,18 +22,14 @@ from reader.workbench.experiment import ResourceCatalog
 def _base_config() -> dict:
     return base_reader_config(
         experiment_id="exp_cli",
-        plot_specs=[
-            {"id": "plot_a", "plugin": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}},
-            {
-                "id": "plot_b",
-                "plugin": "plot/snapshot_barplot",
-                "reads": {"df": "ingest/df"},
-                "with": {"x": "design_id", "y": ["OD600"], "time": 0.0},
-            },
-        ],
-        export_specs=[
-            {"id": "export_a", "plugin": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}
-        ],
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_parameters={"fold_change": {"report_times": [14.0]}},
+        protocol_analysis={"crosstalk_pairs": {"enabled": True, "export": True}},
+        protocol_deliverables={
+            "plots": {"profile": "none", "include": ["time_series", "snapshot_by_channel"]},
+            "exports": {"include": ["crosstalk_pairs_csv"]},
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
 
 
@@ -42,23 +38,23 @@ def test_plot_list_filters(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg), "--list"])
     assert result.exit_code == 0
-    assert "plot_a" in result.output
-    assert "plot_b" in result.output
+    assert "time_series" in result.output
+    assert "snapshot_by_channel" in result.output
 
-    result = runner.invoke(app, ["plot", str(cfg), "--list", "--only", "plot_a"])
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--only", "time_series"])
     assert result.exit_code == 0
-    assert "plot_a" in result.output
-    assert "plot_b" not in result.output
+    assert "time_series" in result.output
+    assert "snapshot_by_channel" not in result.output
 
-    result = runner.invoke(app, ["plot", str(cfg), "--list", "--exclude", "plot_a"])
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--exclude", "time_series"])
     assert result.exit_code == 0
-    assert "plot_a" not in result.output
-    assert "plot_b" in result.output
+    assert "time_series" not in result.output
+    assert "snapshot_by_channel" in result.output
 
 
 def test_plot_list_empty(tmp_path: Path) -> None:
     cfg = _base_config()
-    cfg["plots"]["specs"] = []
+    cfg["protocol"]["deliverables"]["plots"] = {"profile": "none"}
     cfg_path = write_config(tmp_path, cfg)
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg_path), "--list"])
@@ -105,16 +101,16 @@ def test_export_list_filters(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg), "--list"])
     assert result.exit_code == 0
-    assert "export_a" in result.output
+    assert "crosstalk_pairs_csv" in result.output
 
-    result = runner.invoke(app, ["export", str(cfg), "--list", "--only", "export_a"])
+    result = runner.invoke(app, ["export", str(cfg), "--list", "--only", "crosstalk_pairs_csv"])
     assert result.exit_code == 0
-    assert "export_a" in result.output
+    assert "crosstalk_pairs_csv" in result.output
 
 
 def test_export_list_empty(tmp_path: Path) -> None:
     cfg = _base_config()
-    cfg["exports"]["specs"] = []
+    cfg["protocol"]["deliverables"]["exports"] = {"exclude": ["crosstalk_pairs_csv"]}
     cfg_path = write_config(tmp_path, cfg)
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg_path), "--list"])
@@ -123,16 +119,7 @@ def test_export_list_empty(tmp_path: Path) -> None:
 
 
 def test_validate_checks_files_by_default(tmp_path: Path) -> None:
-    cfg = _base_config()
-    cfg["pipeline"]["steps"] = [
-        {"id": "ingest", "plugin": "ingest/synergy_h1"},
-        {
-            "id": "merge_map",
-            "plugin": "transform/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": {"file": "./inputs/metadata.xlsx"}},
-        },
-    ]
-    cfg_path = write_config(tmp_path, cfg)
+    cfg_path = write_config(tmp_path, _base_config())
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     file_path = inputs_dir / "metadata.xlsx"
@@ -148,16 +135,7 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
 
 
 def test_validate_no_files_skips_checks(tmp_path: Path) -> None:
-    cfg = _base_config()
-    cfg["pipeline"]["steps"] = [
-        {"id": "ingest", "plugin": "ingest/synergy_h1"},
-        {
-            "id": "merge_map",
-            "plugin": "transform/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": {"file": "./inputs/metadata.xlsx"}},
-        },
-    ]
-    cfg_path = write_config(tmp_path, cfg)
+    cfg_path = write_config(tmp_path, _base_config())
     runner = CliRunner()
     result = runner.invoke(app, ["validate", str(cfg_path), "--no-files"])
     assert result.exit_code == 0
@@ -168,7 +146,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "plot_a", "--mode", "none"],
+        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "time_series", "--mode", "none"],
     )
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
@@ -181,7 +159,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
 def test_plot_override_parses_runtime_inputs_to_typed_refs(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, _base_config())
     decl = load_decl(cfg_path)
-    plot_spec = list(resolve_workbench(decl).plots)[0]
+    plot_spec = next(spec for spec in resolve_workbench(decl).plots if spec.id == "time_series")
 
     overrides = _parse_input_overrides(
         ["df=override/df", "sample_map={file: ./inputs/metadata.xlsx}"],

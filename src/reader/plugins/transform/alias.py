@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from reader.core.labeling import apply_label_mappings
+from reader.plugins.transform._labeling import apply_label_mappings
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 

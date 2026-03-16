@@ -22,9 +22,8 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
-from reader.core.errors import ConfigError, ReaderError, RecordError
+from reader.errors import ConfigError, ReaderError, RecordError
 from reader.runtime import ReaderRuntime, builtin_runtime
-from reader.workbench.assets import resolve_notebook_template_asset, select_default_notebook_template
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
 from reader.workbench.engine import explain as explain_job
@@ -45,11 +44,13 @@ from reader.workbench.graph import (
     resolve_workbench,
     select_workbench_specs,
 )
-from reader.workbench.notebooks import (
-    notebook_template_catalog,
-    write_experiment_notebook,
+from reader.workbench.notebooks import write_experiment_notebook
+from reader.workbench.templates import (
+    builtin_notebook_template_catalog,
+    compatible_notebook_templates,
+    require_notebook_template_for_protocol,
+    resolve_notebook_template_descriptor,
 )
-from reader.workbench.recipes import describe_recipe, list_recipes
 
 THEME = Theme(
     {
@@ -186,67 +187,86 @@ def _launch_marimo(mode: str, target: Path, *, has_fcs: bool) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command(help="List recipes or describe one.")
-def recipes(
+@app.command(help="List built-in protocols or describe one.")
+def protocols(
     name: str | None = typer.Argument(
         None,
         metavar="[NAME]",
-        help="Optional recipe name to describe (e.g., plate_reader/synergy_h1).",
+        help="Optional protocol id to describe (e.g., plate_reader/dual_reporter_screen).",
     ),
     domain: str | None = typer.Option(
         None,
         "--domain",
         metavar="NAME",
-        help="Filter recipes by semantic domain.",
+        help="Filter protocols by semantic domain.",
     ),
     family: str | None = typer.Option(
         None,
         "--family",
         metavar="NAME",
-        help="Filter recipes by semantic family.",
+        help="Filter protocols by semantic family.",
     ),
 ):
+    runtime = builtin_runtime()
     try:
         if name:
-            info = describe_recipe(name)
-            table = _table(f"Recipe: {info['recipe']}")
-            table.add_column("#", justify="right", style="muted")
-            table.add_column("Step ID", style="accent")
-            table.add_column("Plugin")
-            for i, step in enumerate(info["steps"], 1):
-                table.add_row(str(i), step.get("id", ""), step.get("plugin", ""))
-            subtitle = f"{info['domain']}/{info['family']} • {info['summary']}"
-            console.print(Panel(table, border_style="accent", box=box.ROUNDED, subtitle=subtitle))
+            descriptor = runtime.protocols.resolve(name)
+            table = _table(f"Protocol: {descriptor.protocol}")
+            table.add_column("Section", style="accent")
+            table.add_column("Details")
+            table.add_row("Domain", descriptor.domain)
+            table.add_row("Family", descriptor.family)
+            table.add_row("Summary", descriptor.summary)
+            if descriptor.tags:
+                table.add_row("Tags", ", ".join(descriptor.tags))
+            if descriptor.factors:
+                table.add_row("Factors", ", ".join(f"{item.name} ({item.role})" for item in descriptor.factors))
+            if descriptor.windows:
+                table.add_row("Windows", ", ".join(item.id for item in descriptor.windows))
+            if descriptor.metrics:
+                table.add_row("Metrics", ", ".join(item.id for item in descriptor.metrics))
+            if descriptor.ranking is not None:
+                table.add_row("Primary ranking", descriptor.ranking.primary_metric)
+            table.add_row("Default notebook", descriptor.execution.notebook.default_template)
+            table.add_row("Allowed notebooks", ", ".join(descriptor.execution.notebook.allowed_templates))
+            if descriptor.deliverables:
+                plot_ids = [item.id for item in descriptor.deliverables if item.surface == "plots"]
+                export_ids = [item.id for item in descriptor.deliverables if item.surface == "exports"]
+                if plot_ids:
+                    table.add_row("Plot deliverables", ", ".join(plot_ids))
+                if export_ids:
+                    table.add_row("Export deliverables", ", ".join(export_ids))
+            if descriptor.execution.plugin_defaults:
+                table.add_row(
+                    "Plugin defaults", ", ".join(item.plugin for item in descriptor.execution.plugin_defaults)
+                )
+            console.print(Panel(table, border_style="accent", box=box.ROUNDED))
             return
 
-        table = _table("Recipes")
-        table.add_column("Name", style="accent")
+        table = _table("Protocols")
+        table.add_column("Name", style="accent", min_width=24)
         table.add_column("Domain")
         table.add_column("Family")
         table.add_column("Description")
-        for recipe, desc in list_recipes():
-            descriptor = describe_recipe(recipe)
-            if domain and descriptor["domain"] != domain:
+        for descriptor in runtime.protocols.all():
+            if domain and descriptor.domain != domain:
                 continue
-            if family and descriptor["family"] != family:
+            if family and descriptor.family != family:
                 continue
-            table.add_row(recipe, descriptor["domain"], descriptor["family"], desc)
+            table.add_row(descriptor.protocol, descriptor.domain, descriptor.family, descriptor.summary)
         console.print(Panel(table, border_style="accent", box=box.ROUNDED))
     except ConfigError as e:
         raise typer.BadParameter(str(e)) from e
 
 
 def _load_job_models(job_path: Path) -> tuple[ReaderSpec, WorkbenchDecl]:
+    runtime = builtin_runtime()
     spec = ReaderSpec.load(job_path)
-    return spec, build_workbench_decl(spec, source_path=job_path)
+    return spec, build_workbench_decl(spec, source_path=job_path, protocols=runtime.protocols)
 
 
 def _has_sfxi_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
     return pipeline_has_plugin(decl, runtime=runtime, tag="sfxi")
-
-
-def _has_cytometry_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
-    return pipeline_has_plugin(decl, runtime=runtime, domain="cytometry")
 
 
 def _dataframe_record_contracts(
@@ -282,7 +302,7 @@ def _template_requirements_satisfied(
     *,
     runtime: ReaderRuntime,
 ) -> bool:
-    descriptor = resolve_notebook_template_asset(template_name)
+    descriptor = resolve_notebook_template_descriptor(template_name)
     requirements = descriptor.capabilities.requires_any
     if not requirements:
         return True
@@ -311,6 +331,10 @@ def _template_requirements_satisfied(
             if record_contracts:
                 return True
     return False
+
+
+def _bind_decl_protocol(*, decl: WorkbenchDecl, runtime: ReaderRuntime):
+    return runtime.bind_protocol(decl.experiment_semantics.protocol)
 
 
 def _default_notebook_name() -> str:
@@ -346,13 +370,29 @@ def _scaffold_notebook(
 ) -> None:
     try:
         if list_templates:
-            table = _table("Notebook templates")
+            runtime = builtin_runtime()
+            bound_protocol = None
+            title = "Notebook templates"
+            descriptors = builtin_notebook_template_catalog().all()
+            if job is not None:
+                job_path = _infer_job_path(job)
+                _, decl = _load_job_models(job_path)
+                bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
+                title = f"Notebook templates: {bound_protocol.id}"
+                descriptors = compatible_notebook_templates(protocol=bound_protocol)
+            table = _table(title)
             table.add_column("Name", style="accent")
             table.add_column("Domain")
             table.add_column("Family")
+            if bound_protocol is not None:
+                table.add_column("Default", justify="center")
             table.add_column("Description")
-            for descriptor in notebook_template_catalog().all():
-                table.add_row(descriptor.template, descriptor.domain, descriptor.family, descriptor.summary)
+            for descriptor in descriptors:
+                row = [descriptor.template, descriptor.domain, descriptor.family]
+                if bound_protocol is not None:
+                    row.append("yes" if descriptor.template == bound_protocol.default_notebook_template else "")
+                row.append(descriptor.summary)
+                table.add_row(*row)
             console.print(Panel(table, border_style="accent", box=box.ROUNDED))
             return
         if overwrite and new:
@@ -366,17 +406,16 @@ def _scaffold_notebook(
         exp_dir = job_path.parent
         _, decl = _load_job_models(job_path)
         runtime = builtin_runtime()
+        bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
         workbench = resolve_workbench(decl)
         plot_specs = list(workbench.plots)
         notebook_specs = list(workbench.notebooks)
         configured_notebook = notebook_specs[0] if notebook_specs and not template_name else None
-        selected_template = template_name or (configured_notebook.template if configured_notebook is not None else None)
-        if not selected_template:
-            selected_template = select_default_notebook_template(
-                has_plots=bool(plot_specs),
-                has_cytometry=_has_cytometry_step(decl, runtime=runtime),
-            ).template
-        descriptor = resolve_notebook_template_asset(selected_template)
+        selected_template = bound_protocol.resolve_notebook_template(
+            explicit_template=template_name,
+            configured_template=(configured_notebook.template if configured_notebook is not None else None),
+        )
+        descriptor = require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
         if (plot_only or plot_exclude) and not descriptor.capabilities.supports_plot_filters:
             raise typer.BadParameter(
                 f"--only/--exclude are not supported with template {descriptor.template}. "
@@ -457,7 +496,7 @@ def notebook(
     template_name: str | None = typer.Option(
         None,
         "--template",
-        help="Notebook template (defaults to the first configured notebooks.specs entry, else auto-picks).",
+        help="Notebook template (defaults to the protocol default or protocol.deliverables.notebook.template).",
     ),
     list_templates: bool = typer.Option(
         False,
@@ -1623,7 +1662,7 @@ def _apply_step_overrides(
 def demo():
     steps = [
         ("1", "Find experiments", "reader ls"),
-        ("2", "List recipes", "reader recipes"),
+        ("2", "List protocols", "reader protocols"),
         ("3", "Explain plan", "reader explain 1"),
         ("4", "Validate config + inputs", "reader validate 1"),
         ("5", "Run pipeline (records)", "reader run 1"),

@@ -7,8 +7,8 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 
-from reader.core.errors import ConfigError, ExecutionError
-from reader.core.mpl import ensure_mpl_cache_dir
+from reader.errors import ConfigError, ExecutionError
+from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.experiment import ExperimentSemantics
@@ -20,7 +20,7 @@ from reader.workbench.graph import (
     input_ref_display,
     resolve_workbench,
 )
-from reader.workbench.notebooks import resolve_notebook_template_descriptor
+from reader.workbench.templates import require_notebook_template_for_protocol
 
 from ._shared import collect_categories
 from .contracts import _resolve_output_labels
@@ -79,53 +79,59 @@ def _assert_known_read_targets(*, label: str, step: Any, available_labels: set[s
         )
 
 
-def _validate_step_config(*, label: str, step: Any, plugin_cls: Any) -> None:
+def _effective_step_with(*, protocol: Any, step: Any) -> dict[str, Any]:
+    return protocol.effective_plugin_config(plugin_id=step.plugin, step_with=(step.with_ or {}))
+
+
+def _validate_step_config(*, label: str, step: Any, plugin_cls: Any, protocol: Any) -> dict[str, Any]:
+    with_block = _effective_step_with(protocol=protocol, step=step)
     try:
-        plugin_cls.ConfigModel.model_validate(step.with_ or {})
+        plugin_cls.ConfigModel.model_validate(with_block)
     except Exception as err:
         raise ConfigError(f"{label} {step.id}: invalid config for {step.plugin}: {err}") from err
+    return with_block
 
 
-def _validate_plot_semantic_refs(*, step: Any, experiment: ExperimentSemantics) -> None:
-    with_block = step.with_ or {}
+def _validate_plot_semantic_refs(*, step: Any, experiment: ExperimentSemantics, with_block: dict[str, Any]) -> None:
     partition = with_block.get("partition")
     if partition is not None:
         try:
-            experiment.assay.resolve_plot_partition(partition=partition)
+            experiment.annotations.resolve_plot_partition(partition=partition)
         except Exception as err:
             raise ConfigError(f"plot {step.id}: invalid plot partition: {err}") from err
 
     x_column = with_block.get("x")
     y_column = with_block.get("y")
     try:
-        experiment.assay.resolve_order_arg(
+        experiment.annotations.resolve_order_arg(
             order=with_block.get("order_x"),
             order_ref=with_block.get("order_x_ref"),
             column=(x_column if isinstance(x_column, str) else None),
             arg_name="order_x",
         )
-        experiment.assay.resolve_order_arg(
+        experiment.annotations.resolve_order_arg(
             order=with_block.get("order_y"),
             order_ref=with_block.get("order_y_ref"),
             column=(y_column if isinstance(y_column, str) else None),
             arg_name="order_y",
         )
         if isinstance(with_block.get("logic_map_ref"), str):
-            experiment.assay.resolve_logic_map(ref=with_block["logic_map_ref"])
+            experiment.annotations.resolve_logic_map(ref=with_block["logic_map_ref"])
     except Exception as err:
         raise ConfigError(f"plot {step.id}: invalid ordering semantic reference: {err}") from err
 
 
-def _validate_pipeline_semantic_refs(*, step: Any, experiment: ExperimentSemantics) -> None:
-    with_block = step.with_ or {}
+def _validate_pipeline_semantic_refs(*, step: Any, experiment: ExperimentSemantics, with_block: dict[str, Any]) -> None:
     try:
         if isinstance(with_block.get("logic_map_ref"), str):
-            experiment.assay.resolve_logic_map(ref=with_block["logic_map_ref"])
+            experiment.annotations.resolve_logic_map(ref=with_block["logic_map_ref"])
     except Exception as err:
-        raise ConfigError(f"pipeline {step.id}: invalid assay semantic reference: {err}") from err
+        raise ConfigError(f"pipeline {step.id}: invalid annotation semantic reference: {err}") from err
 
 
-def _validate_pipeline_steps(items: list[Any], *, registry: Any, experiment: ExperimentSemantics) -> set[str]:
+def _validate_pipeline_steps(
+    items: list[Any], *, registry: Any, experiment: ExperimentSemantics, protocol: Any
+) -> set[str]:
     available: set[str] = set()
     produced: set[str] = set()
     for step in items:
@@ -140,8 +146,8 @@ def _validate_pipeline_steps(items: list[Any], *, registry: Any, experiment: Exp
             available_labels=available | produced,
             plugin_cls=plugin_cls,
         )
-        _validate_step_config(label="pipeline", step=step, plugin_cls=plugin_cls)
-        _validate_pipeline_semantic_refs(step=step, experiment=experiment)
+        with_block = _validate_step_config(label="pipeline", step=step, plugin_cls=plugin_cls, protocol=protocol)
+        _validate_pipeline_semantic_refs(step=step, experiment=experiment, with_block=with_block)
         try:
             output_labels = _resolve_output_labels(
                 step_id=step.id,
@@ -168,6 +174,7 @@ def _validate_specs(
     label: str,
     registry: Any,
     available_labels: set[str],
+    protocol: Any,
     experiment: ExperimentSemantics | None = None,
 ) -> None:
     for spec_item in items:
@@ -182,13 +189,14 @@ def _validate_specs(
             available_labels=available_labels,
             plugin_cls=plugin_cls,
         )
-        _validate_step_config(label=label, step=spec_item, plugin_cls=plugin_cls)
+        with_block = _validate_step_config(label=label, step=spec_item, plugin_cls=plugin_cls, protocol=protocol)
         if label == "plot":
             if experiment is None:
                 raise ConfigError("plot validation requires experiment semantics")
             _validate_plot_semantic_refs(
                 step=spec_item,
                 experiment=experiment,
+                with_block=with_block,
             )
         data_outputs = {
             key: port.render() for key, port in plugin_cls.output_ports().items() if port.kind == "dataframe"
@@ -200,9 +208,9 @@ def _validate_specs(
             )
 
 
-def _validate_notebook_specs(items: list[Any]) -> None:
+def _validate_notebook_specs(items: list[Any], *, protocol: Any) -> None:
     for spec_item in items:
-        resolve_notebook_template_descriptor(spec_item.template)
+        require_notebook_template_for_protocol(spec_item.template, protocol=protocol)
 
 
 def validate(
@@ -224,9 +232,15 @@ def validate(
     if "plot" in categories:
         ensure_mpl_cache_dir()
     registry = runtime.plugins if categories else None
+    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
 
     experiment_semantics = decl.experiment_semantics
-    pipeline_labels = _validate_pipeline_steps(pipeline_steps, registry=registry, experiment=experiment_semantics)
+    pipeline_labels = _validate_pipeline_steps(
+        pipeline_steps,
+        registry=registry,
+        experiment=experiment_semantics,
+        protocol=bound_protocol,
+    )
     if plot_specs:
         if registry is None:
             raise ConfigError("plot validation requires plugin-backed workbench specs")
@@ -235,14 +249,21 @@ def validate(
             label="plot",
             registry=registry,
             available_labels=pipeline_labels,
+            protocol=bound_protocol,
             experiment=experiment_semantics,
         )
     if export_specs:
         if registry is None:
             raise ConfigError("export validation requires plugin-backed workbench specs")
-        _validate_specs(export_specs, label="export", registry=registry, available_labels=pipeline_labels)
+        _validate_specs(
+            export_specs,
+            label="export",
+            registry=registry,
+            available_labels=pipeline_labels,
+            protocol=bound_protocol,
+        )
     if notebook_specs:
-        _validate_notebook_specs(notebook_specs)
+        _validate_notebook_specs(notebook_specs, protocol=bound_protocol)
 
     files_checked = None
     missing_files: list[tuple[str, str, str, Path]] = []
@@ -255,7 +276,8 @@ def validate(
                 for key, target in (step.reads or {}).items():
                     if isinstance(target, FileRef | ResourceRef):
                         entries.append((label, step.id, key, target.path))
-                auto_roots = (step.with_ or {}).get("auto_roots") if hasattr(step, "with_") else None
+                with_block = _effective_step_with(protocol=bound_protocol, step=step) if hasattr(step, "with_") else {}
+                auto_roots = with_block.get("auto_roots")
                 if isinstance(auto_roots, list):
                     for root in auto_roots:
                         roots.append((label, step.id, Path(root)))
@@ -288,6 +310,7 @@ def validate(
 
     lines = [
         "[green]✓ Config validated[/green]",
+        f"[dim]protocol[/dim]: {decl.experiment_semantics.protocol.id}",
         f"[dim]pipeline[/dim]: {len(pipeline_steps)}",
         f"[dim]plots[/dim]: {len(plot_specs)}",
         f"[dim]exports[/dim]: {len(export_specs)}",

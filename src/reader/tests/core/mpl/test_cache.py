@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from reader.core.errors import ConfigError
-from reader.core.mpl import ensure_mpl_cache_dir
+from reader.errors import ConfigError
+from reader.plotting.mpl import ensure_mpl_cache_dir
 
 
 def test_ensure_mpl_cache_dir_env_points_to_file(tmp_path, monkeypatch):

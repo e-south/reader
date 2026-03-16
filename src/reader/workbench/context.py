@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from reader.core.plot_style import PaletteBook
+    from reader.plotting.style import PaletteBook
+    from reader.protocols import BoundProtocol
     from reader.workbench.experiment import ExperimentSemantics
 
 
@@ -31,3 +32,4 @@ class RunContext:
     palette_book: PaletteBook | None
     strict: bool = True
     experiment: ExperimentSemantics | None = None
+    protocol: BoundProtocol | None = None

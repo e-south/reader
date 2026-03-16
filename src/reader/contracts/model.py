@@ -14,7 +14,7 @@ from typing import Literal
 
 import pandas as pd
 
-from reader.core.errors import ContractError
+from reader.errors import ContractError
 
 type ContractId = str
 DType = Literal["string", "int", "float", "bool", "category", "datetime"]

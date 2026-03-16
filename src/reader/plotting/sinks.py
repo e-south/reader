@@ -1,11 +1,9 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
-src/reader/core/plot_sinks.py
+src/reader/plotting/sinks.py
 
 Plot sinks for saving rendered figures.
-
-Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
@@ -17,8 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from reader.core.errors import ExecutionError
-from reader.core.plot_utils import save_figure
+from reader.errors import ExecutionError
+from reader.plotting.utils import save_figure
 
 
 @dataclass(frozen=True)

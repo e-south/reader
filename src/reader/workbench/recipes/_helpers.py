@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 from reader.workbench.decl import (
     FileInputDecl,
     PluginStepDecl,

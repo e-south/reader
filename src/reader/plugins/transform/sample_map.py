@@ -20,8 +20,8 @@ from pathlib import Path
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import MergeError
 from reader.domains.plate_reader.io.sample_map import parse_sample_map
+from reader.errors import MergeError
 from reader.workbench.ports import dataframe_input, dataframe_output, file_path_input
 from reader.workbench.registry import Plugin, PluginConfig
 

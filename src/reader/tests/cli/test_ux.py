@@ -15,6 +15,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
+from reader.protocols import builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.tests.support import base_reader_config, build_decl, write_config
 from reader.workbench import PluginSemantics, cli
@@ -28,15 +29,16 @@ from reader.workbench.registry import Plugin, PluginConfig, Registry
 def _base_config() -> dict:
     return base_reader_config(
         experiment_id="exp",
-        plot_specs=[{"id": "plot_a", "plugin": "plot/time_series", "reads": {"df": {"record": "ingest/df"}}}],
-        export_specs=[
-            {
-                "id": "export_a",
-                "plugin": "export/csv",
-                "reads": {"df": {"record": "ingest/df"}},
-                "with": {"path": "a.csv"},
-            }
-        ],
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_parameters={"fold_change": {"report_times": [14.0]}},
+        protocol_analysis={
+            "crosstalk_pairs": {"enabled": True, "export": True},
+        },
+        protocol_deliverables={
+            "plots": {"profile": "none", "include": ["time_series"]},
+            "exports": {"include": ["crosstalk_pairs_csv"]},
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
 
 
@@ -105,8 +107,8 @@ def test_ls_all_includes_template_dirs(monkeypatch, tmp_path: Path) -> None:
     assert "template" in output
 
 
-def test_next_steps_commands_are_clean() -> None:
-    spec = ReaderSpec.model_validate(_base_config())
+def test_next_steps_commands_are_clean(tmp_path: Path) -> None:
+    spec = ReaderSpec.load(write_config(tmp_path / "config.yaml", _base_config()))
     steps = build_next_steps(build_decl(spec), job_label="1")
     commands = [cmd for cmd, _ in steps]
     assert any(cmd.startswith("reader records 1") for cmd in commands)
@@ -117,23 +119,27 @@ def test_next_steps_commands_are_clean() -> None:
     assert not any("--edit" in cmd for cmd in commands)
 
 
-def test_next_steps_prefers_config_notebook_template() -> None:
+def test_next_steps_prefers_config_notebook_template(tmp_path: Path) -> None:
     cfg = _base_config()
-    cfg["notebooks"] = {"specs": [{"id": "basic", "template": "notebook/basic"}]}
-    spec = ReaderSpec.model_validate(cfg)
+    cfg["protocol"]["deliverables"]["notebook"] = {"template": "notebook/basic"}
+    spec = ReaderSpec.load(write_config(tmp_path / "config.yaml", cfg))
     steps = build_next_steps(build_decl(spec), job_label="1")
     notes = [desc for _, desc in steps]
     assert any("template notebook/basic" in desc for desc in notes)
 
 
-def test_next_steps_uses_cytometry_notebook_for_cytometry_pipeline() -> None:
+def test_next_steps_uses_protocol_default_notebook(tmp_path: Path) -> None:
     cfg = base_reader_config(
         experiment_id="exp",
-        pipeline_steps=[{"id": "ingest_cyto", "plugin": "ingest/flow_cytometer"}],
-        plot_specs=[],
-        export_specs=[],
+        protocol_id="cytometry/flow_panel",
+        protocol_parameters={
+            "ingest": {"auto_roots": ["./inputs"]},
+            "metadata": {"require_columns": ["design_id", "treatment"]},
+        },
+        resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
     )
-    spec = ReaderSpec.model_validate(cfg)
+    tmp_cfg = write_config(tmp_path, cfg)
+    spec = ReaderSpec.load(tmp_cfg)
     notes = [desc for _, desc in build_next_steps(build_decl(spec), job_label="1")]
     assert any("template notebook/cytometry" in desc for desc in notes)
 
@@ -175,7 +181,12 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "builtin_runtime",
-        lambda: ReaderRuntime(contracts=builtin_contract_catalog(), plugins=reg, assets=AssetCatalog([])),
+        lambda: ReaderRuntime(
+            contracts=builtin_contract_catalog(),
+            protocols=builtin_protocol_catalog(),
+            plugins=reg,
+            assets=AssetCatalog([]),
+        ),
     )
 
     cli.plugins(category=None, domain=None, family=None)
@@ -187,12 +198,23 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     assert "for CLI tests." in output
 
 
-def test_recipes_command_filters_by_family() -> None:
+def test_protocols_command_filters_by_family() -> None:
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["recipes", "--family", "plot_set"])
+    result = runner.invoke(cli.app, ["protocols", "--family", "screen_analysis"])
     assert result.exit_code == 0
-    assert "plot_set" in result.output
-    assert "synergy_h1" not in result.output
+    assert "screen_analysis" in result.output
+    assert "plate_reader" in result.output
+    assert "cytometry/flow_panel" not in result.output
+
+
+def test_protocols_command_lists_builtin_protocols() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["protocols", "plate_reader/dual_reporter_screen"])
+    assert result.exit_code == 0
+    assert "Protocol:" in result.output
+    assert "plate_reader/dual_reporter_screen" in result.output
+    assert "Dual-reporter screen protocol" in result.output
+    assert "notebook/eda" in result.output
 
 
 def test_notebook_list_templates_command_shows_semantics() -> None:
@@ -203,6 +225,22 @@ def test_notebook_list_templates_command_shows_semantics() -> None:
     assert "notebook/cytometry" in result.output
     assert "cytometry" in result.output
     assert "record_explorer" in result.output
+
+
+def test_notebook_list_templates_respects_protocol(tmp_path: Path) -> None:
+    cfg = base_reader_config(
+        experiment_id="exp",
+        protocol_id="logic/sfxi_screen",
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    cfg_path = write_config(tmp_path, cfg)
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["notebook", str(cfg_path), "--list-templates"])
+    assert result.exit_code == 0
+    assert "Notebook templates: logic/sfxi_screen" in result.output
+    assert "SFXI vec8" in result.output
+    assert "yes" in result.output
+    assert "notebook/cytometry" not in result.output
 
 
 def test_demo_command_lists_expected_workbench_lifecycle() -> None:

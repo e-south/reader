@@ -2,20 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from reader.protocols.model import ProtocolBinding
 
 ResourceKind = Literal["file", "directory"]
 
 
 @dataclass(frozen=True)
-class AssayLabelSpec:
+class AnnotationLabelSpec:
     source: str
     values: dict[str, str] = field(default_factory=dict)
     output: str | None = None
 
 
 @dataclass(frozen=True)
-class ResolvedAssayLabelSpec:
+class ResolvedAnnotationLabelSpec:
     ref: str
     source: str
     output: str | None
@@ -23,23 +26,23 @@ class ResolvedAssayLabelSpec:
 
 
 @dataclass(frozen=True)
-class AssayLabels:
-    by_id: dict[str, AssayLabelSpec] = field(default_factory=dict)
+class AnnotationLabels:
+    by_id: dict[str, AnnotationLabelSpec] = field(default_factory=dict)
 
-    def resolve(self, refs: list[str] | None = None) -> list[ResolvedAssayLabelSpec]:
+    def resolve(self, refs: list[str] | None = None) -> list[ResolvedAnnotationLabelSpec]:
         requested = list(self.by_id) if refs is None else refs
         if not requested:
             return []
-        resolved: list[ResolvedAssayLabelSpec] = []
+        resolved: list[ResolvedAnnotationLabelSpec] = []
         for raw_ref in requested:
             ref = str(raw_ref).strip()
             if not ref:
                 raise ValueError("label refs must be non-empty strings")
             spec = self.by_id.get(ref)
             if spec is None:
-                raise ValueError(f"assay.labels missing key '{ref}'")
+                raise ValueError(f"annotations.labels missing key '{ref}'")
             resolved.append(
-                ResolvedAssayLabelSpec(
+                ResolvedAnnotationLabelSpec(
                     ref=ref,
                     source=spec.source,
                     output=spec.output,
@@ -50,14 +53,14 @@ class AssayLabels:
 
 
 @dataclass(frozen=True)
-class AssayOrderSpec:
+class AnnotationOrderSpec:
     column: str
     values: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
-class AssayOrders:
-    by_id: dict[str, AssayOrderSpec] = field(default_factory=dict)
+class AnnotationOrders:
+    by_id: dict[str, AnnotationOrderSpec] = field(default_factory=dict)
 
     def resolve(
         self,
@@ -82,24 +85,24 @@ class AssayOrders:
         if spec is None:
             options = ", ".join(sorted(self.by_id)) if self.by_id else "—"
             raise ValueError(
-                f"Unknown {arg_name}_ref '{ref}'. Define it under assay.orders.{ref}. (available: {options})"
+                f"Unknown {arg_name}_ref '{ref}'. Define it under annotations.orders.{ref}. (available: {options})"
             )
         if column and spec.column and str(column) != str(spec.column):
             raise ValueError(f"{arg_name}_ref '{ref}' targets column {spec.column!r}, but plot uses column {column!r}")
         if not spec.values:
-            raise ValueError(f"assay.orders.{ref}.values must not be empty")
+            raise ValueError(f"annotations.orders.{ref}.values must not be empty")
         return [str(item) for item in spec.values]
 
 
 @dataclass(frozen=True)
-class AssayCollectionSpec:
+class AnnotationCollectionSpec:
     column: str
     items: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class AssayCollections:
-    by_id: dict[str, AssayCollectionSpec] = field(default_factory=dict)
+class AnnotationCollections:
+    by_id: dict[str, AnnotationCollectionSpec] = field(default_factory=dict)
 
     def resolve(self, *, ref: str) -> dict[str, Any]:
         collection_ref = str(ref).strip()
@@ -110,14 +113,14 @@ class AssayCollections:
             options = ", ".join(sorted(self.by_id)) if self.by_id else "—"
             raise ValueError(
                 f"Unknown collection_ref '{collection_ref}'. "
-                f"Define it under assay.collections.{collection_ref}. (available: {options})"
+                f"Define it under annotations.collections.{collection_ref}. (available: {options})"
             )
         if not spec.items:
-            raise ValueError(f"assay.collections.{collection_ref}.items must be a non-empty mapping")
+            raise ValueError(f"annotations.collections.{collection_ref}.items must be a non-empty mapping")
         normalized_items: list[dict[str, list[str]]] = []
         for label, values in spec.items.items():
             if not values:
-                raise ValueError(f"assay.collections.{collection_ref}.items.{label} must be a non-empty list")
+                raise ValueError(f"annotations.collections.{collection_ref}.items.{label} must be a non-empty list")
             normalized_items.append({str(label): [str(value) for value in values]})
         return {"column": spec.column, "items": normalized_items}
 
@@ -148,10 +151,10 @@ class LogicMaps:
         if spec is None:
             options = ", ".join(sorted(self.by_id)) if self.by_id else "—"
             raise ValueError(
-                f"Unknown logic_map_ref '{logic_ref}'. Define it under assay.logic_maps.{logic_ref}. (available: {options})"
+                f"Unknown logic_map_ref '{logic_ref}'. Define it under annotations.logic_maps.{logic_ref}. (available: {options})"
             )
         if set(spec.corners) != {"00", "10", "01", "11"}:
-            raise ValueError(f"assay.logic_maps.{logic_ref}.corners must have exactly 00/10/01/11")
+            raise ValueError(f"annotations.logic_maps.{logic_ref}.corners must have exactly 00/10/01/11")
         return ResolvedLogicMap(
             column=spec.column,
             corners={str(key): str(value) for key, value in spec.corners.items()},
@@ -167,13 +170,13 @@ class ResolvedPlotPartition:
 
 
 @dataclass(frozen=True)
-class AssaySemantics:
-    labels: AssayLabels = field(default_factory=AssayLabels)
-    orders: AssayOrders = field(default_factory=AssayOrders)
-    collections: AssayCollections = field(default_factory=AssayCollections)
+class AnnotationSemantics:
+    labels: AnnotationLabels = field(default_factory=AnnotationLabels)
+    orders: AnnotationOrders = field(default_factory=AnnotationOrders)
+    collections: AnnotationCollections = field(default_factory=AnnotationCollections)
     logic_maps: LogicMaps = field(default_factory=LogicMaps)
 
-    def resolve_label_specs(self, refs: list[str] | None = None) -> list[ResolvedAssayLabelSpec]:
+    def resolve_label_specs(self, refs: list[str] | None = None) -> list[ResolvedAnnotationLabelSpec]:
         return self.labels.resolve(refs)
 
     def resolve_order_arg(
@@ -271,6 +274,7 @@ class OutputLayout:
 
 @dataclass(frozen=True)
 class ExperimentSemantics:
-    assay: AssaySemantics
+    protocol: ProtocolBinding
+    annotations: AnnotationSemantics
     resources: ResourceCatalog
     layout: OutputLayout

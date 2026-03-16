@@ -9,8 +9,9 @@ import pandas.testing as pdt
 
 from reader.domains.logic.sfxi.run import build_vec8_from_tidy
 from reader.plugins.transform.sfxi import SFXICfg, SFXITransform
+from reader.protocols import ProtocolBinding
 from reader.workbench.experiment import (
-    AssaySemantics,
+    AnnotationSemantics,
     ExperimentSemantics,
     LogicMaps,
     LogicMapSpec,
@@ -23,7 +24,8 @@ def _ctx():
     return SimpleNamespace(
         logger=logging.getLogger("reader.tests.sfxi"),
         experiment=ExperimentSemantics(
-            assay=AssaySemantics(
+            protocol=ProtocolBinding(id="logic/sfxi_screen"),
+            annotations=AnnotationSemantics(
                 logic_maps=LogicMaps(
                     by_id={
                         "screen": LogicMapSpec(
@@ -78,7 +80,7 @@ def test_sfxi_plugin_matches_build_vec8_from_tidy():
     )
     df = _input_df()
 
-    logic_map = ctx.experiment.assay.resolve_logic_map(ref=cfg.logic_map_ref)
+    logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
     run_cfg = cfg.model_dump()
     run_cfg["treatment_map"] = dict(logic_map.corners)
     run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive

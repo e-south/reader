@@ -24,8 +24,8 @@ import pandas as pd
 import polars as pl
 from matplotlib.colors import Colormap, LinearSegmentedColormap
 
-from reader.core.plot_sinks import PlotFigure
-from reader.core.plot_style import new_fig_ax, use_style
+from reader.plotting.sinks import PlotFigure
+from reader.plotting.style import new_fig_ax, use_style
 
 from ...analysis.timepoints import choose_nearest_time
 from ..common import alias_column, emit_plot_figure, pretty_name, warn_if_empty

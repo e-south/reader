@@ -2,25 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from reader.core.errors import ConfigError
-from reader.workbench.assets import (
-    AssetCatalog,
-    AssetDescriptor,
-    describe_recipe_asset,
-    list_recipe_assets,
-    recipe_asset_catalog,
-    resolve_recipe_asset,
-    resolve_recipe_steps,
-)
+from reader.errors import ConfigError
+from reader.workbench.decl import PluginStepDecl, RecipeSourceDecl
 from reader.workbench.ontology import WorkbenchRecipeSemantics
+from reader.workbench.recipes.plate_reader import PLATE_READER_RECIPES
+from reader.workbench.recipes.plots import PLOT_RECIPES
+from reader.workbench.recipes.sfxi import SFXI_RECIPES
 
-RecipeCatalog = AssetCatalog
-RecipeDescriptor = AssetDescriptor
-RECIPES = recipe_asset_catalog()
+RecipeInfo = dict[str, Any]
+RecipeCatalog = dict[str, RecipeInfo]
 
 
 def _build_recipe_catalog(*sources: tuple[str, dict[str, dict[str, Any]]]) -> RecipeCatalog:
-    descriptors: list[RecipeDescriptor] = []
+    catalog: RecipeCatalog = {}
     owners: dict[str, str] = {}
     for owner, source in sources:
         for recipe, info in source.items():
@@ -33,40 +27,36 @@ def _build_recipe_catalog(*sources: tuple[str, dict[str, dict[str, Any]]]) -> Re
             steps = info.get("steps", [])
             if not isinstance(steps, list):
                 raise ConfigError(f"Recipe {recipe!r} in {owner} must declare a list of steps.")
-            descriptors.append(
-                RecipeDescriptor(
-                    kind="recipe",
-                    name=recipe,
-                    domain=semantics.domain,
-                    family=semantics.family,
-                    summary=semantics.summary,
-                    tags=tuple(semantics.tags),
-                    steps=tuple(steps),
-                )
-            )
+            if not all(isinstance(step, PluginStepDecl) for step in steps):
+                raise ConfigError(f"Recipe {recipe!r} in {owner} must declare PluginStepDecl steps.")
+            catalog[recipe] = {"semantics": semantics, "steps": tuple(steps)}
             owners[recipe] = owner
-    return RecipeCatalog(descriptors)
+    return catalog
 
 
-def list_recipes(family: str | None = None) -> list[tuple[str, str]]:
-    return list_recipe_assets(family=family)
+RECIPES = _build_recipe_catalog(
+    ("plate_reader", PLATE_READER_RECIPES),
+    ("sfxi", SFXI_RECIPES),
+    ("plots", PLOT_RECIPES),
+)
 
 
-def resolve_recipe(name: str, *, with_args: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    return resolve_recipe_steps(name, with_args=with_args)
+def resolve_recipe_steps(name: str, *, with_args: dict[str, Any] | None = None) -> list[PluginStepDecl]:
+    try:
+        info = RECIPES[name]
+    except KeyError:
+        options = ", ".join(sorted(RECIPES)) or "—"
+        raise ConfigError(f"Unknown internal recipe {name!r}. Available recipes: {options}") from None
+    source = RecipeSourceDecl(recipe=name, with_=dict(with_args or {}))
+    return [_attach_recipe_source(step, source=source) for step in info["steps"]]
 
 
-def describe_recipe(name: str) -> dict[str, Any]:
-    return describe_recipe_asset(name)
-
-
-__all__ = [
-    "RECIPES",
-    "RecipeCatalog",
-    "RecipeDescriptor",
-    "_build_recipe_catalog",
-    "describe_recipe",
-    "list_recipes",
-    "resolve_recipe",
-    "resolve_recipe_asset",
-]
+def _attach_recipe_source(step: PluginStepDecl, *, source: RecipeSourceDecl) -> PluginStepDecl:
+    return PluginStepDecl(
+        id=step.id,
+        plugin=step.plugin,
+        reads=dict(step.reads or {}),
+        writes=dict(step.writes or {}),
+        with_=dict(step.with_ or {}),
+        source_recipe=RecipeSourceDecl(recipe=source.recipe, with_=dict(source.with_ or {})),
+    )

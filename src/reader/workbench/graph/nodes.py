@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 from reader.workbench.graph.refs import (
     InputRef,
     OutputRef,

@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from reader.contracts import ContractCatalog, ContractId
-from reader.core.errors import RecordError
+from reader.errors import RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.records.model import (

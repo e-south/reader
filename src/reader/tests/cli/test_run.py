@@ -11,11 +11,10 @@ from reader.workbench.cli import app
 def _run_config() -> dict:
     return base_reader_config(
         experiment_id="exp_run",
-        pipeline_steps=[
-            {"id": "ingest", "plugin": "ingest/synergy_h1"},
-            {"id": "labels", "plugin": "transform/assay_labels", "reads": {"df": "ingest/df"}},
-        ],
-        assay={
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_analysis={"include_fold_change": False},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
             "labels": {
                 "design_id": {
                     "source": "design_id",

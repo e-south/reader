@@ -18,11 +18,11 @@ from typing import TYPE_CHECKING, Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from reader.core.plot_sinks import PlotFigure
-from reader.core.plot_utils import save_figure
+from reader.plotting.sinks import PlotFigure
+from reader.plotting.utils import save_figure
 
 if TYPE_CHECKING:
-    from reader.core.plot_style import PaletteBook
+    from reader.plotting.style import PaletteBook
 
 
 def require_columns(df: pd.DataFrame, cols: Iterable[str], *, where: str) -> None:

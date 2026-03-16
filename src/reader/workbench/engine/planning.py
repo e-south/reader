@@ -8,9 +8,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from reader.core.mpl import ensure_mpl_cache_dir
+from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
-from reader.workbench.assets import resolve_notebook_template_asset, select_default_notebook_template
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.graph import (
     OutputRef,
@@ -18,8 +17,9 @@ from reader.workbench.graph import (
     output_ref_display,
     resolve_workbench,
 )
+from reader.workbench.templates import require_notebook_template_for_protocol, resolve_notebook_template_descriptor
 
-from ._shared import collect_categories, has_cytometry_step
+from ._shared import collect_categories
 
 
 def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
@@ -87,7 +87,7 @@ def _notebook_table(steps: list[Any], *, title: str) -> Table:
     table.add_column("Type")
     table.add_column("Config")
     for index, step in enumerate(steps, 1):
-        descriptor = resolve_notebook_template_asset(step.template)
+        descriptor = resolve_notebook_template_descriptor(step.template)
         table.add_row(
             str(index),
             step.id,
@@ -104,6 +104,7 @@ def build_next_steps(
     job_label: str | None = None,
     runtime: ReaderRuntime | None = None,
 ) -> list[tuple[str, str]]:
+    runtime = runtime or builtin_runtime()
     label = (job_label or "").strip()
 
     def _cmd(base: str, tail: str = "") -> str:
@@ -114,12 +115,11 @@ def build_next_steps(
     plot_specs = list(workbench.plots)
     export_specs = list(workbench.exports)
     notebook_specs = list(workbench.notebooks)
-    notebook_template = notebook_specs[0].template if notebook_specs else None
-    if not notebook_template:
-        notebook_template = select_default_notebook_template(
-            has_plots=bool(plot_specs),
-            has_cytometry=has_cytometry_step(decl, runtime=runtime),
-        ).template
+    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
+    notebook_template = bound_protocol.resolve_notebook_template(
+        configured_template=(notebook_specs[0].template if notebook_specs else None)
+    )
+    require_notebook_template_for_protocol(notebook_template, protocol=bound_protocol)
     steps.append((_cmd("reader records"), "Review generated workbench records (QC)"))
     if plot_specs:
         steps.append((_cmd("reader plot"), "Save plot files to outputs/plots"))

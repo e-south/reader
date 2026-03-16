@@ -16,7 +16,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from reader.core.errors import ParseError
+from reader.errors import ParseError
 
 
 def _to_float(value) -> float:

@@ -9,7 +9,7 @@ from reader.domains.logic.sfxi.run import SFXIBuildResult, build_vec8_from_tidy
 def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
     if ctx.experiment is None:
         raise ValueError("sfxi requires experiment semantics in the run context")
-    logic_map = ctx.experiment.assay.resolve_logic_map(ref=cfg.logic_map_ref)
+    logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
     run_cfg = cfg.model_dump()
     run_cfg["treatment_map"] = dict(logic_map.corners)
     run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive

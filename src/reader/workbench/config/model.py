@@ -2,59 +2,11 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
-from reader.core.errors import ConfigError
-
-
-class RecipeCallSpec(BaseModel):
-    recipe: str
-    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
-
-    model_config = {"populate_by_name": True, "extra": "forbid"}
-
-
-class InputBindingSpec(BaseModel):
-    record: str | None = None
-    file: str | None = None
-    resource: str | None = None
-
-    model_config = {"extra": "forbid"}
-
-    @model_validator(mode="after")
-    def _validate_shape(self) -> InputBindingSpec:
-        populated = [name for name in ("record", "file", "resource") if getattr(self, name) is not None]
-        if len(populated) != 1:
-            raise ValueError("input binding must declare exactly one of record, file, or resource")
-        value = getattr(self, populated[0])
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"input binding {populated[0]} value must be a non-empty string")
-        return self
-
-
-class OutputBindingSpec(BaseModel):
-    record: str
-
-    model_config = {"extra": "forbid"}
-
-    @field_validator("record", mode="after")
-    @classmethod
-    def _validate_record(cls, v: str) -> str:
-        if not isinstance(v, str) or not v.strip():
-            raise ValueError("output binding record must be a non-empty string")
-        return v
-
-
-class PluginStepSpec(BaseModel):
-    id: str
-    plugin: str
-    reads: dict[str, InputBindingSpec] = Field(default_factory=dict)
-    writes: dict[str, OutputBindingSpec] = Field(default_factory=dict)
-    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
-
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+from reader.errors import ConfigError
 
 
 class ExperimentSpec(BaseModel):
@@ -87,7 +39,7 @@ class PlottingSpec(BaseModel):
 
 
 class ResourceSpec(BaseModel):
-    kind: Literal["file", "directory"]
+    kind: str
     path: str
 
     model_config = {"extra": "forbid"}
@@ -99,7 +51,7 @@ class ResourcesSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class AssayLabelSpec(BaseModel):
+class AnnotationLabelSpec(BaseModel):
     source: str
     values: dict[str, str] = Field(default_factory=dict)
     output: str | None = None
@@ -107,21 +59,21 @@ class AssayLabelSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class AssayOrderSpec(BaseModel):
+class AnnotationOrderSpec(BaseModel):
     column: str
     values: list[str] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
 
-class AssayCollectionSpec(BaseModel):
+class AnnotationCollectionSpec(BaseModel):
     column: str
     items: dict[str, list[str]] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
 
-class AssayLogicMapSpec(BaseModel):
+class AnnotationLogicMapSpec(BaseModel):
     column: str
     corners: dict[str, str]
     case_sensitive: bool = True
@@ -129,81 +81,70 @@ class AssayLogicMapSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class AssaySpec(BaseModel):
-    labels: dict[str, AssayLabelSpec] = Field(default_factory=dict)
-    orders: dict[str, AssayOrderSpec] = Field(default_factory=dict)
-    collections: dict[str, AssayCollectionSpec] = Field(default_factory=dict)
-    logic_maps: dict[str, AssayLogicMapSpec] = Field(default_factory=dict)
+class AnnotationSpec(BaseModel):
+    labels: dict[str, AnnotationLabelSpec] = Field(default_factory=dict)
+    orders: dict[str, AnnotationOrderSpec] = Field(default_factory=dict)
+    collections: dict[str, AnnotationCollectionSpec] = Field(default_factory=dict)
+    logic_maps: dict[str, AnnotationLogicMapSpec] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
 
-class PipelineSpec(BaseModel):
-    recipes: list[str | RecipeCallSpec] = Field(default_factory=list)
-    runtime: dict[str, Any] = Field(default_factory=dict)
-    overrides: dict[str, Any] = Field(default_factory=dict)
-    steps: list[PluginStepSpec]
+class NotebookDeliverablesSpec(BaseModel):
+    template: str | None = None
 
     model_config = {"extra": "forbid"}
 
 
-class SpecDefaults(BaseModel):
-    reads: dict[str, InputBindingSpec] = Field(default_factory=dict)
-    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
+class SurfaceDeliverablesSpec(BaseModel):
+    profile: str | None = None
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    settings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
 
-class PlotSection(BaseModel):
-    recipes: list[str | RecipeCallSpec] = Field(default_factory=list)
-    overrides: dict[str, Any] = Field(default_factory=dict)
-    defaults: SpecDefaults = Field(default_factory=SpecDefaults)
-    specs: list[PluginStepSpec] = Field(default_factory=list)
+class DeliverablesSpec(BaseModel):
+    notebook: NotebookDeliverablesSpec = Field(default_factory=NotebookDeliverablesSpec)
+    plots: SurfaceDeliverablesSpec = Field(default_factory=SurfaceDeliverablesSpec)
+    exports: SurfaceDeliverablesSpec = Field(default_factory=SurfaceDeliverablesSpec)
 
     model_config = {"extra": "forbid"}
 
 
-class ExportSection(BaseModel):
-    recipes: list[str | RecipeCallSpec] = Field(default_factory=list)
-    overrides: dict[str, Any] = Field(default_factory=dict)
-    defaults: SpecDefaults = Field(default_factory=SpecDefaults)
-    specs: list[PluginStepSpec] = Field(default_factory=list)
-
-    model_config = {"extra": "forbid"}
-
-
-class NotebookTemplateCallSpec(BaseModel):
+class ProtocolBindingSpec(BaseModel):
     id: str
-    template: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    analysis: dict[str, Any] = Field(default_factory=dict)
+    deliverables: DeliverablesSpec = Field(default_factory=DeliverablesSpec)
 
     model_config = {"extra": "forbid"}
 
-
-class NotebookSection(BaseModel):
-    specs: list[NotebookTemplateCallSpec] = Field(default_factory=list)
-
-    model_config = {"extra": "forbid"}
+    @field_validator("id", mode="after")
+    @classmethod
+    def _validate_id(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ConfigError("protocol.id must be a non-empty string")
+        return v
 
 
 class ReaderSpec(BaseModel):
     schema_: str = Field(alias="schema")
     experiment: ExperimentSpec
+    protocol: ProtocolBindingSpec
     paths: PathsSpec = Field(default_factory=PathsSpec)
     plotting: PlottingSpec = Field(default_factory=PlottingSpec)
     resources: ResourcesSpec = Field(default_factory=ResourcesSpec)
-    assay: AssaySpec = Field(default_factory=AssaySpec)
-    pipeline: PipelineSpec
-    plots: PlotSection = Field(default_factory=PlotSection)
-    exports: ExportSection = Field(default_factory=ExportSection)
-    notebooks: NotebookSection = Field(default_factory=NotebookSection)
+    annotations: AnnotationSpec = Field(default_factory=AnnotationSpec)
 
     model_config = {"extra": "forbid"}
 
     @field_validator("schema_", mode="after")
     @classmethod
     def _validate_schema(cls, v: str) -> str:
-        if v != "reader/v4":
-            raise ConfigError("Config schema must be 'reader/v4'. This repo only supports reader/v4.")
+        if v != "reader/v6":
+            raise ConfigError("Config schema must be 'reader/v6'. This repo only supports reader/v6.")
         return v
 
     @classmethod

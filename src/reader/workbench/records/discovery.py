@@ -4,7 +4,7 @@ import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reader.core.errors import RecordError
+from reader.errors import RecordError
 
 if TYPE_CHECKING:
     from reader.runtime import ReaderRuntime

@@ -14,7 +14,7 @@ from typing import Any
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure
+from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig
@@ -48,7 +48,7 @@ class LogicSymmetryPlot(FigurePlotPlugin):
         df: pd.DataFrame = inputs["df"]
         from reader.domains.logic.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
 
-        logic_map = ctx.experiment.assay.resolve_logic_map(ref=cfg.logic_map_ref)
+        logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],

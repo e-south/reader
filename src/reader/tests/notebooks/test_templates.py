@@ -11,11 +11,18 @@ import ast
 
 import pytest
 
-from reader.core.errors import ConfigError
-from reader.workbench.assets import AssetCapabilities, select_default_notebook_template
-from reader.workbench.notebooks import notebook_template_catalog
-from reader.workbench.notebooks import templates as notebook_templates
-from reader.workbench.notebooks.catalog import NotebookTemplateCatalog, NotebookTemplateDescriptor
+from reader.errors import ConfigError
+from reader.protocols import ProtocolBinding, builtin_protocol_catalog
+from reader.workbench.assets import AssetCapabilities
+from reader.workbench.templates import (
+    NotebookTemplateCatalog,
+    NotebookTemplateDescriptor,
+    builtin_notebook_template_catalog,
+    compatible_notebook_templates,
+    require_notebook_template_for_protocol,
+    resolve_notebook_template_descriptor,
+    select_default_notebook_template,
+)
 
 
 def _is_app_cell(dec: ast.AST) -> bool:
@@ -72,27 +79,17 @@ def _find_duplicates(template: str) -> set[str]:
 
 
 def test_notebook_templates_no_duplicate_globals() -> None:
-    templates = {
-        "notebook/eda": notebook_templates.EXPERIMENT_NOTEBOOK_EDA_TEMPLATE,
-        "notebook/basic": notebook_templates.EXPERIMENT_EDA_BASIC_TEMPLATE,
-        "notebook/microplate": notebook_templates.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
-        "notebook/cytometry": notebook_templates.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
-        "notebook/sfxi_eda": notebook_templates.EXPERIMENT_SFXI_EDA_TEMPLATE,
-    }
-    for name, template in templates.items():
+    for descriptor in builtin_notebook_template_catalog().all():
+        name = descriptor.template
+        template = descriptor.load_body()
         dupes = sorted(_find_duplicates(template))
         assert not dupes, f"{name} defines the same non-private name in multiple cells: {dupes}"
 
 
 def test_notebook_templates_parse() -> None:
-    templates = {
-        "notebook/eda": notebook_templates.EXPERIMENT_NOTEBOOK_EDA_TEMPLATE,
-        "notebook/basic": notebook_templates.EXPERIMENT_EDA_BASIC_TEMPLATE,
-        "notebook/microplate": notebook_templates.EXPERIMENT_EDA_MICROPLATE_TEMPLATE,
-        "notebook/cytometry": notebook_templates.EXPERIMENT_EDA_CYTOMETRY_TEMPLATE,
-        "notebook/sfxi_eda": notebook_templates.EXPERIMENT_SFXI_EDA_TEMPLATE,
-    }
-    for name, template in templates.items():
+    for descriptor in builtin_notebook_template_catalog().all():
+        name = descriptor.template
+        template = descriptor.load_body()
         try:
             ast.parse(template)
         except SyntaxError as exc:  # pragma: no cover - explicit failure path
@@ -100,7 +97,7 @@ def test_notebook_templates_parse() -> None:
 
 
 def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
-    template = notebook_templates.EXPERIMENT_EDA_BASIC_TEMPLATE
+    template = resolve_notebook_template_descriptor("notebook/basic").load_body()
     assert "pl.read_parquet" in template
     assert "pd.read_parquet" not in template
     assert "Polars is required to read parquet" in template
@@ -109,7 +106,7 @@ def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
 
 
 def test_notebook_template_catalog_exposes_domain_semantics() -> None:
-    descriptors = {item.template: item for item in notebook_template_catalog().all()}
+    descriptors = {item.template: item for item in builtin_notebook_template_catalog().all()}
     assert descriptors["notebook/eda"].domain == "generic"
     assert descriptors["notebook/microplate"].domain == "plate_reader"
     assert descriptors["notebook/cytometry"].domain == "cytometry"
@@ -118,20 +115,42 @@ def test_notebook_template_catalog_exposes_domain_semantics() -> None:
     assert descriptors["notebook/eda"].capabilities.inject_plot_specs is True
 
 
-def test_notebook_template_default_selection_uses_capabilities() -> None:
-    assert select_default_notebook_template(has_plots=True, has_cytometry=False).template == "notebook/eda"
-    assert select_default_notebook_template(has_plots=False, has_cytometry=True).template == "notebook/cytometry"
-    assert select_default_notebook_template(has_plots=False, has_cytometry=False).template == "notebook/basic"
+def test_notebook_template_default_selection_uses_protocol_policy() -> None:
+    catalog = builtin_protocol_catalog()
+    assert (
+        select_default_notebook_template(
+            protocol=catalog.bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
+        ).template
+        == "notebook/eda"
+    )
+    assert (
+        select_default_notebook_template(protocol=catalog.bind(ProtocolBinding(id="cytometry/flow_panel"))).template
+        == "notebook/cytometry"
+    )
+    assert (
+        select_default_notebook_template(protocol=catalog.bind(ProtocolBinding(id="workbench/generic"))).template
+        == "notebook/basic"
+    )
+
+
+def test_notebook_template_catalog_filters_by_protocol() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
+    templates = [item.template for item in compatible_notebook_templates(protocol=protocol)]
+    assert templates == ["notebook/sfxi_eda", "notebook/eda", "notebook/basic"]
+    descriptor = require_notebook_template_for_protocol("notebook/sfxi_eda", protocol=protocol)
+    assert descriptor.template == "notebook/sfxi_eda"
+    with pytest.raises(ConfigError, match="does not allow notebook template"):
+        require_notebook_template_for_protocol("notebook/cytometry", protocol=protocol)
 
 
 def test_notebook_template_catalog_rejects_duplicate_templates() -> None:
     descriptor = NotebookTemplateDescriptor(
-        kind="template",
-        name="notebook/eda",
+        template="notebook/eda",
         domain="generic",
         family="record_explorer",
         summary="x",
-        body="print('x')",
+        source_package="reader.workbench.templates.builtins",
+        source_name="basic.marimo.py",
         capabilities=AssetCapabilities(),
     )
     with pytest.raises(ConfigError, match="Duplicate template"):

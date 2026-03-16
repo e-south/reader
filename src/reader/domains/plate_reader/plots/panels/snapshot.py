@@ -16,10 +16,10 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from reader.core.plot_style import PaletteBook
 from reader.domains.plate_reader.analysis.timepoints import nearest_time_per_key
 from reader.domains.plate_reader.ordering import order_levels
 from reader.domains.plate_reader.plots.common import colors_for
+from reader.plotting.style import PaletteBook
 
 
 @dataclass(frozen=True)

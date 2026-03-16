@@ -11,7 +11,7 @@ from reader.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
 from reader.plugins.plot.time_series import TimeSeriesPlot
 from reader.plugins.plot.ts_and_snap import TSAndSnapPlot
 from reader.plugins.transform.alias import AliasTransform
-from reader.plugins.transform.assay_labels import AssayLabelsTransform
+from reader.plugins.transform.assay_labels import AnnotationLabelsTransform
 from reader.plugins.transform.blank import BlankCorrection
 from reader.plugins.transform.crosstalk_pairs import CrosstalkPairs
 from reader.plugins.transform.fold_change import FoldChange
@@ -53,10 +53,10 @@ _BUILTIN_PLUGIN_CATALOG = AssetCatalog(
             semantics=PluginSemantics(
                 domain="generic",
                 family="label_enrichment",
-                summary="Materialize configured assay.labels into dataframe columns.",
-                tags=("assay", "labels", "annotation"),
+                summary="Materialize configured annotations.labels into dataframe columns.",
+                tags=("annotations", "labels", "annotation"),
             ),
-            plugin_cls=AssayLabelsTransform,
+            plugin_cls=AnnotationLabelsTransform,
         ),
         build_plugin_asset(
             plugin_id="transform/outlier_filter",

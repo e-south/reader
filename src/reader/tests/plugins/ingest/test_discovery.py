@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from reader.core.errors import ParseError
+from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 
 

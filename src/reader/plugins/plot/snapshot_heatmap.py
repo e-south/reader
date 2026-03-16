@@ -14,8 +14,8 @@ from typing import Any
 import pandas as pd
 from pydantic import Field, model_validator
 
-from reader.core.plot_sinks import PlotFigure
 from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
+from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig
@@ -68,13 +68,13 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
         df = prepared["df"]
         filename = prepared["filename"]
         fig_kwargs = prepared["fig_kwargs"]
-        resolved_order_x = ctx.experiment.assay.resolve_order_arg(
+        resolved_order_x = ctx.experiment.annotations.resolve_order_arg(
             order=cfg.order_x,
             order_ref=cfg.order_x_ref,
             column=cfg.x,
             arg_name="order_x",
         )
-        resolved_order_y = ctx.experiment.assay.resolve_order_arg(
+        resolved_order_y = ctx.experiment.annotations.resolve_order_arg(
             order=cfg.order_y,
             order_ref=cfg.order_y_ref,
             column=cfg.y,

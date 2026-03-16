@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.plotting.sinks import PlotFigure, normalize_plot_figures, save_plot_figures
 from reader.workbench.ports import file_bundle_output
 from reader.workbench.registry import Plugin
 
@@ -43,7 +43,7 @@ class FigurePlotPlugin(Plugin):
 def resolve_plot_partition_cfg(*, ctx, partition: PlotPartitionCfg):
     if ctx.experiment is None:
         raise ValueError("plot partition resolution requires experiment semantics in the run context")
-    return ctx.experiment.assay.resolve_plot_partition(partition=partition)
+    return ctx.experiment.annotations.resolve_plot_partition(partition=partition)
 
 
 def save_rendered_figures(*, ctx, figures: list[PlotFigure], plot_key: str) -> dict[str, list[str] | None]:

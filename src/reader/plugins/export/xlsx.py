@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import ExecutionError
+from reader.errors import ExecutionError
 from reader.workbench.ports import dataframe_input, file_path_output
 from reader.workbench.registry import Plugin, PluginConfig
 

@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from reader.core.errors import ConfigError
 from reader.workbench.experiment import ExperimentSemantics
 
 
@@ -39,12 +38,6 @@ class RecordOutputDecl:
 
 
 @dataclass(frozen=True)
-class RecipeCallDecl:
-    recipe: str
-    with_: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class RecipeSourceDecl:
     recipe: str
     with_: dict[str, Any] = field(default_factory=dict)
@@ -61,24 +54,13 @@ class PluginStepDecl:
 
 
 @dataclass(frozen=True)
-class SpecDefaultsDecl:
-    reads: dict[str, InputBindingDecl] = field(default_factory=dict)
-    with_: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class PipelineDecl:
-    recipes: tuple[RecipeCallDecl, ...] = ()
     runtime: dict[str, Any] = field(default_factory=dict)
-    overrides: dict[str, Any] = field(default_factory=dict)
     steps: tuple[PluginStepDecl, ...] = ()
 
 
 @dataclass(frozen=True)
 class SurfaceDecl:
-    recipes: tuple[RecipeCallDecl, ...] = ()
-    defaults: SpecDefaultsDecl = field(default_factory=SpecDefaultsDecl)
-    overrides: dict[str, Any] = field(default_factory=dict)
     specs: tuple[PluginStepDecl, ...] = ()
 
 
@@ -102,12 +84,3 @@ class WorkbenchDecl:
     plots: SurfaceDecl
     exports: SurfaceDecl
     notebooks: NotebookDecl
-
-
-def ensure_decl_step_override_shape(*, override: Any, where: str) -> None:
-    if not isinstance(override, dict):
-        raise ConfigError(f"{where} must be a mapping")
-    for key in ("reads", "writes", "with"):
-        value = override.get(key)
-        if value is not None and not isinstance(value, dict):
-            raise ConfigError(f"{where}.{key} must be a mapping when provided")

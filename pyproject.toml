@@ -41,6 +41,9 @@ where = ["src"]
 include = ["reader*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+"reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
+
 [dependency-groups]
 cytometry = [
     "flowio>=1.4.0",

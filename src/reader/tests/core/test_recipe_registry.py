@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 from reader.workbench.ontology import WorkbenchRecipeSemantics
 from reader.workbench.recipes.registry import _build_recipe_catalog
 

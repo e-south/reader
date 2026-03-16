@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from reader.contracts import ContractCatalog
-from reader.core.errors import ContractError, ExecutionError
+from reader.errors import ContractError, ExecutionError
 from reader.workbench.graph import OutputRef
 from reader.workbench.ports import InputPortSpec, OutputPortSpec
 from reader.workbench.registry import Plugin

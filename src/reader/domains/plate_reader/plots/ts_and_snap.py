@@ -19,9 +19,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import polars as pl
 
-from reader.core.plot_sinks import PlotFigure
-from reader.core.plot_style import DEFAULT_RC as _RC
-from reader.core.plot_style import PaletteBook, use_style
+from reader.plotting.sinks import PlotFigure
+from reader.plotting.style import DEFAULT_RC as _RC
+from reader.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
 from .common import alias_column, colors_for, emit_plot_figure, require_columns, warn_if_empty

@@ -1,7 +1,7 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
-src/reader/core/mpl.py
+src/reader/plotting/mpl.py
 
 Matplotlib cache handling.
 --------------------------------------------------------------------------------
@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
 
 
 def _find_repo_root() -> Path | None:

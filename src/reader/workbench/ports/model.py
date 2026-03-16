@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from reader.contracts import ContractId, OutputContractSurface
-from reader.core.errors import RegistryError
+from reader.errors import RegistryError
 
 type PortKind = Literal["dataframe", "file_path", "file_bundle"]
 

@@ -16,7 +16,7 @@ from reader.plugins.transform.alias import AliasCfg, AliasTransform
 
 def _ctx(labels=None):
     logger = SimpleNamespace(info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None)
-    return SimpleNamespace(logger=logger, assay={"labels": labels or {}})
+    return SimpleNamespace(logger=logger, annotations={"labels": labels or {}})
 
 
 def test_alias_mapping_single_column_map():

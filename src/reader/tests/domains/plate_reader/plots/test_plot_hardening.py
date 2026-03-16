@@ -19,17 +19,18 @@ import pytest
 from pydantic import ValidationError
 from rich.console import Console
 
-from reader.core.errors import ConfigError
 from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
+from reader.errors import ConfigError
 from reader.plugins.plot.snapshot_barplot import SnapshotBarCfg
 from reader.plugins.plot.snapshot_heatmap import HeatmapCfg, SnapshotHeatmapPlot
+from reader.protocols import ProtocolBinding
 from reader.tests.support import load_decl, write_config
 from reader.workbench.engine import validate as validate_job
 from reader.workbench.experiment import (
-    AssayOrders,
-    AssayOrderSpec,
-    AssaySemantics,
+    AnnotationOrders,
+    AnnotationOrderSpec,
+    AnnotationSemantics,
     ExperimentSemantics,
     OutputLayout,
     ResourceCatalog,
@@ -207,14 +208,15 @@ def test_snapshot_heatmap_render_resolves_order_refs_from_semantics() -> None:
     ctx = SimpleNamespace(
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
-            assay=AssaySemantics(
-                orders=AssayOrders(
+            protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            annotations=AnnotationSemantics(
+                orders=AnnotationOrders(
                     by_id={
-                        "states_2x2": AssayOrderSpec(
+                        "states_2x2": AnnotationOrderSpec(
                             column="treatment_alias",
                             values=["-IPTG/-stress", "+IPTG/-stress", "-IPTG/+stress", "+IPTG/+stress"],
                         ),
-                        "screen_rows": AssayOrderSpec(column="design_id_alias", values=["spyP/tetO", "spyP/CpxR"]),
+                        "screen_rows": AnnotationOrderSpec(column="design_id_alias", values=["spyP/tetO", "spyP/CpxR"]),
                     }
                 )
             ),
@@ -254,7 +256,8 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
     ctx = SimpleNamespace(
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
-            assay=AssaySemantics(orders=AssayOrders()),
+            protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            annotations=AnnotationSemantics(orders=AnnotationOrders()),
             resources=ResourceCatalog(),
             layout=OutputLayout(
                 outputs_dir=Path("."), plots_subdir="plots", exports_subdir="exports", notebooks_subdir="notebooks"
@@ -286,26 +289,29 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
 
 def test_validate_rejects_unknown_heatmap_order_ref(tmp_path) -> None:
     data = {
-        "schema": "reader/v4",
+        "schema": "reader/v6",
         "experiment": {"id": "exp_semantics"},
-        "pipeline": {"steps": [{"id": "ingest", "plugin": "ingest/synergy_h1"}]},
-        "plots": {
-            "defaults": {"reads": {"df": "ingest/df"}},
-            "specs": [
-                {
-                    "id": "heatmap",
-                    "plugin": "plot/snapshot_heatmap",
-                    "with": {
-                        "channel": "YFP/CFP",
-                        "time": 0.0,
-                        "x": "treatment_alias",
-                        "y": "design_id_alias",
-                        "order_x_ref": "missing",
+        "protocol": {
+            "id": "plate_reader/dual_reporter_screen",
+            "analysis": {"include_fold_change": False},
+            "deliverables": {
+                "plots": {
+                    "profile": "none",
+                    "include": ["snapshot_heatmap_yfp_cfp"],
+                    "settings": {
+                        "snapshot_heatmap_yfp_cfp": {
+                            "channel": "YFP/CFP",
+                            "time": 0.0,
+                            "x": "treatment_alias",
+                            "y": "design_id_alias",
+                            "order_x_ref": "missing",
+                        }
                     },
                 }
-            ],
+            },
         },
-        "assay": {"orders": {"rows": {"column": "design_id_alias", "values": ["d1"]}}},
+        "resources": {"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        "annotations": {"orders": {"rows": {"column": "design_id_alias", "values": ["d1"]}}},
     }
     decl = load_decl(write_config(tmp_path, data))
 

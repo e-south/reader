@@ -1,9 +1,9 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
-src/reader/core/errors.py
+src/reader/errors.py
 
-Author(s): Eric J. South
+Package-wide exception taxonomy.
 --------------------------------------------------------------------------------
 """
 

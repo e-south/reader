@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reader.core.errors import ExecutionError
+from reader.errors import ExecutionError
 from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef
 from reader.workbench.ports import InputPortSpec
 from reader.workbench.records import RecordStore

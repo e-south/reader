@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from reader.core.errors import RecordError
+from reader.errors import RecordError
 from reader.workbench.graph import ProvenanceInput, provenance_input_from_dict, provenance_input_to_dict
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 

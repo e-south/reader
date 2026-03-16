@@ -6,11 +6,12 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from reader.plugins.transform.assay_labels import AssayLabelsCfg, AssayLabelsTransform
+from reader.plugins.transform.assay_labels import AnnotationLabelsCfg, AnnotationLabelsTransform
+from reader.protocols import ProtocolBinding
 from reader.workbench.experiment import (
-    AssayLabels,
-    AssayLabelSpec,
-    AssaySemantics,
+    AnnotationLabels,
+    AnnotationLabelSpec,
+    AnnotationSemantics,
     ExperimentSemantics,
     OutputLayout,
     ResourceCatalog,
@@ -20,10 +21,11 @@ from reader.workbench.experiment import (
 def _ctx(labels):
     logger = SimpleNamespace(info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None)
     semantics = ExperimentSemantics(
-        assay=AssaySemantics(
-            labels=AssayLabels(
+        protocol=ProtocolBinding(id="workbench/generic"),
+        annotations=AnnotationSemantics(
+            labels=AnnotationLabels(
                 by_id={
-                    key: AssayLabelSpec(
+                    key: AnnotationLabelSpec(
                         source=value["source"],
                         values=dict(value.get("values", {})),
                         output=value.get("output"),
@@ -42,8 +44,8 @@ def _ctx(labels):
 
 def test_assay_labels_applies_all_labels_by_default():
     df = pd.DataFrame({"design_id": ["a"], "treatment": ["x"]})
-    cfg = AssayLabelsCfg()
-    out = AssayLabelsTransform().run(
+    cfg = AnnotationLabelsCfg()
+    out = AnnotationLabelsTransform().run(
         _ctx(
             {
                 "design_id": {"source": "design_id", "output": "design_id_alias", "values": {"a": "A"}},
@@ -59,8 +61,8 @@ def test_assay_labels_applies_all_labels_by_default():
 
 def test_assay_labels_can_select_subset_by_ref():
     df = pd.DataFrame({"design_id": ["a"], "treatment": ["x"]})
-    cfg = AssayLabelsCfg(refs=["design_id"])
-    out = AssayLabelsTransform().run(
+    cfg = AnnotationLabelsCfg(refs=["design_id"])
+    out = AnnotationLabelsTransform().run(
         _ctx(
             {
                 "design_id": {"source": "design_id", "output": "design_id_alias", "values": {"a": "A"}},
@@ -75,14 +77,14 @@ def test_assay_labels_can_select_subset_by_ref():
 
 
 def test_assay_labels_requires_configured_labels():
-    with pytest.raises(ValueError, match="no assay.labels"):
-        AssayLabelsTransform().run(_ctx({}), {"df": pd.DataFrame({"design_id": ["a"]})}, AssayLabelsCfg())
+    with pytest.raises(ValueError, match="no annotations.labels"):
+        AnnotationLabelsTransform().run(_ctx({}), {"df": pd.DataFrame({"design_id": ["a"]})}, AnnotationLabelsCfg())
 
 
 def test_assay_labels_requires_existing_ref():
     with pytest.raises(ValueError, match="missing key 'missing'"):
-        AssayLabelsTransform().run(
+        AnnotationLabelsTransform().run(
             _ctx({"design_id": {"source": "design_id", "values": {"a": "A"}}}),
             {"df": pd.DataFrame({"design_id": ["a"]})},
-            AssayLabelsCfg(refs=["missing"]),
+            AnnotationLabelsCfg(refs=["missing"]),
         )

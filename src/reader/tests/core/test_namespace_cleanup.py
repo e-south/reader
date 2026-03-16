@@ -8,12 +8,15 @@ import pytest
 @pytest.mark.parametrize(
     "module_name",
     [
+        "reader.core",
         "reader.io",
         "reader.lib",
         "reader.domains.plate_reader.support",
         "reader.domains.logic.semantics",
         "reader.workbench.model",
         "reader.workbench.semantics",
+        "reader.workbench.notebooks.catalog",
+        "reader.workbench.notebooks.templates",
         "reader.workbench.resources",
     ],
 )

@@ -8,8 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from reader.core.errors import ConfigError
-from reader.core.mpl import ensure_mpl_cache_dir
+from reader.errors import ConfigError
+from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.decl import WorkbenchDecl, load_workbench_decl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
@@ -80,6 +80,7 @@ def run_spec(
     )
     ctx = build_run_context(
         decl=decl,
+        runtime=runtime,
         out_dir=out_dir,
         store=store,
         logger=logger,
@@ -186,7 +187,8 @@ def run_job(
     show_next_steps: bool = False,
     runtime: ReaderRuntime | None = None,
 ) -> None:
-    decl = load_workbench_decl(spec_path)
+    runtime = runtime or builtin_runtime()
+    decl = load_workbench_decl(spec_path, protocols=runtime.protocols)
     run_spec(
         decl,
         resume_from=resume_from,

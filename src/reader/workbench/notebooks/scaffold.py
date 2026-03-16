@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reader.workbench.assets import resolve_notebook_template_asset
+from reader.workbench.templates import resolve_notebook_template_descriptor
 
 
 def write_experiment_notebook(
@@ -15,8 +15,8 @@ def write_experiment_notebook(
 ) -> tuple[Path, bool]:
     if target.exists() and not overwrite:
         return target, False
-    descriptor = resolve_notebook_template_asset(template)
-    body = descriptor.body
+    descriptor = resolve_notebook_template_descriptor(template)
+    body = descriptor.load_body()
     if descriptor.capabilities.inject_plot_specs and "__PLOT_SPECS__" in body:
         payload = plot_specs or []
         body = body.replace("__PLOT_SPECS__", repr(payload))

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from reader.core.errors import ContractError
+from reader.errors import ContractError
 
 from .model import ContractId, ContractToken, DataFrameContract, validate_df
 

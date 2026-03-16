@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from reader.contracts import builtin_contract_catalog
-from reader.core.errors import RecordError
+from reader.errors import RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
 from reader.workbench.records import RecordStore, discover_dataframe_records
 

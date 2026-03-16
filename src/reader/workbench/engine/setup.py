@@ -9,7 +9,8 @@ from typing import Any
 from rich.console import Console
 from rich.logging import RichHandler
 
-from reader.core.errors import ConfigError
+from reader.errors import ConfigError
+from reader.runtime import ReaderRuntime
 from reader.workbench.context import RunContext
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.records import RecordStore
@@ -57,7 +58,7 @@ def resolve_palette_book(*, decl: WorkbenchDecl, steps: list[Any], dry_run: bool
         return None
 
     try:
-        mod = import_module("reader.core.plot_style")
+        mod = import_module("reader.plotting.style")
         palette_book_cls = getattr(mod, "PaletteBook", None)
         available_palettes = getattr(mod, "available_palettes", None)
         if palette_book_cls is None or available_palettes is None:
@@ -77,6 +78,7 @@ def resolve_palette_book(*, decl: WorkbenchDecl, steps: list[Any], dry_run: bool
 def build_run_context(
     *,
     decl: WorkbenchDecl,
+    runtime: ReaderRuntime,
     out_dir: Path,
     store: RecordStore,
     logger: logging.Logger,
@@ -93,6 +95,7 @@ def build_run_context(
         palette_book=palette_book,
         strict=bool(decl.pipeline.runtime.get("strict", True)) if isinstance(decl.pipeline.runtime, dict) else True,
         experiment=decl.experiment_semantics,
+        protocol=runtime.bind_protocol(decl.experiment_semantics.protocol),
     )
 
 

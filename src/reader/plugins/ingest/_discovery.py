@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from reader.core.errors import ParseError
+from reader.errors import ParseError
 
 from .discovery_policy import DEFAULT_ROOTS, discover_files
 

@@ -7,15 +7,30 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
+from pathlib import Path
+
 from rich.console import Console
 
 from reader.contracts import OutputContractSurface, builtin_contract_catalog
-from reader.tests.support import build_decl
+from reader.protocols import ProtocolBinding
+from reader.tests.support import base_reader_config, build_decl
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.cli import THEME
 from reader.workbench.config import ReaderSpec
+from reader.workbench.decl.model import (
+    ExperimentDecl,
+    NotebookDecl,
+    NotebookTemplateCallDecl,
+    PipelineDecl,
+    PluginStepDecl,
+    RecordInputDecl,
+    RecordOutputDecl,
+    SurfaceDecl,
+    WorkbenchDecl,
+)
 from reader.workbench.engine import explain
+from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig, Registry
 
@@ -39,6 +54,33 @@ class _Dummy(Plugin):
         raise AssertionError("not used in explain")
 
 
+def _workbench_decl(
+    *,
+    pipeline: tuple[PluginStepDecl, ...] = (),
+    notebooks: tuple[NotebookTemplateCallDecl, ...] = (),
+) -> WorkbenchDecl:
+    semantics = ExperimentSemantics(
+        protocol=ProtocolBinding(id="workbench/generic"),
+        annotations=AnnotationSemantics(),
+        resources=ResourceCatalog(),
+        layout=OutputLayout(
+            outputs_dir=Path("/tmp/reader"),
+            plots_subdir="plots",
+            exports_subdir="exports",
+            notebooks_subdir="notebooks",
+        ),
+    )
+    return WorkbenchDecl(
+        experiment=ExperimentDecl(id="exp", title="exp", root=Path("/tmp/reader")),
+        experiment_semantics=semantics,
+        plotting_palette=None,
+        pipeline=PipelineDecl(runtime={}, steps=pipeline),
+        plots=SurfaceDecl(specs=()),
+        exports=SurfaceDecl(specs=()),
+        notebooks=NotebookDecl(specs=notebooks),
+    )
+
+
 def test_explain_renders_without_rich_subtitle_kwargs() -> None:
     registry = Registry(contracts=builtin_contract_catalog())
     registry.register(
@@ -48,18 +90,17 @@ def test_explain_renders_without_rich_subtitle_kwargs() -> None:
             plugin_cls=_Dummy,
         )
     )
-    spec = ReaderSpec.model_validate(
-        {
-            "schema": "reader/v4",
-            "experiment": {"id": "exp"},
-            "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
-            "pipeline": {"steps": [{"id": "step_one", "plugin": "transform/dummy"}]},
-            "plots": {"specs": []},
-            "exports": {"specs": []},
-        }
+    decl = _workbench_decl(
+        pipeline=(
+            PluginStepDecl(
+                id="step_one",
+                plugin="transform/dummy",
+                writes={"df": RecordOutputDecl(record_id="step_one/df")},
+            ),
+        )
     )
     console = Console(theme=THEME, record=True, width=80)
-    explain(build_decl(spec), console=console, registry=registry)
+    explain(decl, console=console, registry=registry)
 
 
 class _PromotingDummy(Plugin):
@@ -100,26 +141,18 @@ def test_explain_surfaces_runtime_contract_promotions() -> None:
             plugin_cls=_PromotingDummy,
         )
     )
-    spec = ReaderSpec.model_validate(
-        {
-            "schema": "reader/v4",
-            "experiment": {"id": "exp"},
-            "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
-            "pipeline": {
-                "steps": [
-                    {
-                        "id": "step_one",
-                        "plugin": "transform/promoting_dummy",
-                        "reads": {"df": {"record": "input/df"}},
-                    }
-                ]
-            },
-            "plots": {"specs": []},
-            "exports": {"specs": []},
-        }
+    decl = _workbench_decl(
+        pipeline=(
+            PluginStepDecl(
+                id="step_one",
+                plugin="transform/promoting_dummy",
+                reads={"df": RecordInputDecl(record_id="input/df")},
+                writes={"df": RecordOutputDecl(record_id="step_one/df")},
+            ),
+        )
     )
     console = Console(theme=THEME, record=True, width=160)
-    explain(build_decl(spec), console=console, registry=registry)
+    explain(decl, console=console, registry=registry)
     rendered = console.export_text()
     assert "plate_reader/test_transform" in rendered
     assert "runtime may promote to" in rendered
@@ -144,15 +177,10 @@ def test_registry_catalog_indexes_semantic_fields() -> None:
 
 def test_explain_renders_notebook_specs_without_plugin_registry() -> None:
     spec = ReaderSpec.model_validate(
-        {
-            "schema": "reader/v4",
-            "experiment": {"id": "exp"},
-            "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
-            "pipeline": {"steps": []},
-            "plots": {"specs": []},
-            "exports": {"specs": []},
-            "notebooks": {"specs": [{"id": "eda", "template": "notebook/eda"}]},
-        }
+        base_reader_config(
+            experiment_id="exp",
+            protocol_deliverables={"notebook": {"template": "notebook/eda"}},
+        )
     )
     console = Console(theme=THEME, record=True, width=100)
     explain(build_decl(spec), console=console, registry=None)

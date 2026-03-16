@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from reader.contracts import builtin_contract_catalog
-from reader.core.errors import ExecutionError
+from reader.errors import ExecutionError
 from reader.workbench.engine import (
     _assert_input_ports,
     _assert_output_ports,

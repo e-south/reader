@@ -9,7 +9,7 @@ Author(s): Eric J. South
 
 import pytest
 
-from reader.core.plot_style import PaletteBook
+from reader.plotting.style import PaletteBook
 
 
 def test_palette_book_rejects_unknown_name() -> None:

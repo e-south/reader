@@ -19,8 +19,8 @@ from typing import Literal
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import ParseError
 from reader.domains.cytometry.io.fcs import parse_fcs_file
+from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
 from reader.workbench.ports import dataframe_output, file_path_input

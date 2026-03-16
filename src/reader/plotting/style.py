@@ -1,11 +1,9 @@
 """
 --------------------------------------------------------------------------------
 <reader project>
-src/reader/core/plot_style.py
+src/reader/plotting/style.py
 
 Shared palette + subplot layout helpers for plotting modules.
-
-Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
@@ -18,7 +16,6 @@ from dataclasses import dataclass
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-# Accessible, print-friendly cycles (Okabe–Ito & friends)
 _PALETTES: dict[str, list[str]] = {
     "colorblind": [
         "#0072B2",
@@ -63,12 +60,12 @@ class PaletteBook:
         if self.name not in _PALETTES:
             opts = ", ".join(sorted(_PALETTES))
             raise ValueError(f"Unknown palette '{self.name}'. Available: {opts}")
-        pal = _PALETTES[self.name]
-        if n <= len(pal):
-            return pal[:n]
+        palette = _PALETTES[self.name]
+        if n <= len(palette):
+            return palette[:n]
         out = []
         while len(out) < n:
-            out.extend(pal)
+            out.extend(palette)
         return out[:n]
 
 
@@ -77,8 +74,8 @@ def available_palettes() -> list[str]:
 
 
 DEFAULT_RC = {
-    "figure_figsize": (5, 5),  # overall figure size (user‑tunable)
-    "savefig_dpi": 300,  # affects rasterized artists / PNG
+    "figure_figsize": (5, 5),
+    "savefig_dpi": 300,
     "axes_spines_top": False,
     "axes_spines_right": False,
     "axes_titleweight": "bold",
@@ -87,7 +84,7 @@ DEFAULT_RC = {
     "grid_alpha": 0.25,
     "grid_linestyle": "-",
     "grid_color": "#B0B0B0",
-    "axes_axisbelow": True,  # grid behind bars/lines
+    "axes_axisbelow": True,
     "font_size": 13.0,
     "axes_labelsize": 13.0,
     "axes_titlesize": 14.0,
@@ -98,11 +95,11 @@ DEFAULT_RC = {
     "xtick_direction": "out",
     "ytick_direction": "out",
     "legend_frameon": False,
-    "pdf_fonttype": 42,  # vector text in PDF
-    "pdf_compression": 9,  # NEW: 0..9 (9 = smallest files)
-    "path_simplify": True,  # can help time‑series
+    "pdf_fonttype": 42,
+    "pdf_compression": 9,
+    "path_simplify": True,
     "path_simplify_threshold": 0.0,
-    "agg_path_chunksize": 20000,  # split long paths for vector backends
+    "agg_path_chunksize": 20000,
 }
 
 
@@ -110,12 +107,11 @@ DEFAULT_RC = {
 def use_style(rc: dict | None = None, color_cycle: Iterable[str] | None = None):
     """Context manager to push a small, opinionated Matplotlib style."""
     rc = {**DEFAULT_RC, **(rc or {})}
-    # Optional relative scaling for all font sizes (per-plot, via config.yaml → fig.rc.font_scale)
     scale = float(rc.pop("font_scale", 1.0))
 
-    def _s(key: str) -> float:
-        v = float(rc.get(key, DEFAULT_RC[key]))
-        return v * scale
+    def _scaled(key: str) -> float:
+        value = float(rc.get(key, DEFAULT_RC[key]))
+        return value * scale
 
     with mpl.rc_context():
         mpl.rcParams.update(
@@ -131,13 +127,13 @@ def use_style(rc: dict | None = None, color_cycle: Iterable[str] | None = None):
                 "grid.linestyle": rc["grid_linestyle"],
                 "grid.color": rc["grid_color"],
                 "axes.axisbelow": rc["axes_axisbelow"],
-                "font.size": _s("font_size"),
-                "axes.labelsize": _s("axes_labelsize"),
-                "axes.titlesize": _s("axes_titlesize"),
-                "xtick.labelsize": _s("xtick_labelsize"),
-                "ytick.labelsize": _s("ytick_labelsize"),
-                "legend.fontsize": _s("legend_fontsize"),
-                "legend.title_fontsize": _s("legend_title_fontsize"),
+                "font.size": _scaled("font_size"),
+                "axes.labelsize": _scaled("axes_labelsize"),
+                "axes.titlesize": _scaled("axes_titlesize"),
+                "xtick.labelsize": _scaled("xtick_labelsize"),
+                "ytick.labelsize": _scaled("ytick_labelsize"),
+                "legend.fontsize": _scaled("legend_fontsize"),
+                "legend.title_fontsize": _scaled("legend_title_fontsize"),
                 "xtick.direction": rc["xtick_direction"],
                 "ytick.direction": rc["ytick_direction"],
                 "legend.frameon": rc["legend_frameon"],
@@ -157,12 +153,10 @@ def new_fig_ax(fig_kwargs: dict | None = None):
     """
     Consistent figure construction.
     Only pass kwargs that Matplotlib's Figure/subplots actually understand.
-    Plot- or style-level options (e.g. 'cmap', 'ext', 'rc', 'cbar_shrink', custom knobs)
-    must be consumed by the caller and must not be forwarded here.
+    Plot- or style-level options must be consumed by the caller and not forwarded.
     """
-    fkw = dict(fig_kwargs or {})
-    # Whitelist: accepted by plt.subplots / Figure in supported Matplotlib versions
-    _ALLOWED = {
+    fig_kwargs = dict(fig_kwargs or {})
+    allowed = {
         "num",
         "figsize",
         "dpi",
@@ -178,12 +172,11 @@ def new_fig_ax(fig_kwargs: dict | None = None):
         "sharex",
         "sharey",
     }
-    fkw = {k: v for k, v in fkw.items() if k in _ALLOWED}
-    if "figsize" not in fkw:
-        fkw["figsize"] = DEFAULT_RC["figure_figsize"]
-    # Keep layout tight to help legends in upper-right
-    fkw.setdefault("constrained_layout", True)
-    return plt.subplots(**fkw)
+    fig_kwargs = {key: value for key, value in fig_kwargs.items() if key in allowed}
+    if "figsize" not in fig_kwargs:
+        fig_kwargs["figsize"] = DEFAULT_RC["figure_figsize"]
+    fig_kwargs.setdefault("constrained_layout", True)
+    return plt.subplots(**fig_kwargs)
 
 
 __all__ = ["DEFAULT_RC", "PaletteBook", "available_palettes", "new_fig_ax", "use_style"]

@@ -5,7 +5,7 @@ import importlib.metadata as md
 import pytest
 
 from reader.contracts import builtin_contract_catalog
-from reader.core.errors import RegistryError
+from reader.errors import RegistryError
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.ports import dataframe_input, dataframe_output
