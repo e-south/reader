@@ -15,14 +15,13 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import Field
 
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
-from reader.plugins.transform._fold_change import compute_fold_change_table
+from reader.domains.plate_reader.analysis import compute_fold_change_table
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 # ----------------------------- config model -----------------------------
 
@@ -57,26 +56,15 @@ class FoldChangeCfg(PluginConfig):
 class FoldChange(Plugin):
     """Contract-driven transform that emits a fold_change.v1 table."""
 
-    key = "fold_change"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="plate_reader",
-        family="summary_transform",
-        summary="Summarize nearest-time fold-change tables from tidy signals.",
-        tags=("fold_change", "snapshot_summary"),
-    )
     ConfigModel = FoldChangeCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # Accept tidy.v1 — metadata columns are optional but used if present.
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        # One artifact: a validated FC table
-        return {"table": "fold_change.v1"}
+    def output_ports(cls):
+        return {"table": dataframe_output("table", "fold_change.v1")}
 
     # ------------------------------- run --------------------------------
 

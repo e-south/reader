@@ -14,9 +14,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-import reader.core.cli as cli
-from reader.core.cli import app
+import reader.workbench.cli as cli
 from reader.tests.support import base_reader_config, default_notebook_name, write_config
+from reader.workbench.cli import app
 
 
 def _base_config() -> dict:
@@ -49,6 +49,26 @@ def test_notebook_mode_none_skips_launch(monkeypatch, tmp_path: Path) -> None:
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
     assert default_notebook_name() in result.output
+
+
+def test_notebook_auto_selects_cytometry_preset_from_pipeline_semantics(monkeypatch, tmp_path: Path) -> None:
+    cfg = base_reader_config(
+        experiment_id="exp_nb",
+        pipeline_steps=[{"id": "ingest_cyto", "plugin": "ingest/flow_cytometer"}],
+        plot_specs=[],
+        export_specs=[],
+    )
+    cfg_path = write_config(tmp_path, cfg)
+
+    def _fail_launch(*args, **kwargs) -> None:
+        raise AssertionError("launch should not be called")
+
+    monkeypatch.setattr(cli, "_launch_marimo", _fail_launch)
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    assert "Cytometry" in nb_path.read_text(encoding="utf-8")
 
 
 def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> None:

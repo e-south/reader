@@ -20,11 +20,11 @@ import pandas as pd
 from pydantic import Field
 
 from reader.core.errors import ParseError
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
-from reader.io.discovery import DEFAULT_EXCLUDE
-from reader.io.flow_cytometer import parse_fcs_file
+from reader.domains.cytometry.io.fcs import parse_fcs_file
 from reader.plugins.ingest._discovery import discover_auto_input_files
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
+from reader.workbench.ports import dataframe_output, file_path_input
+from reader.workbench.registry import Plugin, PluginConfig
 
 DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
 
@@ -51,24 +51,18 @@ class FlowCytometerCfg(PluginConfig):
 class FlowCytometerIngest(Plugin):
     """Ingest .fcs files into tidy.v1 (snapshot; time is constant)."""
 
-    key = "flow_cytometer"
-    category = "ingest"
-    semantics = PluginSemantics(
-        category="ingest",
-        domain="cytometry",
-        family="fcs_ingest",
-        summary="Parse FCS cytometry files into tidy event tables and channel metadata.",
-        tags=("fcs", "events", "channels"),
-    )
     ConfigModel = FlowCytometerCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"raw?": "none"}  # optional explicit file input
+    def input_ports(cls):
+        return {"raw": file_path_input("raw", optional=True)}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1", "channels": "cytometer.channels.v1"}
+    def output_ports(cls):
+        return {
+            "df": dataframe_output("df", "tidy.v1"),
+            "channels": dataframe_output("channels", "cytometer.channels.v1"),
+        }
 
     def _discover(self, ctx, cfg: FlowCytometerCfg) -> list[Path]:
         return discover_auto_input_files(

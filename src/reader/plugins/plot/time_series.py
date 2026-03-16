@@ -9,16 +9,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import PluginConfig
-from reader.core.workbench import PluginSemantics
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class TimeSeriesCfg(PluginConfig):
@@ -40,25 +39,19 @@ class TimeSeriesCfg(PluginConfig):
 
 
 class TimeSeriesPlot(FigurePlotPlugin):
-    key = "time_series"
-    category = "plot"
-    semantics = PluginSemantics(
-        category="plot",
-        domain="plate_reader",
-        family="time_series",
-        summary="Render grouped time-series plots from tidy plate-reader traces.",
-        tags=("kinetics", "channels"),
-    )
     ConfigModel = TimeSeriesCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1", "blanks?": "tidy.v1"}  # '?' is human hint; engine passes only present keys
+    def input_ports(cls):
+        return {
+            "df": dataframe_input("df", "tidy.v1"),
+            "blanks": dataframe_input("blanks", "tidy.v1", optional=True),
+        }
 
     def render(self, ctx, inputs, cfg: TimeSeriesCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
-        from reader.lib.microplates.time_series import plot_time_series  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.time_series import plot_time_series  # noqa: PLC0415
 
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 

@@ -13,24 +13,26 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from reader.core.cli import app
-from reader.tests.support import base_reader_config, default_notebook_name, write_config
+from reader.tests.support import base_reader_config, default_notebook_name, load_decl, write_config
+from reader.workbench import FileRef, RecordRef, resolve_workbench
+from reader.workbench.cli import _apply_step_overrides, _parse_input_overrides, app
+from reader.workbench.experiment import ResourceCatalog
 
 
 def _base_config() -> dict:
     return base_reader_config(
         experiment_id="exp_cli",
         plot_specs=[
-            {"id": "plot_a", "uses": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}},
+            {"id": "plot_a", "plugin": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}},
             {
                 "id": "plot_b",
-                "uses": "plot/snapshot_barplot",
+                "plugin": "plot/snapshot_barplot",
                 "reads": {"df": "ingest/df"},
                 "with": {"x": "design_id", "y": ["OD600"], "time": 0.0},
             },
         ],
         export_specs=[
-            {"id": "export_a", "uses": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}
+            {"id": "export_a", "plugin": "export/csv", "reads": {"df": "ingest/df"}, "with": {"path": "a.csv"}}
         ],
     )
 
@@ -123,11 +125,11 @@ def test_export_list_empty(tmp_path: Path) -> None:
 def test_validate_checks_files_by_default(tmp_path: Path) -> None:
     cfg = _base_config()
     cfg["pipeline"]["steps"] = [
-        {"id": "ingest", "uses": "ingest/synergy_h1"},
+        {"id": "ingest", "plugin": "ingest/synergy_h1"},
         {
             "id": "merge_map",
-            "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": "file:./inputs/metadata.xlsx"},
+            "plugin": "transform/sample_map",
+            "reads": {"df": "ingest/df", "sample_map": {"file": "./inputs/metadata.xlsx"}},
         },
     ]
     cfg_path = write_config(tmp_path, cfg)
@@ -148,11 +150,11 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
 def test_validate_no_files_skips_checks(tmp_path: Path) -> None:
     cfg = _base_config()
     cfg["pipeline"]["steps"] = [
-        {"id": "ingest", "uses": "ingest/synergy_h1"},
+        {"id": "ingest", "plugin": "ingest/synergy_h1"},
         {
             "id": "merge_map",
-            "uses": "merge/sample_map",
-            "reads": {"df": "ingest/df", "sample_map": "file:./inputs/metadata.xlsx"},
+            "plugin": "transform/sample_map",
+            "reads": {"df": "ingest/df", "sample_map": {"file": "./inputs/metadata.xlsx"}},
         },
     ]
     cfg_path = write_config(tmp_path, cfg)
@@ -166,7 +168,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["notebook", str(cfg), "--preset", "notebook/eda", "--only", "plot_a", "--mode", "none"],
+        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "plot_a", "--mode", "none"],
     )
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
@@ -174,3 +176,25 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     content = nb_path.read_text(encoding="utf-8")
     assert "PLOT_SPECS" not in content
     assert 'label="Dataset (dataframe record)"' in content
+
+
+def test_plot_override_parses_runtime_inputs_to_typed_refs(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, _base_config())
+    decl = load_decl(cfg_path)
+    plot_spec = list(resolve_workbench(decl).plots)[0]
+
+    overrides = _parse_input_overrides(
+        ["df=override/df", "sample_map={file: ./inputs/metadata.xlsx}"],
+        root=tmp_path,
+        resources=ResourceCatalog(),
+    )
+    updated = _apply_step_overrides(
+        [plot_spec],
+        input_overrides=overrides,
+        set_overrides=[],
+        root=tmp_path,
+        resources=ResourceCatalog(),
+    )
+
+    assert updated[0].reads["df"] == RecordRef(record_id="override/df")
+    assert updated[0].reads["sample_map"] == FileRef(path=(tmp_path / "inputs" / "metadata.xlsx").resolve())

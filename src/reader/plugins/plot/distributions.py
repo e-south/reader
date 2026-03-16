@@ -9,16 +9,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import PluginConfig
-from reader.core.workbench import PluginSemantics
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class DistributionsCfg(PluginConfig):
@@ -36,26 +35,19 @@ class DistributionsCfg(PluginConfig):
 
 
 class DistributionsPlot(FigurePlotPlugin):
-    key = "distributions"
-    category = "plot"
-    semantics = PluginSemantics(
-        category="plot",
-        domain="plate_reader",
-        family="distribution",
-        summary="Render channel-wise distribution plots from tidy measurements.",
-        tags=("density", "qc"),
-    )
     ConfigModel = DistributionsCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # blanks is optional; if absent we’ll draw only data fills
-        return {"df": "tidy.v1", "blanks?": "tidy.v1"}
+    def input_ports(cls):
+        return {
+            "df": dataframe_input("df", "tidy.v1"),
+            "blanks": dataframe_input("blanks", "tidy.v1", optional=True),
+        }
 
     def render(self, ctx, inputs, cfg: DistributionsCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks: pd.DataFrame = inputs.get("blanks", df.iloc[0:0])
-        from reader.lib.microplates.distributions import plot_distributions  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.distributions import plot_distributions  # noqa: PLC0415
 
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 

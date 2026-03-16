@@ -9,12 +9,10 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 import pandas as pd
 
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class BlankCfg(PluginConfig):
@@ -38,28 +36,19 @@ def _detect_blanks(df: pd.DataFrame) -> pd.DataFrame:
 
 
 class BlankCorrection(Plugin):
-    key = "blank_correction"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="plate_reader",
-        family="signal_correction",
-        summary="Detect and optionally subtract blank control wells.",
-        tags=("blanks", "normalization"),
-    )
     ConfigModel = BlankCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1", "blanks": "tidy.v1"}
-
-    @classmethod
-    def output_contract_surfaces(cls) -> Mapping[str, object]:
-        return cls.passthrough_output_contract_surfaces(
+    def output_ports(cls):
+        return cls.passthrough_output_ports(
+            outputs={
+                "df": dataframe_output("df", "tidy.v1"),
+                "blanks": dataframe_output("blanks", "tidy.v1"),
+            },
             passthrough={"df": "df", "blanks": "df"},
             promoted_examples={
                 "df": ("plate_reader.annotated.v1",),
@@ -67,9 +56,9 @@ class BlankCorrection(Plugin):
             },
         )
 
-    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
         del cfg
-        return self.inherit_dataframe_output_contracts(
+        return self.inherit_dataframe_output_ports(
             inputs=inputs,
             outputs=outputs,
             passthrough={"df": "df", "blanks": "df"},

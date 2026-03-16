@@ -9,18 +9,16 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 from pydantic import Field, model_validator
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import PluginConfig
-from reader.core.semantics import resolve_assay_order_arg
-from reader.core.workbench import PluginSemantics
-from reader.lib.microplates.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
+from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
 from reader.plugins.plot._shared import FigurePlotPlugin
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class HeatmapCfg(PluginConfig):
@@ -50,25 +48,18 @@ class HeatmapCfg(PluginConfig):
 
 
 class SnapshotHeatmapPlot(FigurePlotPlugin):
-    key = "snapshot_heatmap"
-    category = "plot"
-    semantics = PluginSemantics(
-        category="plot",
-        domain="plate_reader",
-        family="snapshot_heatmap",
-        summary="Render heatmaps for snapshot or fold-change plate-reader summaries.",
-        tags=("snapshot", "heatmap"),
-    )
     ConfigModel = HeatmapCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # Both are optional; we derive what we need at runtime.
-        # - df? : tidy.v1    (OD600, YFP, YFP/OD600, YFP/CFP, …)
-        # - fc? : fold_change.v1  (FC/log2FC for specific targets like YFP/CFP)
-        return {"df?": "tidy.v1", "fc?": "fold_change.v1"}
+    def input_ports(cls):
+        return {
+            "df": dataframe_input("df", "tidy.v1", optional=True),
+            "fc": dataframe_input("fc", "fold_change.v1", optional=True),
+        }
 
     def render(self, ctx, inputs, cfg: HeatmapCfg) -> list[PlotFigure]:
+        if ctx.experiment is None:
+            raise ValueError("snapshot_heatmap requires experiment semantics in the run context")
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
 
@@ -77,18 +68,16 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
         df = prepared["df"]
         filename = prepared["filename"]
         fig_kwargs = prepared["fig_kwargs"]
-        resolved_order_x = resolve_assay_order_arg(
+        resolved_order_x = ctx.experiment.assay.resolve_order_arg(
             order=cfg.order_x,
             order_ref=cfg.order_x_ref,
             column=cfg.x,
-            assay=dict(getattr(ctx, "assay", {}) or {}),
             arg_name="order_x",
         )
-        resolved_order_y = resolve_assay_order_arg(
+        resolved_order_y = ctx.experiment.assay.resolve_order_arg(
             order=cfg.order_y,
             order_ref=cfg.order_y_ref,
             column=cfg.y,
-            assay=dict(getattr(ctx, "assay", {}) or {}),
             arg_name="order_y",
         )
         return plot_snapshot_heatmap(

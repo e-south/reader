@@ -9,16 +9,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import PluginConfig
-from reader.core.workbench import PluginSemantics
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class SnapshotBarCfg(PluginConfig):
@@ -40,24 +39,15 @@ class SnapshotBarCfg(PluginConfig):
 
 
 class SnapshotBarplot(FigurePlotPlugin):
-    key = "snapshot_barplot"
-    category = "plot"
-    semantics = PluginSemantics(
-        category="plot",
-        domain="plate_reader",
-        family="snapshot_bar",
-        summary="Render grouped snapshot barplots at a selected timepoint.",
-        tags=("snapshot", "bars"),
-    )
     ConfigModel = SnapshotBarCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     def render(self, ctx, inputs, cfg: SnapshotBarCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.microplates.snapshot_barplot import plot_snapshot_barplot  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot  # noqa: PLC0415
 
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 

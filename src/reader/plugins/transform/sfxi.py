@@ -11,13 +11,11 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from pydantic import Field
 
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
 from reader.plugins.transform._sfxi import build_sfxi_plugin_result, log_sfxi_plugin_result
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class SFXICfg(PluginConfig):
@@ -41,24 +39,15 @@ class SFXICfg(PluginConfig):
 
 
 class SFXITransform(Plugin):
-    key = "sfxi"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="logic",
-        family="summary_transform",
-        summary="Compute SFXI vec8 logic summaries from annotated plate-reader traces.",
-        tags=("logic", "summary"),
-    )
     ConfigModel = SFXICfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "plate_reader.annotated.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "plate_reader.annotated.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"vec8": "sfxi.vec8.v2"}
+    def output_ports(cls):
+        return {"vec8": dataframe_output("vec8", "sfxi.vec8.v2")}
 
     def run(self, ctx, inputs, cfg: SFXICfg):
         result = build_sfxi_plugin_result(ctx=ctx, df=inputs["df"], cfg=cfg)

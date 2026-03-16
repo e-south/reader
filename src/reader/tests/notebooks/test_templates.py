@@ -9,7 +9,13 @@ Author(s): Eric J. South
 
 import ast
 
-from reader.core.notebooks import templates as notebook_templates
+import pytest
+
+from reader.core.errors import ConfigError
+from reader.workbench.assets import AssetCapabilities, select_default_notebook_template
+from reader.workbench.notebooks import notebook_template_catalog
+from reader.workbench.notebooks import templates as notebook_templates
+from reader.workbench.notebooks.catalog import NotebookTemplateCatalog, NotebookTemplateDescriptor
 
 
 def _is_app_cell(dec: ast.AST) -> bool:
@@ -100,3 +106,33 @@ def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
     assert "Polars is required to read parquet" in template
     assert "discover_dataframe_records" in template
     assert "allow_scan=__ALLOW_RECORD_SCAN__" in template
+
+
+def test_notebook_template_catalog_exposes_domain_semantics() -> None:
+    descriptors = {item.template: item for item in notebook_template_catalog().all()}
+    assert descriptors["notebook/eda"].domain == "generic"
+    assert descriptors["notebook/microplate"].domain == "plate_reader"
+    assert descriptors["notebook/cytometry"].domain == "cytometry"
+    assert descriptors["notebook/sfxi_eda"].domain == "logic"
+    assert descriptors["notebook/eda"].capabilities.supports_plot_filters is True
+    assert descriptors["notebook/eda"].capabilities.inject_plot_specs is True
+
+
+def test_notebook_template_default_selection_uses_capabilities() -> None:
+    assert select_default_notebook_template(has_plots=True, has_cytometry=False).template == "notebook/eda"
+    assert select_default_notebook_template(has_plots=False, has_cytometry=True).template == "notebook/cytometry"
+    assert select_default_notebook_template(has_plots=False, has_cytometry=False).template == "notebook/basic"
+
+
+def test_notebook_template_catalog_rejects_duplicate_templates() -> None:
+    descriptor = NotebookTemplateDescriptor(
+        kind="template",
+        name="notebook/eda",
+        domain="generic",
+        family="record_explorer",
+        summary="x",
+        body="print('x')",
+        capabilities=AssetCapabilities(),
+    )
+    with pytest.raises(ConfigError, match="Duplicate template"):
+        NotebookTemplateCatalog([descriptor, descriptor])

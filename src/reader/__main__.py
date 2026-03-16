@@ -7,7 +7,7 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
-from reader.core.cli import app
+from reader.workbench.cli import app
 
 if __name__ == "__main__":
     app()

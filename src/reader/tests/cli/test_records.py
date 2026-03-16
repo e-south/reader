@@ -8,14 +8,16 @@ src/reader/tests/test_cli_records.py
 import pandas as pd
 from typer.testing import CliRunner
 
-from reader.core.cli import app
-from reader.core.records import RecordStore
+from reader.contracts import builtin_contract_catalog
+from reader.workbench.cli import app
+from reader.workbench.graph import ProvenanceInput, RecordRef
+from reader.workbench.records import RecordStore
 
 
 def test_records_requires_catalog(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v3\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
+        "schema: reader/v4\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -27,15 +29,15 @@ def test_records_requires_catalog(tmp_path) -> None:
 def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v3\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
+        "schema: reader/v4\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
         encoding="utf-8",
     )
     outputs = tmp_path / "outputs"
-    store = RecordStore(outputs)
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
     df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
     store.persist_dataframe(
         producer_id="ingest",
-        producer_uses="ingest/synergy_h1",
+        producer_plugin="ingest/synergy_h1",
         out_name="df",
         record_id="ingest/df",
         df=df,
@@ -49,9 +51,9 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     store.append_file_bundle(
         producer_kind="plot",
         producer_id="qc",
-        producer_uses="plot/time_series",
+        producer_plugin="plot/time_series",
         record_id="plot:qc",
-        inputs=["ingest/df"],
+        inputs=[ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))],
         config_digest="sha256:plot",
         files=[plot_path],
     )
@@ -65,15 +67,15 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
 def test_records_all_shows_revision_counts(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v3\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
+        "schema: reader/v4\nexperiment:\n  id: exp\npipeline:\n  steps: []\n",
         encoding="utf-8",
     )
     outputs = tmp_path / "outputs"
-    store = RecordStore(outputs)
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
     df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
     store.persist_dataframe(
         producer_id="ingest",
-        producer_uses="ingest/synergy_h1",
+        producer_plugin="ingest/synergy_h1",
         out_name="df",
         record_id="ingest/df",
         df=df,
@@ -83,7 +85,7 @@ def test_records_all_shows_revision_counts(tmp_path) -> None:
     )
     store.persist_dataframe(
         producer_id="ingest",
-        producer_uses="ingest/synergy_h1",
+        producer_plugin="ingest/synergy_h1",
         out_name="df",
         record_id="ingest/df",
         df=df,

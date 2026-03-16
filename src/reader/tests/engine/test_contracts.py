@@ -8,57 +8,57 @@ Tests for engine contract enforcement and writes aliasing.
 """
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
-from reader.core.engine import (
-    _assert_input_contracts,
-    _assert_output_contracts,
+from reader.contracts import builtin_contract_catalog
+from reader.core.errors import ExecutionError
+from reader.workbench.engine import (
+    _assert_input_ports,
+    _assert_output_ports,
     _resolve_inputs,
     _resolve_output_labels,
-    _resolve_runtime_output_contracts,
+    _resolve_runtime_output_ports,
 )
-from reader.core.errors import ExecutionError
-from reader.core.records import RecordStore
-from reader.core.registry import Plugin
-from reader.core.workbench import PluginSemantics
+from reader.workbench.graph import FileRef, OutputRef
+from reader.workbench.ports import dataframe_input, dataframe_output, file_bundle_output, file_path_input
+from reader.workbench.records import RecordStore
+from reader.workbench.registry import Plugin
 
 
 class DummyPlugin:
     @staticmethod
-    def input_contracts():
-        return {"df": "tidy.v1", "raw?": "none"}
+    def input_ports():
+        return {
+            "df": dataframe_input("df", "tidy.v1"),
+            "raw": file_path_input("raw", optional=True),
+        }
 
 
 class DummyOutputPlugin:
     @staticmethod
-    def output_contracts():
-        return {"df": "tidy.v1"}
+    def output_ports():
+        return {"df": dataframe_output("df", "tidy.v1")}
 
 
 class DummyPromotingPlugin(Plugin):
-    key = "dummy_promoting"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="plate_reader",
-        family="test_transform",
-        summary="Test pass-through promotion plugin.",
-    )
+    @classmethod
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def input_contracts(cls):
-        return {"df": "tidy.v1"}
+    def output_ports(cls):
+        return cls.passthrough_output_ports(
+            outputs={"df": dataframe_output("df", "tidy.v1")},
+            passthrough={"df": "df"},
+        )
 
-    @classmethod
-    def output_contracts(cls):
-        return {"df": "tidy.v1"}
-
-    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
         del cfg
-        return self.inherit_dataframe_output_contracts(
+        return self.inherit_dataframe_output_ports(
             inputs=inputs,
             outputs=outputs,
             passthrough={"df": "df"},
@@ -70,47 +70,74 @@ class DummyPromotingPlugin(Plugin):
         return {"df": inputs["df"]}
 
 
-def test_assert_input_contracts_rejects_extra_inputs():
+def test_assert_input_ports_rejects_extra_inputs():
     plugin = DummyPlugin()
+    contracts = builtin_contract_catalog()
     inputs = {
         "df": SimpleNamespace(contract_id="tidy.v1"),
         "extra": SimpleNamespace(contract_id="tidy.v1"),
     }
     with pytest.raises(ExecutionError):
-        _assert_input_contracts(plugin, inputs, where="test")
+        _assert_input_ports(plugin, inputs, contracts=contracts, where="test")
 
 
-def test_assert_input_contracts_allows_optional_missing():
+def test_assert_input_ports_allows_optional_missing():
     plugin = DummyPlugin()
+    contracts = builtin_contract_catalog()
     inputs = {"df": SimpleNamespace(contract_id="tidy.v1")}
-    _assert_input_contracts(plugin, inputs, where="test")
+    _assert_input_ports(plugin, inputs, contracts=contracts, where="test")
 
 
-def test_assert_input_contracts_accepts_stricter_contract():
+def test_assert_input_ports_accepts_stricter_contract():
     plugin = DummyPlugin()
+    contracts = builtin_contract_catalog()
     inputs = {"df": SimpleNamespace(contract_id="plate_reader.annotated.v1")}
-    _assert_input_contracts(plugin, inputs, where="test")
+    _assert_input_ports(plugin, inputs, contracts=contracts, where="test")
 
 
-def test_assert_input_contracts_allows_mismatch_when_non_strict(caplog):
+def test_assert_input_ports_allows_mismatch_when_non_strict(caplog):
     plugin = DummyPlugin()
+    contracts = builtin_contract_catalog()
     inputs = {"df": SimpleNamespace(contract_id="other.v1")}
     logger = logging.getLogger("reader.tests")
     with caplog.at_level(logging.WARNING, logger="reader.tests"):
-        _assert_input_contracts(plugin, inputs, where="test", strict=False, logger=logger)
+        _assert_input_ports(plugin, inputs, contracts=contracts, where="test", strict=False, logger=logger)
     assert any("contract relaxed" in rec.message for rec in caplog.records)
 
 
-def test_assert_output_contracts_allows_mismatch_when_non_strict(caplog):
+def test_assert_input_ports_rejects_file_for_dataframe_port():
+    plugin = DummyPlugin()
+    contracts = builtin_contract_catalog()
+    with pytest.raises(ExecutionError):
+        _assert_input_ports(plugin, {"df": Path("raw.csv")}, contracts=contracts, where="test")
+
+
+def test_assert_output_ports_allows_mismatch_when_non_strict(caplog):
     bad_df = pd.DataFrame({"position": ["A1"]})
+    contracts = builtin_contract_catalog()
     logger = logging.getLogger("reader.tests")
     with caplog.at_level(logging.WARNING, logger="reader.tests"):
-        _assert_output_contracts({"df": "tidy.v1"}, {"df": bad_df}, where="test", strict=False, logger=logger)
+        _assert_output_ports(
+            {"df": dataframe_output("df", "tidy.v1")},
+            {"df": bad_df},
+            contracts=contracts,
+            where="test",
+            strict=False,
+            logger=logger,
+        )
     assert any("contract relaxed" in rec.message for rec in caplog.records)
 
 
-def test_resolve_runtime_output_contracts_accepts_promotion():
+def test_resolve_runtime_output_ports_accepts_promotion():
     plugin = DummyPromotingPlugin()
+    plugin.bind_runtime(
+        descriptor=type(
+            "D",
+            (),
+            {"kind": "plugin", "cls": DummyPromotingPlugin, "plugin_id": "transform/dummy", "name": "transform/dummy"},
+        )(),
+        contracts=builtin_contract_catalog(),
+    )
     inputs = {"df": SimpleNamespace(contract_id="plate_reader.annotated.v1")}
     outputs = {
         "df": pd.DataFrame(
@@ -125,54 +152,61 @@ def test_resolve_runtime_output_contracts_accepts_promotion():
             }
         )
     }
-    resolved = _resolve_runtime_output_contracts(plugin, inputs=inputs, outputs=outputs, cfg=None, where="test")
-    assert resolved == {"df": "plate_reader.annotated.v1"}
+    resolved = _resolve_runtime_output_ports(
+        plugin,
+        inputs=inputs,
+        outputs=outputs,
+        cfg=None,
+        contracts=builtin_contract_catalog(),
+        where="test",
+    )
+    assert resolved["df"].contract == "plate_reader.annotated.v1"
 
 
 def test_resolve_output_labels_default_and_override():
     labels = _resolve_output_labels(
         step_id="ingest",
-        output_contracts={"df": "tidy.v1"},
+        output_ports={"df": dataframe_output("df", "tidy.v1")},
         writes={},
     )
-    assert labels["df"] == "ingest/df"
+    assert labels["df"] == OutputRef(record_id="ingest/df")
 
     labels = _resolve_output_labels(
         step_id="ingest",
-        output_contracts={"df": "tidy.v1"},
-        writes={"df": "raw/df"},
+        output_ports={"df": dataframe_output("df", "tidy.v1")},
+        writes={"df": OutputRef(record_id="raw/df")},
     )
-    assert labels["df"] == "raw/df"
+    assert labels["df"] == OutputRef(record_id="raw/df")
 
 
 def test_resolve_output_labels_rejects_unknown_and_duplicates():
     with pytest.raises(ExecutionError):
         _resolve_output_labels(
             step_id="ingest",
-            output_contracts={"df": "tidy.v1"},
-            writes={"unknown": "raw/df"},
+            output_ports={"df": dataframe_output("df", "tidy.v1")},
+            writes={"unknown": OutputRef(record_id="raw/df")},
         )
 
     with pytest.raises(ExecutionError):
         _resolve_output_labels(
             step_id="ingest",
-            output_contracts={"a": "tidy.v1", "b": "tidy.v1"},
-            writes={"a": "shared/df", "b": "shared/df"},
+            output_ports={"a": dataframe_output("a", "tidy.v1"), "b": dataframe_output("b", "tidy.v1")},
+            writes={"a": OutputRef(record_id="shared/df"), "b": OutputRef(record_id="shared/df")},
         )
 
 
-def test_resolve_output_labels_rejects_none_contract_writes():
+def test_resolve_output_labels_rejects_file_output_writes():
     with pytest.raises(ExecutionError):
         _resolve_output_labels(
             step_id="plot",
-            output_contracts={"files": "none"},
-            writes={"files": "plots"},
+            output_ports={"artifacts": file_bundle_output("artifacts")},
+            writes={"artifacts": OutputRef(record_id="plots")},
         )
 
 
 def test_resolve_inputs_rejects_directory_file_input(tmp_path):
-    store = RecordStore(tmp_path / "outputs")
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
     data_dir = tmp_path / "inputs"
     data_dir.mkdir()
     with pytest.raises(ExecutionError):
-        _resolve_inputs(store, {"raw": f"file:{data_dir}"})
+        _resolve_inputs(store, {"raw": FileRef(path=data_dir)}, input_ports={"raw": file_path_input("raw")})

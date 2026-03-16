@@ -9,12 +9,15 @@ Author(s): Eric J. South
 
 from rich.console import Console
 
-from reader.core.cli import THEME
-from reader.core.config import ReaderSpec
-from reader.core.contracts import OutputContractSurface
-from reader.core.engine import explain
-from reader.core.registry import Plugin, PluginConfig, Registry
-from reader.core.workbench import PluginSemantics
+from reader.contracts import OutputContractSurface, builtin_contract_catalog
+from reader.tests.support import build_decl
+from reader.workbench import PluginSemantics
+from reader.workbench.assets import build_plugin_asset
+from reader.workbench.cli import THEME
+from reader.workbench.config import ReaderSpec
+from reader.workbench.engine import explain
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig, Registry
 
 
 class _Cfg(PluginConfig):
@@ -22,71 +25,61 @@ class _Cfg(PluginConfig):
 
 
 class _Dummy(Plugin):
-    key = "dummy"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="generic",
-        family="test_transform",
-        summary="Test transform plugin.",
-    )
     ConfigModel = _Cfg
 
     @classmethod
-    def input_contracts(cls):
+    def input_ports(cls):
         return {}
 
     @classmethod
-    def output_contracts(cls):
-        return {"df": "none"}
+    def output_ports(cls):
+        return {"df": dataframe_output("df", "tidy.v1")}
 
     def run(self, ctx, inputs, cfg):
         raise AssertionError("not used in explain")
 
 
 def test_explain_renders_without_rich_subtitle_kwargs() -> None:
-    registry = Registry()
-    registry.register("transform", "dummy", _Dummy)
+    registry = Registry(contracts=builtin_contract_catalog())
+    registry.register(
+        build_plugin_asset(
+            plugin_id="transform/dummy",
+            semantics=PluginSemantics(domain="generic", family="test_transform", summary="Test transform plugin."),
+            plugin_cls=_Dummy,
+        )
+    )
     spec = ReaderSpec.model_validate(
         {
-            "schema": "reader/v3",
+            "schema": "reader/v4",
             "experiment": {"id": "exp"},
             "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
-            "pipeline": {"steps": [{"id": "step_one", "uses": "transform/dummy"}]},
+            "pipeline": {"steps": [{"id": "step_one", "plugin": "transform/dummy"}]},
             "plots": {"specs": []},
             "exports": {"specs": []},
         }
     )
     console = Console(theme=THEME, record=True, width=80)
-    explain(spec, console=console, registry=registry)
+    explain(build_decl(spec), console=console, registry=registry)
 
 
 class _PromotingDummy(Plugin):
-    key = "promoting_dummy"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="plate_reader",
-        family="test_transform",
-        summary="Test runtime contract promotion plugin.",
-    )
     ConfigModel = _Cfg
 
     @classmethod
-    def input_contracts(cls):
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls):
-        return {"df": "tidy.v1"}
-
-    @classmethod
-    def output_contract_surfaces(cls):
+    def output_ports(cls):
         return {
-            "df": OutputContractSurface(
-                minimum="tidy.v1",
-                runtime_mode="promoted",
-                promoted=("plate_reader.annotated.v1",),
+            "df": dataframe_output(
+                "df",
+                "tidy.v1",
+                surface=OutputContractSurface(
+                    minimum="tidy.v1",
+                    runtime_mode="promoted",
+                    promoted=("plate_reader.annotated.v1",),
+                ),
             )
         }
 
@@ -95,19 +88,29 @@ class _PromotingDummy(Plugin):
 
 
 def test_explain_surfaces_runtime_contract_promotions() -> None:
-    registry = Registry()
-    registry.register("transform", "promoting_dummy", _PromotingDummy)
+    registry = Registry(contracts=builtin_contract_catalog())
+    registry.register(
+        build_plugin_asset(
+            plugin_id="transform/promoting_dummy",
+            semantics=PluginSemantics(
+                domain="plate_reader",
+                family="test_transform",
+                summary="Test runtime contract promotion plugin.",
+            ),
+            plugin_cls=_PromotingDummy,
+        )
+    )
     spec = ReaderSpec.model_validate(
         {
-            "schema": "reader/v3",
+            "schema": "reader/v4",
             "experiment": {"id": "exp"},
             "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
             "pipeline": {
                 "steps": [
                     {
                         "id": "step_one",
-                        "uses": "transform/promoting_dummy",
-                        "reads": {"df": "input/df"},
+                        "plugin": "transform/promoting_dummy",
+                        "reads": {"df": {"record": "input/df"}},
                     }
                 ]
             },
@@ -116,7 +119,7 @@ def test_explain_surfaces_runtime_contract_promotions() -> None:
         }
     )
     console = Console(theme=THEME, record=True, width=160)
-    explain(spec, console=console, registry=registry)
+    explain(build_decl(spec), console=console, registry=registry)
     rendered = console.export_text()
     assert "plate_reader/test_transform" in rendered
     assert "runtime may promote to" in rendered
@@ -124,29 +127,35 @@ def test_explain_surfaces_runtime_contract_promotions() -> None:
 
 
 def test_registry_catalog_indexes_semantic_fields() -> None:
-    registry = Registry()
-    registry.register("transform", "dummy", _Dummy)
+    registry = Registry(contracts=builtin_contract_catalog())
+    registry.register(
+        build_plugin_asset(
+            plugin_id="transform/dummy",
+            semantics=PluginSemantics(domain="generic", family="test_transform", summary="Test transform plugin."),
+            plugin_cls=_Dummy,
+        )
+    )
     catalog = registry.catalog()
 
-    assert [item.uses for item in catalog.filter(category="transform")] == ["transform/dummy"]
-    assert [item.uses for item in catalog.filter(domain="generic")] == ["transform/dummy"]
-    assert [item.uses for item in catalog.filter(family="test_transform")] == ["transform/dummy"]
+    assert [item.plugin for item in catalog.filter(category="transform")] == ["transform/dummy"]
+    assert [item.plugin for item in catalog.filter(domain="generic")] == ["transform/dummy"]
+    assert [item.plugin for item in catalog.filter(family="test_transform")] == ["transform/dummy"]
 
 
 def test_explain_renders_notebook_specs_without_plugin_registry() -> None:
     spec = ReaderSpec.model_validate(
         {
-            "schema": "reader/v3",
+            "schema": "reader/v4",
             "experiment": {"id": "exp"},
             "paths": {"outputs": "/tmp/reader", "plots": "plots", "exports": "exports"},
             "pipeline": {"steps": []},
             "plots": {"specs": []},
             "exports": {"specs": []},
-            "notebooks": {"specs": [{"id": "eda", "uses": "notebook/eda"}]},
+            "notebooks": {"specs": [{"id": "eda", "template": "notebook/eda"}]},
         }
     )
     console = Console(theme=THEME, record=True, width=100)
-    explain(spec, console=console, registry=None)
+    explain(build_decl(spec), console=console, registry=None)
     rendered = console.export_text()
     assert "Notebooks" in rendered
     assert "notebook/eda" in rendered

@@ -4,16 +4,16 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from reader.core.cli import app
 from reader.tests.support import base_reader_config, write_config
+from reader.workbench.cli import app
 
 
 def _run_config() -> dict:
     return base_reader_config(
         experiment_id="exp_run",
         pipeline_steps=[
-            {"id": "ingest", "uses": "ingest/synergy_h1"},
-            {"id": "labels", "uses": "transform/assay_labels", "reads": {"df": "ingest/df"}},
+            {"id": "ingest", "plugin": "ingest/synergy_h1"},
+            {"id": "labels", "plugin": "transform/assay_labels", "reads": {"df": "ingest/df"}},
         ],
         assay={
             "labels": {

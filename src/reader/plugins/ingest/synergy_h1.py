@@ -15,11 +15,11 @@ from typing import Literal
 import pandas as pd
 
 from reader.core.errors import ParseError
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
-from reader.io.discovery import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
-from reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
+from reader.domains.plate_reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
 from reader.plugins.ingest._discovery import discover_auto_input_files
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
+from reader.workbench.ports import dataframe_output, file_path_input
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class SynergyH1UnifiedCfg(PluginConfig):
@@ -54,24 +54,15 @@ class SynergyH1UnifiedCfg(PluginConfig):
 class SynergyH1(Plugin):
     """Unified Synergy H1 ingest (snapshot-only, kinetic-only, or mixed)."""
 
-    key = "synergy_h1"
-    category = "ingest"
-    semantics = PluginSemantics(
-        category="ingest",
-        domain="plate_reader",
-        family="workbook_ingest",
-        summary="Parse Synergy H1 workbooks into tidy plate-reader traces.",
-        tags=("xlsx", "kinetic", "snapshot"),
-    )
     ConfigModel = SynergyH1UnifiedCfg
 
     @classmethod
-    def input_contracts(cls):
-        return {"raw?": "none"}  # file is optional; we can auto-discover
+    def input_ports(cls):
+        return {"raw": file_path_input("raw", optional=True)}
 
     @classmethod
-    def output_contracts(cls):
-        return {"df": "tidy.v1"}
+    def output_ports(cls):
+        return {"df": dataframe_output("df", "tidy.v1")}
 
     # ---------- helpers ----------
 

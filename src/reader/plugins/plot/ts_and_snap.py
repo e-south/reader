@@ -11,16 +11,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.plot_sinks import PlotFigure
-from reader.core.registry import PluginConfig
-from reader.core.workbench import PluginSemantics
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class TSAndSnapCfg(PluginConfig):
@@ -59,24 +58,15 @@ class TSAndSnapCfg(PluginConfig):
 
 
 class TSAndSnapPlot(FigurePlotPlugin):
-    key = "ts_and_snap"
-    category = "plot"
-    semantics = PluginSemantics(
-        category="plot",
-        domain="plate_reader",
-        family="composite_plot",
-        summary="Render paired time-series and snapshot summary panels.",
-        tags=("time_series", "snapshot"),
-    )
     ConfigModel = TSAndSnapCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}  # blanks not required here
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     def render(self, ctx, inputs, cfg: TSAndSnapCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
 
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 

@@ -9,15 +9,14 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from contextlib import suppress
 
 import pandas as pd
 from pydantic import Field
 
 from reader.core.errors import ExecutionError
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class PromoteCfg(PluginConfig):
@@ -33,25 +32,15 @@ class PromoteCfg(PluginConfig):
 
 
 class PromoteToTidyPlusMap(Plugin):
-    key = "to_tidy_plus_map"
-    category = "validator"
-    semantics = PluginSemantics(
-        category="validator",
-        domain="plate_reader",
-        family="contract_promotion",
-        summary="Promote tidy tables to annotated plate-reader contracts when metadata is present.",
-        tags=("contract", "annotation"),
-    )
     ConfigModel = PromoteCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # Accept a tidy table with extra metadata columns present
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "plate_reader.annotated.v1"}
+    def output_ports(cls):
+        return {"df": dataframe_output("df", "plate_reader.annotated.v1")}
 
     def run(self, ctx, inputs, cfg: PromoteCfg):
         df: pd.DataFrame = inputs["df"].copy()

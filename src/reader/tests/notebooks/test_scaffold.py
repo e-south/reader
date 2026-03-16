@@ -13,8 +13,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from reader.core.cli import app
 from reader.tests.support import base_reader_config, default_notebook_name, write_config
+from reader.workbench.cli import app
 
 
 def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
@@ -23,12 +23,12 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
         base_reader_config(
             experiment_id="exp_nb",
             plot_specs=[
-                {"id": "plot_a", "uses": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}}
+                {"id": "plot_a", "plugin": "plot/time_series", "reads": {"df": "ingest/df"}, "with": {"y": ["OD600"]}}
             ],
         ),
     )
     runner = CliRunner()
-    result = runner.invoke(app, ["notebook", str(cfg_path), "--preset", "notebook/eda", "--mode", "none"])
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     assert nb_path.exists()
@@ -108,7 +108,7 @@ def test_notebook_scaffold_uses_configured_notebook_spec(tmp_path: Path) -> None
     cfg_path = write_config(
         tmp_path,
         base_reader_config(
-            experiment_id="exp_nb", pipeline_steps=[], notebook_specs=[{"id": "cyto", "uses": "notebook/cytometry"}]
+            experiment_id="exp_nb", pipeline_steps=[], notebook_specs=[{"id": "cyto", "template": "notebook/cytometry"}]
         ),
     )
     runner = CliRunner()

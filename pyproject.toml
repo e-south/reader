@@ -31,7 +31,7 @@ dnadesign = [
 ]
 
 [project.scripts]
-reader = "reader.core.cli:app"
+reader = "reader.workbench.cli:app"
 
 [tool.setuptools.package-dir]
 "" = "src"

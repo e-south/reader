@@ -3,15 +3,16 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from reader.core.semantics import resolve_logic_map_ref
-from reader.lib.sfxi.run import SFXIBuildResult, build_vec8_from_tidy
+from reader.domains.logic.sfxi.run import SFXIBuildResult, build_vec8_from_tidy
 
 
 def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
-    logic_map = resolve_logic_map_ref(ref=cfg.logic_map_ref, assay=dict(ctx.assay or {}))
+    if ctx.experiment is None:
+        raise ValueError("sfxi requires experiment semantics in the run context")
+    logic_map = ctx.experiment.assay.resolve_logic_map(ref=cfg.logic_map_ref)
     run_cfg = cfg.model_dump()
-    run_cfg["treatment_map"] = logic_map["corners"]
-    run_cfg["treatment_case_sensitive"] = logic_map["case_sensitive"]
+    run_cfg["treatment_map"] = dict(logic_map.corners)
+    run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive
     return build_vec8_from_tidy(df.copy(), run_cfg)
 
 

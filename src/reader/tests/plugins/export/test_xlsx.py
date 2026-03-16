@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from reader.core.context import RunContext
 from reader.plugins.export.xlsx import ExportXlsx, ExportXlsxCfg
+from reader.workbench.context import RunContext
 
 
 def _ctx(tmp_path: Path) -> RunContext:
@@ -39,7 +39,7 @@ def test_export_xlsx_writes_readable_file(tmp_path: Path) -> None:
     cfg = ExportXlsxCfg(path="vec8.xlsx", sheet_name="vec8", index=False)
 
     out = ExportXlsx().run(ctx, {"df": df}, cfg)
-    out_path = Path(out["files"][0])
+    out_path = Path(out["artifact"])
     assert out_path.exists()
 
     back = pd.read_excel(out_path, sheet_name="vec8")

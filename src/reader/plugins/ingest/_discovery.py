@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from reader.core.errors import ParseError
-from reader.io.discovery import DEFAULT_ROOTS, discover_files
+
+from .discovery_policy import DEFAULT_ROOTS, discover_files
 
 
 def auto_pick_discovered_file(

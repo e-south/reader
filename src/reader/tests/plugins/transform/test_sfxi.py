@@ -1,27 +1,44 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pandas.testing as pdt
 
-from reader.plugins.transform._sfxi import build_sfxi_plugin_result
+from reader.domains.logic.sfxi.run import build_vec8_from_tidy
 from reader.plugins.transform.sfxi import SFXICfg, SFXITransform
+from reader.workbench.experiment import (
+    AssaySemantics,
+    ExperimentSemantics,
+    LogicMaps,
+    LogicMapSpec,
+    OutputLayout,
+    ResourceCatalog,
+)
 
 
 def _ctx():
     return SimpleNamespace(
         logger=logging.getLogger("reader.tests.sfxi"),
-        assay={
-            "logic_maps": {
-                "screen": {
-                    "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
-                    "case_sensitive": True,
-                }
-            }
-        },
+        experiment=ExperimentSemantics(
+            assay=AssaySemantics(
+                logic_maps=LogicMaps(
+                    by_id={
+                        "screen": LogicMapSpec(
+                            column="treatment",
+                            corners={"00": "A", "10": "B", "01": "C", "11": "D"},
+                            case_sensitive=True,
+                        )
+                    }
+                )
+            ),
+            resources=ResourceCatalog(),
+            layout=OutputLayout(
+                outputs_dir=Path("."), plots_subdir="plots", exports_subdir="exports", notebooks_subdir="notebooks"
+            ),
+        ),
     )
 
 
@@ -61,7 +78,11 @@ def test_sfxi_plugin_matches_build_vec8_from_tidy():
     )
     df = _input_df()
 
-    expected = build_sfxi_plugin_result(ctx=ctx, df=df, cfg=cfg).vec8.reset_index(drop=True)
+    logic_map = ctx.experiment.assay.resolve_logic_map(ref=cfg.logic_map_ref)
+    run_cfg = cfg.model_dump()
+    run_cfg["treatment_map"] = dict(logic_map.corners)
+    run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive
+    expected = build_vec8_from_tidy(df.copy(), run_cfg).vec8.reset_index(drop=True)
     actual = SFXITransform().run(ctx, {"df": df}, cfg)["vec8"].reset_index(drop=True)
 
     pdt.assert_frame_equal(actual, expected)
