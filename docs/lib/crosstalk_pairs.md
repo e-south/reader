@@ -191,15 +191,21 @@ PY
 
 ### Export to the experiment exports directory
 
-Add an export spec (relative to `outputs/exports/`):
+Bind the export through protocol deliverables (relative to `outputs/exports/`):
 
 ```yaml
-exports:
-  specs:
-    - id: export_crosstalk_pairs
-      plugin: export/csv
-      reads: { df: crosstalk_pairs/table }
-      with: { path: "crosstalk_pairs.csv" }
+protocol:
+  id: plate_reader/dual_reporter_screen
+  analysis:
+    crosstalk_pairs:
+      enabled: true
+      export: true
+  deliverables:
+    exports:
+      include: [crosstalk_pairs_csv]
+      settings:
+        crosstalk_pairs_csv:
+          path: crosstalk_pairs.csv
 ```
 
 Then run:

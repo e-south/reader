@@ -29,13 +29,13 @@ reader ls --root experiments --all
 
 If `--root` is omitted, `reader` auto-detects the nearest `experiments/` directory.
 
-Inspect plugins, recipes, and notebook templates:
+Inspect plugins, protocols, and notebook templates:
 
 ```bash
 reader plugins
 reader plugins --category plot
-reader recipes
-reader recipes --family plot_set
+reader protocols
+reader protocols --family screen_analysis
 reader notebook --list-templates
 ```
 
@@ -49,7 +49,7 @@ reader demo
 
 ## Configuration + validation
 
-Print the expanded config (recipes + overrides applied):
+Print the compiled config/IR:
 
 ```bash
 reader config CONFIG|DIR|INDEX

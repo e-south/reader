@@ -1,5 +1,159 @@
 # Dev Journal
 
+## 2026-03-16: Typed Reader v6 Protocol Surface
+
+Completed the next hard cut from a protocol-compiled config surface with a raw
+mutation escape hatch to a stricter semantic authoring model.
+
+- Replaced `reader/v5` with `reader/v6`.
+- Removed the public `graph_patch` surface entirely.
+- Removed `protocol.with` and replaced it with:
+  - `protocol.parameters`
+  - `protocol.analysis`
+  - `protocol.deliverables`
+- Kept protocol compilers as the only owner of default workflow assembly.
+- Made public deliverable ids stable and semantic (`time_series`,
+  `snapshot_by_channel`, `vec8_xlsx`, `crosstalk_pairs_csv`, ...), instead of
+  exposing compiler-internal step ids.
+- Rewired the built-in protocol catalog so each protocol advertises only the
+  deliverables and defaults it can actually compile.
+- Migrated tracked experiment configs to the new `reader/v6` surface.
+
+The resulting placement rule is clearer:
+
+- `protocols/` own assay semantics, analysis parameters, and deliverable
+  selection
+- experiment configs bind semantic inputs, not raw graph mutations
+- `decl/` and `graph/` are executor IR only
+- recipes remain internal compiler macros, not user-facing config concepts
+
+## 2026-03-16: Protocol Execution Plan Slice
+
+Implemented the next semantic cut after adding the protocol kernel:
+`reader.protocols` no longer stops at descriptive metadata. Bound protocols now
+carry an executable plan that runtime behavior actually consumes.
+
+- Added protocol execution primitives to `reader.protocols`:
+  - `ProtocolExecutionPlan`
+  - `ProtocolNotebookPolicy`
+  - `ProtocolPluginDefaultsSpec`
+  - protocol binding references for protocol-owned defaults
+- Gave every built-in protocol an explicit execution plan with:
+  - a default notebook template
+  - an allowed notebook-template set
+  - protocol-owned shared plugin defaults where the workflow already had clear
+    repeated knowledge
+- Rewired notebook selection so `reader notebook` and `reader` next-step
+  guidance use the bound protocol’s notebook policy instead of
+  `has_plots` / `has_cytometry` heuristics.
+- Rewired validation so notebook specs must be allowed by the bound protocol.
+- Rewired plugin config validation and execution so effective plugin config is:
+  - protocol defaults
+  - plus optional `protocol.with.plugins.<plugin_id>` overrides
+  - plus step-local `with`
+- Moved shared logic-screen and plate-reader defaults out of repeated step
+  config where the protocol already owned that knowledge.
+- Updated CLI protocol inspection so operator-facing output shows the default
+  notebook and protocol-owned plugin-default surface.
+
+The resulting placement rule is clearer:
+
+- `protocols/` owns both assay semantics and protocol-level execution defaults
+- `recipes/` remain operational macros, not the primary assay-definition layer
+- `workbench/templates/` owns template behavior, but protocol policy owns which
+  templates are valid/default for a bound experiment
+- plugin `with` blocks override protocol defaults; they do not have to
+  redundantly restate them
+
+Validation for this slice:
+
+- targeted runtime/template/CLI/config pytest matrix first
+- full pytest, lint, format, compileall, CLI checks, and experiment validation
+  after final sweep
+
+## 2026-03-16: Protocol Kernel + Annotation Rename Slice
+
+Implemented the next rooted ontology cleanup after the composition-root cut
+exposed the remaining semantic gap: `assay` was only annotation metadata while
+the package still had no first-class home for experiment analysis protocols.
+
+- Added `reader.protocols` as the explicit protocol kernel with:
+  - `ProtocolDescriptor`
+  - `ProtocolCatalog`
+  - explicit built-in protocols for:
+    - `workbench/generic`
+    - `plate_reader/dual_reporter_screen`
+    - `logic/sfxi_screen`
+    - `cytometry/flow_panel`
+- Added a `protocol` binding to the config schema and to `ReaderRuntime`.
+- Threaded protocol binding through declaration building, runtime composition,
+  validation, and run-context construction.
+- Renamed the misleading experiment-local `assay` surface to `annotations`
+  everywhere it actually meant reusable labels/orders/collections/logic maps.
+- Removed the silent `experiment.id` directory-name fallback. Configs now bind
+  experiment identity explicitly.
+- Migrated tracked experiment configs and the public docs to the explicit
+  `protocol` + `annotations` surface.
+- Added a `reader protocols` CLI command so built-in protocols are operator-
+  visible instead of being hidden metadata.
+
+The resulting placement rule is clearer:
+
+- `protocols/` owns experiment analysis protocol semantics
+- `workbench/experiment/` owns experiment-local protocol binding, annotations,
+  resources, and output layout
+- `recipes/`, plots, notebooks, and future analysis helpers consume protocol
+  definitions instead of inventing their own assay ontology locally
+- directory names no longer participate in experiment identity
+
+Validation for this slice:
+
+- targeted config/protocol/CLI/plot/SFXI pytest matrix first
+- full pytest, lint, format, compileall, and repo validation after final sweep
+
+## 2026-03-16: First-Class Notebook Templates + Core Dissolution Slice
+
+Implemented the next ontology cleanup after the runtime-kernel cut exposed the
+last large split-ownership lie: notebook templates still existed as giant code
+strings in one module, metadata in another, and scaffold mutation logic in a
+third, while `reader.core` remained a catch-all namespace.
+
+- Added `reader.workbench.templates` as the sole semantic owner for built-in
+  notebook templates.
+- Moved each built-in template to its own file-backed source artifact under
+  `workbench/templates/builtins/` with colocated descriptor metadata.
+- Added explicit `NotebookTemplateDescriptor` and `NotebookTemplateCatalog`
+  instead of aliasing notebook-template semantics through the generic asset
+  catalog.
+- Rewired scaffold, CLI, planning, validation, and graph normalization to
+  resolve notebook templates through `reader.workbench.templates`.
+- Reduced `workbench/assets/` to consuming template descriptors instead of
+  declaring notebook templates directly.
+- Deleted `workbench/notebooks/catalog.py` and the 2.5k-line
+  `workbench/notebooks/templates.py` code-as-data module.
+- Deleted the `reader.core` source namespace and moved its surviving concepts
+  to truthful homes:
+  - `reader.errors`
+  - `reader.plotting.*`
+  - `reader.plugins.transform._labeling`
+- Removed the legacy `PluginCatalog` / `PluginDescriptor` aliases from
+  `reader.workbench.__init__`.
+
+The resulting placement rule is clearer:
+
+- `workbench/templates/` owns notebook-template identity, metadata, and source
+- `workbench/notebooks/` only writes or launches notebook artifacts
+- `assets/` consumes template descriptors but does not author them
+- `plotting/` owns plotting infrastructure
+- `errors.py` owns package-wide exceptions
+- transform-local labeling helpers live with transform plugins instead of in a
+  catch-all namespace
+
+Validation for this slice:
+
+- targeted notebook/template + asset + CLI + plotting pytest matrix
+- full pytest, lint, format, compileall, and config validation after final sweep
+
 ## 2026-03-16: Explicit ReaderRuntime Composition Root Slice
 
 Implemented the next breaking ontology cleanup after the typed-port cut exposed
@@ -336,7 +490,7 @@ The resulting placement rule is clearer:
 - `workbench/assets/` is the single semantic registry surface for workbench
   assets
 - `workbench/registry.py` owns executable plugin discovery only
-- `workbench/recipes/*` and `workbench/notebooks/templates.py` are now static
+- `workbench/recipes/*` and `workbench/templates/builtins/*` are now static
   asset declaration sources, not independent ontology systems
 - operators consume capabilities from asset descriptors instead of switching on
   concrete ids
@@ -403,8 +557,8 @@ Implemented the next ontology cleanup slice.
 
 The resulting placement rule is clearer:
 
-- `workbench/notebooks/catalog.py` is the semantic catalog for notebook
-  templates, not a special-case "preset" registry
+- `workbench/templates/` is the semantic catalog for notebook templates,
+  not a special-case "preset" registry
 - `workbench/notebooks/scaffold.py` writes notebook files from template
   descriptors
 - `reader notebook --template` is the explicit operator surface for notebook
@@ -428,7 +582,7 @@ Implemented the next ontology cleanup slice.
   ad hoc buckets such as `assay`.
 - Reclassified `transform/assay_labels` under the canonical `generic` domain.
 - Moved reusable dataframe label-application mechanics out of
-  `plugins/transform/_labeling.py` and into `reader.core.labeling`.
+  `plugins/transform/_labeling.py` and into `reader.plugins.transform._labeling`.
 - Moved assay-label spec resolution into `reader.workbench.semantics` so
   plugins no longer parse `assay.labels` structures themselves.
 - Rewired workbench validation, notebook SFXI template materialization, and
@@ -491,7 +645,7 @@ Implemented the next ontology cleanup slice.
   `reader.domains.plate_reader.contracts`.
 - Deleted the old shared `src/reader/contracts/analysis.py` sink instead of
   leaving one residual analysis bucket behind.
-- Moved generic palette/style helpers into `reader.core.plot_style`.
+- Moved generic palette/style helpers into `reader.plotting.style`.
 - Rewired workbench palette resolution and plate-reader plotting modules to the
   new shared plotting-infra path.
 

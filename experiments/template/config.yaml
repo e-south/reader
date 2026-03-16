@@ -1,165 +1,84 @@
-schema: reader/v4
+schema: reader/v6
 experiment:
+  id: template
   title: biosensor_panel_M9_glu
-resources:
-  sample_map:
-    kind: file
-    path: ./inputs/metadata.xlsx
-pipeline:
-  runtime:
-    strict: true
-  steps:
-  - id: ingest
-    plugin: ingest/synergy_h1
-    with:
+protocol:
+  id: logic/sfxi_screen
+  parameters:
+    ingest:
       mode: mixed
       channels:
       - OD600
       - CFP
       - YFP
       add_sheet: true
-    writes:
-      df:
-        record: raw/df
-  - id: merge_map
-    plugin: transform/sample_map
-    reads:
-      df:
-        record: raw/df
-      sample_map:
-        resource: sample_map
-    writes:
-      df:
-        record: merged/df
-  - id: ratio_yfp_cfp
-    plugin: transform/ratio
-    reads:
-      df:
-        record: merged/df
-    with:
-      name: YFP/CFP
-      numerator: YFP
-      denominator: CFP
-    writes:
-      df:
-        record: ratio_yfp_cfp/df
-  - id: ratio_yfp_od600
-    plugin: transform/ratio
-    reads:
-      df:
-        record: ratio_yfp_cfp/df
-    with:
-      name: YFP/OD600
-      numerator: YFP
-      denominator: OD600
-    writes:
-      df:
-        record: ratio_yfp_od600/df
-  - id: blank
-    plugin: transform/blank_correction
-    reads:
-      df:
-        record: ratio_yfp_od600/df
-    with:
-      method: subtract
-      capture_blanks: true
-    writes:
-      df:
-        record: corrected/df
-      blanks:
-        record: corrected/blanks
-  - id: overflow
-    plugin: transform/overflow_handling
-    reads:
-      df:
-        record: corrected/df
-    with:
-      action: max
-      clip_quantile: 0.999
-    writes:
-      df:
-        record: final/df
-  - id: sfxi
-    plugin: transform/sfxi
-    reads:
-      df:
-        record: final/df
-    with:
-      response:
-        logic_channel: YFP/CFP
-        intensity_channel: YFP/OD600
-      design_by:
-      - design_id
-      time_mode: nearest
-      target_time_h: 10
-      time_tolerance_h: 0.5
-      reference:
-        design_id: REF
-        stat: mean
-      logic_map_ref: induction_logic
-    writes:
-      vec8:
-        record: sfxi/vec8
-plots:
-  defaults:
-    reads:
-      df:
-        record: final/df
-  specs:
-  - id: plot_ts
-    plugin: plot/time_series
-    reads:
-      blanks:
-        record: corrected/blanks
-    with:
-      x: time
-      y:
-      - OD600
-      - CFP
-      - YFP
-      hue: treatment
-      partition:
-        collection_ref: group_ab
-      fig:
-        rc:
-          savefig_dpi: 300
-  - id: logic
-    plugin: plot/logic_symmetry
-    with:
-      response_channel: YFP/CFP
-      design_by:
-      - design_id
-      batch_col: batch
-      aggregation:
-        replicate_stat: mean
-        uncertainty: halo
-      encodings:
-        size_by: log_r
-        hue: null
-        alpha_by: batch
-      output:
-        format:
-        - pdf
-        dpi: 300
-        figsize:
-        - 7
-        - 6
-      logic_map_ref: induction_logic
-exports:
-  defaults:
-    reads:
-      df:
-        record: final/df
-  specs:
-  - id: export_final
-    plugin: export/csv
-    with:
-      path: final.csv
-notebooks:
-  specs:
-  - id: default
-    template: notebook/eda
-assay:
+    response:
+      logic_channel: YFP/CFP
+      intensity_channel: YFP/OD600
+    reference:
+      design_id: REF
+      stat: mean
+    design_by:
+    - design_id
+    logic_map_ref: induction_logic
+    target_time_h: 10
+    time_mode: nearest
+    time_tolerance_h: 0.5
+  analysis:
+    include_fold_change: false
+    include_export: false
+    preprocessing:
+      blank:
+        method: subtract
+        capture_blanks: true
+      overflow:
+        action: max
+        clip_quantile: 0.999
+  deliverables:
+    plots:
+      profile: none
+      settings:
+        time_series:
+          x: time
+          y:
+          - OD600
+          - CFP
+          - YFP
+          hue: treatment
+          partition:
+            collection_ref: group_ab
+          fig:
+            rc:
+              savefig_dpi: 300
+        logic_symmetry_yfp_cfp:
+          response_channel: YFP/CFP
+          design_by:
+          - design_id
+          batch_col: batch
+          aggregation:
+            replicate_stat: mean
+            uncertainty: halo
+          encodings:
+            size_by: log_r
+            alpha_by: batch
+          output:
+            format:
+            - pdf
+            dpi: 300
+            figsize:
+            - 7
+            - 6
+          logic_map_ref: induction_logic
+      include:
+      - time_series
+      - logic_symmetry_yfp_cfp
+    notebook:
+      template: notebook/eda
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.xlsx
+annotations:
   collections:
     group_ab:
       column: design_id

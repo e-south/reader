@@ -24,18 +24,19 @@ reader/
     lib/                # library-level references
     audits/             # audits and investigations
   src/reader/            # library + CLI
-    workbench/          # experiment lifecycle, config, records, notebooks, recipes, CLI
-      assets/           # unified asset registry + capability model for plugins/recipes/templates
+    protocols/          # explicit experiment analysis protocol kernel
+    workbench/          # experiment lifecycle, config, decl/graph IR, records, notebooks, CLI
+      assets/           # unified asset registry + capability model for plugins/templates
       config/           # wire schema + YAML loading only
-      decl/             # internal authored declaration layer
-      experiment/       # typed experiment-local semantics (assay, resources, output layout)
+      decl/             # compiled declaration IR
+      experiment/       # typed experiment-local semantics (protocol binding, annotations, resources, output layout)
       engine/           # planning, validation, contracts, runtime execution
       graph/            # runtime graph nodes and typed refs
       ports/            # typed plugin input/output port ontology
       ontology.py       # shared workbench semantic types
-      notebooks/        # notebook template catalog + scaffold writer
+      notebooks/        # notebook scaffold + launch flows
       records/          # record catalog store + dataset discovery helpers
-    domains/            # assay/data semantics by domain
+    domains/            # protocol/data semantics by domain
       plate_reader/
         analysis/       # derived plate-reader summary logic (e.g. fold_change)
         ordering.py     # dose/treatment ordering semantics
@@ -50,7 +51,7 @@ reader/
     contracts/          # explicit dataframe contract kernel
       builtins/         # built-in contract declarations by semantic domain
     plugins/            # ingest/transform/plot/export/validator
-    core/               # tiny shared infra only (errors, matplotlib cache, plot sinks/utils/style)
+    plotting/           # shared plotting/style/cache infrastructure
     tests/
 ```
 
@@ -91,14 +92,16 @@ That split keeps plan-time semantics, runtime semantics, and filesystem concerns
 
 The workbench asset surface now follows one model:
 
-- `workbench/assets/` is the single semantic registry surface for plugins,
-  recipes, and notebook templates
+- `workbench/assets/` is the single semantic registry surface for plugins and
+  notebook templates
 - `workbench/registry.py` owns executable plugin discovery only; plugin assets
   are exposed through the shared asset model
 - `workbench/decl/` owns the internal authored declaration layer for bound
   experiments, recipe-expanded step declarations, and notebook template calls
 - `workbench/experiment/` owns experiment-local semantics:
-  typed assay vocabulary, explicit resource catalogs, and output layout
+  explicit protocol binding, typed annotation vocabulary, explicit resource catalogs, and output layout
+- `protocols/` owns built-in experiment analysis protocols and the typed
+  `ProtocolCatalog` used by runtime composition
 - `workbench/graph/` owns typed workbench references and normalized runtime
   nodes:
   `AssetRef`, `InputRef`, `OutputRef`, plugin-step nodes, notebook-template
@@ -110,13 +113,18 @@ The workbench asset surface now follows one model:
   internal authored model or the runtime graph model
 - `workbench/records/model.py` owns persisted artifact provenance types instead
   of opaque input strings
-- `workbench/notebooks/templates.py` and `workbench/recipes/*` are static asset
-  declaration sources, not independent catalog systems
+- `workbench/templates/builtins/*` are static template assets
+- `workbench/recipes/*` are internal workflow macros used by protocol
+  compilers, not user-facing config surfaces
 - `workbench/model/` was deleted; the remaining semantic types now live under
   `workbench/ontology.py`, `workbench/assets/`, `workbench/decl/`, and
   `workbench/graph/`
-- operator behavior such as notebook auto-pick and plot-filter support now
-  comes from asset capabilities instead of hardcoded template ids in CLI code
+- operator behavior such as notebook auto-pick and protocol-level plugin
+  defaults now comes from protocol execution plans instead of heuristic CLI
+  branches or repeated per-step config blobs
+- template-local capabilities still own template-specific behavior such as plot
+  filtering or injected plot specs, but protocol policy now owns which
+  templates are valid by default for a bound experiment
 
 The plate-reader plotting library now follows the domain ontology directly:
 
@@ -148,10 +156,10 @@ That policy now lives with ingest adapters:
 - `plugins/ingest/discovery_policy.py` owns raw-file auto-discovery defaults
   and file search helpers
 
-The shared plotting infrastructure now lives under `core` instead of any domain:
+The shared plotting infrastructure now lives under `plotting/` instead of any domain:
 
-- `core/plot_style.py` owns palettes, Matplotlib rc defaults, and shared figure construction helpers
-- `core/labeling.py` owns generic dataframe label-application mechanics reused by labeling transforms
+- `plotting/style.py` owns palettes and shared figure construction helpers
+- `plotting/mpl.py` owns Matplotlib cache setup and rc defaults
 
 ---
 

@@ -39,8 +39,8 @@ Current examples of this convention:
   logic
 - `plugins/ingest/discovery_policy.py` owns raw-file discovery defaults and search helpers
 - `plugins/plot/_shared.py` owns shared figure-plot adapter behavior
-- `core/plot_style.py` owns shared palette/style helpers used by workbench and domain plot code
-- `core/labeling.py` owns reusable dataframe label-application mechanics for generic labeling transforms
+- `plotting/style.py` owns shared palette/style helpers used by workbench and domain plot code
+- `plugins/transform/_labeling.py` owns reusable dataframe label-application mechanics for generic labeling transforms
 - `domains/semantics.py` owns the shared domain-semantic access surface used by workbench and plugins
 - `plugins/transform/_*.py` owns transform-local adapter support only when the code is not shared outside one plugin
 
@@ -285,33 +285,29 @@ Mapping strategies are explicit and documented in config:
 For library-level API details and column semantics, see `docs/lib/crosstalk_pairs.md`.
 
 ```yaml
-pipeline:
-  steps:
-    - id: fold_change__yfp_over_cfp
-      plugin: transform/fold_change
-      reads: { df: ratio_yfp_cfp/df }
-      with:
-        target: YFP/CFP
-        report_times: [12.0]
-        treatment_column: treatment
-        group_by: [design_id]
-        use_global_baseline: true
-        global_baseline_value: negative
-
-    - id: crosstalk_pairs
-      plugin: transform/crosstalk_pairs
-      reads: { table: fold_change__yfp_over_cfp/table }
-      with:
+protocol:
+  id: plate_reader/dual_reporter_screen
+  with:
+    workflow:
+      include_crosstalk_pairs: true
+      include_crosstalk_export: true
+      plot_set: yfp_time_series
+    fold_change:
+      report_times: [12.0]
+      use_global_baseline: true
+      global_baseline_value: negative
+    plugins:
+      transform/crosstalk_pairs:
         value_column: log2FC
         value_scale: log2
         target: YFP/CFP
         time_mode: all
         time_policy: per_time
         mapping_mode: column
-        design_treatment_column: cognate_treatment   # mapping_mode: explicit -> use design_treatment_map
+        design_treatment_column: cognate_treatment
         min_self: 1.0
         max_cross: 0.5
-        max_other: 0.5             # max response to any non-self treatment
+        max_other: 0.5
         min_self_minus_best_other: 1.0
         min_selectivity_delta: 1.0
         require_self_is_top1: true
@@ -320,20 +316,26 @@ pipeline:
 To export pairings:
 
 ```yaml
-exports:
-  specs:
-    - id: export_crosstalk_pairs
-      plugin: export/csv
-      reads: { df: crosstalk_pairs/table }
-      with: { path: "crosstalk_pairs.csv" }
+protocol:
+  id: plate_reader/dual_reporter_screen
+  analysis:
+    crosstalk_pairs:
+      enabled: true
+      export: true
+  deliverables:
+    exports:
+      include: [crosstalk_pairs_csv]
+      settings:
+        crosstalk_pairs_csv:
+          path: crosstalk_pairs.csv
 ```
 
 ---
 
 ### Adding a plot/export plugin
 
-Plot specs live under `plots:` and export specs under `exports:` in config (optionally bundled via
-`plots.recipes` / `plots.overrides` and `exports.recipes` / `exports.overrides`).
+Plot and export plugins now enter configs through protocol compilation plus
+`protocol.deliverables` selection/settings.
 
 They are run by:
 
@@ -357,7 +359,7 @@ Plot plugins implement a **single render path** that powers file output:
 Minimal plot plugin pattern:
 
 ```python
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.plotting.sinks import PlotFigure, normalize_plot_figures, save_plot_figures
 from reader.workbench.ports import dataframe_input, file_bundle_output
 
 class MyPlot(Plugin):
@@ -402,16 +404,15 @@ Export plugins are intentionally permissive about input contracts; the built‑i
 Example export spec:
 
 ```yaml
-exports:
-  specs:
-    - id: export_vec8
-      plugin: "export/csv"
-      reads: { df: "sfxi_vec8/df" }
-      with: { path: "sfxi_vec8.csv" }
-    - id: export_vec8_xlsx
-      plugin: "export/xlsx"
-      reads: { df: "sfxi_vec8/df" }
-      with: { path: "sfxi_vec8.xlsx", sheet_name: "vec8" }
+protocol:
+  id: logic/sfxi_screen
+  deliverables:
+    exports:
+      include: [vec8_xlsx]
+      settings:
+        vec8_xlsx:
+          path: sfxi_vec8.xlsx
+          sheet_name: vec8
 ```
 
 ---

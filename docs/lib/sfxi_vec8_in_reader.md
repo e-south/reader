@@ -187,7 +187,11 @@ with:
 * Keys **must be exactly**: `{"00","10","01","11"}` (`api.load_sfxi_config` enforces this).
 * Values are the treatment labels expected to appear in the tidy data.
 
-In `reader/v4` experiment configs, you do **not** write `treatment_map` directly on `transform/sfxi`. Instead, define the mapping once under `assay.logic_maps.<name>` and reference it with `logic_map_ref`. The plugin materializes the lower-level `treatment_map` internally before calling the SFXI library.
+In `reader/v6` experiment configs, you do **not** write `treatment_map`
+directly on a hand-authored `transform/sfxi` step. Instead, define the mapping
+once under `annotations.logic_maps.<name>` and reference it with
+`protocol.parameters.logic_map_ref`. The protocol materializes the lower-level
+mapping before running the SFXI transform.
 
 Duplicate values are rejected (after optional normalization) to avoid ambiguous mapping:
 
@@ -435,10 +439,34 @@ See `src/reader/contracts/builtins/` for the canonical contracts referenced by t
 
 ### Configuration entry point
 
-In `reader/v4` pipeline configs, SFXI runs as a transform step using `transform/sfxi`. A minimal example:
+In `reader/v6`, SFXI is normally configured through the bound protocol plus
+semantic `protocol.parameters` / `protocol.analysis` / `protocol.deliverables`
+fields. A minimal example:
 
 ```yaml
-assay:
+protocol:
+  id: logic/sfxi_screen
+  parameters:
+    ingest:
+      mode: mixed
+      channels: [OD600, CFP, YFP]
+    fold_change:
+      report_times: [14.0]
+      use_global_baseline: true
+      global_baseline_value: EtOH_0_percent_0nM_cipro
+    response:
+      logic_channel: YFP/CFP
+      intensity_channel: YFP/OD600
+    design_by: [design_id]
+    logic_map_ref: induction_logic
+    reference:
+      design_id: REF
+      stat: mean
+  deliverables:
+    exports:
+      include: [vec8_xlsx]
+
+annotations:
   logic_maps:
     induction_logic:
       column: treatment_alias
@@ -448,57 +476,14 @@ assay:
         "01": EtOH 0%, 100 nM cipro
         "11": EtOH 3%, 100 nM cipro
       case_sensitive: true
-
-pipeline:
-  steps:
-    - id: sfxi_vec8
-      plugin: transform/sfxi
-      reads:
-        df:
-          record: promote_to_tidy_plus_map/df
-      with:
-        response:
-          logic_channel: YFP/CFP
-          intensity_channel: YFP/OD600
-
-        design_by: [design_id]
-
-        # treatment → corner mapping (state order: 00,10,01,11)
-        logic_map_ref: induction_logic
-
-        # time selection
-        target_time_h: 10.0            # null → latest available time
-        time_mode: nearest             # nearest | last_before | first_after | exact
-        time_tolerance_h: 0.25         # soft warning threshold
-
-        # corner completeness
-        require_all_corners_per_design: true
-
-        # intensity reference anchor (required)
-        reference:
-          design_id: REF
-          stat: mean                   # mean | median
-          # on_missing: error          # currently only 'error' is supported
-
-        # numerical guards / knobs
-        eps_ratio: 1e-9
-        eps_range: 1e-12
-        eps_ref: 1e-9
-        eps_abs: 0.0
-        ref_add_alpha: 0.0
-        log2_offset_delta: 0.0
-
-        # output
-        output_subdir: sfxi
-        vec8_filename: vec8.csv
-        log_filename: sfxi_log.json
 ```
 
 Additional notes:
 
 * `response.logic_channel` and `response.intensity_channel` are **required** and must match `channel` values in the tidy table exactly (string equality).
-* `assay.logic_maps.<name>.corners` must contain exactly the four keys `00, 10, 01, 11`.
-* `logic_map_ref` must point to a defined assay logic map; reader fails fast on unknown refs.
+* `protocol.id` should bind the experiment to `logic/sfxi_screen` when SFXI is the primary analysis protocol.
+* `annotations.logic_maps.<name>.corners` must contain exactly the four keys `00, 10, 01, 11`.
+* `logic_map_ref` must point to a defined annotations logic map; reader fails fast on unknown refs.
 * `reference.design_id` is required for intensity anchoring; missing reference data results in an error rather than a fallback.
 * Although a `time_column` config key exists in `SFXIConfig`, the current selector validation expects a literal `time` column in the tidy table. (If your upstream data uses a different name, rename it to `time` before SFXI.)
 
@@ -521,15 +506,18 @@ The following example uses the SFXI-capable experiment
     * a typed records catalog at `outputs/manifests/records.json`
     * an SFXI dataframe record at `sfxi_vec8/vec8`
 
-2) Export the vec8 table via `reader export`. Add export specs to the experiment `config.yaml` (adjust the `reads` path to match your SFXI step id):
+2) Export the vec8 table via `reader export`. Bind the workbook export as a protocol deliverable:
 
     ```yaml
-    exports:
-      specs:
-        - id: export_vec8_xlsx
-          plugin: export/xlsx
-          reads: { df: sfxi_vec8/vec8 }
-          with: { path: "sfxi/vec8.xlsx", sheet_name: "vec8" }
+    protocol:
+      id: logic/sfxi_screen
+      deliverables:
+        exports:
+          include: [vec8_xlsx]
+          settings:
+            vec8_xlsx:
+              path: sfxi/vec8.xlsx
+              sheet_name: vec8
     ```
 
     Then run exports:
