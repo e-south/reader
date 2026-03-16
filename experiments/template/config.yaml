@@ -1,12 +1,16 @@
-schema: reader/v3
+schema: reader/v4
 experiment:
   title: biosensor_panel_M9_glu
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.xlsx
 pipeline:
   runtime:
     strict: true
   steps:
   - id: ingest
-    uses: ingest/synergy_h1
+    plugin: ingest/synergy_h1
     with:
       mode: mixed
       channels:
@@ -15,57 +19,71 @@ pipeline:
       - YFP
       add_sheet: true
     writes:
-      df: raw/df
+      df:
+        record: raw/df
   - id: merge_map
-    uses: merge/sample_map
+    plugin: transform/sample_map
     reads:
-      df: raw/df
-      sample_map: resource:sample_map
+      df:
+        record: raw/df
+      sample_map:
+        resource: sample_map
     writes:
-      df: merged/df
+      df:
+        record: merged/df
   - id: ratio_yfp_cfp
-    uses: transform/ratio
+    plugin: transform/ratio
     reads:
-      df: merged/df
+      df:
+        record: merged/df
     with:
       name: YFP/CFP
       numerator: YFP
       denominator: CFP
     writes:
-      df: ratio_yfp_cfp/df
+      df:
+        record: ratio_yfp_cfp/df
   - id: ratio_yfp_od600
-    uses: transform/ratio
+    plugin: transform/ratio
     reads:
-      df: ratio_yfp_cfp/df
+      df:
+        record: ratio_yfp_cfp/df
     with:
       name: YFP/OD600
       numerator: YFP
       denominator: OD600
     writes:
-      df: ratio_yfp_od600/df
+      df:
+        record: ratio_yfp_od600/df
   - id: blank
-    uses: transform/blank_correction
+    plugin: transform/blank_correction
     reads:
-      df: ratio_yfp_od600/df
+      df:
+        record: ratio_yfp_od600/df
     with:
       method: subtract
       capture_blanks: true
     writes:
-      df: corrected/df
-      blanks: corrected/blanks
+      df:
+        record: corrected/df
+      blanks:
+        record: corrected/blanks
   - id: overflow
-    uses: transform/overflow_handling
+    plugin: transform/overflow_handling
     reads:
-      df: corrected/df
+      df:
+        record: corrected/df
     with:
       action: max
       clip_quantile: 0.999
     writes:
-      df: final/df
+      df:
+        record: final/df
   - id: sfxi
-    uses: transform/sfxi
+    plugin: transform/sfxi
     reads:
-      df: final/df
+      df:
+        record: final/df
     with:
       response:
         logic_channel: YFP/CFP
@@ -80,16 +98,19 @@ pipeline:
         stat: mean
       logic_map_ref: induction_logic
     writes:
-      vec8: sfxi/vec8
+      vec8:
+        record: sfxi/vec8
 plots:
   defaults:
     reads:
-      df: final/df
+      df:
+        record: final/df
   specs:
   - id: plot_ts
-    uses: plot/time_series
+    plugin: plot/time_series
     reads:
-      blanks: corrected/blanks
+      blanks:
+        record: corrected/blanks
     with:
       x: time
       y:
@@ -103,7 +124,7 @@ plots:
         rc:
           savefig_dpi: 300
   - id: logic
-    uses: plot/logic_symmetry
+    plugin: plot/logic_symmetry
     with:
       response_channel: YFP/CFP
       design_by:
@@ -127,16 +148,17 @@ plots:
 exports:
   defaults:
     reads:
-      df: final/df
+      df:
+        record: final/df
   specs:
   - id: export_final
-    uses: export/csv
+    plugin: export/csv
     with:
       path: final.csv
 notebooks:
   specs:
   - id: default
-    uses: notebook/eda
+    template: notebook/eda
 assay:
   collections:
     group_ab:

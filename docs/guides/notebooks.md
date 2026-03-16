@@ -5,7 +5,7 @@ Once you run a pipeline you can generate [marimo notebooks](https://marimo.io/) 
 ### Contents
 
 1. [General usage](#general-usage)
-2. [Using reader presets](#using-reader-presets)
+2. [Using reader templates](#using-reader-templates)
 
 ---
 
@@ -59,9 +59,9 @@ In general there are two ways to use marimo:
 
 ---
 
-### Using reader presets
+### Using reader templates
 
-Presets let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
+Templates let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
 Use `reader notebook` for broad exploration across dataframe records.
 By default, notebooks are written under `outputs/notebooks/`.
 
@@ -80,7 +80,7 @@ What the scaffolded notebook includes:
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
 * load-status messaging when no records exist yet or parquet loading fails
 
-The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` presets are intentionally minimal record explorers.
+The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` templates are intentionally minimal record explorers.
 They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
 
 The dataset dropdown drives the canonical `df_active` variable.
@@ -88,7 +88,7 @@ The dataset dropdown drives the canonical `df_active` variable.
 See what’s available:
 
 ```bash
-reader notebook --list-presets
+reader notebook --list-templates
 ```
 
 Notes:
@@ -97,15 +97,20 @@ Notes:
 * `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `reader run` or opt in with `reader notebook --scan-records`.
-* Common presets include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda` (SFXI vec8 builder scaffold; requires a `transform/sfxi` step or existing SFXI dataframe records).
-* The SFXI preset draws a red dashed induction marker on the time-series plot when an induction time can be inferred from dataframe records:
+* Common templates include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
+* Template behavior is capability-driven:
+  - plot filtering is only available for templates that declare plot-filter support
+  - auto-pick chooses a template from declared default rules instead of hardcoded CLI branching
+  - template applicability checks are declared on the template asset itself
+* `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
+* The SFXI template draws a red dashed induction marker on the time-series plot when an induction time can be inferred from dataframe records:
   - preferred: an explicit column like `induction_time_h` (or `induction_time`) in the tidy dataframe
   - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time
   If neither is present, the induction marker is omitted.
 * If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new` to create a second notebook with an automatic numeric suffix.
-* If `--preset` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it auto-selects `notebook/eda` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
+* If `--template` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it auto-selects the first template whose declared default rule matches the workbench state.
 
-See also: [SFXI vec8 in reader](sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook preset aligns with the code.
+See also: [SFXI vec8 in reader](sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook template aligns with the code.
 
 ---
 

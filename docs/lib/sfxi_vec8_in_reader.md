@@ -38,13 +38,13 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
   * **Reader makes this explicit** by writing an `intensity_log2_offset_delta` column into every vec8 row. When `log2_offset_delta` is left at its default (`0.0`), this column will be all zeros.
   * **If OPAL uses a different delta, recovered linear intensities and downstream scores will be inconsistent.** Keep the values in sync (preferably by validating against the vec8 column at ingest time).
 
-- The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader/lib/sfxi/*` and adds pipeline plumbing and logging.
+- The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader.domains.logic.sfxi.*` and adds pipeline plumbing and logging.
 
 ---
 
 ### Relevant modules
 
-Key modules in `src/reader/lib/sfxi/`:
+Key modules in `src/reader/domains/logic/sfxi/`:
 
 * **Selection + cornerization + aggregation:** `selection.py`
 
@@ -187,7 +187,7 @@ with:
 * Keys **must be exactly**: `{"00","10","01","11"}` (`api.load_sfxi_config` enforces this).
 * Values are the treatment labels expected to appear in the tidy data.
 
-In `reader/v3` experiment configs, you do **not** write `treatment_map` directly on `transform/sfxi`. Instead, define the mapping once under `assay.logic_maps.<name>` and reference it with `logic_map_ref`. The plugin materializes the lower-level `treatment_map` internally before calling the SFXI library.
+In `reader/v4` experiment configs, you do **not** write `treatment_map` directly on `transform/sfxi`. Instead, define the mapping once under `assay.logic_maps.<name>` and reference it with `logic_map_ref`. The plugin materializes the lower-level `treatment_map` internally before calling the SFXI library.
 
 Duplicate values are rejected (after optional normalization) to avoid ambiguous mapping:
 
@@ -429,13 +429,13 @@ When using `lib.sfxi.run` entry points, the JSON log includes:
 
 > Note: the library (`run_sfxi`) writes `sfxi_log.json`. If you are using a higher-level transform wrapper, it may choose to surface the same information via console logging and/or pipeline metadata instead of writing a separate JSON file.
 
-See `src/reader/core/contracts/` for the canonical contracts referenced by the pipeline (`plate_reader.annotated.v1`, `sfxi.vec8.v2`).
+See `src/reader/contracts/builtins/` for the canonical contracts referenced by the pipeline (`plate_reader.annotated.v1`, `sfxi.vec8.v2`).
 
 ---
 
 ### Configuration entry point
 
-In `reader/v3` pipeline configs, SFXI runs as a transform step using `transform/sfxi`. A minimal example:
+In `reader/v4` pipeline configs, SFXI runs as a transform step using `transform/sfxi`. A minimal example:
 
 ```yaml
 assay:
@@ -452,9 +452,10 @@ assay:
 pipeline:
   steps:
     - id: sfxi_vec8
-      uses: transform/sfxi
+      plugin: transform/sfxi
       reads:
-        df: promote_to_tidy_plus_map/df
+        df:
+          record: promote_to_tidy_plus_map/df
       with:
         response:
           logic_channel: YFP/CFP
@@ -526,7 +527,7 @@ The following example uses the SFXI-capable experiment
     exports:
       specs:
         - id: export_vec8_xlsx
-          uses: export/xlsx
+          plugin: export/xlsx
           reads: { df: sfxi_vec8/vec8 }
           with: { path: "sfxi/vec8.xlsx", sheet_name: "vec8" }
     ```
@@ -541,15 +542,15 @@ The following example uses the SFXI-capable experiment
 
     * `outputs/exports/sfxi/vec8.xlsx`
 
-3) Launch the SFXI notebook preset (interactive vec8 inspection + export panel):
+3) Launch the SFXI notebook template (interactive vec8 inspection + export panel):
 
     ```bash
-    uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --preset notebook/sfxi_eda --mode edit
+    uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --template notebook/sfxi_eda --mode edit
     ```
 
     Notes:
 
-    * The notebook preset is gated: it only scaffolds when the experiment has a valid
+    * The notebook template is gated: it only scaffolds when the experiment has a valid
       `transform/sfxi` step or existing SFXI dataframe records.
     * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 

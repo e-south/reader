@@ -17,15 +17,19 @@ Plugins exist so repeated parsing/transforms/plots can be reused across experime
 
 A good plugin is thin orchestration:
 
-- keep instrument/file parsing in `io/` (raw → tidy tables)
-- keep reusable computation in `lib/` (domain logic)
+- keep instrument/file parsing in `domains/<domain>/io/` when it is domain-owned,
+  or in `plugins/ingest/discovery_policy.py` when it is genuinely shared raw-file
+  autodiscovery policy for ingest adapters
+- keep reusable computation in `domains/<domain>/...` instead of `plugins/`
+- keep derived domain tables with the producing domain, not in shared contract buckets
 - keep plugins focused on wiring inputs → computation → declared outputs
 - if multiple plugins in one category share orchestration-only behavior, keep
   that in `plugins/<category>/_*.py`; do not duplicate file discovery,
   partition resolution, or figure-save plumbing across plugin modules
-- for plotting, keep figure selection/layout in `lib/microplates/support/` or a
-  figure-specific package, keep axes rendering in `lib/microplates/panels/`,
-  and keep plugin modules as config adapters only
+- for plotting, keep figure selection/layout in the domain package
+  (for example `domains/plate_reader/analysis/`, `domains/plate_reader/ordering.py`,
+  and `domains/plate_reader/plots/`), keep axes rendering in
+  `domains/<domain>/plots/panels/`, and keep plugin modules as config adapters only
 - if a plot needs semantic input preparation, keep that in the plotting library
   next to the figure package rather than in a plugin-private helper
 
@@ -33,14 +37,18 @@ Current examples of this convention:
 
 - `plugins/ingest/_discovery.py` owns shared ingest auto-discovery and pick
   logic
+- `plugins/ingest/discovery_policy.py` owns raw-file discovery defaults and search helpers
 - `plugins/plot/_shared.py` owns shared figure-plot adapter behavior
-- `plugins/transform/_*.py` owns transform-local support logic when extraction
-  into `lib/` would be premature
+- `core/plot_style.py` owns shared palette/style helpers used by workbench and domain plot code
+- `core/labeling.py` owns reusable dataframe label-application mechanics for generic labeling transforms
+- `domains/semantics.py` owns the shared domain-semantic access surface used by workbench and plugins
+- `plugins/transform/_*.py` owns transform-local adapter support only when the code is not shared outside one plugin
 
-Each plugin now also declares a small workbench ontology entry:
+Each plugin now has a small workbench ontology entry declared in the explicit
+built-in plugin manifest:
 
-- `category` = execution stage (`ingest`, `merge`, `transform`, `validator`, `plot`, `export`)
-- `domain` = problem domain (`plate_reader`, `cytometry`, `logic`, `generic`, ...)
+- `category` = execution stage (`ingest`, `transform`, `validator`, `plot`, `export`)
+- `domain` = canonical problem domain (`plate_reader`, `cytometry`, `logic`, `generic`)
 - `family` = semantic plugin type within that domain (`time_series`, `metadata_merge`, `derived_channel`, ...)
 
 That ontology is first-class in the registry and CLI. `reader plugins` is no longer
@@ -55,15 +63,32 @@ src/reader/plugins/<category>/
 You’ll typically see plugins grouped as:
 
 * `ingest/*` — read raw instrument/files into a tidy table
-* `merge/*` — attach metadata or mapping tables
-* `transform/*` — operate on tidy tables (derive new channels, filter, normalize, etc.)
+* `transform/*` — operate on tidy tables (derive new channels, attach metadata, filter, normalize, etc.)
 * `validator/*` — enforce or upgrade schema/shape
 * `plot/*` — render plots (plot specs)
 * `export/*` — write exports (export specs)
 
-External plugins use matching entry-point groups for every advertised category:
-`reader.ingest`, `reader.merge`, `reader.transform`, `reader.validator`,
-`reader.plot`, and `reader.export`.
+Built-in plugin registration is explicit in:
+
+```bash
+src/reader/workbench/assets/plugin_manifest.py
+```
+
+`src/reader/plugins/` now contains implementations only; the runtime does not
+discover built-ins by scanning that package tree.
+
+External plugins use the `reader.plugins` entry-point group and must expose an
+explicit plugin descriptor, not just a `Plugin` subclass.
+
+Plugin I/O is now declared through the explicit port kernel in
+`reader.workbench.ports`, not through string conventions. That means:
+
+- input optionality is `optional=True`, not a `?` suffix
+- dataframe ports declare `contract="tidy.v1"` or `contract=None`
+- file inputs use `file_path` ports
+- plot/export outputs use explicit `file_path` or `file_bundle` ports
+- the removed legacy conventions `"none"` and `"files"` are not valid plugin API
+  surface anymore
 
 ---
 
@@ -71,10 +96,10 @@ External plugins use matching entry-point groups for every advertised category:
 
 **Generic ingestion**
 
-1. Keep parsing logic in `io/`:
+1. Keep parsing logic in a domain package:
 
   ```python
-  # src/reader/io/my_format.py
+  # src/reader/domains/plate_reader/io/my_format.py
   import pandas as pd
   from pathlib import Path
 
@@ -85,47 +110,60 @@ External plugins use matching entry-point groups for every advertised category:
       return df
   ```
 
-2. Wire it up as a plugin:
+2. Wire it up as a plugin implementation:
 
   ```python
   # src/reader/plugins/ingest/my_format.py
-  from typing import Mapping, Dict, Any
-  from reader.core.registry import Plugin, PluginConfig
-  from reader.core.workbench import PluginSemantics
-  from reader.io.my_format import parse_my_format
+  from typing import Any
+  from reader.workbench.ports import dataframe_output, file_path_input
+  from reader.workbench.registry import Plugin, PluginConfig
+  from reader.domains.plate_reader.io.my_format import parse_my_format
 
   class MyCfg(PluginConfig):
       pass
 
   class MyIngest(Plugin):
-      key = "my_format"
-      category = "ingest"
-      semantics = PluginSemantics(
-          category="ingest",
-          domain="plate_reader",
-          family="workbook_ingest",
-          summary="Parse my custom workbook format into tidy traces.",
-      )
       ConfigModel = MyCfg
 
       @classmethod
-      def input_contracts(cls) -> Mapping[str, str]:
-          return {"raw": "none"}
+      def input_ports(cls):
+          return {"raw": file_path_input("raw")}
 
       @classmethod
-      def output_contracts(cls) -> Mapping[str, str]:
-          return {"df": "tidy.v1"}
+      def output_ports(cls):
+          return {"df": dataframe_output("df", "tidy.v1")}
 
-      def run(self, ctx, inputs: Dict[str, Any], cfg: MyCfg):
+      def run(self, ctx, inputs: dict[str, Any], cfg: MyCfg):
           return {"df": parse_my_format(inputs["raw"])}
   ```
 
-3. Use it in an experiment:
+3. Register it explicitly in the built-in manifest:
+
+  ```python
+  # src/reader/workbench/assets/plugin_manifest.py
+  from reader.plugins.ingest.my_format import MyIngest
+  from reader.workbench import PluginSemantics
+  from reader.workbench.assets import build_plugin_asset
+
+  build_plugin_asset(
+      plugin_id="ingest/my_format",
+      semantics=PluginSemantics(
+          domain="plate_reader",
+          family="workbook_ingest",
+          summary="Parse my custom workbook format into tidy traces.",
+      ),
+      plugin_cls=MyIngest,
+  )
+  ```
+
+4. Use it in an experiment:
 
   ```yaml
   - id: "ingest_custom"
-    uses: "ingest/my_format"
-    reads: { raw: "file:./inputs/run001.ext" }
+    plugin: "ingest/my_format"
+    reads:
+      raw:
+        file: "./inputs/run001.ext"
   ```
 
 ### Flow cytometry ingest plugin
@@ -136,14 +174,14 @@ For flow cytometry `.fcs` files, use `ingest/flow_cytometer`. It emits a tidy ta
 * `time` set to a constant (default `0.0`, since cytometry is snapshot data)
 * long-form `channel` / `value` pairs per event
 
-The raw FCS parsing lives in `reader.io.flow_cytometer`; the plugin is just the workbench adapter
+The raw FCS parsing currently lives in `reader.domains.cytometry.io.fcs`; the plugin is just the workbench adapter
 for config, auto-discovery, output contracts, and logging.
 
 Example:
 
 ```yaml
 - id: ingest_cytometer
-  uses: ingest/flow_cytometer
+  plugin: ingest/flow_cytometer
   with:
     auto_roots: ["./inputs"]
     channel_name_field: "pns"
@@ -153,11 +191,13 @@ Example:
 To attach metadata keyed by `sample_id`:
 
 ```yaml
-- id: merge_metadata
-  uses: merge/sample_metadata
+- id: attach_metadata
+  plugin: transform/sample_metadata
   reads:
-    df: "ingest_cytometer/df"
-    metadata: "file:./metadata.csv"
+    df:
+      record: "ingest_cytometer/df"
+    metadata:
+      file: "./metadata.csv"
   with:
     require_columns: ["design_id", "treatment"]
 ```
@@ -177,54 +217,43 @@ promotion; execution decides the actual stored contract from the emitted data.
 Transforms typically declare a minimal table contract such as `tidy.v1`.
 When a transform preserves richer metadata semantics, it can resolve a stricter
 runtime output contract instead of collapsing back to the minimum.
-If that promotion matters to users, expose it in `output_contract_surfaces()`
+If that promotion matters to users, expose it through the dataframe output
+port surface
 so `reader explain` reports the planned semantic range instead of only the floor.
 
 ```python
-from typing import Mapping, Dict, Any
 import pandas as pd
-from reader.core.registry import Plugin, PluginConfig
-from reader.core.workbench import PluginSemantics
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 class Cfg(PluginConfig):
     factor: float = 2.0
 
 class ScaleValues(Plugin):
-    key = "scale"
-    category = "transform"
-    semantics = PluginSemantics(
-        category="transform",
-        domain="generic",
-        family="value_transform",
-        summary="Scale tidy values by a constant factor.",
-    )
     ConfigModel = Cfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
-
-    @classmethod
-    def output_contract_surfaces(cls):
-        return cls.passthrough_output_contract_surfaces(
+    def output_ports(cls):
+        return cls.passthrough_output_ports(
+            outputs={"df": dataframe_output("df", "tidy.v1")},
             passthrough={"df": "df"},
             promoted_examples={"df": ("plate_reader.annotated.v1",)},
         )
 
-    def resolve_output_contracts(self, *, inputs, outputs, cfg, where):
+    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
         del cfg
-        return self.inherit_dataframe_output_contracts(
+        return self.inherit_dataframe_output_ports(
             inputs=inputs,
             outputs=outputs,
             passthrough={"df": "df"},
             where=where,
         )
 
-    def run(self, ctx, inputs: Dict[str, Any], cfg: Cfg):
+    def run(self, ctx, inputs: dict[str, Any], cfg: Cfg):
         df = inputs["df"].copy()
         df["value"] = pd.to_numeric(df["value"], errors="coerce") * cfg.factor
         return {"df": df}
@@ -259,7 +288,7 @@ For library-level API details and column semantics, see `docs/lib/crosstalk_pair
 pipeline:
   steps:
     - id: fold_change__yfp_over_cfp
-      uses: transform/fold_change
+      plugin: transform/fold_change
       reads: { df: ratio_yfp_cfp/df }
       with:
         target: YFP/CFP
@@ -270,7 +299,7 @@ pipeline:
         global_baseline_value: negative
 
     - id: crosstalk_pairs
-      uses: transform/crosstalk_pairs
+      plugin: transform/crosstalk_pairs
       reads: { table: fold_change__yfp_over_cfp/table }
       with:
         value_column: log2FC
@@ -294,7 +323,7 @@ To export pairings:
 exports:
   specs:
     - id: export_crosstalk_pairs
-      uses: export/csv
+      plugin: export/csv
       reads: { df: crosstalk_pairs/table }
       with: { path: "crosstalk_pairs.csv" }
 ```
@@ -304,7 +333,7 @@ exports:
 ### Adding a plot/export plugin
 
 Plot specs live under `plots:` and export specs under `exports:` in config (optionally bundled via
-`plots.presets` / `plots.overrides` and `exports.presets` / `exports.overrides`).
+`plots.recipes` / `plots.overrides` and `exports.recipes` / `exports.overrides`).
 
 They are run by:
 
@@ -314,8 +343,8 @@ They are run by:
 Guidelines:
 
 * Plot/export plugins should be deterministic and pure: read declared inputs, produce deterministic outputs.
-* Avoid experiment-specific logic inside plot plugins; keep bespoke logic in `lib/`.
-* Declare input/output contracts; write under `outputs/plots` or `outputs/exports`.
+* Avoid experiment-specific logic inside plot plugins; keep bespoke logic in `domains/<domain>/`.
+* Declare typed input/output ports; write under `outputs/plots` or `outputs/exports`.
 * Plot specs are assertive: missing required columns raise an error.
 * If a selection is empty, emit a warning and skip (don’t silently write an empty plot).
 * Plot/export outputs are tracked as `file_bundle` records in `outputs/manifests/records.json`.
@@ -329,20 +358,27 @@ Minimal plot plugin pattern:
 
 ```python
 from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
+from reader.workbench.ports import dataframe_input, file_bundle_output
 
 class MyPlot(Plugin):
-    key = "my_plot"
-    category = "plot"
     ConfigModel = MyCfg
+
+    @classmethod
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
+
+    @classmethod
+    def output_ports(cls):
+        return {"artifacts": file_bundle_output("artifacts")}
 
     def render(self, ctx, inputs, cfg: MyCfg) -> list[PlotFigure]:
         fig = build_plot(inputs["df"])
         return [PlotFigure(fig=fig, filename=cfg.filename or "my_plot")]
 
     def run(self, ctx, inputs, cfg: MyCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
+        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.plugin_key}")
         saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}
+        return {"artifacts": [str(p) for p in saved]}
 ```
 
 Common plot config knobs (shared across most plot plugins):
@@ -369,11 +405,11 @@ Example export spec:
 exports:
   specs:
     - id: export_vec8
-      uses: "export/csv"
+      plugin: "export/csv"
       reads: { df: "sfxi_vec8/df" }
       with: { path: "sfxi_vec8.csv" }
     - id: export_vec8_xlsx
-      uses: "export/xlsx"
+      plugin: "export/xlsx"
       reads: { df: "sfxi_vec8/df" }
       with: { path: "sfxi_vec8.xlsx", sheet_name: "vec8" }
 ```

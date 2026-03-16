@@ -1,6 +1,6 @@
 # Configuring pipelines
 
-Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots, notebooks, and exports.
+Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/transform/validate). Outputs derived from pipelines can then feed into plots, notebooks, and exports.
 
 ### Contents
 
@@ -16,7 +16,7 @@ Pipelines are defined in `config.yaml` and detail steps you want to run the same
 Every config must declare the schema at the top:
 
 ```yaml
-schema: "reader/v3"
+schema: "reader/v4"
 ```
 
 ---
@@ -24,7 +24,7 @@ schema: "reader/v3"
 ### Top-level structure
 
 ```yaml
-schema: "reader/v3"
+schema: "reader/v4"
 
 experiment:                     # optional; omit entirely to derive id/title from the directory
   id: <string>                 # optional; defaults to the experiment directory name
@@ -40,23 +40,23 @@ plotting:
   palette: "colorblind"       # optional default; string or null
 
 pipeline:
-  presets: []                  # optional
+  recipes: []                  # optional
   runtime: {}                  # optional (e.g., strict: true)
   overrides: {}                # optional per-step overrides by id
   steps: []                    # required (use empty list if none)
 
 plots:
-  presets: []                  # optional
+  recipes: []                  # optional
   defaults:                    # optional defaults applied to all plot specs
-    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    reads: {}                  # e.g., { df: { record: "ratios/yfp_od600" } }
     with:  {}                  # shallow-merged into spec.with
   overrides: {}                # optional per-plot overrides by id
   specs: []                    # optional (unordered)
 
 exports:
-  presets: []                  # optional
+  recipes: []                  # optional
   defaults:                    # optional defaults applied to all export specs
-    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
+    reads: {}                  # e.g., { df: { record: "ratios/yfp_od600" } }
     with:  {}
   overrides: {}                # optional per-export overrides by id
   specs: []                    # optional (unordered)
@@ -64,7 +64,7 @@ exports:
 notebooks:
   specs:
     - id: "default"
-      uses: "notebook/basic"   # optional default for `reader notebook`
+      template: "notebook/basic"   # optional default for `reader notebook`
 
 resources:
   optional_extra_input:
@@ -80,9 +80,9 @@ assay:
 
 Notes:
 
-- `paths.outputs` is resolved relative to the config file and stored as an absolute path.
+- `paths.outputs` is resolved relative to the config file when `reader` builds the internal workbench declaration.
 - `paths.plots`, `paths.exports`, and `paths.notebooks` must be relative to `paths.outputs`.
-- `paths.plots`, `paths.exports`, and `paths.notebooks` may not escape `paths.outputs` via `..`.
+- `paths.plots`, `paths.exports`, and `paths.notebooks` may not contain `..` segments.
 - Omit `paths` entirely when you want the defaults shown above.
 - Omit `plotting.palette` when you want the default `colorblind` palette.
 - Omit `experiment` entirely when the directory name is the id you want and you do not need a custom title.
@@ -90,15 +90,21 @@ Notes:
 - Omit `experiment.id` only when the experiment directory name is the canonical id you want.
 - `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
 - Step/spec ids must be unique across pipeline, plots, exports, and notebooks.
-- Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
-- `notebooks.specs` is declarative-only in `reader/v3`: use `id` and `uses`.
-- Plot/export defaults apply after preset expansion and before per-id overrides.
-- `resource:sample_map` and `resource:metadata` are conventional handles that resolve to `./inputs/metadata.xlsx` and `./inputs/metadata.csv` without explicit `resources:` entries. Use `resources:` only for non-conventional external inputs.
-- `assay` is the canonical place for reusable experiment semantics. Keep resource handles under `resources:` and reusable meaning under `assay:` rather than hiding both inside free-form step config.
-- Internally, `reader` materializes all three sections into one shared
-  `WorkbenchSpec` model before planning, validation, runtime execution, and CLI
-  inspection. That keeps spec semantics consistent across the workbench instead
-  of re-deriving `pipeline` vs `plot` vs `export` vs `notebook` shape in multiple places.
+- Inline `recipe:` entries inside `steps` are not supported. Use `pipeline.recipes`, `plots.recipes`, or `exports.recipes` instead.
+- `notebooks.specs` is declarative-only in `reader/v4`: use `id` and `template`.
+- Plot/export defaults apply after recipe expansion and before per-id overrides.
+- `reads.*` bindings are explicit mappings: `{record: ...}`, `{file: ...}`, or `{resource: ...}`.
+- Every `resource:` binding must resolve through an explicit `resources:` declaration. There are no hidden conventional resources.
+- `assay` is the canonical place for reusable assay semantics; `resources` is the canonical place for named external inputs; `paths` owns only output layout.
+- Plugin interfaces are typed internally through `workbench/ports/`; config
+  wiring no longer depends on `?` suffixes, `"none"` sentinels, or the legacy
+  `"files"` output convention.
+- Internally, `reader` materializes plugin-backed steps and notebook templates
+  through an explicit staged model:
+  `config -> decl -> experiment -> graph -> engine -> records`.
+  That keeps wire syntax, internal authored structure, experiment-local
+  semantics, executable graph nodes, and persisted provenance semantically
+  distinct.
 
 ---
 
@@ -115,7 +121,7 @@ outputs/
   manifests/
     records.json
 ```
-- The first `notebooks.specs` entry controls the default notebook template used by `reader notebook` when `--preset` is omitted.
+- The first `notebooks.specs` entry controls the default notebook template used by `reader notebook` when `--template` is omitted. If no notebook spec is configured, `reader` selects a default template from template capabilities instead of hardcoded CLI branches.
 
 ---
 
@@ -125,20 +131,22 @@ A step object (used in `pipeline.steps`, `plots.specs`, and `exports.specs`) loo
 
 ```yaml
 - id: <string>
-  uses: "<category>/<key>"     # ingest/merge/transform/validator/plot/export
-  reads: {}                    # optional (input bindings)
+  plugin: "<category>/<key>"     # ingest/transform/validator/plot/export
+  reads: {}                      # optional (input bindings)
   with:  {}                    # optional (plugin params)
-  writes: {}                   # optional (stable output labels)
+  writes: {}                     # optional (stable output labels)
 ```
 
 Rules:
 
-- `reads` can bind inputs to a prior output (e.g., `merge/df`), to an explicit file path using `file:`, or to a named resource using `resource:`.
+- `reads` binds each input name to exactly one ref shape:
+  `{record: "step_id/df"}`, `{file: "./inputs/run001.ext"}`, or `{resource: "sample_map"}`.
 - `writes` maps outputs to stable labels (so downstream steps can avoid tight coupling to step ids).
+- `writes` binds each output name to `{record: "stable/id"}`.
 - `pipeline` steps may not use `plot/*` or `export/*` plugins.
 - `plots` specs must use `plot/*` plugins and are unordered.
 - `exports` specs must use `export/*` plugins and are unordered.
-- `notebooks` specs must use `notebook/*` templates, are unordered, and currently do not support `reads` or `writes`.
+- `notebooks` specs must use `template: notebook/*`, are unordered, and currently do not support `reads` or `writes`.
 
 ---
 
@@ -157,9 +165,12 @@ metadata filenames** to avoid accidental ingestion:
 If your metadata uses different names, either pass an explicit `reads.raw` file path or add those
 names to the ingest step’s `auto_exclude` list.
 
+That autodiscovery policy now lives with ingest plugins under
+`plugins/ingest/discovery_policy.py`, not under `workbench/`.
+
 **Resources**
 
-Use `resources` only when you need a non-conventional external input:
+Declare every named external input under `resources`:
 
 ```yaml
 resources:
@@ -170,18 +181,24 @@ resources:
 pipeline:
   steps:
     - id: merge_map
-      uses: merge/sample_map
+      plugin: transform/sample_map
       reads:
-        df: ingest/df
-        sample_map: resource:custom_map
+        df:
+          record: ingest/df
+        sample_map:
+          resource: custom_map
 ```
 
-The conventional handles below do not need declarations:
+Common cases still use explicit resources:
 
 ```yaml
-reads:
-  sample_map: resource:sample_map   # ./inputs/metadata.xlsx
-  metadata: resource:metadata       # ./inputs/metadata.csv
+resources:
+  sample_map:
+    kind: file
+    path: "./inputs/metadata.xlsx"
+  metadata:
+    kind: file
+    path: "./inputs/metadata.csv"
 ```
 
 **Assay labels**
@@ -206,8 +223,10 @@ assay:
 pipeline:
   steps:
     - id: labels
-      uses: transform/assay_labels
-      reads: { df: "final/df" }
+      plugin: transform/assay_labels
+      reads:
+        df:
+          record: "final/df"
 ```
 
 If you only want a subset, pass `with.refs`. Keep one `labels` step unless there is a concrete need to split the transformations.
@@ -230,7 +249,7 @@ assay:
 plots:
   specs:
     - id: heatmap
-      uses: plot/snapshot_heatmap
+      plugin: plot/snapshot_heatmap
       with:
         x: treatment_alias
         y: design_id_alias
@@ -258,7 +277,7 @@ assay:
 pipeline:
   steps:
     - id: sfxi_vec8
-      uses: transform/sfxi
+      plugin: transform/sfxi
       reads: { df: promote_to_tidy_plus_map/df }
       with:
         response:
@@ -285,7 +304,7 @@ assay:
 plots:
   specs:
     - id: plot_ts
-      uses: plot/time_series
+      plugin: plot/time_series
       with:
         partition:
           collection_ref: group_ab
@@ -303,7 +322,7 @@ plots:
 ### Example configuration
 
 ```yaml
-schema: "reader/v3"                 # required schema marker
+schema: "reader/v4"                 # required schema marker
 
 experiment:
   id: "20250512_panel_M9_glu"       # optional if the directory name already matches
@@ -336,17 +355,19 @@ pipeline:
     strict: true                    # fail fast on missing inputs/columns
   steps:
     - id: ingest                    # unique step id
-      uses: ingest/synergy_h1       # plugin to read plate reader files
+      plugin: ingest/synergy_h1       # plugin to read plate reader files
       with:
         channels: ["OD600", "CFP"]  # measurements to ingest
         auto_roots: ["./inputs"]    # where to look for raw files
         auto_pick: "single"         # pick one file if multiple
 
     - id: merge_map
-      uses: merge/sample_map        # attach metadata columns
+      plugin: transform/sample_map        # attach metadata columns
       reads:
-        df: "ingest/df"             # from prior step
-        sample_map: "resource:sample_map"          # named external resource
+        df:
+          record: "ingest/df"       # from prior step
+        sample_map:
+          resource: "sample_map"    # named external resource
       # If the merged table contains the required mapped metadata
       # (for example design_id + treatment), reader promotes the stored
       # dataframe-record contract to plate_reader.annotated.v1.
@@ -354,24 +375,31 @@ pipeline:
       # runtime promotion path when the plugin advertises it.
 
     - id: labels
-      uses: transform/assay_labels
-      reads: { df: "merge_map/df" }
+      plugin: transform/assay_labels
+      reads:
+        df:
+          record: "merge_map/df"
 
     - id: ratio_yfp_od600
-      uses: transform/ratio
-      reads: { df: "labels/df" }    # input dataframe
+      plugin: transform/ratio
+      reads:
+        df:
+          record: "labels/df"       # input dataframe
       with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }  # new column
-      writes: { df: "ratios/yfp_od600" }  # stable label for downstream
+      writes:
+        df:
+          record: "ratios/yfp_od600"  # stable label for downstream
 
 plots:
-  presets:
+  recipes:
     - plots/plate_reader_yfp_full   # bundle of plot specs
   defaults:
     reads:
-      df: "ratios/yfp_od600"        # default plot input
+      df:
+        record: "ratios/yfp_od600"  # default plot input
   specs:
     - id: plot_ts
-      uses: plot/time_series
+      plugin: plot/time_series
       with:
         x: time                     # x-axis column
         y: ["OD600", "YFP"]         # y-series
@@ -380,7 +408,7 @@ plots:
           collection_ref: group_ab  # reusable labeled plot partition
 
     - id: heatmap
-      uses: plot/snapshot_heatmap
+      plugin: plot/snapshot_heatmap
       with:
         channel: "YFP/OD600"
         time: 14.0
@@ -391,16 +419,17 @@ plots:
 exports:
   defaults:
     reads:
-      df: "ratios/yfp_od600"        # default export input
+      df:
+        record: "ratios/yfp_od600"  # default export input
   specs:
     - id: export_ratios
-      uses: export/csv
+      plugin: export/csv
       with: { path: "ratios.csv" }  # file name under outputs/exports/
 
 notebooks:
   specs:
     - id: "default"
-      uses: "notebook/eda"          # default notebook scaffold
+      template: "notebook/eda"        # default notebook scaffold
 ```
 
 ---

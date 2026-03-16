@@ -63,7 +63,7 @@ reader export 1
 reader notebook 1
 ```
 
-If you want a specific preset, pass `--preset <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).
+If you want a specific template, pass `--template <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).
 
 See the [Notebooks guide](./notebooks.md) for opening and dependency setup.
 

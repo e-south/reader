@@ -24,18 +24,33 @@ reader/
     lib/                # library-level references
     audits/             # audits and investigations
   src/reader/            # library + CLI
-    core/               # config package, CLI, records, engine package
-      config/           # parse-time schema + config loading/normalization
+    workbench/          # experiment lifecycle, config, records, notebooks, recipes, CLI
+      assets/           # unified asset registry + capability model for plugins/recipes/templates
+      config/           # wire schema + YAML loading only
+      decl/             # internal authored declaration layer
+      experiment/       # typed experiment-local semantics (assay, resources, output layout)
       engine/           # planning, validation, contracts, runtime execution
+      graph/            # runtime graph nodes and typed refs
+      ports/            # typed plugin input/output port ontology
+      ontology.py       # shared workbench semantic types
       notebooks/        # notebook template catalog + scaffold writer
       records/          # record catalog store + dataset discovery helpers
-      workbench/        # plugin + spec ontology, semantic catalogs, spec materialization
-    plugins/            # ingest/merge/transform/plot/export/validator
-    io/                 # instrument parsing (raw -> tidy)
-    lib/                # reusable domain logic
-      microplates/      # plotting library split into support/, panels/, figure packages
-        snapshot_barplot/
-        snapshot_heatmap/
+    domains/            # assay/data semantics by domain
+      plate_reader/
+        analysis/       # derived plate-reader summary logic (e.g. fold_change)
+        ordering.py     # dose/treatment ordering semantics
+        io/             # Synergy H1 parsing
+        plots/          # plate-reader plotting primitives and figure builders
+      cytometry/
+        io/             # FCS parsing
+      logic/
+        sfxi/           # SFXI math, selection, reference handling, writer
+        logic_symmetry/ # logic-symmetry plotting/metrics helpers
+        crosstalk/      # pairwise crosstalk ranking helpers
+    contracts/          # explicit dataframe contract kernel
+      builtins/         # built-in contract declarations by semantic domain
+    plugins/            # ingest/transform/plot/export/validator
+    core/               # tiny shared infra only (errors, matplotlib cache, plot sinks/utils/style)
     tests/
 ```
 
@@ -48,42 +63,95 @@ Plugins declare input/output contracts (schema identifiers). The engine:
 - validates declared outputs
 - fails fast on mismatches (unless runtime strictness is relaxed, in which case mismatches are logged as warnings)
 
-Built‑in contracts live in `src/reader/core/contracts/`.
-They are organized by semantic domain (`generic.py`, `plate_reader.py`,
-`cytometry.py`, `analysis.py`) so lineage and responsibility stay explicit
-instead of accumulating in one registry file.
+Built‑in contracts now live entirely under `src/reader/contracts/`.
+The contract ontology is explicit and centralized:
 
-The engine is now organized as a package instead of a monolithic module:
+- `src/reader/contracts/model.py` defines contract identity and dataframe rules
+- `src/reader/contracts/catalog.py` owns `ContractCatalog` and lineage checks
+- `src/reader/contracts/builtins/` owns built-in declarations for:
+  - `generic`
+  - `plate_reader`
+  - `logic`
+  - `cytometry`
+- `src/reader/contracts/__init__.py` exports the explicit built-in catalog
+  constructor `builtin_contract_catalog()`
 
-- `core/engine/planning.py` owns explain/plan rendering
-- `core/engine/validation.py` owns config/reference checks
-- `core/engine/contracts.py` owns runtime contract enforcement
-- `core/engine/inputs.py` owns dataframe-record/file input resolution
-- `core/engine/runtime.py` owns execution orchestration
+`domains/` no longer declares built-in dataframe contracts. Domain packages now
+own algorithms, IO, and semantics only.
+
+The workbench engine is now organized as a package instead of a monolithic module:
+
+- `workbench/engine/planning.py` owns explain/plan rendering
+- `workbench/engine/validation.py` owns config/reference checks
+- `workbench/engine/contracts.py` owns runtime contract enforcement
+- `workbench/engine/inputs.py` owns dataframe-record/file input resolution
+- `workbench/engine/runtime.py` owns execution orchestration
 
 That split keeps plan-time semantics, runtime semantics, and filesystem concerns orthogonal.
 
-The plugin surface follows the same idea:
+The workbench asset surface now follows one model:
 
-- `core/workbench/ontology.py` defines the workbench vocabulary for plugins
-  (`category`, `domain`, `family`, `summary`, `tags`)
-- `core/workbench/catalog.py` provides semantic indexes over installed plugins
-- `core/workbench/specs.py` materializes `pipeline`, `plot`, `export`, and
-  `notebook` config entries into one shared `WorkbenchSpec` model so planning,
-  validation, runtime, and CLI inspection operate on the same semantic shape
-- `core/registry.py` owns plugin discovery and registration, but semantic
-  grouping now lives in the workbench catalog instead of being inferred only
-  from `uses` strings or filesystem layout
-- `core/notebooks/catalog.py` owns the notebook template registry, while
-  `core/notebooks/scaffold.py` owns notebook file generation
+- `workbench/assets/` is the single semantic registry surface for plugins,
+  recipes, and notebook templates
+- `workbench/registry.py` owns executable plugin discovery only; plugin assets
+  are exposed through the shared asset model
+- `workbench/decl/` owns the internal authored declaration layer for bound
+  experiments, recipe-expanded step declarations, and notebook template calls
+- `workbench/experiment/` owns experiment-local semantics:
+  typed assay vocabulary, explicit resource catalogs, and output layout
+- `workbench/graph/` owns typed workbench references and normalized runtime
+  nodes:
+  `AssetRef`, `InputRef`, `OutputRef`, plugin-step nodes, notebook-template
+  calls, and typed `source_recipe` provenance for recipe-expanded steps
+- `workbench/ports/` owns typed plugin I/O semantics:
+  input/output port names, optionality, port kind, and dataframe-contract
+  attachment
+- `workbench/config/` is wire-schema parsing only; it no longer doubles as the
+  internal authored model or the runtime graph model
+- `workbench/records/model.py` owns persisted artifact provenance types instead
+  of opaque input strings
+- `workbench/notebooks/templates.py` and `workbench/recipes/*` are static asset
+  declaration sources, not independent catalog systems
+- `workbench/model/` was deleted; the remaining semantic types now live under
+  `workbench/ontology.py`, `workbench/assets/`, `workbench/decl/`, and
+  `workbench/graph/`
+- operator behavior such as notebook auto-pick and plot-filter support now
+  comes from asset capabilities instead of hardcoded template ids in CLI code
 
-The plotting library follows the same direction:
+The plate-reader plotting library now follows the domain ontology directly:
 
-- `lib/microplates/support/` for selection, grouping, ordering, and file helpers
-- `lib/microplates/support/emission.py` for shared figure emission semantics
-- `lib/microplates/panels/` for axes-level drawing primitives
-- figure-specific packages such as `snapshot_barplot/` and `snapshot_heatmap/`
-  for figure planning plus render orchestration
+- `domains/plate_reader/analysis/fold_change.py` owns fold-change table construction
+- `domains/plate_reader/analysis/timepoints.py` owns nearest-time and snapshot selection helpers
+- `domains/plate_reader/ordering.py` owns dose/treatment ordering semantics
+- `domains/plate_reader/io/sample_map.py` for plate-map parsing
+- `domains/plate_reader/plots/common.py` owns plot-shared dataframe/layout/color/output helpers
+- `domains/plate_reader/plots/grouping.py` owns figure-group resolution helpers
+- `domains/plate_reader/plots/panels/` for axes-level drawing primitives
+- figure-specific packages such as `domains/plate_reader/plots/snapshot_barplot/`
+  and `domains/plate_reader/plots/snapshot_heatmap/` for figure planning plus
+  render orchestration
+
+The logic domain now follows the same rule:
+
+- `domains/semantics.py` owns the canonical plugin domain vocabulary
+- `domains/logic/sfxi/` owns vec8 config parsing, selection, math, and output writing
+- `domains/logic/logic_symmetry/` owns logic-symmetry preparation, metrics, overlays, and rendering
+- `domains/logic/crosstalk/` owns pairwise crosstalk ranking logic
+
+The cytometry domain now follows the same rule:
+
+- `domains/cytometry/io/` owns raw FCS parsing
+
+Raw ingest autodiscovery no longer lives under `workbench/`.
+That policy now lives with ingest adapters:
+
+- `plugins/ingest/discovery_policy.py` owns raw-file auto-discovery defaults
+  and file search helpers
+
+The shared plotting infrastructure now lives under `core` instead of any domain:
+
+- `core/plot_style.py` owns palettes, Matplotlib rc defaults, and shared figure construction helpers
+- `core/labeling.py` owns generic dataframe label-application mechanics reused by labeling transforms
 
 ---
 

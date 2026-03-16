@@ -29,14 +29,14 @@ reader ls --root experiments --all
 
 If `--root` is omitted, `reader` auto-detects the nearest `experiments/` directory.
 
-Inspect plugins and presets:
+Inspect plugins, recipes, and notebook templates:
 
 ```bash
 reader plugins
 reader plugins --category plot
-reader presets
-reader presets --category plot
-reader presets --category notebook
+reader recipes
+reader recipes --family plot_set
+reader notebook --list-templates
 ```
 
 Guided walkthrough:
@@ -49,7 +49,7 @@ reader demo
 
 ## Configuration + validation
 
-Print the expanded config (presets + overrides applied):
+Print the expanded config (recipes + overrides applied):
 
 ```bash
 reader config CONFIG|DIR|INDEX
@@ -150,10 +150,12 @@ reader plot CONFIG|DIR|INDEX --exclude plot_debug
 Ad-hoc overrides (plot/export only):
 
 ```bash
-reader plot CONFIG|DIR|INDEX --only plot_ts --input df=ratio_yfp_od600/df
+reader plot CONFIG|DIR|INDEX --only plot_ts --input 'df={record: ratio_yfp_od600/df}'
 reader plot CONFIG|DIR|INDEX --only plot_ts --set with.time=6.0
 ```
 
+`--input` expects a structured YAML/JSON binding such as `{record: ...}`,
+`{file: ...}`, or `{resource: ...}`.
 `--set` paths must start with `reads.`, `with.`, or `writes.`.
 
 ---
@@ -195,9 +197,13 @@ reader export CONFIG|DIR|INDEX --only export_ratios --set with.path="exports/rat
 
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution). If `--preset` is omitted, the CLI
-uses the first configured `notebooks.specs` entry, otherwise auto-picks `notebook/eda` when plots
-exist or `notebook/basic` (both presets currently scaffold the same minimal notebook):
+Scaffold a marimo notebook (no pipeline execution). If `--template` is omitted, the CLI
+uses the first configured `notebooks.specs` entry, otherwise auto-picks a default
+template from declared template capabilities:
+
+- plot-capable template when plots exist
+- cytometry EDA template when the pipeline is cytometry-shaped
+- fallback basic template otherwise
 
 Notebooks are written under `outputs/notebooks/`.
 
@@ -205,10 +211,10 @@ Notebooks are written under `outputs/notebooks/`.
 reader notebook CONFIG|DIR|INDEX
 ```
 
-Choose a preset explicitly:
+Choose a template explicitly:
 
 ```bash
-reader notebook CONFIG|DIR|INDEX --preset notebook/eda
+reader notebook CONFIG|DIR|INDEX --template notebook/eda
 ```
 
 Allow explicit record scanning when the canonical catalog is missing:
@@ -229,16 +235,16 @@ Launch modes:
 - `--mode run`: run as a read-only app
 - `--mode none`: create only (no launch)
 
-See presets:
+See templates:
 
 ```bash
-reader notebook --list-presets
+reader notebook --list-templates
 ```
 
 Overwrite an existing notebook:
 
 ```bash
-reader notebook CONFIG|DIR|INDEX --preset notebook/basic --force
+reader notebook CONFIG|DIR|INDEX --template notebook/basic --force
 ```
 
 Create a new notebook with a numeric suffix if the name already exists:
@@ -253,11 +259,12 @@ Regenerate a notebook in-place:
 reader notebook CONFIG|DIR|INDEX --refresh
 ```
 
-Filter plots injected into the notebook/eda scaffold:
+Filter plots injected into a template that declares plot-filter capability
+(currently `notebook/eda`):
 
 ```bash
-reader notebook CONFIG|DIR|INDEX --preset notebook/eda --only plot_ts
-reader notebook CONFIG|DIR|INDEX --preset notebook/eda --exclude plot_debug
+reader notebook CONFIG|DIR|INDEX --template notebook/eda --only plot_ts
+reader notebook CONFIG|DIR|INDEX --template notebook/eda --exclude plot_debug
 ```
 
 ---
