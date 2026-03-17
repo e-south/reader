@@ -1,25 +1,26 @@
-# Configuring Reader v6
+# Configuring Reader v7
 
-`reader` now has one normal authoring surface:
+`reader` now has three explicit layers:
 
-- `protocols/` own assay semantics and default workflow assembly
-- experiment configs bind semantic protocol inputs
-- compiled workbench graphs are runtime IR, not user-authored config
+- authoring: experiment `config.yaml`
+- semantics: `reader.protocols`
+- execution: compiled workbench IR
 
-There is no public `graph_patch`, no top-level `pipeline` / `plots` / `exports`,
-and no `protocol.with`.
+The config surface is for human authors. It should describe assay inputs,
+analysis choices, and requested outputs in domain terms, not plugin or graph
+terms.
 
 ## Minimal shape
 
 ```yaml
-schema: reader/v6
+schema: reader/v7
 
 experiment:
   id: 20250614_sensor_panel_M9_glu
 
 protocol:
   id: plate_reader/dual_reporter_screen
-  parameters:
+  inputs:
     ingest:
       mode: auto
       channels: [OD600, CFP, YFP]
@@ -32,50 +33,69 @@ resources:
     path: ./inputs/metadata.xlsx
 ```
 
-## Top-Level Surface
+## Top-level surface
 
 - `schema`
-  Must be `reader/v6`.
-
+  Must be `reader/v7`.
 - `experiment`
-  Explicit experiment identity. `experiment.id` is required. There is no
-  directory-name fallback.
-
+  Explicit experiment identity. `experiment.id` is required.
 - `protocol`
-  The assay/workflow binding.
-
+  Assay binding plus human-facing semantic config.
 - `resources`
-  Explicit external inputs such as `sample_map` or `metadata`.
-
+  External files such as `sample_map` or `metadata`.
 - `annotations`
-  Experiment-local labels, orders, collections, and logic maps.
-
+  Labels, orders, collections, and logic maps.
 - `paths`
-  Optional output-layout override. Omit when using the defaults.
-
+  Optional output layout override.
 - `plotting`
-  Optional plotting palette override. Omit when using the default.
+  Optional shared plotting palette override.
 
-## Protocol Surface
+There is no public `graph_patch`, no top-level `pipeline` / `plots` /
+`exports`, and no `protocol.with`.
 
-The protocol block is split by semantic role:
+## Protocol surface
 
-- `protocol.parameters`
-  Experiment parameters for the assay family.
+The protocol block is split by role:
 
+- `protocol.inputs`
+  Assay-family input bindings and protocol-owned knobs.
 - `protocol.analysis`
-  Analysis-plan toggles such as preprocessing, strictness, measurement mode,
-  and protocol-defined feature gates.
+  Analysis toggles and semantic policy choices.
+- `protocol.outputs`
+  Notebook, plot, and export selection.
 
-- `protocol.deliverables`
-  User-facing plot/export/notebook selection.
+## Plot and artifact registries
 
-### Plate-reader example
+Protocols expose two user-facing registries:
+
+- plot outputs
+  Named figures such as `raw_kinetics`, `endpoint_by_condition`, or
+  `logic_symmetry`
+- export artifacts
+  Named files such as `crosstalk_pairs_table` or
+  `logic_summary_workbook`
+
+Plot outputs can also be grouped into named plot profiles. A profile is just a
+semantic bundle of figure ids chosen by the protocol author.
+
+Users do not select plugins directly. They choose:
+
+- a plot profile
+- optional `include` / `exclude` figure ids
+- optional per-figure `views`
+- optional export `include` / `exclude`
+- optional per-artifact `artifacts` config
+
+Unknown keys on the public authoring surface now fail fast. `reader/v7` no
+longer silently drops misspelled `protocol` keys, unknown plot/export output
+blocks, or malformed annotation collections.
+
+## Plate-reader example
 
 ```yaml
 protocol:
   id: plate_reader/dual_reporter_screen
-  parameters:
+  inputs:
     ingest:
       mode: auto
       channels: [OD600, CFP, YFP]
@@ -88,24 +108,28 @@ protocol:
     crosstalk_pairs:
       enabled: true
       export: true
-  deliverables:
+  outputs:
+    notebook:
+      template: notebook/eda
     plots:
-      profile: yfp_time_series
-      include: [snapshot_heatmap_yfp_cfp]
-      settings:
-        snapshot_heatmap_yfp_cfp:
-          channel: YFP/CFP
+      profile: screen_overview
+      include: [ratio_heatmap]
+      views:
+        ratio_heatmap:
           time: 12.0
     exports:
-      include: [crosstalk_pairs_csv]
+      include: [crosstalk_pairs_table]
+      artifacts:
+        crosstalk_pairs_table:
+          path: crosstalk_pairs.csv
 ```
 
-### Logic/SFXI example
+## Logic/SFXI example
 
 ```yaml
 protocol:
   id: logic/sfxi_screen
-  parameters:
+  inputs:
     ingest:
       mode: mixed
       channels: [OD600, CFP, YFP]
@@ -119,19 +143,21 @@ protocol:
     logic_map_ref: induction_logic
   analysis:
     include_export: true
-  deliverables:
+  outputs:
     notebook:
       template: notebook/sfxi_eda
+    plots:
+      profile: logic_geometry
     exports:
-      include: [vec8_xlsx]
+      include: [logic_summary_workbook]
 ```
 
-### Cytometry example
+## Cytometry example
 
 ```yaml
 protocol:
   id: cytometry/flow_panel
-  parameters:
+  inputs:
     ingest:
       auto_roots: ["./inputs"]
       channel_name_field: pns
@@ -140,49 +166,51 @@ protocol:
       require_non_null: true
 ```
 
-## Deliverable IDs
+## Discoverability
 
-Plot and export selection use stable public ids, not internal compiled step ids.
+Use the CLI to inspect the semantic surface:
 
-Current built-in ids include:
+```bash
+uv run reader ls --details
+uv run reader ls --details --format json
+uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
+uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
+uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --format json
+uv run reader protocols plate_reader/dual_reporter_screen
+uv run reader protocols plate_reader/dual_reporter_screen --format json
+uv run reader protocols plate_reader/dual_reporter_screen --example-config
+uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform
+uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
+uv run reader explain experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
+uv run reader plot experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
+uv run reader export experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
+```
 
-- plate reader / logic plots:
-  - `time_series`
-  - `snapshot_by_channel`
-  - `snapshot_by_design`
-  - `snapshot_state`
-  - `ts_and_snap_intensity`
-  - `ts_and_snap_ratio`
-  - `distributions`
-  - `snapshot_heatmap_yfp_cfp`
-  - `snapshot_heatmap_cfp_od600`
-  - `logic_symmetry_yfp_cfp`
-- exports:
-  - `crosstalk_pairs_csv`
-  - `vec8_xlsx`
+These commands show:
 
-Use `protocol.deliverables.<surface>.settings.<deliverable_id>` for
-deliverable-specific config.
+- what experiments exist, which protocol each one binds, and how many outputs already exist
+- the same experiment inventory as a machine-readable contract for agents and automation
+- a starter experiment directory for a chosen protocol
+- the root, bound authoring values, inputs/resources, pipeline chain, selected plots, export artifacts, notebook policy, generated output examples, and record catalog for one experiment
+- the authoring inputs and analysis surface for the selected protocol, plus the default compiled pipeline and output implementations, in either table or JSON form
+- the plugin registry filtered to the transform kernel a given protocol actually uses
+- a starter YAML outline for that protocol
+- the bound protocol
+- the compiled pipeline chain and record/resource daisy chain
+- the selected plot outputs
+- the selected export artifacts
+- the notebook template policy
 
-## Validation Rules
-
-- No legacy top-level workflow sections.
-- No implicit protocol inference.
-- No implicit experiment id inference.
-- No public raw graph mutation surface.
-- Unknown resources, labels, logic maps, deliverable ids, or notebook templates
-  fail fast.
-
-## Mental Model
+## Mental model
 
 The authoritative flow is:
 
-`config -> protocol compiler -> workbench decl -> graph -> engine -> records`
+`config -> protocol binding -> protocol compiler -> workbench decl -> graph -> engine -> records`
 
 That keeps:
 
-- assay semantics in `protocols/`
-- experiment-local metadata in `annotations/` and `resources/`
+- human authoring in config
+- assay semantics in `reader.protocols`
 - execution IR in `decl/` and `graph/`
 - plugin mechanics in `plugins/`
 

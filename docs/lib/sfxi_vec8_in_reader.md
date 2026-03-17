@@ -187,10 +187,10 @@ with:
 * Keys **must be exactly**: `{"00","10","01","11"}` (`api.load_sfxi_config` enforces this).
 * Values are the treatment labels expected to appear in the tidy data.
 
-In `reader/v6` experiment configs, you do **not** write `treatment_map`
+In `reader/v7` experiment configs, you do **not** write `treatment_map`
 directly on a hand-authored `transform/sfxi` step. Instead, define the mapping
 once under `annotations.logic_maps.<name>` and reference it with
-`protocol.parameters.logic_map_ref`. The protocol materializes the lower-level
+`protocol.inputs.logic_map_ref`. The protocol materializes the lower-level
 mapping before running the SFXI transform.
 
 Duplicate values are rejected (after optional normalization) to avoid ambiguous mapping:
@@ -439,14 +439,14 @@ See `src/reader/contracts/builtins/` for the canonical contracts referenced by t
 
 ### Configuration entry point
 
-In `reader/v6`, SFXI is normally configured through the bound protocol plus
-semantic `protocol.parameters` / `protocol.analysis` / `protocol.deliverables`
+In `reader/v7`, SFXI is normally configured through the bound protocol plus
+semantic `protocol.inputs` / `protocol.analysis` / `protocol.outputs`
 fields. A minimal example:
 
 ```yaml
 protocol:
   id: logic/sfxi_screen
-  parameters:
+  inputs:
     ingest:
       mode: mixed
       channels: [OD600, CFP, YFP]
@@ -462,9 +462,9 @@ protocol:
     reference:
       design_id: REF
       stat: mean
-  deliverables:
+  outputs:
     exports:
-      include: [vec8_xlsx]
+      include: [logic_summary_workbook]
 
 annotations:
   logic_maps:
@@ -506,16 +506,16 @@ The following example uses the SFXI-capable experiment
     * a typed records catalog at `outputs/manifests/records.json`
     * an SFXI dataframe record at `sfxi_vec8/vec8`
 
-2) Export the vec8 table via `reader export`. Bind the workbook export as a protocol deliverable:
+2) Export the vec8 table via `reader export`. Bind the workbook export as a protocol artifact:
 
     ```yaml
     protocol:
       id: logic/sfxi_screen
-      deliverables:
+      outputs:
         exports:
-          include: [vec8_xlsx]
-          settings:
-            vec8_xlsx:
+          include: [logic_summary_workbook]
+          artifacts:
+            logic_summary_workbook:
               path: sfxi/vec8.xlsx
               sheet_name: vec8
     ```

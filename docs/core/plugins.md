@@ -2,6 +2,12 @@
 # Extending reader with plugins
 
 Plugins exist so repeated parsing/transforms/plots can be reused across experiments.
+This is a maintainer-facing surface. Ordinary experiment authors should stay in
+`config.yaml`, `reader init`, `reader protocols`, `reader inspect`,
+`reader plot --list`, and `reader export --list`; they should not need plugin
+ids for normal workbench use. When you do need registry-level inspection, start
+with `reader plugins --protocol <protocol-id>` so you see the plugin kernel in
+assay context instead of as a flat global dump.
 
 ### Contents
 
@@ -322,11 +328,11 @@ protocol:
     crosstalk_pairs:
       enabled: true
       export: true
-  deliverables:
+  outputs:
     exports:
-      include: [crosstalk_pairs_csv]
-      settings:
-        crosstalk_pairs_csv:
+      include: [crosstalk_pairs_table]
+      artifacts:
+        crosstalk_pairs_table:
           path: crosstalk_pairs.csv
 ```
 
@@ -335,7 +341,7 @@ protocol:
 ### Adding a plot/export plugin
 
 Plot and export plugins now enter configs through protocol compilation plus
-`protocol.deliverables` selection/settings.
+`protocol.outputs` selection/settings.
 
 They are run by:
 
@@ -406,11 +412,11 @@ Example export spec:
 ```yaml
 protocol:
   id: logic/sfxi_screen
-  deliverables:
+  outputs:
     exports:
-      include: [vec8_xlsx]
-      settings:
-        vec8_xlsx:
+      include: [logic_summary_workbook]
+      artifacts:
+        logic_summary_workbook:
           path: sfxi_vec8.xlsx
           sheet_name: vec8
 ```

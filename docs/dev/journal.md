@@ -1,27 +1,87 @@
 # Dev Journal
 
-## 2026-03-16: Typed Reader v6 Protocol Surface
+## 2026-03-16: Progressive-Disclosure CLI + Docs Hardening Slice
+
+Audited the live `reader/v7` surface as a real operator and agent harness, then
+closed the main discovery gaps without reintroducing config-side shims.
+
+- Rewrote the top-level `README.md` around the actual product boundary:
+  `reader` as a protocol-driven experimental workbench with one central YAML
+  authoring surface.
+- Added `docs/README.md` as the authoritative documentation index, grouped by
+  user flows, maintainer flows, and demos/library references.
+- Added `reader inspect` as the high-level experiment inspection surface that
+  shows:
+  - experiment root and protocol
+  - the bound authoring values from `protocol.inputs`, `protocol.analysis`, and
+    `protocol.outputs`
+  - input files and declared resources
+  - the compiled pipeline chain
+  - selected plot outputs and export artifacts
+  - the current generated-output state on disk, including example files
+- Extended `reader ls` with `--details` so discovery is not just a directory
+  listing; it now surfaces protocol ids, selected runtime-plan summaries, and
+  current output counts.
+- Added `reader ls --protocol <id>` and `reader ls --status <state>` so users
+  and agents can narrow large workbench inventories to one assay family or
+  broken configs without scraping tables.
+- Added `reader init` so new experiments can be scaffolded directly from a
+  protocol starter config instead of copy-pasting YAML by hand.
+- Added `--format json` to the main discovery surfaces so agents and automation
+  can inspect experiments, protocols, plugins, and record provenance without
+  scraping rich tables.
+- Extended `reader protocols <id>` so it now shows the default compiled
+  pipeline plus the plot/export implementation mapping behind the semantic
+  output ids.
+- Extended `reader inspect` so it now includes the current record catalog in
+  the one-command experiment overview.
+- Extended `reader plugins` with `--protocol <id>` so maintainers can inspect
+  the ingest/transform/plot/export kernel in assay context.
+- Updated the guided CLI flow so `reader demo` and the CLI reference both route
+  users through discovery in a better order:
+  `ls -> inspect -> protocols -> explain -> run`
+- Removed one remaining eager Matplotlib import from the plot-plugin registry
+  path so simple discovery commands do not needlessly import plotting code.
+
+The current placement rule is clearer:
+
+- top-level README explains the workbench in plain language
+- `docs/README.md` is the documentation route map
+- `reader inspect` is the everyday experiment-introspection surface
+- `reader explain` remains the lower-level compiled-plan surface
+- protocol and plugin registries stay distinct: user-facing semantic outputs
+  live in protocols, plugin mechanics stay a maintainer surface
+
+## 2026-03-16: Reader v7 Authoring Surface + Semantic Output Registry
 
 Completed the next hard cut from a protocol-compiled config surface with a raw
 mutation escape hatch to a stricter semantic authoring model.
 
-- Replaced `reader/v5` with `reader/v6`.
+- Replaced `reader/v6` with `reader/v7`.
 - Removed the public `graph_patch` surface entirely.
-- Removed `protocol.with` and replaced it with:
-  - `protocol.parameters`
+- Replaced baggier protocol config words with:
+  - `protocol.inputs`
   - `protocol.analysis`
-  - `protocol.deliverables`
+  - `protocol.outputs`
 - Kept protocol compilers as the only owner of default workflow assembly.
-- Made public deliverable ids stable and semantic (`time_series`,
-  `snapshot_by_channel`, `vec8_xlsx`, `crosstalk_pairs_csv`, ...), instead of
-  exposing compiler-internal step ids.
+- Made the output surface explicitly semantic:
+  - plot outputs such as `raw_kinetics`, `endpoint_by_condition`,
+    `logic_symmetry`
+  - export artifacts such as `crosstalk_pairs_table` and
+    `logic_summary_workbook`
+  - named plot profiles such as `screen_overview` and `logic_overview`
 - Rewired the built-in protocol catalog so each protocol advertises only the
-  deliverables and defaults it can actually compile.
-- Migrated tracked experiment configs to the new `reader/v6` surface.
+  plot outputs, export artifacts, and default plot profile it can actually
+  compile.
+- Migrated tracked experiment configs to the new `reader/v7` surface.
+- Updated `reader protocols`, `reader plot --list`, `reader export --list`,
+  `reader explain`, and `reader config` so users can inspect the semantic
+  workflow and compiled daisy chain without reading compiler code.
 
 The resulting placement rule is clearer:
 
-- `protocols/` own assay semantics, analysis parameters, and deliverable
+- `protocols/` own assay semantics, analysis parameters, plot registries, and
+  artifact registries
   selection
 - experiment configs bind semantic inputs, not raw graph mutations
 - `decl/` and `graph/` are executor IR only

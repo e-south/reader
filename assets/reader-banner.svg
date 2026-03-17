@@ -1,0 +1,18 @@
+<svg width="1280" height="260" viewBox="0 0 1280 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="readerGradient" x1="0" y1="0" x2="1280" y2="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0D3B66"/>
+      <stop offset="0.55" stop-color="#1D6F8C"/>
+      <stop offset="1" stop-color="#A44A3F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="260" rx="28" fill="url(#readerGradient)"/>
+  <rect x="36" y="36" width="1208" height="188" rx="20" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.18"/>
+  <text x="84" y="120" fill="#F9F7F1" font-family="Menlo, Monaco, Consolas, monospace" font-size="58" font-weight="700">reader</text>
+  <text x="86" y="168" fill="#DCE9F2" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">
+    protocol-driven experimental workbench
+  </text>
+  <text x="86" y="202" fill="#DCE9F2" font-family="Menlo, Monaco, Consolas, monospace" font-size="20">
+    author in YAML • inspect in CLI • compile to deterministic runtime plans
+  </text>
+</svg>

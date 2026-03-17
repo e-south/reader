@@ -191,7 +191,7 @@ PY
 
 ### Export to the experiment exports directory
 
-Bind the export through protocol deliverables (relative to `outputs/exports/`):
+Bind the export through protocol outputs (relative to `outputs/exports/`):
 
 ```yaml
 protocol:
@@ -200,11 +200,11 @@ protocol:
     crosstalk_pairs:
       enabled: true
       export: true
-  deliverables:
+  outputs:
     exports:
-      include: [crosstalk_pairs_csv]
-      settings:
-        crosstalk_pairs_csv:
+      include: [crosstalk_pairs_table]
+      artifacts:
+        crosstalk_pairs_table:
           path: crosstalk_pairs.csv
 ```
 
