@@ -28,8 +28,13 @@ uv run reader ls --root experiments --details --protocol plate_reader/dual_repor
 uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
 uv run reader inspect experiments/template/config.yaml
 uv run reader inspect experiments/template/config.yaml --format json
+uv run reader steps experiments/template/config.yaml --format json
+uv run reader validate experiments/template/config.yaml --no-files --format json
+uv run reader explain experiments/template/config.yaml --format json
+uv run reader run experiments/template/config.yaml --dry-run --format json
 uv run reader protocols plate_reader/dual_reporter_screen --example-config
-uv run reader validate experiments/template/config.yaml --no-files
+uv run reader plot experiments/template/config.yaml --list --format json
+uv run reader export experiments/template/config.yaml --list --format json
 ```
 
 ## Workbench layout

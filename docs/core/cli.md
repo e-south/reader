@@ -5,8 +5,9 @@ Use the CLI in progressive disclosure order:
 1. `reader ls` to find experiments.
 2. `reader init` to scaffold a new experiment from a protocol.
 3. `reader inspect` to see one experiment’s authoring bindings, inputs, pipeline chain, plots, exports, and current outputs.
-4. `reader explain` for the full compiled runtime plan.
-5. `reader run`, `reader plot`, `reader export`, and `reader notebook` to materialize outputs.
+4. `reader steps` for a compact pipeline-only daisy chain.
+5. `reader explain` for the full compiled runtime plan.
+6. `reader run`, `reader plot`, `reader export`, and `reader notebook` to materialize outputs.
 
 `reader` commands accept a config path, experiment directory, or an index from `reader ls` (shown below as `CONFIG|DIR|INDEX`).
 
@@ -88,6 +89,13 @@ compiled chain as JSON:
 reader inspect CONFIG|DIR|INDEX --format json
 ```
 
+List just the pipeline chain and bindings:
+
+```bash
+reader steps CONFIG|DIR|INDEX
+reader steps CONFIG|DIR|INDEX --format json
+```
+
 Guided walkthrough:
 
 ```bash
@@ -140,18 +148,21 @@ Validate schema, wiring, and inputs:
 
 ```bash
 reader validate CONFIG|DIR|INDEX
+reader validate CONFIG|DIR|INDEX --format json
 ```
 
 Skip file checks (config-only):
 
 ```bash
 reader validate CONFIG|DIR|INDEX --no-files
+reader validate CONFIG|DIR|INDEX --no-files --format json
 ```
 
 Inspect the resolved plan without execution:
 
 ```bash
 reader explain CONFIG|DIR|INDEX
+reader explain CONFIG|DIR|INDEX --format json
 ```
 
 ---
@@ -162,6 +173,7 @@ Run the pipeline section only (produces dataframe records + `outputs/manifests/r
 
 ```bash
 reader run CONFIG|DIR|INDEX
+reader run CONFIG|DIR|INDEX --dry-run --format json
 ```
 
 Slice the pipeline:
@@ -169,6 +181,7 @@ Slice the pipeline:
 ```bash
 reader run CONFIG|DIR|INDEX --from step_a --until step_c
 reader run CONFIG|DIR|INDEX --only step_b
+reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --format json
 ```
 
 `reader run` fails fast if `--from` comes after `--until` in pipeline order.
@@ -207,6 +220,7 @@ List resolved semantic plot outputs and their upstream dataframe bindings:
 
 ```bash
 reader plot CONFIG|DIR|INDEX --list
+reader plot CONFIG|DIR|INDEX --list --format json
 ```
 
 Dry-run a plot plan without executing:
@@ -247,6 +261,7 @@ List resolved semantic export artifacts and their upstream dataframe bindings:
 
 ```bash
 reader export CONFIG|DIR|INDEX --list
+reader export CONFIG|DIR|INDEX --list --format json
 ```
 
 Dry-run an export plan without executing:

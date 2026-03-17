@@ -39,8 +39,14 @@
   - `reader ls --details --format json`
   - `reader ls --details --protocol <protocol-id> --format json`
   - `reader inspect <config|dir|index> --format json`
+  - `reader steps <config|dir|index> --format json`
+  - `reader validate <config|dir|index> --no-files --format json`
+  - `reader explain <config|dir|index> --format json`
+  - `reader run <config|dir|index> --dry-run --format json`
   - `reader protocols <protocol-id> --format json`
   - `reader plugins --protocol <protocol-id> --format json`
+  - `reader plot <config|dir|index> --list --format json`
+  - `reader export <config|dir|index> --list --format json`
   - `reader records <config|dir|index> --format json`
 - I need to discover available assays and their outputs:
   - `reader protocols`
@@ -52,7 +58,9 @@
   - `reader inspect ./experiments/<new-experiment>/config.yaml`
 - I need to see what plots or artifacts a config will generate:
   - `reader plot <config|dir|index> --list`
+  - `reader plot <config|dir|index> --list --format json`
   - `reader export <config|dir|index> --list`
+  - `reader export <config|dir|index> --list --format json`
 - I need to add or extend a maintainer surface:
   - read [Plugin development](./core/plugins.md)
   - then read [Spec / architecture](./core/spec.md)
