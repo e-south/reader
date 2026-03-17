@@ -12,6 +12,8 @@ from reader.workbench.decl.model import NotebookTemplateCallDecl, PluginStepDecl
 MetricStage = Literal["raw", "support", "derived", "comparison", "summary", "ranking", "qc", "burden", "leakiness"]
 FigureKind = Literal["qc", "kinetics", "summary", "ranking", "architecture"]
 RankingDirection = Literal["higher_is_better", "lower_is_better"]
+SemanticNodeKind = Literal["control_rule", "window", "metric", "ranking"]
+SemanticExecutionStatus = Literal["compiled", "descriptive_only"]
 ConfigFieldKind = Literal[
     "mapping",
     "string",
@@ -361,6 +363,85 @@ class ProtocolRankingSpec:
 
 
 @dataclass(frozen=True)
+class ProtocolSemanticExecution:
+    status: SemanticExecutionStatus = "descriptive_only"
+    step_ids: tuple[str, ...] = ()
+    plugin_ids: tuple[str, ...] = ()
+    record_ids: tuple[str, ...] = ()
+    config_paths: tuple[str, ...] = ()
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "step_ids", tuple(str(value) for value in self.step_ids if str(value).strip()))
+        object.__setattr__(self, "plugin_ids", tuple(str(value) for value in self.plugin_ids if str(value).strip()))
+        object.__setattr__(self, "record_ids", tuple(str(value) for value in self.record_ids if str(value).strip()))
+        object.__setattr__(
+            self,
+            "config_paths",
+            tuple(str(value) for value in self.config_paths if str(value).strip()),
+        )
+        object.__setattr__(self, "note", str(self.note).strip())
+
+
+@dataclass(frozen=True)
+class ProtocolSemanticNode:
+    id: str
+    kind: SemanticNodeKind
+    summary: str
+    stage: MetricStage | None = None
+    formula: str | None = None
+    depends_on: tuple[str, ...] = ()
+    anchor: str | None = None
+    selector: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    match_on: tuple[str, ...] = ()
+    control_selector: str | None = None
+    primary_metric: str | None = None
+    direction: RankingDirection | None = None
+    penalties: tuple[str, ...] = ()
+    supporting_metrics: tuple[str, ...] = ()
+    execution: ProtocolSemanticExecution = field(default_factory=ProtocolSemanticExecution)
+
+    def __post_init__(self) -> None:
+        if not str(self.id).strip():
+            raise ValueError("ProtocolSemanticNode.id must be a non-empty string.")
+        if not str(self.summary).strip():
+            raise ValueError("ProtocolSemanticNode.summary must be a non-empty string.")
+        object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on if str(value).strip()))
+        object.__setattr__(self, "params", dict(self.params or {}))
+        object.__setattr__(self, "match_on", tuple(str(value) for value in self.match_on if str(value).strip()))
+        object.__setattr__(self, "penalties", tuple(str(value) for value in self.penalties if str(value).strip()))
+        object.__setattr__(
+            self,
+            "supporting_metrics",
+            tuple(str(value) for value in self.supporting_metrics if str(value).strip()),
+        )
+
+
+@dataclass(frozen=True)
+class ProtocolSemanticProgram:
+    protocol: str
+    controls: tuple[ProtocolSemanticNode, ...] = ()
+    windows: tuple[ProtocolSemanticNode, ...] = ()
+    metrics: tuple[ProtocolSemanticNode, ...] = ()
+    ranking: ProtocolSemanticNode | None = None
+
+    def __post_init__(self) -> None:
+        if not str(self.protocol).strip():
+            raise ValueError("ProtocolSemanticProgram.protocol must be a non-empty string.")
+        for group_name, nodes in (
+            ("controls", self.controls),
+            ("windows", self.windows),
+            ("metrics", self.metrics),
+        ):
+            seen: set[str] = set()
+            for node in nodes:
+                if node.id in seen:
+                    raise ValueError(f"Duplicate semantic node {node.id!r} in {group_name}.")
+                seen.add(node.id)
+
+
+@dataclass(frozen=True)
 class ProtocolPluginDefaultsSpec:
     plugin: str
     summary: str
@@ -407,6 +488,7 @@ class CompiledProtocolPlan:
     plots: tuple[PluginStepDecl, ...] = ()
     exports: tuple[PluginStepDecl, ...] = ()
     notebooks: tuple[NotebookTemplateCallDecl, ...] = ()
+    semantic_program: ProtocolSemanticProgram | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "runtime", dict(self.runtime or {}))
@@ -502,6 +584,56 @@ class ProtocolDescriptor:
             protocol_id=self.protocol,
         )
 
+    def semantic_program(self) -> ProtocolSemanticProgram:
+        return ProtocolSemanticProgram(
+            protocol=self.protocol,
+            controls=tuple(
+                ProtocolSemanticNode(
+                    id=item.id,
+                    kind="control_rule",
+                    summary=item.summary,
+                    match_on=item.match_on,
+                    control_selector=item.control_selector,
+                )
+                for item in self.control_rules
+            ),
+            windows=tuple(
+                ProtocolSemanticNode(
+                    id=item.id,
+                    kind="window",
+                    summary=item.summary,
+                    anchor=item.anchor,
+                    selector=item.selector,
+                    params=item.params,
+                )
+                for item in self.windows
+            ),
+            metrics=tuple(
+                ProtocolSemanticNode(
+                    id=item.id,
+                    kind="metric",
+                    summary=item.summary,
+                    stage=item.stage,
+                    formula=item.formula,
+                    depends_on=item.depends_on,
+                )
+                for item in self.metrics
+            ),
+            ranking=(
+                ProtocolSemanticNode(
+                    id="ranking",
+                    kind="ranking",
+                    summary=self.ranking.summary,
+                    primary_metric=self.ranking.primary_metric,
+                    direction=self.ranking.direction,
+                    penalties=self.ranking.penalties,
+                    supporting_metrics=self.ranking.supporting_metrics,
+                )
+                if self.ranking is not None
+                else None
+            ),
+        )
+
 
 @dataclass(frozen=True)
 class BoundProtocol:
@@ -586,6 +718,7 @@ class BoundProtocol:
             plots=plan.plots,
             exports=plan.exports,
             notebooks=notebooks,
+            semantic_program=plan.semantic_program or self.descriptor.semantic_program(),
         )
 
     def effective_plugin_config(self, *, plugin_id: str, step_with: dict[str, Any] | None = None) -> dict[str, Any]:

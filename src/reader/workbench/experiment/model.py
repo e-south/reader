@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from reader.protocols.model import ProtocolBinding
+    from reader.protocols.model import ProtocolBinding, ProtocolSemanticProgram
 
 ResourceKind = Literal["file", "directory"]
 
@@ -278,3 +278,4 @@ class ExperimentSemantics:
     annotations: AnnotationSemantics
     resources: ResourceCatalog
     layout: OutputLayout
+    protocol_program: ProtocolSemanticProgram | None = None

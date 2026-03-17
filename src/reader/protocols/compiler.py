@@ -4,7 +4,12 @@ from copy import deepcopy
 from typing import Any
 
 from reader.errors import ConfigError
-from reader.protocols.model import CompiledProtocolPlan
+from reader.protocols.model import (
+    CompiledProtocolPlan,
+    ProtocolSemanticExecution,
+    ProtocolSemanticNode,
+    ProtocolSemanticProgram,
+)
 from reader.workbench.decl.model import (
     NotebookTemplateCallDecl,
     PluginStepDecl,
@@ -38,6 +43,7 @@ def compile_generic_protocol(protocol: Any):
         plots=(),
         exports=(),
         notebooks=(default_notebook_call(template),),
+        semantic_program=protocol.descriptor.semantic_program(),
     )
 
 
@@ -97,6 +103,9 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
         plots=tuple(plots),
         exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
+        semantic_program=_plate_reader_semantic_program(
+            protocol, measurement=measurement, include_crosstalk_pairs=include_crosstalk_pairs
+        ),
     )
 
 
@@ -147,6 +156,7 @@ def compile_logic_sfxi_screen(protocol: Any):
         plots=tuple(plots),
         exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
+        semantic_program=_logic_semantic_program(protocol, include_vec8=include_vec8),
     )
 
 
@@ -175,6 +185,189 @@ def compile_cytometry_flow_panel(protocol: Any):
         plots=(),
         exports=(),
         notebooks=(default_notebook_call(template),),
+        semantic_program=_cytometry_semantic_program(protocol),
+    )
+
+
+def _semantic_program(protocol: Any, *, overrides: dict[str, ProtocolSemanticExecution]) -> ProtocolSemanticProgram:
+    descriptor_program = protocol.descriptor.semantic_program()
+
+    def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
+        return tuple(
+            ProtocolSemanticNode(
+                id=node.id,
+                kind=node.kind,
+                summary=node.summary,
+                stage=node.stage,
+                formula=node.formula,
+                depends_on=node.depends_on,
+                anchor=node.anchor,
+                selector=node.selector,
+                params=node.params,
+                match_on=node.match_on,
+                control_selector=node.control_selector,
+                primary_metric=node.primary_metric,
+                direction=node.direction,
+                penalties=node.penalties,
+                supporting_metrics=node.supporting_metrics,
+                execution=overrides.get(node.id, node.execution),
+            )
+            for node in nodes
+        )
+
+    ranking = descriptor_program.ranking
+    if ranking is not None:
+        ranking = ProtocolSemanticNode(
+            id=ranking.id,
+            kind=ranking.kind,
+            summary=ranking.summary,
+            stage=ranking.stage,
+            formula=ranking.formula,
+            depends_on=ranking.depends_on,
+            anchor=ranking.anchor,
+            selector=ranking.selector,
+            params=ranking.params,
+            match_on=ranking.match_on,
+            control_selector=ranking.control_selector,
+            primary_metric=ranking.primary_metric,
+            direction=ranking.direction,
+            penalties=ranking.penalties,
+            supporting_metrics=ranking.supporting_metrics,
+            execution=overrides.get(ranking.id, ranking.execution),
+        )
+
+    return ProtocolSemanticProgram(
+        protocol=descriptor_program.protocol,
+        controls=_apply(descriptor_program.controls),
+        windows=_apply(descriptor_program.windows),
+        metrics=_apply(descriptor_program.metrics),
+        ranking=ranking,
+    )
+
+
+def _plate_reader_semantic_program(
+    protocol: Any,
+    *,
+    measurement: str,
+    include_crosstalk_pairs: bool,
+) -> ProtocolSemanticProgram:
+    overrides: dict[str, ProtocolSemanticExecution] = {
+        "OD": ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("ingest",),
+            plugin_ids=("ingest/synergy_h1",),
+            record_ids=("ingest/df",),
+            note="Raw OD600 values are materialized on the ingest dataframe.",
+        ),
+    }
+    if measurement == "yfp_cfp":
+        overrides.update(
+            {
+                "CFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw CFP values are materialized on the ingest dataframe.",
+                ),
+                "YFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw YFP values are materialized on the ingest dataframe.",
+                ),
+                "CFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_cfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_cfp_od600/df",),
+                    note="The CFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+                "YFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_yfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_yfp_od600/df",),
+                    note="The YFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+                "R": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_yfp_cfp",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_yfp_cfp/df",),
+                    note="The primary YFP/CFP ratio is materialized as a ratio step output.",
+                ),
+            }
+        )
+    else:
+        overrides.update(
+            {
+                "YFP_OD": ProtocolSemanticExecution(
+                    status="descriptive_only",
+                    note="This measurement family does not materialize YFP/OD600.",
+                ),
+                "CFP_OD": ProtocolSemanticExecution(
+                    status="descriptive_only",
+                    note="This measurement family does not materialize CFP/OD600.",
+                ),
+                "R": ProtocolSemanticExecution(
+                    status="descriptive_only",
+                    note="This measurement family does not materialize the YFP/CFP ratio.",
+                ),
+            }
+        )
+    if include_crosstalk_pairs:
+        overrides["ranking"] = ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("crosstalk_pairs",),
+            plugin_ids=("transform/crosstalk_pairs",),
+            record_ids=("crosstalk_pairs/table",),
+            config_paths=("protocol.analysis.crosstalk_pairs",),
+            note="When crosstalk pair analysis is enabled, the exported pair table is compiled from fold-change output.",
+        )
+    return _semantic_program(protocol, overrides=overrides)
+
+
+def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSemanticProgram:
+    overrides: dict[str, ProtocolSemanticExecution] = {}
+    if include_vec8:
+        vec8_binding = ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("sfxi_vec8",),
+            plugin_ids=("transform/sfxi",),
+            record_ids=("sfxi_vec8/vec8",),
+            config_paths=(
+                "protocol.inputs.response",
+                "protocol.inputs.reference",
+                "protocol.inputs.design_by",
+                "protocol.inputs.logic_map_ref",
+                "protocol.inputs.time_mode",
+                "protocol.inputs.target_time_h",
+                "protocol.inputs.time_tolerance_h",
+            ),
+            note="The SFXI vec8 transform materializes the protocol control rule, summary window, metric, and ranking surface.",
+        )
+        overrides.update(
+            {
+                "logic_corner_map": vec8_binding,
+                "summary_timepoint": vec8_binding,
+                "vec8": vec8_binding,
+                "ranking": vec8_binding,
+            }
+        )
+    return _semantic_program(protocol, overrides=overrides)
+
+
+def _cytometry_semantic_program(protocol: Any) -> ProtocolSemanticProgram:
+    return _semantic_program(
+        protocol,
+        overrides={
+            "ranking": ProtocolSemanticExecution(
+                status="descriptive_only",
+                note="Cytometry ranking remains domain-defined until a typed analysis program is introduced.",
+            )
+        },
     )
 
 

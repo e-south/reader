@@ -93,6 +93,7 @@ def build_workbench_decl(
         ),
         resources=resources,
         layout=layout,
+        protocol_program=compiled.semantic_program,
     )
 
     return WorkbenchDecl(
