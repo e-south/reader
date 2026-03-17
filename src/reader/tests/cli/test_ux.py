@@ -297,6 +297,45 @@ def test_next_steps_uses_protocol_default_notebook(tmp_path: Path) -> None:
     assert any("template notebook/cytometry" in desc for desc in notes)
 
 
+def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["steps", str(cfg), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["count"] >= 1
+    first = payload["pipeline"][0]
+    assert first["stage"] == "ingest"
+    assert first["semantics"]["category"] == "ingest"
+    assert first["writes"][0]["display"] == "ingest/df"
+
+
+def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["explain", str(cfg), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["plan"]["pipeline_flow"][0] == "ingest"
+    assert "sample_map" in payload["plan"]["resources"]
+    assert payload["plots"][0]["semantics"]["category"] == "plot"
+    assert payload["exports"][0]["semantics"]["category"] == "export"
+
+
+def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["validate", str(cfg), "--no-files", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["validation"]["status"] == "ok"
+    assert payload["validation"]["counts"]["pipeline"] >= 1
+    assert payload["validation"]["files"]["mode"] == "skipped"
+
+
 class _PluginCfg(PluginConfig):
     pass
 

@@ -213,14 +213,13 @@ def _validate_notebook_specs(items: list[Any], *, protocol: Any) -> None:
         require_notebook_template_for_protocol(spec_item.template, protocol=protocol)
 
 
-def validate(
+def validation_summary(
     decl: WorkbenchDecl,
     *,
-    console: Console,
     check_files: bool = False,
     exp_root: Path | None = None,
     runtime: ReaderRuntime | None = None,
-) -> None:
+) -> dict[str, Any]:
     runtime = runtime or builtin_runtime()
     workbench = resolve_workbench(decl)
     pipeline_steps = list(workbench.pipeline)
@@ -308,27 +307,78 @@ def validate(
                 lines.append(f"- {label}:{step_id} • auto_roots → {rel}")
             raise ConfigError("\n".join(lines))
 
+    file_total, root_total = files_checked or (0, 0)
+    if not check_files:
+        files_payload = {
+            "mode": "skipped",
+            "checked": False,
+            "declared": {"file_inputs": 0, "auto_roots": 0},
+            "summary": "skipped (--no-files)",
+        }
+    elif file_total == 0 and root_total == 0:
+        files_payload = {
+            "mode": "none_declared",
+            "checked": True,
+            "declared": {"file_inputs": 0, "auto_roots": 0},
+            "summary": "none declared",
+        }
+    else:
+        parts = []
+        if file_total:
+            parts.append(f"{file_total} file input(s)")
+        if root_total:
+            parts.append(f"{root_total} auto_root(s)")
+        files_payload = {
+            "mode": "ok",
+            "checked": True,
+            "declared": {"file_inputs": file_total, "auto_roots": root_total},
+            "summary": f"ok ({', '.join(parts)})",
+        }
+
+    return {
+        "status": "ok",
+        "protocol": decl.experiment_semantics.protocol.id,
+        "counts": {
+            "pipeline": len(pipeline_steps),
+            "plots": len(plot_specs),
+            "exports": len(export_specs),
+            "notebooks": len(notebook_specs),
+        },
+        "checks": [
+            "schema",
+            "plugin availability",
+            "reads",
+            "output labels",
+            "plugin config",
+        ],
+        "files": files_payload,
+        "tip": "use 'reader explain' to see inputs/outputs",
+    }
+
+
+def validate(
+    decl: WorkbenchDecl,
+    *,
+    console: Console,
+    check_files: bool = False,
+    exp_root: Path | None = None,
+    runtime: ReaderRuntime | None = None,
+) -> None:
+    summary = validation_summary(
+        decl,
+        check_files=check_files,
+        exp_root=exp_root,
+        runtime=runtime,
+    )
     lines = [
         "[green]✓ Config validated[/green]",
-        f"[dim]protocol[/dim]: {decl.experiment_semantics.protocol.id}",
-        f"[dim]pipeline[/dim]: {len(pipeline_steps)}",
-        f"[dim]plots[/dim]: {len(plot_specs)}",
-        f"[dim]exports[/dim]: {len(export_specs)}",
-        f"[dim]notebooks[/dim]: {len(notebook_specs)}",
-        "[dim]checks[/dim]: schema, plugin availability, reads, output labels, plugin config",
+        f"[dim]protocol[/dim]: {summary['protocol']}",
+        f"[dim]pipeline[/dim]: {summary['counts']['pipeline']}",
+        f"[dim]plots[/dim]: {summary['counts']['plots']}",
+        f"[dim]exports[/dim]: {summary['counts']['exports']}",
+        f"[dim]notebooks[/dim]: {summary['counts']['notebooks']}",
+        f"[dim]checks[/dim]: {', '.join(summary['checks'])}",
     ]
-    if check_files:
-        file_total, root_total = files_checked or (0, 0)
-        if file_total == 0 and root_total == 0:
-            lines.append("[dim]files[/dim]: none declared")
-        else:
-            parts = []
-            if file_total:
-                parts.append(f"{file_total} file input(s)")
-            if root_total:
-                parts.append(f"{root_total} auto_root(s)")
-            lines.append(f"[dim]files[/dim]: ok ({', '.join(parts)})")
-    else:
-        lines.append("[dim]files[/dim]: skipped (--no-files)")
-    lines.append("[dim]tip[/dim]: use 'reader explain' to see inputs/outputs")
+    lines.append(f"[dim]files[/dim]: {summary['files']['summary']}")
+    lines.append(f"[dim]tip[/dim]: {summary['tip']}")
     console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))

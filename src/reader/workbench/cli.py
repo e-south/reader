@@ -31,8 +31,9 @@ from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
 from reader.workbench.engine import explain as explain_job
-from reader.workbench.engine import run_job, run_spec
+from reader.workbench.engine import run_job, run_spec, slice_pipeline_steps
 from reader.workbench.engine import validate as validate_job
+from reader.workbench.engine import validation_summary as validate_summary_job
 from reader.workbench.engine._shared import pipeline_has_plugin
 from reader.workbench.experiment import ResourceCatalog
 from reader.workbench.experiments import discover_experiment_configs
@@ -877,7 +878,17 @@ def _binding_display(ref) -> str:
     return input_ref_display(ref)
 
 
-def _serialize_reads(reads) -> list[dict[str, object]]:
+def _plugin_semantics_payload(plugin: str, *, runtime: ReaderRuntime) -> dict[str, object]:
+    descriptor = runtime.plugins.resolve_descriptor(plugin)
+    return {
+        "category": descriptor.category,
+        "domain": descriptor.domain,
+        "family": descriptor.family,
+        "summary": descriptor.summary,
+    }
+
+
+def _serialize_reads(reads, *, declared_ports=None) -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for label, ref in (reads or {}).items():
         item: dict[str, object] = {
@@ -895,6 +906,14 @@ def _serialize_reads(reads) -> list[dict[str, object]]:
             item["ref"] = {"file": str(path)}
         else:
             item["ref"] = {"display": _binding_display(ref)}
+        declared_port = (declared_ports or {}).get(label)
+        if declared_port is not None:
+            item["kind"] = declared_port.kind
+            item["declared"] = declared_port.render()
+            if declared_port.contract is not None:
+                item["contract"] = declared_port.contract
+            if declared_port.optional:
+                item["optional"] = True
         payload.append(item)
     return payload
 
@@ -909,7 +928,9 @@ def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, 
                 {
                     "label": output_name,
                     "kind": port.kind,
+                    "declared": port.render(),
                     "display": record_ref.record_id,
+                    "contract": port.contract,
                     "ref": output_ref_to_dict(record_ref),
                 }
             )
@@ -918,6 +939,7 @@ def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, 
             {
                 "label": output_name,
                 "kind": port.kind,
+                "declared": port.render(),
                 "display": output_name,
             }
         )
@@ -925,21 +947,70 @@ def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, 
 
 
 def _pipeline_step_payload(step, *, runtime: ReaderRuntime) -> dict[str, object]:
+    plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
     return {
         "stage": step.plugin.split("/", 1)[0],
         "id": step.id,
         "plugin": step.plugin,
-        "reads": _serialize_reads(step.reads),
+        "semantics": _plugin_semantics_payload(step.plugin, runtime=runtime),
+        "reads": _serialize_reads(step.reads, declared_ports=plugin_cls.input_ports()),
         "writes": _pipeline_writes_payload(step, runtime=runtime),
     }
 
 
-def _spec_step_payload(step, *, summary: str) -> dict[str, object]:
+def _spec_step_payload(step, *, summary: str, runtime: ReaderRuntime) -> dict[str, object]:
+    plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
     return {
         "id": step.id,
         "plugin": step.plugin,
         "summary": summary,
-        "reads": _serialize_reads(step.reads),
+        "semantics": _plugin_semantics_payload(step.plugin, runtime=runtime),
+        "reads": _serialize_reads(step.reads, declared_ports=plugin_cls.input_ports()),
+    }
+
+
+def _experiment_identity_payload(
+    *,
+    job_path: Path,
+    decl: WorkbenchDecl,
+    protocol_id: str | None = None,
+) -> dict[str, object]:
+    return {
+        "id": decl.experiment.id,
+        "title": decl.experiment.title,
+        "protocol": protocol_id or decl.experiment_semantics.protocol.id,
+        "config": str(job_path),
+        "root": str(decl.experiment.root),
+    }
+
+
+def _surface_specs_payload(
+    *,
+    job_path: Path,
+    decl: WorkbenchDecl,
+    runtime: ReaderRuntime,
+    bound_protocol,
+    selected,
+    kind: str,
+    only: list[str],
+    exclude: list[str],
+) -> dict[str, object]:
+    if kind == "plot":
+        summary_lookup = _plot_output_summaries(bound_protocol)
+        payload_key = "plots"
+    else:
+        summary_lookup = _export_output_summaries(bound_protocol)
+        payload_key = "exports"
+    return {
+        "experiment": _experiment_identity_payload(job_path=job_path, decl=decl, protocol_id=bound_protocol.id),
+        "count": len(selected),
+        "filters": {
+            "only": list(only),
+            "exclude": list(exclude),
+        },
+        payload_key: [
+            _spec_step_payload(step, summary=summary_lookup.get(step.id, "—"), runtime=runtime) for step in selected
+        ],
     }
 
 
@@ -1110,21 +1181,97 @@ def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[
         "compiled": {
             "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in compiled_plan.pipeline],
             "plots": [
-                _spec_step_payload(step, summary=_plot_output_summaries(bound_protocol).get(step.id, "—"))
+                _spec_step_payload(
+                    step,
+                    summary=_plot_output_summaries(bound_protocol).get(step.id, "—"),
+                    runtime=runtime,
+                )
                 for step in compiled_plan.plots
             ],
             "exports": [
-                _spec_step_payload(step, summary=_export_output_summaries(bound_protocol).get(step.id, "—"))
+                _spec_step_payload(
+                    step,
+                    summary=_export_output_summaries(bound_protocol).get(step.id, "—"),
+                    runtime=runtime,
+                )
                 for step in compiled_plan.exports
             ],
             "notebooks": [
                 {
+                    "id": notebook.id,
                     "template": notebook.template,
                 }
                 for notebook in compiled_plan.notebooks
             ],
         },
     }
+
+
+def _explain_payload(*, job_path: Path, decl: WorkbenchDecl, runtime: ReaderRuntime) -> dict[str, object]:
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
+    workbench = resolve_workbench(decl)
+    pipeline_steps = list(workbench.pipeline)
+    plot_steps = list(workbench.plots)
+    export_steps = list(workbench.exports)
+    notebook_steps = list(workbench.notebooks)
+    return {
+        "experiment": _experiment_identity_payload(job_path=job_path, decl=decl, protocol_id=bound_protocol.id),
+        "plan": {
+            "protocol": bound_protocol.id,
+            "input_sections": sorted(bound_protocol.inputs),
+            "analysis_knobs": sorted(bound_protocol.analysis),
+            "resources": sorted(decl.experiment_semantics.resources.by_id.keys()),
+            "pipeline_flow": [step.id for step in pipeline_steps],
+            "plots": [step.id for step in plot_steps],
+            "exports": [step.id for step in export_steps],
+            "notebooks": [step.template for step in notebook_steps],
+        },
+        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in pipeline_steps],
+        "plots": [
+            _spec_step_payload(step, summary=_plot_output_summaries(bound_protocol).get(step.id, "—"), runtime=runtime)
+            for step in plot_steps
+        ],
+        "exports": [
+            _spec_step_payload(
+                step,
+                summary=_export_output_summaries(bound_protocol).get(step.id, "—"),
+                runtime=runtime,
+            )
+            for step in export_steps
+        ],
+        "notebooks": [{"id": step.id, "template": step.template} for step in notebook_steps],
+    }
+
+
+def _run_dry_run_payload(
+    *,
+    job_path: Path,
+    decl: WorkbenchDecl,
+    runtime: ReaderRuntime,
+    resume_from: str | None,
+    until: str | None,
+    only: str | None = None,
+) -> dict[str, object]:
+    workbench = resolve_workbench(decl)
+    pipeline_steps = slice_pipeline_steps(
+        list(workbench.pipeline),
+        resume_from=only or resume_from,
+        until=only or until,
+    )
+    payload = _explain_payload(job_path=job_path, decl=decl, runtime=runtime)
+    payload["dry_run"] = True
+    payload["slice"] = {
+        "from": resume_from,
+        "until": until,
+        "only": only,
+    }
+    payload["plan"]["pipeline_flow"] = [step.id for step in pipeline_steps]
+    payload["plan"]["plots"] = []
+    payload["plan"]["exports"] = []
+    payload["pipeline"] = [_pipeline_step_payload(step, runtime=runtime) for step in pipeline_steps]
+    payload["plots"] = []
+    payload["exports"] = []
+    return payload
 
 
 def _default_notebook_name() -> str:
@@ -1736,10 +1883,7 @@ def inspect(
 
     payload = {
         "experiment": {
-            "id": decl.experiment.id,
-            "protocol": bound_protocol.id,
-            "config": str(job_path),
-            "root": str(exp_root),
+            **_experiment_identity_payload(job_path=job_path, decl=decl, protocol_id=bound_protocol.id),
             "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile,
             "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template,
         },
@@ -1770,15 +1914,16 @@ def inspect(
         },
         "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in workbench.pipeline],
         "plots": [
-            _spec_step_payload(spec_decl, summary=plot_summaries.get(spec_decl.id, "—"))
+            _spec_step_payload(spec_decl, summary=plot_summaries.get(spec_decl.id, "—"), runtime=runtime)
             for spec_decl in workbench.plots
         ],
         "exports": [
-            _spec_step_payload(spec_decl, summary=export_summaries.get(spec_decl.id, "—"))
+            _spec_step_payload(spec_decl, summary=export_summaries.get(spec_decl.id, "—"), runtime=runtime)
             for spec_decl in workbench.exports
         ],
         "notebooks": [
             {
+                "id": notebook.id,
                 "template": notebook.template,
             }
             for notebook in workbench.notebooks
@@ -1947,12 +2092,23 @@ def explain(
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     try:
         job_path = _infer_job_path(job)
         _append_journal(job_path, f"reader explain {job_path}")
         _, decl = _load_job_models(job_path)
-        explain_job(decl, console=console, runtime=builtin_runtime())
+        runtime = builtin_runtime()
+        fmt = _normalize_output_format(format)
+        if fmt == "json":
+            _emit_json(_explain_payload(job_path=job_path, decl=decl, runtime=runtime))
+            return
+        explain_job(decl, console=console, runtime=runtime)
     except ReaderError as e:
         _handle_reader_error(e)
 
@@ -1969,17 +2125,38 @@ def validate(
         "--no-files",
         help="Skip file existence checks (config-only validation).",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     try:
         job_path = _infer_job_path(job)
         _append_journal(job_path, f"reader validate {job_path}")
         _, decl = _load_job_models(job_path)
+        runtime = builtin_runtime()
+        fmt = _normalize_output_format(format)
+        if fmt == "json":
+            _emit_json(
+                {
+                    "experiment": _experiment_identity_payload(job_path=job_path, decl=decl),
+                    "validation": validate_summary_job(
+                        decl,
+                        check_files=not no_files,
+                        exp_root=decl.experiment.root,
+                        runtime=runtime,
+                    ),
+                }
+            )
+            return
         validate_job(
             decl,
             console=console,
             check_files=not no_files,
             exp_root=decl.experiment.root,
-            runtime=builtin_runtime(),
+            runtime=runtime,
         )
     except ReaderError as e:
         _handle_reader_error(e)
@@ -2052,6 +2229,12 @@ def run(
         "--dry-run",
         help="Plan only: validate and print the plan without executing steps.",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format for --dry-run: table | json (default: table).",
+    ),
     log_level: str = typer.Option(
         "INFO",
         "--log-level",
@@ -2074,12 +2257,17 @@ def run(
         _, decl = _load_job_models(job_path)
     except ReaderError as e:
         _handle_reader_error(e)
+    fmt = _normalize_output_format(format)
+    if fmt == "json" and not dry_run:
+        raise typer.BadParameter("--format json is only supported with --dry-run")
 
     if only:
         _resolve_pipeline_step_id(decl, only)
         parts += ["--only", only]
         if dry_run:
             parts += ["--dry-run"]
+        if fmt == "json":
+            parts += ["--format", "json"]
         if log_level and log_level != "INFO":
             parts += ["--log-level", log_level]
         if compact:
@@ -2087,6 +2275,18 @@ def run(
         _append_journal(job_path, " ".join(parts))
         try:
             runtime = builtin_runtime()
+            if dry_run and fmt == "json":
+                _emit_json(
+                    _run_dry_run_payload(
+                        job_path=job_path,
+                        decl=decl,
+                        runtime=runtime,
+                        resume_from=None,
+                        until=None,
+                        only=only,
+                    )
+                )
+                return
             run_job(
                 job_path,
                 resume_from=only,
@@ -2112,6 +2312,8 @@ def run(
         parts += ["--until", until]
     if dry_run:
         parts += ["--dry-run"]
+    if fmt == "json":
+        parts += ["--format", "json"]
     if log_level and log_level != "INFO":
         parts += ["--log-level", log_level]
     if compact:
@@ -2119,6 +2321,17 @@ def run(
     _append_journal(job_path, " ".join(parts))
     try:
         runtime = builtin_runtime()
+        if dry_run and fmt == "json":
+            _emit_json(
+                _run_dry_run_payload(
+                    job_path=job_path,
+                    decl=decl,
+                    runtime=runtime,
+                    resume_from=from_step,
+                    until=until,
+                )
+            )
+            return
         run_job(
             job_path,
             resume_from=from_step,
@@ -2176,6 +2389,7 @@ def _run_plot_job(
     only: list[str] | None,
     exclude: list[str] | None,
     list_only: bool,
+    format: str,
     dry_run: bool,
     log_level: str,
     inputs: list[str] | None,
@@ -2185,11 +2399,28 @@ def _run_plot_job(
     runtime = builtin_runtime()
     workbench = resolve_workbench(decl)
     bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
+    fmt = _normalize_output_format(format)
     if not list_only:
+        if fmt == "json":
+            raise typer.BadParameter("--format json is only supported with --list")
         _require_dataframe_records(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
     if not plot_specs:
         if list_only:
+            if fmt == "json":
+                _emit_json(
+                    _surface_specs_payload(
+                        job_path=job_path,
+                        decl=decl,
+                        runtime=runtime,
+                        bound_protocol=bound_protocol,
+                        selected=[],
+                        kind="plot",
+                        only=only or [],
+                        exclude=exclude or [],
+                    )
+                )
+                return
             console.print(
                 Panel.fit(
                     "No plot specs configured in this experiment.",
@@ -2201,6 +2432,20 @@ def _run_plot_job(
         raise typer.BadParameter("No plot specs configured in this experiment. Add plots to the config.")
     selected = _select_steps(plot_specs, only=only or [], exclude=exclude or [], kind="plot spec")
     if list_only:
+        if fmt == "json":
+            _emit_json(
+                _surface_specs_payload(
+                    job_path=job_path,
+                    decl=decl,
+                    runtime=runtime,
+                    bound_protocol=bound_protocol,
+                    selected=selected,
+                    kind="plot",
+                    only=only or [],
+                    exclude=exclude or [],
+                )
+            )
+            return
         t = _table("Plots")
         t.add_column("#", justify="right", style="muted")
         t.add_column("id", style="accent", overflow="fold")
@@ -2306,6 +2551,12 @@ def plot(
         "--list",
         help="List plot specs for this config and exit.",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format for --list: table | json (default: table).",
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2322,7 +2573,10 @@ def plot(
 ):
     if root and not year:
         raise typer.BadParameter("--root is only valid with --year")
+    fmt = _normalize_output_format(format)
     if year:
+        if fmt == "json":
+            raise typer.BadParameter("--format json is only supported for single-experiment plot listings")
         if job is not None:
             raise typer.BadParameter("--year cannot be combined with CONFIG|DIR|INDEX")
         root_path = _find_nearest_experiments_dir(Path.cwd()) if root is None else Path(root).resolve()
@@ -2359,6 +2613,7 @@ def plot(
                     only=only,
                     exclude=exclude,
                     list_only=list_only,
+                    format=fmt,
                     dry_run=dry_run,
                     log_level=log_level,
                     inputs=inputs,
@@ -2387,6 +2642,7 @@ def plot(
             only=only,
             exclude=exclude,
             list_only=list_only,
+            format=fmt,
             dry_run=dry_run,
             log_level=log_level,
             inputs=inputs,
@@ -2410,6 +2666,12 @@ def export(
         "--list",
         help="List export specs for this config and exit.",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format for --list: table | json (default: table).",
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2429,11 +2691,26 @@ def export(
         _, decl = _load_job_models(job_path)
     except ReaderError as e:
         _handle_reader_error(e)
+    fmt = _normalize_output_format(format)
     workbench = resolve_workbench(decl)
     bound_protocol = _bind_decl_protocol(decl=decl, runtime=builtin_runtime())
     export_specs = list(workbench.exports)
     if not export_specs:
         if list_only:
+            if fmt == "json":
+                _emit_json(
+                    _surface_specs_payload(
+                        job_path=job_path,
+                        decl=decl,
+                        runtime=builtin_runtime(),
+                        bound_protocol=bound_protocol,
+                        selected=[],
+                        kind="export",
+                        only=only or [],
+                        exclude=exclude or [],
+                    )
+                )
+                return
             console.print(
                 Panel.fit(
                     "No export specs configured in this experiment.",
@@ -2445,6 +2722,20 @@ def export(
         raise typer.BadParameter("No export specs configured in this experiment. Add exports to the config.")
     selected = _select_steps(export_specs, only=only or [], exclude=exclude or [], kind="export spec")
     if list_only:
+        if fmt == "json":
+            _emit_json(
+                _surface_specs_payload(
+                    job_path=job_path,
+                    decl=decl,
+                    runtime=builtin_runtime(),
+                    bound_protocol=bound_protocol,
+                    selected=selected,
+                    kind="export",
+                    only=only or [],
+                    exclude=exclude or [],
+                )
+            )
+            return
         t = _table("Exports")
         t.add_column("#", justify="right", style="muted")
         t.add_column("id", style="accent", overflow="fold")
@@ -2467,6 +2758,8 @@ def export(
         )
         return
     try:
+        if fmt == "json":
+            raise typer.BadParameter("--format json is only supported with --list")
         runtime = builtin_runtime()
         _require_dataframe_records(decl, job_path, runtime=runtime)
         experiment_root = decl.experiment.root
@@ -2636,25 +2929,53 @@ def records(
     console.print(Panel(t, border_style="accent", box=box.ROUNDED))
 
 
-@app.command(help="List step ids and plugins for a config.")
+@app.command(help="List pipeline steps and bindings for a config.")
 def steps(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     try:
-        _, decl = _load_job_models(_infer_job_path(job))
+        job_path = _infer_job_path(job)
+        _, decl = _load_job_models(job_path)
     except ReaderError as e:
         _handle_reader_error(e)
+    runtime = builtin_runtime()
+    fmt = _normalize_output_format(format)
     pipeline = list(resolve_workbench(decl).pipeline)
+    payload = {
+        "experiment": _experiment_identity_payload(job_path=job_path, decl=decl),
+        "count": len(pipeline),
+        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in pipeline],
+    }
+    if fmt == "json":
+        _emit_json(payload)
+        return
     t = _table("Steps")
     t.add_column("#", justify="right", style="muted")
-    t.add_column("id", style="accent")
-    t.add_column("plugin")
-    for i, s in enumerate(pipeline, 1):
-        t.add_row(str(i), s.id, s.plugin)
+    t.add_column("stage", style="accent")
+    t.add_column("id", style="accent", overflow="fold")
+    t.add_column("plugin", overflow="fold")
+    t.add_column("from", overflow="fold")
+    t.add_column("writes", overflow="fold")
+    for i, item in enumerate(payload["pipeline"], 1):
+        from_refs = ", ".join(f"{entry['label']} <- {entry['display']}" for entry in item["reads"]) or "—"
+        writes = (
+            ", ".join(
+                (f"{entry['label']} -> {entry['display']}" if entry.get("kind") == "dataframe" else str(entry["label"]))
+                for entry in item["writes"]
+            )
+            or "—"
+        )
+        t.add_row(str(i), str(item["stage"]), str(item["id"]), str(item["plugin"]), from_refs, writes)
     console.print(
         Panel(
             t,
@@ -2946,14 +3267,15 @@ def demo():
             "reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen",
         ),
         ("5", "Starter YAML for a protocol", "reader protocols plate_reader/dual_reporter_screen --example-config"),
-        ("6", "Explain plan", "reader explain 1"),
-        ("7", "Validate config + inputs", "reader validate 1"),
-        ("8", "Run pipeline (records)", "reader run 1"),
-        ("9", "See records", "reader records 1"),
-        ("10", "List plot specs", "reader plot 1 --list"),
-        ("11", "Save plots", "reader plot 1"),
-        ("12", "Run exports", "reader export 1"),
-        ("13", "Notebook (marimo)", "reader notebook 1"),
+        ("6", "Show pipeline chain", "reader steps 1"),
+        ("7", "Explain plan", "reader explain 1"),
+        ("8", "Validate config + inputs", "reader validate 1"),
+        ("9", "Run pipeline (records)", "reader run 1"),
+        ("10", "See records", "reader records 1"),
+        ("11", "List plot specs", "reader plot 1 --list"),
+        ("12", "Save plots", "reader plot 1"),
+        ("13", "Run exports", "reader export 1"),
+        ("14", "Notebook (marimo)", "reader notebook 1"),
     ]
     t = _table("Reader Demo")
     t.add_column("#", justify="right", style="muted")

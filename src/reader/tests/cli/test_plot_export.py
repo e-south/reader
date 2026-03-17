@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -61,6 +62,39 @@ def test_plot_list_empty(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(cfg_path), "--list"])
     assert result.exit_code == 0
     assert "No plot specs configured" in result.output
+
+
+def test_plot_list_json(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["count"] == 2
+    assert payload["filters"]["only"] == []
+    assert payload["plots"][0]["id"] == "raw_kinetics"
+    assert payload["plots"][0]["semantics"]["category"] == "plot"
+
+
+def test_plot_list_json_empty(tmp_path: Path) -> None:
+    cfg = _base_config()
+    cfg["protocol"]["outputs"]["plots"] = {"profile": "none"}
+    cfg_path = write_config(tmp_path, cfg)
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["count"] == 0
+    assert payload["plots"] == []
+
+
+def test_plot_json_requires_list(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--format", "json"])
+    assert result.exit_code != 0
+    assert "only supported with --list" in result.output
 
 
 def test_plot_requires_records(tmp_path: Path) -> None:
@@ -123,6 +157,38 @@ def test_export_list_empty(tmp_path: Path) -> None:
     result = runner.invoke(app, ["export", str(cfg_path), "--list"])
     assert result.exit_code == 0
     assert "No export specs configured" in result.output
+
+
+def test_export_list_json(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["count"] == 1
+    assert payload["exports"][0]["id"] == "crosstalk_pairs_table"
+    assert payload["exports"][0]["semantics"]["category"] == "export"
+
+
+def test_export_list_json_empty(tmp_path: Path) -> None:
+    cfg = _base_config()
+    cfg["protocol"]["outputs"]["exports"] = {"exclude": ["crosstalk_pairs_table"]}
+    cfg_path = write_config(tmp_path, cfg)
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg_path), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["count"] == 0
+    assert payload["exports"] == []
+
+
+def test_export_json_requires_list(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--format", "json"])
+    assert result.exit_code != 0
+    assert "only supported with --list" in result.output
 
 
 def test_validate_checks_files_by_default(tmp_path: Path) -> None:

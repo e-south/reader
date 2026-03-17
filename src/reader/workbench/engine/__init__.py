@@ -13,7 +13,7 @@ from .inputs import _resolve_inputs
 from .planning import build_next_steps, explain
 from .runtime import run_job, run_spec
 from .setup import build_run_context, configure_logger, resolve_palette_book, slice_pipeline_steps
-from .validation import validate
+from .validation import validate, validation_summary
 
 __all__ = [
     "_assert_input_ports",
@@ -33,4 +33,5 @@ __all__ = [
     "run_spec",
     "slice_pipeline_steps",
     "validate",
+    "validation_summary",
 ]
