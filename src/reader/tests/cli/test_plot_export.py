@@ -34,6 +34,25 @@ def _base_config() -> dict:
     )
 
 
+def _logic_plot_config() -> dict:
+    return base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_outputs={"plots": {"profile": "none", "include": ["logic_symmetry"]}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "logic_maps": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+
+
 def test_plot_list_filters(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -87,6 +106,20 @@ def test_plot_list_json_empty(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["count"] == 0
     assert payload["plots"] == []
+
+
+def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _logic_plot_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["count"] == 1
+    read = payload["plots"][0]["reads"][0]
+    assert read["contract"] == "plate_reader.annotated.v1"
+    assert read["source"]["producer"]["id"] == "ratio_yfp_od600"
+    assert read["source"]["surface"]["runtime_mode"] == "passthrough"
+    assert "plate_reader.annotated.v1" in read["source"]["surface"]["promoted"]
 
 
 def test_plot_json_requires_list(tmp_path: Path) -> None:

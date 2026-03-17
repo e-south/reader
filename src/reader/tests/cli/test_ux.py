@@ -185,6 +185,10 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["count"] == 2
+    assert payload["summary"]["status"] == {"config_error": 1, "ok": 1}
+    assert payload["summary"]["protocols"] == {"plate_reader/dual_reporter_screen": 1}
+    assert payload["summary"]["with_outputs"] == 1
+    assert payload["summary"]["without_outputs"] == 1
     by_name = {item["name"]: item for item in payload["experiments"]}
     assert by_name["good_exp"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert by_name["good_exp"]["generated"]["records"] == 1
@@ -304,6 +308,8 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["count"] >= 1
     first = payload["pipeline"][0]
     assert first["stage"] == "ingest"
@@ -318,6 +324,7 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["semantic_program"]["controls"][0]["execution"]["status"] == "descriptive_only"
     assert payload["plan"]["pipeline_flow"][0] == "ingest"
     assert "sample_map" in payload["plan"]["resources"]
     assert payload["plots"][0]["semantics"]["category"] == "plot"
@@ -410,6 +417,7 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert "Inputs Surface" in result.output
     assert "ingest.mode" in result.output
     assert "Analysis Surface" in result.output
+    assert "Semantic Program" in result.output
     assert "Plot Profiles" in result.output
     assert "Plot Outputs" in result.output
     assert "Export Artifacts" in result.output
@@ -510,6 +518,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Experiment overview" in result.output
     assert "Authoring bindings" in result.output
+    assert "Semantic Program" in result.output
     assert "fold_change.report_times" in result.output
     assert "Pipeline chain" in result.output
     assert "Plot outputs" in result.output
@@ -543,10 +552,13 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert payload["generated"]["records"][0]["record_id"] == "ingest/df"
     assert payload["pipeline"][0]["id"] == "ingest"
     assert payload["plots"][0]["id"] == "raw_kinetics"
+    assert payload["pipeline"][0]["writes"][0]["surface"]["minimum"] == "tidy.v1"
 
 
 def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
@@ -568,9 +580,24 @@ def test_protocols_command_can_emit_json() -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["starter_config"]["schema"] == "reader/v7"
     assert payload["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["plot_profiles"])
+
+
+def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["protocols", "logic/sfxi_screen", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["protocol"] == "logic/sfxi_screen"
+    assert payload["semantic_program"]["controls"][0]["execution"]["status"] == "compiled"
+    assert payload["semantic_program"]["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
+    assert payload["semantic_program"]["windows"][0]["execution"]["status"] == "compiled"
+    assert payload["semantic_program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
+    assert payload["semantic_program"]["ranking"]["execution"]["status"] == "compiled"
 
 
 def test_plugins_command_can_emit_json() -> None:

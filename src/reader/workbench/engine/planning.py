@@ -103,6 +103,38 @@ def _notebook_table(steps: list[Any], *, title: str) -> Table:
     return table
 
 
+def _semantic_program_table(program) -> Table:
+    table = Table(
+        title="Semantic Program",
+        title_justify="left",
+        title_style="bold cyan",
+        header_style="bold",
+        box=box.ROUNDED,
+        expand=True,
+        show_lines=False,
+    )
+    table.add_column("Kind", style="accent")
+    table.add_column("ID", style="accent")
+    table.add_column("Execution")
+    table.add_column("Compiled Via")
+    table.add_column("Summary")
+
+    def _add(kind: str, node) -> None:
+        compiled_via = ", ".join(node.execution.step_ids) or "—"
+        summary = node.summary if not node.execution.note else f"{node.summary} ({node.execution.note})"
+        table.add_row(kind, node.id, node.execution.status, compiled_via, summary)
+
+    for node in program.controls:
+        _add("control_rule", node)
+    for node in program.windows:
+        _add("window", node)
+    for node in program.metrics:
+        _add("metric", node)
+    if program.ranking is not None:
+        _add("ranking", program.ranking)
+    return table
+
+
 def build_next_steps(
     decl: WorkbenchDecl,
     *,
@@ -172,6 +204,14 @@ def explain(
     if resources:
         summary.add_row("Resources", ", ".join(resources))
     console.print(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Protocol plan"))
+    if decl.experiment_semantics.protocol_program is not None:
+        console.print(
+            Panel(
+                _semantic_program_table(decl.experiment_semantics.protocol_program),
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
     if pipeline_steps:
         if registry is None:
             raise RuntimeError("pipeline explanation requires a plugin registry")

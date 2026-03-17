@@ -392,6 +392,7 @@ def protocols(
                 _emit_json(_protocol_descriptor_payload(descriptor, runtime=runtime))
                 return
             bound_protocol, compiled_plan = _default_protocol_plan(descriptor=descriptor, runtime=runtime)
+            semantic_program = compiled_plan.semantic_program or descriptor.semantic_program()
             table = _table(f"Protocol: {descriptor.protocol}")
             table.add_column("Section", style="accent")
             table.add_column("Details")
@@ -408,6 +409,15 @@ def protocols(
                 table.add_row("Metrics", ", ".join(item.id for item in descriptor.metrics))
             if descriptor.ranking is not None:
                 table.add_row("Primary ranking", descriptor.ranking.primary_metric)
+            table.add_row(
+                "Semantic nodes",
+                str(
+                    len(semantic_program.controls)
+                    + len(semantic_program.windows)
+                    + len(semantic_program.metrics)
+                    + (1 if semantic_program.ranking is not None else 0)
+                ),
+            )
             table.add_row("Default notebook", descriptor.execution.notebook.default_template)
             table.add_row("Allowed notebooks", ", ".join(descriptor.execution.notebook.allowed_templates))
             if descriptor.default_plot_profile is not None:
@@ -431,6 +441,13 @@ def protocols(
                         box=box.ROUNDED,
                     )
                 )
+            if (
+                semantic_program.controls
+                or semantic_program.windows
+                or semantic_program.metrics
+                or semantic_program.ranking is not None
+            ):
+                console.print(Panel(_semantic_program_table(semantic_program), border_style="accent", box=box.ROUNDED))
             if descriptor.plot_profiles:
                 console.print(Panel(_protocol_plot_profiles_table(descriptor), border_style="accent", box=box.ROUNDED))
             if descriptor.figures:
@@ -733,6 +750,74 @@ def _protocol_surface_table(title: str, rows: list[tuple[str, str, str, str, str
     return table
 
 
+def _semantic_node_payload(node) -> dict[str, object]:
+    payload = {
+        "id": node.id,
+        "kind": node.kind,
+        "summary": node.summary,
+        "execution": {
+            "status": node.execution.status,
+            "step_ids": list(node.execution.step_ids),
+            "plugin_ids": list(node.execution.plugin_ids),
+            "record_ids": list(node.execution.record_ids),
+            "config_paths": list(node.execution.config_paths),
+            "note": node.execution.note,
+        },
+    }
+    if node.kind == "control_rule":
+        payload["match_on"] = list(node.match_on)
+        payload["control_selector"] = node.control_selector
+    if node.kind == "window":
+        payload["anchor"] = node.anchor
+        payload["selector"] = node.selector
+        payload["params"] = dict(node.params)
+    if node.kind == "metric":
+        payload["stage"] = node.stage
+        payload["formula"] = node.formula
+        payload["depends_on"] = list(node.depends_on)
+    if node.kind == "ranking":
+        payload["primary_metric"] = node.primary_metric
+        payload["direction"] = node.direction
+        payload["penalties"] = list(node.penalties)
+        payload["supporting_metrics"] = list(node.supporting_metrics)
+    return payload
+
+
+def _semantic_program_payload(program) -> dict[str, object]:
+    return {
+        "protocol": program.protocol,
+        "controls": [_semantic_node_payload(node) for node in program.controls],
+        "windows": [_semantic_node_payload(node) for node in program.windows],
+        "metrics": [_semantic_node_payload(node) for node in program.metrics],
+        "ranking": _semantic_node_payload(program.ranking) if program.ranking is not None else None,
+    }
+
+
+def _semantic_program_table(program) -> Table:
+    table = _table("Semantic Program")
+    table.add_column("kind", style="accent", width=13)
+    table.add_column("id", style="accent", overflow="fold")
+    table.add_column("status", width=18)
+    table.add_column("compiled via", overflow="fold")
+    table.add_column("summary", overflow="fold")
+
+    def _add_node(kind: str, node) -> None:
+        compiled_via = ", ".join(node.execution.step_ids) or "—"
+        note = node.execution.note
+        summary = node.summary if not note else f"{node.summary} ({note})"
+        table.add_row(kind, node.id, node.execution.status, compiled_via, summary)
+
+    for node in program.controls:
+        _add_node("control_rule", node)
+    for node in program.windows:
+        _add_node("window", node)
+    for node in program.metrics:
+        _add_node("metric", node)
+    if program.ranking is not None:
+        _add_node("ranking", program.ranking)
+    return table
+
+
 def _protocol_plot_profiles_table(descriptor) -> Table:
     table = _table("Plot Profiles")
     table.add_column("id", style="accent")
@@ -878,6 +963,40 @@ def _binding_display(ref) -> str:
     return input_ref_display(ref)
 
 
+def _output_surface_payload(port) -> dict[str, object] | None:
+    surface = getattr(port, "contract_surface", None)
+    if surface is None:
+        return None
+    return {
+        "minimum": surface.minimum,
+        "runtime_mode": surface.runtime_mode,
+        "promoted": list(surface.promoted),
+        "note": surface.note,
+        "rendered": surface.render(),
+    }
+
+
+def _record_producer_map(steps, *, runtime: ReaderRuntime) -> dict[str, dict[str, object]]:
+    producers: dict[str, dict[str, object]] = {}
+    for step in steps:
+        plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
+        for output_name, port in plugin_cls.output_ports().items():
+            if port.kind != "dataframe":
+                continue
+            record_ref = (step.writes or {}).get(output_name, OutputRef(record_id=f"{step.id}/{output_name}"))
+            producers[record_ref.record_id] = {
+                "producer": {
+                    "id": step.id,
+                    "plugin": step.plugin,
+                    "stage": step.plugin.split("/", 1)[0],
+                },
+                "output": output_name,
+                "contract": port.contract,
+                "surface": _output_surface_payload(port),
+            }
+    return producers
+
+
 def _plugin_semantics_payload(plugin: str, *, runtime: ReaderRuntime) -> dict[str, object]:
     descriptor = runtime.plugins.resolve_descriptor(plugin)
     return {
@@ -888,7 +1007,7 @@ def _plugin_semantics_payload(plugin: str, *, runtime: ReaderRuntime) -> dict[st
     }
 
 
-def _serialize_reads(reads, *, declared_ports=None) -> list[dict[str, object]]:
+def _serialize_reads(reads, *, declared_ports=None, record_producers=None) -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for label, ref in (reads or {}).items():
         item: dict[str, object] = {
@@ -900,6 +1019,8 @@ def _serialize_reads(reads, *, declared_ports=None) -> list[dict[str, object]]:
         path = getattr(ref, "path", None)
         if isinstance(record_id, str) and record_id:
             item["ref"] = {"record": record_id}
+            if record_producers and record_id in record_producers:
+                item["source"] = deepcopy(record_producers[record_id])
         elif isinstance(resource_id, str) and resource_id:
             item["ref"] = {"resource": resource_id}
         elif path is not None:
@@ -934,6 +1055,9 @@ def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, 
                     "ref": output_ref_to_dict(record_ref),
                 }
             )
+            surface = _output_surface_payload(port)
+            if surface is not None:
+                outputs[-1]["surface"] = surface
             continue
         outputs.append(
             {
@@ -946,26 +1070,72 @@ def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, 
     return outputs
 
 
-def _pipeline_step_payload(step, *, runtime: ReaderRuntime) -> dict[str, object]:
+def _pipeline_step_payload(step, *, runtime: ReaderRuntime, record_producers=None) -> dict[str, object]:
     plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
     return {
         "stage": step.plugin.split("/", 1)[0],
         "id": step.id,
         "plugin": step.plugin,
         "semantics": _plugin_semantics_payload(step.plugin, runtime=runtime),
-        "reads": _serialize_reads(step.reads, declared_ports=plugin_cls.input_ports()),
+        "reads": _serialize_reads(
+            step.reads, declared_ports=plugin_cls.input_ports(), record_producers=record_producers
+        ),
         "writes": _pipeline_writes_payload(step, runtime=runtime),
     }
 
 
-def _spec_step_payload(step, *, summary: str, runtime: ReaderRuntime) -> dict[str, object]:
+def _spec_step_payload(step, *, summary: str, runtime: ReaderRuntime, record_producers=None) -> dict[str, object]:
     plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
     return {
         "id": step.id,
         "plugin": step.plugin,
         "summary": summary,
         "semantics": _plugin_semantics_payload(step.plugin, runtime=runtime),
-        "reads": _serialize_reads(step.reads, declared_ports=plugin_cls.input_ports()),
+        "reads": _serialize_reads(
+            step.reads, declared_ports=plugin_cls.input_ports(), record_producers=record_producers
+        ),
+    }
+
+
+def _render_read_binding(item: dict[str, object]) -> str:
+    rendered = f"{item['label']} <- {item['display']}"
+    source = item.get("source")
+    if not isinstance(source, dict):
+        return rendered
+    surface = source.get("surface")
+    if not isinstance(surface, dict):
+        return rendered
+    producer = source.get("producer")
+    producer_id = producer.get("id") if isinstance(producer, dict) else None
+    if not isinstance(producer_id, str) or not producer_id:
+        return rendered
+    mode = surface.get("runtime_mode")
+    promoted = [str(value) for value in (surface.get("promoted") or []) if str(value).strip()]
+    contract = item.get("contract")
+    if mode == "promoted" and promoted:
+        return f"{rendered} (via {producer_id}; may promote to {', '.join(promoted)})"
+    if mode == "passthrough" and isinstance(contract, str) and contract in promoted:
+        return f"{rendered} (via {producer_id}; preserves {contract})"
+    return rendered
+
+
+def _inventory_summary(entries: list[dict[str, object]]) -> dict[str, object]:
+    status_counts: dict[str, int] = {}
+    protocol_counts: dict[str, int] = {}
+    with_outputs = 0
+    for entry in entries:
+        status = str(entry.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        protocol_value = entry.get("protocol")
+        if isinstance(protocol_value, str) and protocol_value:
+            protocol_counts[protocol_value] = protocol_counts.get(protocol_value, 0) + 1
+        if bool(entry.get("has_outputs")):
+            with_outputs += 1
+    return {
+        "status": dict(sorted(status_counts.items())),
+        "protocols": dict(sorted(protocol_counts.items())),
+        "with_outputs": with_outputs,
+        "without_outputs": len(entries) - with_outputs,
     }
 
 
@@ -995,6 +1165,8 @@ def _surface_specs_payload(
     only: list[str],
     exclude: list[str],
 ) -> dict[str, object]:
+    workbench = resolve_workbench(decl)
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     if kind == "plot":
         summary_lookup = _plot_output_summaries(bound_protocol)
         payload_key = "plots"
@@ -1009,7 +1181,13 @@ def _surface_specs_payload(
             "exclude": list(exclude),
         },
         payload_key: [
-            _spec_step_payload(step, summary=summary_lookup.get(step.id, "—"), runtime=runtime) for step in selected
+            _spec_step_payload(
+                step,
+                summary=summary_lookup.get(step.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
+            )
+            for step in selected
         ],
     }
 
@@ -1053,12 +1231,16 @@ def _iter_record_payloads(
 
 def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[str, object]:
     bound_protocol, compiled_plan = _default_protocol_plan(descriptor=descriptor, runtime=runtime)
+    record_producers = _record_producer_map(compiled_plan.pipeline, runtime=runtime)
+    semantic_program = compiled_plan.semantic_program or descriptor.semantic_program()
+    semantic_payload = _semantic_program_payload(semantic_program)
     return {
         "protocol": descriptor.protocol,
         "domain": descriptor.domain,
         "family": descriptor.family,
         "summary": descriptor.summary,
         "tags": list(descriptor.tags),
+        "semantic_program": semantic_payload,
         "factors": [
             {
                 "name": item.name,
@@ -1071,33 +1253,35 @@ def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[
         ],
         "control_rules": [
             {
-                "id": item.id,
-                "summary": item.summary,
-                "match_on": list(item.match_on),
-                "control_selector": item.control_selector,
+                "id": item["id"],
+                "summary": item["summary"],
+                "match_on": item.get("match_on", []),
+                "control_selector": item.get("control_selector"),
+                "execution": item["execution"],
             }
-            for item in descriptor.control_rules
+            for item in semantic_payload["controls"]
         ],
         "windows": [
             {
-                "id": item.id,
-                "summary": item.summary,
-                "anchor": item.anchor,
-                "selector": item.selector,
-                "params": dict(item.params),
+                "id": item["id"],
+                "summary": item["summary"],
+                "anchor": item.get("anchor"),
+                "selector": item.get("selector"),
+                "params": item.get("params", {}),
+                "execution": item["execution"],
             }
-            for item in descriptor.windows
+            for item in semantic_payload["windows"]
         ],
         "metrics": [
             {
-                "id": item.id,
-                "summary": item.summary,
-                "stage": item.stage,
-                "formula": item.formula,
-                "depends_on": list(item.depends_on),
-                "notes": list(item.notes),
+                "id": item["id"],
+                "summary": item["summary"],
+                "stage": item.get("stage"),
+                "formula": item.get("formula"),
+                "depends_on": item.get("depends_on", []),
+                "execution": item["execution"],
             }
-            for item in descriptor.metrics
+            for item in semantic_payload["metrics"]
         ],
         "effect_signs": [
             {
@@ -1109,13 +1293,14 @@ def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[
         ],
         "ranking": (
             {
-                "primary_metric": descriptor.ranking.primary_metric,
-                "direction": descriptor.ranking.direction,
-                "summary": descriptor.ranking.summary,
-                "penalties": list(descriptor.ranking.penalties),
-                "supporting_metrics": list(descriptor.ranking.supporting_metrics),
+                "primary_metric": semantic_program.ranking.primary_metric,
+                "direction": semantic_program.ranking.direction,
+                "summary": semantic_program.ranking.summary,
+                "penalties": list(semantic_program.ranking.penalties),
+                "supporting_metrics": list(semantic_program.ranking.supporting_metrics),
+                "execution": _semantic_node_payload(semantic_program.ranking)["execution"],
             }
-            if descriptor.ranking is not None
+            if semantic_program.ranking is not None
             else None
         ),
         "notebook_policy": {
@@ -1179,12 +1364,16 @@ def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[
         "default_plot_profile": descriptor.default_plot_profile,
         "starter_config": _protocol_example_document(descriptor),
         "compiled": {
-            "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in compiled_plan.pipeline],
+            "pipeline": [
+                _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers)
+                for step in compiled_plan.pipeline
+            ],
             "plots": [
                 _spec_step_payload(
                     step,
                     summary=_plot_output_summaries(bound_protocol).get(step.id, "—"),
                     runtime=runtime,
+                    record_producers=record_producers,
                 )
                 for step in compiled_plan.plots
             ],
@@ -1193,6 +1382,7 @@ def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[
                     step,
                     summary=_export_output_summaries(bound_protocol).get(step.id, "—"),
                     runtime=runtime,
+                    record_producers=record_producers,
                 )
                 for step in compiled_plan.exports
             ],
@@ -1214,8 +1404,14 @@ def _explain_payload(*, job_path: Path, decl: WorkbenchDecl, runtime: ReaderRunt
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     return {
         "experiment": _experiment_identity_payload(job_path=job_path, decl=decl, protocol_id=bound_protocol.id),
+        "semantic_program": (
+            _semantic_program_payload(decl.experiment_semantics.protocol_program)
+            if decl.experiment_semantics.protocol_program is not None
+            else None
+        ),
         "plan": {
             "protocol": bound_protocol.id,
             "input_sections": sorted(bound_protocol.inputs),
@@ -1226,9 +1422,16 @@ def _explain_payload(*, job_path: Path, decl: WorkbenchDecl, runtime: ReaderRunt
             "exports": [step.id for step in export_steps],
             "notebooks": [step.template for step in notebook_steps],
         },
-        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in pipeline_steps],
+        "pipeline": [
+            _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers) for step in pipeline_steps
+        ],
         "plots": [
-            _spec_step_payload(step, summary=_plot_output_summaries(bound_protocol).get(step.id, "—"), runtime=runtime)
+            _spec_step_payload(
+                step,
+                summary=_plot_output_summaries(bound_protocol).get(step.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
+            )
             for step in plot_steps
         ],
         "exports": [
@@ -1236,6 +1439,7 @@ def _explain_payload(*, job_path: Path, decl: WorkbenchDecl, runtime: ReaderRunt
                 step,
                 summary=_export_output_summaries(bound_protocol).get(step.id, "—"),
                 runtime=runtime,
+                record_producers=record_producers,
             )
             for step in export_steps
         ],
@@ -1258,6 +1462,7 @@ def _run_dry_run_payload(
         resume_from=only or resume_from,
         until=only or until,
     )
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     payload = _explain_payload(job_path=job_path, decl=decl, runtime=runtime)
     payload["dry_run"] = True
     payload["slice"] = {
@@ -1268,7 +1473,9 @@ def _run_dry_run_payload(
     payload["plan"]["pipeline_flow"] = [step.id for step in pipeline_steps]
     payload["plan"]["plots"] = []
     payload["plan"]["exports"] = []
-    payload["pipeline"] = [_pipeline_step_payload(step, runtime=runtime) for step in pipeline_steps]
+    payload["pipeline"] = [
+        _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers) for step in pipeline_steps
+    ]
     payload["plots"] = []
     payload["exports"] = []
     return payload
@@ -1670,6 +1877,7 @@ def ls(
             "root": str(root_path),
             "count": len(experiments),
             "details": details,
+            "summary": _inventory_summary(experiments),
             "filters": {
                 "protocol": protocol_filter,
                 "status": status_filter,
@@ -1774,6 +1982,7 @@ def ls(
         _emit_json(_inventory_payload(entries))
         return
 
+    inventory_summary = _inventory_summary(entries)
     t = _table("Experiments")
     t.add_column("#", justify="right", style="muted")
     name_values = [str(entry["name"]) for entry in entries]
@@ -1818,6 +2027,20 @@ def ls(
             ),
         )
     )
+    if details:
+        summary = Table(box=box.ROUNDED, expand=True, show_header=False)
+        summary.add_column("Field", style="accent", no_wrap=True)
+        summary.add_column("Value")
+        summary.add_row("Shown", str(len(entries)))
+        summary.add_row(
+            "Outputs",
+            f"{inventory_summary['with_outputs']} with outputs • {inventory_summary['without_outputs']} without outputs",
+        )
+        status_bits = [f"{key}={value}" for key, value in dict(inventory_summary["status"]).items()]
+        summary.add_row("Status", ", ".join(status_bits) if status_bits else "—")
+        protocol_bits = [f"{key}={value}" for key, value in dict(inventory_summary["protocols"]).items()]
+        summary.add_row("Protocols", ", ".join(protocol_bits) if protocol_bits else "—")
+        console.print(Panel(summary, border_style="accent", box=box.ROUNDED, title="Inventory summary"))
 
 
 @app.command(help="Inspect one experiment: inputs, pipeline chain, plots, artifacts, and generated outputs.")
@@ -1869,6 +2092,7 @@ def inspect(
     ]
     plot_summaries = _plot_output_summaries(bound_protocol)
     export_summaries = _export_output_summaries(bound_protocol)
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     authoring_rows: list[tuple[str, str, str]] = []
     for section, values in (
         ("inputs", spec.protocol.inputs),
@@ -1887,6 +2111,11 @@ def inspect(
             "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile,
             "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template,
         },
+        "semantic_program": (
+            _semantic_program_payload(decl.experiment_semantics.protocol_program)
+            if decl.experiment_semantics.protocol_program is not None
+            else None
+        ),
         "authoring": {
             "inputs": spec.protocol.inputs,
             "analysis": spec.protocol.analysis,
@@ -1912,13 +2141,26 @@ def inspect(
             },
             "records": records_payload,
         },
-        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in workbench.pipeline],
+        "pipeline": [
+            _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers)
+            for step in workbench.pipeline
+        ],
         "plots": [
-            _spec_step_payload(spec_decl, summary=plot_summaries.get(spec_decl.id, "—"), runtime=runtime)
+            _spec_step_payload(
+                spec_decl,
+                summary=plot_summaries.get(spec_decl.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
+            )
             for spec_decl in workbench.plots
         ],
         "exports": [
-            _spec_step_payload(spec_decl, summary=export_summaries.get(spec_decl.id, "—"), runtime=runtime)
+            _spec_step_payload(
+                spec_decl,
+                summary=export_summaries.get(spec_decl.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
+            )
             for spec_decl in workbench.exports
         ],
         "notebooks": [
@@ -1969,6 +2211,15 @@ def inspect(
     else:
         authoring.add_row("—", "—", "No explicit bindings; protocol defaults only.")
     console.print(Panel(authoring, border_style="accent", box=box.ROUNDED))
+
+    if decl.experiment_semantics.protocol_program is not None:
+        console.print(
+            Panel(
+                _semantic_program_table(decl.experiment_semantics.protocol_program),
+                border_style="accent",
+                box=box.ROUNDED,
+            )
+        )
 
     filesystem = _table("Inputs + resources")
     filesystem.add_column("kind", style="accent", width=10)
@@ -2022,8 +2273,8 @@ def inspect(
     pipeline_table.add_column("from", overflow="fold")
     pipeline_table.add_column("writes", overflow="fold")
     for idx, step in enumerate(workbench.pipeline, 1):
-        payload_row = _pipeline_step_payload(step, runtime=runtime)
-        from_refs = ", ".join(f"{item['label']} <- {item['display']}" for item in payload_row["reads"]) or "—"
+        payload_row = _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers)
+        from_refs = ", ".join(_render_read_binding(item) for item in payload_row["reads"]) or "—"
         writes = (
             ", ".join(
                 (f"{item['label']} -> {item['display']}" if item.get("kind") == "dataframe" else str(item["label"]))
@@ -2048,10 +2299,13 @@ def inspect(
     plot_table.add_column("from", overflow="fold")
     if workbench.plots:
         for idx, spec_decl in enumerate(workbench.plots, 1):
-            from_refs = (
-                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (spec_decl.reads or {}).items())
-                or "—"
+            spec_payload = _spec_step_payload(
+                spec_decl,
+                summary=plot_summaries.get(spec_decl.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
             )
+            from_refs = ", ".join(_render_read_binding(item) for item in spec_payload["reads"]) or "—"
             plot_table.add_row(str(idx), spec_decl.id, plot_summaries.get(spec_decl.id, "—"), from_refs)
     else:
         plot_table.add_row("—", "—", "No plot outputs selected.", "—")
@@ -2064,10 +2318,13 @@ def inspect(
     export_table.add_column("from", overflow="fold")
     if workbench.exports:
         for idx, spec_decl in enumerate(workbench.exports, 1):
-            from_refs = (
-                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (spec_decl.reads or {}).items())
-                or "—"
+            spec_payload = _spec_step_payload(
+                spec_decl,
+                summary=export_summaries.get(spec_decl.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
             )
+            from_refs = ", ".join(_render_read_binding(item) for item in spec_payload["reads"]) or "—"
             export_table.add_row(str(idx), spec_decl.id, export_summaries.get(spec_decl.id, "—"), from_refs)
     else:
         export_table.add_row("—", "—", "No export artifacts selected.", "—")
@@ -2405,6 +2662,7 @@ def _run_plot_job(
             raise typer.BadParameter("--format json is only supported with --list")
         _require_dataframe_records(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     if not plot_specs:
         if list_only:
             if fmt == "json":
@@ -2454,9 +2712,13 @@ def _run_plot_job(
         t.add_column("plugin", overflow="fold")
         plot_summaries = _plot_output_summaries(bound_protocol)
         for i, s in enumerate(selected, 1):
-            from_refs = (
-                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (s.reads or {}).items()) or "—"
+            spec_payload = _spec_step_payload(
+                s,
+                summary=plot_summaries.get(s.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
             )
+            from_refs = ", ".join(_render_read_binding(item) for item in spec_payload["reads"]) or "—"
             t.add_row(str(i), s.id, plot_summaries.get(s.id, "—"), from_refs, s.plugin)
         console.print(
             Panel(
@@ -2693,7 +2955,9 @@ def export(
         _handle_reader_error(e)
     fmt = _normalize_output_format(format)
     workbench = resolve_workbench(decl)
-    bound_protocol = _bind_decl_protocol(decl=decl, runtime=builtin_runtime())
+    runtime = builtin_runtime()
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
     export_specs = list(workbench.exports)
     if not export_specs:
         if list_only:
@@ -2744,9 +3008,13 @@ def export(
         t.add_column("plugin", overflow="fold")
         export_summaries = _export_output_summaries(bound_protocol)
         for i, s in enumerate(selected, 1):
-            from_refs = (
-                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (s.reads or {}).items()) or "—"
+            spec_payload = _spec_step_payload(
+                s,
+                summary=export_summaries.get(s.id, "—"),
+                runtime=runtime,
+                record_producers=record_producers,
             )
+            from_refs = ", ".join(_render_read_binding(item) for item in spec_payload["reads"]) or "—"
             t.add_row(str(i), s.id, export_summaries.get(s.id, "—"), from_refs, s.plugin)
         console.print(
             Panel(
@@ -2760,7 +3028,6 @@ def export(
     try:
         if fmt == "json":
             raise typer.BadParameter("--format json is only supported with --list")
-        runtime = builtin_runtime()
         _require_dataframe_records(decl, job_path, runtime=runtime)
         experiment_root = decl.experiment.root
         resources = decl.experiment_semantics.resources
@@ -2950,11 +3217,20 @@ def steps(
         _handle_reader_error(e)
     runtime = builtin_runtime()
     fmt = _normalize_output_format(format)
-    pipeline = list(resolve_workbench(decl).pipeline)
+    workbench = resolve_workbench(decl)
+    pipeline = list(workbench.pipeline)
+    record_producers = _record_producer_map(workbench.plugin_steps(), runtime=runtime)
     payload = {
         "experiment": _experiment_identity_payload(job_path=job_path, decl=decl),
+        "semantic_program": (
+            _semantic_program_payload(decl.experiment_semantics.protocol_program)
+            if decl.experiment_semantics.protocol_program is not None
+            else None
+        ),
         "count": len(pipeline),
-        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in pipeline],
+        "pipeline": [
+            _pipeline_step_payload(step, runtime=runtime, record_producers=record_producers) for step in pipeline
+        ],
     }
     if fmt == "json":
         _emit_json(payload)
@@ -2967,7 +3243,7 @@ def steps(
     t.add_column("from", overflow="fold")
     t.add_column("writes", overflow="fold")
     for i, item in enumerate(payload["pipeline"], 1):
-        from_refs = ", ".join(f"{entry['label']} <- {entry['display']}" for entry in item["reads"]) or "—"
+        from_refs = ", ".join(_render_read_binding(entry) for entry in item["reads"]) or "—"
         writes = (
             ", ".join(
                 (f"{entry['label']} -> {entry['display']}" if entry.get("kind") == "dataframe" else str(entry["label"]))
