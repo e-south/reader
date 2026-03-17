@@ -55,6 +55,9 @@
   - `reader plot <config|dir|index> --list --format json`
   - `reader export <config|dir|index> --list --format json`
   - `reader records <config|dir|index> --format json`
+  - `reader ls` JSON includes a fleet summary by protocol/status/output state.
+  - `reader protocols` / `inspect` / `explain` JSON include a protocol semantic program with explicit `compiled` vs `descriptive_only` execution status for controls, windows, metrics, and ranking.
+  - `reader steps` / `inspect` / `plot --list` / `export --list` JSON include upstream producer and contract-surface metadata for record bindings.
 - I need to discover available assays and their outputs:
   - `reader protocols`
   - `reader protocols <protocol-id>`

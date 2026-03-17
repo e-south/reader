@@ -42,6 +42,10 @@ Emit the same inventory as JSON for agents or automation:
 reader ls --root experiments --details --format json
 ```
 
+The JSON payload includes a top-level `summary` block with counts by protocol,
+status, and output presence so agents do not need to reconstruct fleet state by
+walking every row.
+
 Filter the inventory down to one assay family or just broken configs:
 
 ```bash
@@ -107,6 +111,7 @@ Protocol descriptions are the main discovery surface for user-facing outputs:
 - `reader protocols <id>` lists the protocol input/analysis surface, plot profiles, plot outputs, export artifacts, and the default compiled pipeline/plot/export implementations behind them.
 - `reader protocols <id> --example-config` prints a starter `reader/v7` YAML outline.
 - `reader protocols <id> --format json` exposes the same semantic surface plus the compiled default runtime chain in machine-readable form.
+- `reader protocols <id>`, `reader inspect`, and `reader explain` now surface a protocol semantic program, with explicit execution status for controls, windows, metrics, and ranking nodes so users can see what is compiled today versus what remains descriptive-only.
 - `reader plugins --protocol <id> --category transform|plot|export|ingest` scopes the registry to the plugins a protocol actually uses by default.
 - `reader ls --details` is the scalable workbench inventory view: protocol id, selected runtime plan summary, generated output summary, and explicit config-error state.
 - `reader inspect ...` shows the experiment root, bound authoring values, inputs/resources, transform chain, selected plot outputs, export artifacts, current generated outputs, and the latest record catalog.
@@ -121,6 +126,12 @@ reader protocols plate_reader/dual_reporter_screen --format json
 reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
 reader records CONFIG|DIR|INDEX --format json
 ```
+
+These JSON payloads now carry upstream producer and contract-surface metadata
+for record bindings, and the protocol/inspect/explain routes include a semantic
+program block with explicit `compiled` vs `descriptive_only` assay-node status,
+so a consumer can see both the runtime chain and the assay semantics it does or
+does not implement today.
 
 ---
 

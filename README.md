@@ -6,7 +6,7 @@
 
 It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
 
-The discovery commands keep a human table view by default and also support `--format json` for agent harnesses and machine-readable inspection. `reader ls --details` now acts like a workbench inventory surface: it shows the assay protocol, selected runtime plan summary, generated results on disk, and supports `--protocol` / `--status` filters when the experiment tree grows.
+The discovery commands keep a human table view by default and also support `--format json` for agent harnesses and machine-readable inspection. `reader ls --details` now acts like a workbench inventory surface: it shows the assay protocol, selected runtime plan summary, generated results on disk, carries a top-level summary by protocol/status/output state in JSON mode, and supports `--protocol` / `--status` filters when the experiment tree grows. `reader protocols`, `reader inspect`, and `reader explain` now also expose a first-class semantic program, so assay controls, windows, metrics, and ranking are reported alongside the compiled runtime chain instead of living only in descriptor prose.
 
 ---
 
