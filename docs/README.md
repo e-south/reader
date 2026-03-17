@@ -17,6 +17,13 @@
 
 ## Maintainer docs
 
+- [Repo change gate](./repo-change-gate.md)
+- [Repo maintenance](./repo-maintenance.md)
+- [Architecture](../ARCHITECTURE.md)
+- [Design](../DESIGN.md)
+- [Quality](../QUALITY.md)
+- [Reliability](../RELIABILITY.md)
+- [Security](../SECURITY.md)
 - [Plugin development](./core/plugins.md)
 - [Spec / architecture](./core/spec.md)
 - [Dev journal](./dev/journal.md)

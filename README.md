@@ -13,6 +13,11 @@ The discovery commands keep a human table view by default and also support `--fo
 ## Documentation
 
 - [Docs index](docs/README.md): authoritative route map for user, maintainer, and demo flows.
+- [Architecture](ARCHITECTURE.md): top-level system map, ownership boundaries, registries, and invariants.
+- [Design](DESIGN.md): product and information-design principles for `reader/v7`, protocols, and progressive disclosure.
+- [Quality](QUALITY.md): quality bar, harness endpoints, evidence expectations, and failure taxonomy.
+- [Reliability](RELIABILITY.md): preflight/run/verify contract, provenance expectations, and recovery model.
+- [Security](SECURITY.md): trust boundaries, safe defaults, and extension-surface guidance.
 - [CLI reference](docs/core/cli.md): discovery, inspection, validation, run, plot, export, notebook, and record commands.
 - [Configuring reader/v7](docs/core/pipeline.md): the public YAML authoring surface and how protocols expose semantic inputs, analysis knobs, plot outputs, and export artifacts.
 - [Plugin development](docs/core/plugins.md): maintainer-facing guide for adding ingest, transform, plot, export, and validator plugins without leaking mechanics into user config.
