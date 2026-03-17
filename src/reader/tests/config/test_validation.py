@@ -26,7 +26,7 @@ def test_load_requires_schema_marker(tmp_path: Path) -> None:
     data = _base_config()
     data.pop("schema")
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="reader/v6"):
+    with pytest.raises(ConfigError, match="reader/v7"):
         ReaderSpec.load(path)
 
 
@@ -65,6 +65,79 @@ def test_load_rejects_legacy_protocol_with_key(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_load_rejects_unknown_protocol_top_level_key(tmp_path: Path) -> None:
+    data = _base_config()
+    data["protocol"]["unexpected"] = {"x": 1}
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="protocol has unknown keys"):
+        ReaderSpec.load(path)
+
+
+def test_load_rejects_unknown_protocol_input_key_for_bound_protocol(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_plate",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_inputs={"fold_change": {"report_times": [14.0]}, "unknown_block": {"x": 1}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="protocol.inputs for 'plate_reader/dual_reporter_screen' has unknown keys"):
+        load_models(path)
+
+
+def test_load_rejects_unknown_protocol_analysis_key_for_bound_protocol(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_plate",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_analysis={"include_fold_change": True, "include_fold_changee": False},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="protocol.analysis for 'plate_reader/dual_reporter_screen' has unknown keys"):
+        load_models(path)
+
+
+def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_analysis={
+            "preprocessing": {
+                "overflow": {
+                    "action": "max",
+                    "clip_quantile": 0.995,
+                    "cap_strategy": "quantile",
+                    "flag_column": "overflow",
+                    "treat_inf_as_overflow": True,
+                }
+            }
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "logic_maps": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+    overflow = next(step for step in resolve_workbench(decl).pipeline if step.id == "overflow")
+    assert overflow.with_["cap_strategy"] == "quantile"
+    assert overflow.with_["flag_column"] == "overflow"
+
+
+def test_load_rejects_unknown_protocol_outputs_key(tmp_path: Path) -> None:
+    data = _base_config()
+    data["protocol"]["outputs"] = {"plots": {"profile": "none", "include": ["generic_qc"], "unexpected": True}}
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="protocol.outputs.plots has unknown keys"):
+        ReaderSpec.load(path)
+
+
 def test_load_normalizes_annotations_and_resources(tmp_path: Path) -> None:
     data = _base_config()
     data["resources"] = {"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}}
@@ -79,10 +152,20 @@ def test_load_normalizes_annotations_and_resources(tmp_path: Path) -> None:
     assert spec.annotations.collections["group_ab"].items == {"A": ["g1", "2"], "B": ["True"]}
 
 
+def test_load_rejects_non_list_annotation_collection_items(tmp_path: Path) -> None:
+    data = _base_config()
+    data["annotations"] = {
+        "collections": {"group_ab": {"column": "design_id", "items": {"A": "g1"}}},
+    }
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="annotations.collections.group_ab.items entries must be lists"):
+        ReaderSpec.load(path)
+
+
 def test_validate_rejects_notebook_template_outside_protocol_policy(tmp_path: Path) -> None:
     data = base_reader_config(experiment_id="exp_cyto", protocol_id="cytometry/flow_panel")
     data["resources"] = {"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}}
-    data["protocol"]["deliverables"] = {"notebook": {"template": "notebook/eda"}}
+    data["protocol"]["outputs"] = {"notebook": {"template": "notebook/eda"}}
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError, match="does not allow notebook template"):
         load_models(path)
@@ -121,15 +204,14 @@ def test_protocol_compiler_expands_plate_reader_pipeline(tmp_path: Path) -> None
     ]
 
 
-def test_protocol_analysis_and_deliverables_adjust_compiled_protocol(tmp_path: Path) -> None:
+def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_parameters={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"logic_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
-        protocol_deliverables={
-            "plots": {"profile": "none", "include": ["logic_symmetry_yfp_cfp"]},
-            "exports": {"profile": "none"},
+        protocol_outputs={
+            "plots": {"profile": "none", "include": ["logic_symmetry"]},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
@@ -145,7 +227,7 @@ def test_protocol_analysis_and_deliverables_adjust_compiled_protocol(tmp_path: P
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
     assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
-    assert [step.id for step in workbench.plots] == ["logic_symmetry_yfp_cfp"]
+    assert [step.id for step in workbench.plots] == ["logic_symmetry"]
     assert workbench.exports == ()
 
 
@@ -154,12 +236,12 @@ def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:
         experiment_id="exp_partition",
         protocol_id="plate_reader/dual_reporter_screen",
         protocol_analysis={"include_fold_change": False},
-        protocol_deliverables={
+        protocol_outputs={
             "plots": {
                 "profile": "none",
-                "include": ["time_series"],
-                "settings": {
-                    "time_series": {
+                "include": ["raw_kinetics"],
+                "views": {
+                    "raw_kinetics": {
                         "partition": {"collection_ref": "group_ab"},
                         "hue": "treatment",
                         "y": ["OD600"],
@@ -180,12 +262,12 @@ def test_validate_rejects_unknown_partition_collection_ref(tmp_path: Path) -> No
         experiment_id="exp_partition",
         protocol_id="plate_reader/dual_reporter_screen",
         protocol_analysis={"include_fold_change": False},
-        protocol_deliverables={
+        protocol_outputs={
             "plots": {
                 "profile": "none",
-                "include": ["time_series"],
-                "settings": {
-                    "time_series": {
+                "include": ["raw_kinetics"],
+                "views": {
+                    "raw_kinetics": {
                         "partition": {"collection_ref": "missing"},
                         "hue": "treatment",
                         "y": ["OD600"],

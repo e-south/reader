@@ -22,8 +22,8 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         )
 
     schema = data.get("schema")
-    if schema != "reader/v6":
-        raise ConfigError(f"Config schema must be 'reader/v6'. This repo only supports reader/v6 (found {schema!r}).")
+    if schema != "reader/v7":
+        raise ConfigError(f"Config schema must be 'reader/v7'. This repo only supports reader/v7 (found {schema!r}).")
 
     removed_top_level_keys = {
         "steps",
@@ -41,7 +41,7 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         "exports",
         "notebooks",
     }
-    removed_protocol_keys = {"with", "plugins"}
+    removed_protocol_keys = {"with", "plugins", "parameters", "deliverables"}
     removed_experiment_keys = {"name", "outputs", "plots_dir", "palette"}
     illegal = sorted(key for key in removed_top_level_keys if key in data)
     illegal_protocol = []
@@ -59,7 +59,7 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
         if illegal_exp:
             parts.append(f"experiment keys: {illegal_exp}")
         raise ConfigError(
-            "Unsupported legacy/removed config keys are not supported in reader/v6. Remove/replace: " + "; ".join(parts)
+            "Unsupported legacy/removed config keys are not supported in reader/v7. Remove/replace: " + "; ".join(parts)
         )
 
     data.setdefault("experiment", {})
@@ -72,24 +72,25 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
 
     protocol = data.get("protocol")
     if not isinstance(protocol, dict):
-        raise ConfigError("protocol is required and must be a mapping with id/parameters/analysis/deliverables")
+        raise ConfigError("protocol is required and must be a mapping with id/inputs/analysis/outputs")
+    _ensure_only_keys(protocol, {"id", "inputs", "analysis", "outputs"}, where="protocol")
     protocol_id = protocol.get("id")
     if not isinstance(protocol_id, str) or not protocol_id.strip():
         raise ConfigError("protocol.id must be a non-empty string")
-    parameters = protocol.get("parameters", {}) or {}
+    inputs = protocol.get("inputs", {}) or {}
     analysis = protocol.get("analysis", {}) or {}
-    deliverables = protocol.get("deliverables", {}) or {}
-    if not isinstance(parameters, dict):
-        raise ConfigError("protocol.parameters must be a mapping")
+    outputs = protocol.get("outputs", {}) or {}
+    if not isinstance(inputs, dict):
+        raise ConfigError("protocol.inputs must be a mapping")
     if not isinstance(analysis, dict):
         raise ConfigError("protocol.analysis must be a mapping")
-    if not isinstance(deliverables, dict):
-        raise ConfigError("protocol.deliverables must be a mapping")
+    if not isinstance(outputs, dict):
+        raise ConfigError("protocol.outputs must be a mapping")
     data["protocol"] = {
         "id": protocol_id.strip(),
-        "parameters": dict(parameters),
+        "inputs": dict(inputs),
         "analysis": dict(analysis),
-        "deliverables": _normalize_deliverables(deliverables),
+        "outputs": _normalize_outputs(outputs),
     }
 
     data.setdefault("paths", {})
@@ -151,6 +152,7 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
 
 
 def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
+    _ensure_only_keys(annotations_raw, {"labels", "orders", "collections", "logic_maps"}, where="annotations")
     labels_raw = annotations_raw.get("labels", {}) or {}
     if not isinstance(labels_raw, dict):
         raise ConfigError("annotations.labels must be a mapping")
@@ -158,6 +160,7 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
     for label_id, label_spec in labels_raw.items():
         if not isinstance(label_spec, dict):
             raise ConfigError(f"annotations.labels.{label_id} must be a mapping")
+        _ensure_only_keys(label_spec, {"source", "values", "output"}, where=f"annotations.labels.{label_id}")
         source = label_spec.get("source")
         if not isinstance(source, str) or not source.strip():
             raise ConfigError(f"annotations.labels.{label_id}.source must be a non-empty string")
@@ -180,6 +183,7 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
     for order_id, order_spec in orders_raw.items():
         if not isinstance(order_spec, dict):
             raise ConfigError(f"annotations.orders.{order_id} must be a mapping")
+        _ensure_only_keys(order_spec, {"column", "values"}, where=f"annotations.orders.{order_id}")
         column = order_spec.get("column")
         if not isinstance(column, str) or not column.strip():
             raise ConfigError(f"annotations.orders.{order_id}.column must be a non-empty string")
@@ -197,19 +201,21 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
     for collection_id, collection_spec in collections_raw.items():
         if not isinstance(collection_spec, dict):
             raise ConfigError(f"annotations.collections.{collection_id} must be a mapping")
+        _ensure_only_keys(collection_spec, {"column", "items"}, where=f"annotations.collections.{collection_id}")
         column = collection_spec.get("column")
         if not isinstance(column, str) or not column.strip():
             raise ConfigError(f"annotations.collections.{collection_id}.column must be a non-empty string")
         items = collection_spec.get("items", {}) or {}
         if not isinstance(items, dict):
             raise ConfigError(f"annotations.collections.{collection_id}.items must be a mapping")
+        invalid_items = sorted(item_key for item_key, item_values in items.items() if not isinstance(item_values, list))
+        if invalid_items:
+            raise ConfigError(
+                f"annotations.collections.{collection_id}.items entries must be lists for keys: {invalid_items}"
+            )
         normalized_collections[str(collection_id)] = {
             "column": column,
-            "items": {
-                str(item_key): [str(item) for item in item_values]
-                for item_key, item_values in items.items()
-                if isinstance(item_values, list)
-            },
+            "items": {str(item_key): [str(item) for item in item_values] for item_key, item_values in items.items()},
         }
 
     logic_maps_raw = annotations_raw.get("logic_maps", {}) or {}
@@ -219,6 +225,11 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
     for logic_id, logic_spec in logic_maps_raw.items():
         if not isinstance(logic_spec, dict):
             raise ConfigError(f"annotations.logic_maps.{logic_id} must be a mapping")
+        _ensure_only_keys(
+            logic_spec,
+            {"column", "corners", "case_sensitive"},
+            where=f"annotations.logic_maps.{logic_id}",
+        )
         column = logic_spec.get("column")
         if not isinstance(column, str) or not column.strip():
             raise ConfigError(f"annotations.logic_maps.{logic_id}.column must be a non-empty string")
@@ -239,43 +250,69 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_deliverables(raw: dict[str, Any]) -> dict[str, Any]:
+def _normalize_outputs(raw: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
+    _ensure_only_keys(raw, {"notebook", "plots", "exports"}, where="protocol.outputs")
     notebook = raw.get("notebook", {}) or {}
     if not isinstance(notebook, dict):
-        raise ConfigError("protocol.deliverables.notebook must be a mapping")
+        raise ConfigError("protocol.outputs.notebook must be a mapping")
+    _ensure_only_keys(notebook, {"template"}, where="protocol.outputs.notebook")
     template = notebook.get("template")
     if template is not None and (not isinstance(template, str) or not template.strip()):
-        raise ConfigError("protocol.deliverables.notebook.template must be a non-empty string when provided")
+        raise ConfigError("protocol.outputs.notebook.template must be a non-empty string when provided")
     normalized["notebook"] = {"template": template}
 
-    for section in ("plots", "exports"):
-        block = raw.get(section, {}) or {}
-        if not isinstance(block, dict):
-            raise ConfigError(f"protocol.deliverables.{section} must be a mapping")
-        profile = block.get("profile")
-        if profile is not None and (not isinstance(profile, str) or not profile.strip()):
-            raise ConfigError(f"protocol.deliverables.{section}.profile must be a non-empty string when provided")
-        include = block.get("include", []) or []
-        exclude = block.get("exclude", []) or []
-        settings = block.get("settings", {}) or {}
-        if not isinstance(include, list) or not all(isinstance(item, str) and item.strip() for item in include):
-            raise ConfigError(f"protocol.deliverables.{section}.include must be a list of non-empty deliverable ids")
-        if not isinstance(exclude, list) or not all(isinstance(item, str) and item.strip() for item in exclude):
-            raise ConfigError(f"protocol.deliverables.{section}.exclude must be a list of non-empty deliverable ids")
-        if not isinstance(settings, dict):
-            raise ConfigError(f"protocol.deliverables.{section}.settings must be a mapping of id -> settings")
-        normalized[section] = {
-            "profile": profile,
-            "include": [str(item) for item in include],
-            "exclude": [str(item) for item in exclude],
-            "settings": {
-                str(deliverable_id): _normalize_mapping(
-                    settings_block, where=f"protocol.deliverables.{section}.settings"
-                )
-                for deliverable_id, settings_block in settings.items()
-            },
-        }
+    plots = raw.get("plots", {}) or {}
+    if not isinstance(plots, dict):
+        raise ConfigError("protocol.outputs.plots must be a mapping")
+    _ensure_only_keys(plots, {"profile", "include", "exclude", "views"}, where="protocol.outputs.plots")
+    plot_profile = plots.get("profile")
+    if plot_profile is not None and (not isinstance(plot_profile, str) or not plot_profile.strip()):
+        raise ConfigError("protocol.outputs.plots.profile must be a non-empty string when provided")
+    plot_include = plots.get("include", []) or []
+    plot_exclude = plots.get("exclude", []) or []
+    plot_views = plots.get("views", {}) or {}
+    if not isinstance(plot_include, list) or not all(isinstance(item, str) and item.strip() for item in plot_include):
+        raise ConfigError("protocol.outputs.plots.include must be a list of non-empty plot ids")
+    if not isinstance(plot_exclude, list) or not all(isinstance(item, str) and item.strip() for item in plot_exclude):
+        raise ConfigError("protocol.outputs.plots.exclude must be a list of non-empty plot ids")
+    if not isinstance(plot_views, dict):
+        raise ConfigError("protocol.outputs.plots.views must be a mapping of plot id -> view config")
+    normalized["plots"] = {
+        "profile": plot_profile,
+        "include": [str(item) for item in plot_include],
+        "exclude": [str(item) for item in plot_exclude],
+        "views": {
+            str(plot_id): _normalize_mapping(settings_block, where="protocol.outputs.plots.views")
+            for plot_id, settings_block in plot_views.items()
+        },
+    }
+
+    exports = raw.get("exports", {}) or {}
+    if not isinstance(exports, dict):
+        raise ConfigError("protocol.outputs.exports must be a mapping")
+    _ensure_only_keys(exports, {"include", "exclude", "artifacts"}, where="protocol.outputs.exports")
+    export_include = exports.get("include", []) or []
+    export_exclude = exports.get("exclude", []) or []
+    export_artifacts = exports.get("artifacts", {}) or {}
+    if not isinstance(export_include, list) or not all(
+        isinstance(item, str) and item.strip() for item in export_include
+    ):
+        raise ConfigError("protocol.outputs.exports.include must be a list of non-empty artifact ids")
+    if not isinstance(export_exclude, list) or not all(
+        isinstance(item, str) and item.strip() for item in export_exclude
+    ):
+        raise ConfigError("protocol.outputs.exports.exclude must be a list of non-empty artifact ids")
+    if not isinstance(export_artifacts, dict):
+        raise ConfigError("protocol.outputs.exports.artifacts must be a mapping of artifact id -> config")
+    normalized["exports"] = {
+        "include": [str(item) for item in export_include],
+        "exclude": [str(item) for item in export_exclude],
+        "artifacts": {
+            str(artifact_id): _normalize_mapping(settings_block, where="protocol.outputs.exports.artifacts")
+            for artifact_id, settings_block in export_artifacts.items()
+        },
+    }
     return normalized
 
 
@@ -285,3 +322,10 @@ def _normalize_mapping(raw: Any, *, where: str) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ConfigError(f"{where} entries must be mappings")
     return dict(raw)
+
+
+def _ensure_only_keys(raw: dict[str, Any], allowed: set[str], *, where: str) -> None:
+    unknown = sorted(key for key in raw if key not in allowed)
+    if unknown:
+        options = ", ".join(sorted(allowed)) or "—"
+        raise ConfigError(f"{where} has unknown keys {unknown}. Allowed keys: {options}")

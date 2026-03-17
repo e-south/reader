@@ -1,10 +1,10 @@
-schema: reader/v6
+schema: reader/v7
 experiment:
   id: template
   title: biosensor_panel_M9_glu
 protocol:
   id: logic/sfxi_screen
-  parameters:
+  inputs:
     ingest:
       mode: mixed
       channels:
@@ -34,11 +34,11 @@ protocol:
       overflow:
         action: max
         clip_quantile: 0.999
-  deliverables:
+  outputs:
     plots:
       profile: none
-      settings:
-        time_series:
+      views:
+        raw_kinetics:
           x: time
           y:
           - OD600
@@ -50,7 +50,7 @@ protocol:
           fig:
             rc:
               savefig_dpi: 300
-        logic_symmetry_yfp_cfp:
+        logic_symmetry:
           response_channel: YFP/CFP
           design_by:
           - design_id
@@ -70,8 +70,8 @@ protocol:
             - 6
           logic_map_ref: induction_logic
       include:
-      - time_series
-      - logic_symmetry_yfp_cfp
+      - raw_kinetics
+      - logic_symmetry
     notebook:
       template: notebook/eda
 resources:

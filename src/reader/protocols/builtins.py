@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import cache
 
-from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 
 from .compiler import (
     compile_cytometry_flow_panel,
@@ -11,9 +11,10 @@ from .compiler import (
     compile_plate_reader_dual_reporter_screen,
 )
 from .model import (
+    ProtocolArtifactSpec,
     ProtocolCatalog,
+    ProtocolConfigFieldSpec,
     ProtocolControlRule,
-    ProtocolDeliverableSpec,
     ProtocolDescriptor,
     ProtocolEffectSignSpec,
     ProtocolExecutionPlan,
@@ -21,11 +22,43 @@ from .model import (
     ProtocolFigureSpec,
     ProtocolMetricSpec,
     ProtocolNotebookPolicy,
+    ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolRankingSpec,
     ProtocolWindowSpec,
     binding_value,
 )
+
+_MISSING = object()
+
+
+def _field(
+    key: str,
+    summary: str,
+    *,
+    kind: str = "mapping",
+    required: bool = False,
+    allow_none: bool = False,
+    choices: tuple[str, ...] = (),
+    children: tuple[ProtocolConfigFieldSpec, ...] = (),
+    allow_unknown: bool = False,
+    default: object = _MISSING,
+) -> ProtocolConfigFieldSpec:
+    kwargs: dict[str, object] = {}
+    if default is not _MISSING:
+        kwargs["default"] = default
+    return ProtocolConfigFieldSpec(
+        key=key,
+        summary=summary,
+        kind=kind,
+        required=required,
+        allow_none=allow_none,
+        choices=choices,
+        children=children,
+        allow_unknown=allow_unknown,
+        **kwargs,
+    )
+
 
 BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
     ProtocolDescriptor(
@@ -34,6 +67,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         family="general_workbench",
         summary="Generic explicit protocol binding for experiments that do not yet fit a domain-specific protocol.",
         tags=("generic", "explicit_binding"),
+        input_fields=(),
+        analysis_fields=(),
         factors=(
             ProtocolFactorSpec(name="sample", role="sample", summary="Primary experimental unit."),
             ProtocolFactorSpec(name="replicate", role="replicate", summary="Replicate grouping axis.", required=False),
@@ -76,6 +111,224 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             "baseline-shifted ratio traces, and burden/leakiness-aware ranking."
         ),
         tags=("plate_reader", "dual_reporter", "screen", "ratio"),
+        input_fields=(
+            _field(
+                "ingest",
+                "Plate-reader ingest settings and workbook selection.",
+                children=(
+                    _field(
+                        "mode",
+                        "Ingest mode for Synergy H1 parsing.",
+                        kind="string",
+                        choices=("auto", "snapshot_only", "kinetic_only", "mixed"),
+                        default="auto",
+                    ),
+                    _field("channels", "Ordered channel names to keep from the workbook.", kind="string_list"),
+                    _field(
+                        "channel_map",
+                        "Optional channel rename mapping.",
+                        kind="mapping",
+                        allow_unknown=True,
+                        allow_none=True,
+                    ),
+                    _field(
+                        "sheet_names", "Optional workbook sheet names to parse.", kind="string_list", allow_none=True
+                    ),
+                    _field("add_sheet", "Attach source sheet_name to each row.", kind="bool", default=False),
+                    _field(
+                        "time_round_decimals",
+                        "Rounding precision for parsed time values.",
+                        kind="integer",
+                        allow_none=True,
+                        default=12,
+                    ),
+                    _field("time_step_h", "Override time-step spacing in hours.", kind="number", allow_none=True),
+                    _field(
+                        "auto_roots",
+                        "Directories to scan for workbook auto-discovery.",
+                        kind="string_list",
+                        allow_none=True,
+                    ),
+                    _field(
+                        "auto_include",
+                        "Filename globs to include during auto-discovery.",
+                        kind="string_list",
+                        default=list(DEFAULT_INCLUDE),
+                    ),
+                    _field(
+                        "auto_exclude",
+                        "Filename globs to exclude during auto-discovery.",
+                        kind="string_list",
+                        default=list(DEFAULT_EXCLUDE),
+                    ),
+                    _field(
+                        "auto_pick",
+                        "Multi-file selection policy for auto-discovery.",
+                        kind="string",
+                        choices=("single", "latest", "merge"),
+                        default="single",
+                    ),
+                    _field(
+                        "auto_recursive",
+                        "Recurse into child directories when discovering workbooks.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field(
+                        "add_source_column",
+                        "Attach a source file column when merging multiple workbooks.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field("source_col", "Name of the source file column.", kind="string", default="source_file"),
+                    _field("print_summary", "Print an ingest summary to the log.", kind="bool", default=True),
+                ),
+            ),
+            _field(
+                "fold_change",
+                "Fold-change summary inputs for screen-style comparisons.",
+                children=(
+                    _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
+                    _field("report_times", "Report times in hours for fold-change snapshots.", kind="number_list"),
+                    _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
+                    _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
+                    _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
+                    _field(
+                        "group_by",
+                        "Grouping columns for comparison baselines.",
+                        kind="string_list",
+                        default=["design_id"],
+                    ),
+                    _field(
+                        "use_global_baseline",
+                        "Use one shared baseline instead of per-group baselines.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field(
+                        "global_baseline_value",
+                        "Explicit global baseline label when global mode is enabled.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    _field(
+                        "overrides",
+                        "Explicit baseline overrides keyed by group columns.",
+                        kind="mapping_list",
+                        default=[],
+                    ),
+                    _field("fc_column", "Output fold-change column name.", kind="string", default="FC"),
+                    _field("log2fc_column", "Output log2 fold-change column name.", kind="string", default="log2FC"),
+                ),
+            ),
+        ),
+        analysis_fields=(
+            _field(
+                "measurement",
+                "Primary analysis measurement family.",
+                kind="string",
+                choices=("yfp_cfp", "rfp_od600"),
+                default="yfp_cfp",
+            ),
+            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
+            _field(
+                "preprocessing",
+                "Pre-ingest cleanup policy for blanks and overflow.",
+                children=(
+                    _field(
+                        "blank",
+                        "Blank-correction policy.",
+                        children=(
+                            _field(
+                                "method",
+                                "Blank handling strategy.",
+                                kind="string",
+                                choices=("disregard", "subtract"),
+                                default="disregard",
+                            ),
+                            _field(
+                                "capture_blanks",
+                                "Emit a blanks side table for downstream QC.",
+                                kind="bool",
+                                default=True,
+                            ),
+                        ),
+                    ),
+                    _field(
+                        "overflow",
+                        "Overflow handling policy for saturated channels.",
+                        children=(
+                            _field(
+                                "action",
+                                "Overflow action.",
+                                kind="string",
+                                choices=("max", "drop", "nan", "none"),
+                                default="max",
+                            ),
+                            _field("clip_quantile", "Quantile cap used when action=max.", kind="number", default=0.999),
+                            _field(
+                                "cap_strategy",
+                                "How per-channel caps are determined when action=max.",
+                                kind="string",
+                                choices=("provided", "infer", "quantile"),
+                                default="quantile",
+                            ),
+                            _field(
+                                "per_channel_caps",
+                                "Explicit per-channel caps when cap_strategy=provided.",
+                                kind="mapping",
+                                allow_unknown=True,
+                                allow_none=True,
+                            ),
+                            _field(
+                                "flag_column",
+                                "Column used to mark overflowed wells before capping.",
+                                kind="string",
+                                default="overflow",
+                            ),
+                            _field(
+                                "treat_inf_as_overflow",
+                                "Treat infinite values as overflowed rows.",
+                                kind="bool",
+                                default=True,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            _field(
+                "crosstalk_pairs",
+                "Pair-selection analysis over fold-change tables.",
+                children=(
+                    _field("enabled", "Compute crosstalk-safe pair candidates.", kind="bool", default=False),
+                    _field("export", "Export the crosstalk pairs table when present.", kind="bool", default=False),
+                    _field("value_column", "Value column to score.", kind="string", default="log2FC"),
+                    _field("value_scale", "Scale of the value column.", kind="string", default="log2"),
+                    _field("target", "Measurement family to score.", kind="string", default="YFP/CFP"),
+                    _field("time_mode", "Time-selection mode.", kind="string", default="all"),
+                    _field("design_column", "Design/grouping column.", kind="string", default="design_id"),
+                    _field("treatment_column", "Treatment-state column.", kind="string", default="treatment"),
+                    _field("mapping_mode", "Pair mapping mode.", kind="string", default="explicit"),
+                    _field("require_self_treatment", "Require a self-treatment pair.", kind="bool", default=True),
+                    _field("require_self_is_top1", "Require self-treatment to rank first.", kind="bool", default=True),
+                    _field("min_self", "Minimum on-target score.", kind="number", default=1.0),
+                    _field("max_cross", "Maximum tolerated cross-score.", kind="number", default=0.5),
+                    _field(
+                        "min_selectivity_delta",
+                        "Minimum on-target minus off-target margin.",
+                        kind="number",
+                        default=1.0,
+                    ),
+                    _field(
+                        "design_treatment_map",
+                        "Explicit design -> self-treatment mapping when mapping_mode=explicit.",
+                        kind="mapping",
+                        allow_unknown=True,
+                    ),
+                ),
+            ),
+        ),
         factors=(
             ProtocolFactorSpec(name="sensor", role="sensor", summary="Reporter promoter/sensor arm."),
             ProtocolFactorSpec(name="sponge", role="construct", summary="Real or control sponge design."),
@@ -241,96 +494,82 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         figures=(
             ProtocolFigureSpec(
-                id="tetO_burden", kind="qc", summary="tetO burden panel isolates induction burden.", primary=True
-            ),
-            ProtocolFigureSpec(
-                id="tetO_normalized_kinetics",
-                kind="kinetics",
-                summary="Matched-control-normalized C(t) traces show sponge-specific deviations.",
+                id="raw_kinetics",
+                kind="qc",
+                summary="Raw kinetics view over OD600 and reporter channels.",
                 primary=True,
             ),
             ProtocolFigureSpec(
-                id="induced_effect",
-                kind="kinetics",
-                summary="D(t) traces isolate induced sequence-specific sponge effects.",
-                primary=True,
-            ),
-            ProtocolFigureSpec(
-                id="library_heatmap",
+                id="endpoint_by_condition",
                 kind="summary",
-                summary="Library-wide O_AUC/S_AUC heatmaps compare effects across sensors.",
+                summary="Endpoint comparison grouped by treatment/condition.",
                 primary=True,
             ),
             ProtocolFigureSpec(
-                id="pareto_ranking",
-                kind="ranking",
-                summary="Pareto ranking balances on-target effect, burden, and leakiness.",
+                id="endpoint_by_design",
+                kind="summary",
+                summary="Endpoint comparison grouped by construct/design.",
                 primary=True,
             ),
             ProtocolFigureSpec(
-                id="architecture_analysis",
-                kind="architecture",
-                summary="Architecture plots compare mono-, bi-, tri-, and quad-functional sponge behavior.",
+                id="state_summary",
+                kind="summary",
+                summary="2x2 state summary using alias-mapped treatment states.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="intensity_overview",
+                kind="kinetics",
+                summary="Combined time-series and endpoint view of the intensity/support channel.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="ratio_overview",
+                kind="kinetics",
+                summary="Combined time-series and endpoint view of the primary ratio channel.",
+            ),
+            ProtocolFigureSpec(
+                id="value_distributions",
+                kind="qc",
+                summary="Distribution view of the primary measurement channel.",
+            ),
+            ProtocolFigureSpec(
+                id="ratio_heatmap",
+                kind="summary",
+                summary="Endpoint heatmap over the primary ratio channel.",
+            ),
+            ProtocolFigureSpec(
+                id="support_heatmap",
+                kind="summary",
+                summary="Endpoint heatmap over the supporting CFP/OD600 channel.",
             ),
         ),
-        deliverables=(
-            ProtocolDeliverableSpec(
-                id="time_series",
-                surface="plots",
-                summary="Primary time-series kinetics panel.",
-                default=True,
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="screen_overview",
+                summary="Balanced default set for screen-style plate-reader experiments.",
+                figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_by_channel",
-                surface="plots",
-                summary="Snapshot barplots grouped by treatment/channel.",
-                default=True,
+            ProtocolPlotProfileSpec(
+                id="ratio_screen",
+                summary="Ratio-centric screen view for dual-reporter comparisons.",
+                figures=("raw_kinetics", "state_summary", "ratio_overview"),
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_by_design",
-                surface="plots",
-                summary="Snapshot barplots grouped by design.",
-                default=True,
+            ProtocolPlotProfileSpec(
+                id="kinetics_qc",
+                summary="Kinetics-first QC view with raw traces and distributions.",
+                figures=("raw_kinetics", "value_distributions"),
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_state",
-                surface="plots",
-                summary="2x2 state summary panel for alias-mapped treatment states.",
+            ProtocolPlotProfileSpec(
+                id="heatmap_review",
+                summary="Endpoint heatmap review across primary and supporting channels.",
+                figures=("ratio_heatmap", "support_heatmap"),
             ),
-            ProtocolDeliverableSpec(
-                id="ts_and_snap_intensity",
-                surface="plots",
-                summary="Combined time-series and endpoint view of the intensity channel.",
-                default=True,
-            ),
-            ProtocolDeliverableSpec(
-                id="ts_and_snap_ratio",
-                surface="plots",
-                summary="Combined time-series and endpoint view of the dual-reporter ratio.",
-            ),
-            ProtocolDeliverableSpec(
-                id="distributions",
-                surface="plots",
-                summary="Distribution view of the primary ratio channel.",
-            ),
-            ProtocolDeliverableSpec(
-                id="snapshot_heatmap_yfp_cfp",
-                surface="plots",
-                summary="Snapshot heatmap for YFP/CFP.",
-            ),
-            ProtocolDeliverableSpec(
-                id="snapshot_heatmap_cfp_od600",
-                surface="plots",
-                summary="Snapshot heatmap for CFP/OD600.",
-            ),
-            ProtocolDeliverableSpec(
-                id="logic_symmetry_yfp_cfp",
-                surface="plots",
-                summary="Logic symmetry view over the YFP/CFP channel.",
-            ),
-            ProtocolDeliverableSpec(
-                id="crosstalk_pairs_csv",
-                surface="exports",
+        ),
+        default_plot_profile="screen_overview",
+        artifacts=(
+            ProtocolArtifactSpec(
+                id="crosstalk_pairs_table",
                 summary="CSV export of crosstalk-safe pair candidates.",
             ),
         ),
@@ -354,8 +593,19 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     with_={
                         "mode": binding_value("ingest.mode", "auto"),
                         "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
+                        "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "add_sheet": binding_value("ingest.add_sheet", False),
+                        "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                        "time_step_h": binding_value("ingest.time_step_h", None),
+                        "auto_roots": binding_value("ingest.auto_roots", None),
+                        "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                        "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                        "auto_pick": binding_value("ingest.auto_pick", "single"),
+                        "auto_recursive": binding_value("ingest.auto_recursive", False),
+                        "add_source_column": binding_value("ingest.add_source_column", False),
+                        "source_col": binding_value("ingest.source_col", "source_file"),
+                        "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),
                 ProtocolPluginDefaultsSpec(
@@ -385,6 +635,245 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         family="logic_summary",
         summary="SFXI logic-screen protocol for mapping inducible corners to vec8 logic/intensity summaries.",
         tags=("logic", "sfxi", "screen"),
+        input_fields=(
+            _field(
+                "ingest",
+                "Plate-reader ingest settings for the logic screen.",
+                children=(
+                    _field(
+                        "mode",
+                        "Ingest mode for Synergy H1 parsing.",
+                        kind="string",
+                        choices=("auto", "snapshot_only", "kinetic_only", "mixed"),
+                        default="auto",
+                    ),
+                    _field("channels", "Ordered channel names to keep from the workbook.", kind="string_list"),
+                    _field(
+                        "channel_map",
+                        "Optional channel rename mapping.",
+                        kind="mapping",
+                        allow_unknown=True,
+                        allow_none=True,
+                    ),
+                    _field(
+                        "sheet_names", "Optional workbook sheet names to parse.", kind="string_list", allow_none=True
+                    ),
+                    _field("add_sheet", "Attach source sheet_name to each row.", kind="bool", default=False),
+                    _field(
+                        "time_round_decimals",
+                        "Rounding precision for parsed time values.",
+                        kind="integer",
+                        allow_none=True,
+                        default=12,
+                    ),
+                    _field("time_step_h", "Override time-step spacing in hours.", kind="number", allow_none=True),
+                    _field(
+                        "auto_roots",
+                        "Directories to scan for workbook auto-discovery.",
+                        kind="string_list",
+                        allow_none=True,
+                    ),
+                    _field(
+                        "auto_include",
+                        "Filename globs to include during auto-discovery.",
+                        kind="string_list",
+                        default=list(DEFAULT_INCLUDE),
+                    ),
+                    _field(
+                        "auto_exclude",
+                        "Filename globs to exclude during auto-discovery.",
+                        kind="string_list",
+                        default=list(DEFAULT_EXCLUDE),
+                    ),
+                    _field(
+                        "auto_pick",
+                        "Multi-file selection policy for auto-discovery.",
+                        kind="string",
+                        choices=("single", "latest", "merge"),
+                        default="single",
+                    ),
+                    _field(
+                        "auto_recursive",
+                        "Recurse into child directories when discovering workbooks.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field(
+                        "add_source_column",
+                        "Attach a source file column when merging multiple workbooks.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field("source_col", "Name of the source file column.", kind="string", default="source_file"),
+                    _field("print_summary", "Print an ingest summary to the log.", kind="bool", default=True),
+                ),
+            ),
+            _field(
+                "fold_change",
+                "Optional fold-change summary inputs used before vec8 export.",
+                children=(
+                    _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
+                    _field("report_times", "Report times in hours for fold-change snapshots.", kind="number_list"),
+                    _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
+                    _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
+                    _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
+                    _field(
+                        "group_by",
+                        "Grouping columns for comparison baselines.",
+                        kind="string_list",
+                        default=["design_id"],
+                    ),
+                    _field(
+                        "use_global_baseline",
+                        "Use one shared baseline instead of per-group baselines.",
+                        kind="bool",
+                        default=True,
+                    ),
+                    _field(
+                        "global_baseline_value",
+                        "Explicit global baseline label when global mode is enabled.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    _field(
+                        "overrides",
+                        "Explicit baseline overrides keyed by group columns.",
+                        kind="mapping_list",
+                        default=[],
+                    ),
+                    _field("fc_column", "Output fold-change column name.", kind="string", default="FC"),
+                    _field("log2fc_column", "Output log2 fold-change column name.", kind="string", default="log2FC"),
+                ),
+            ),
+            _field(
+                "response",
+                "Response/intensity channel binding for vec8 summaries.",
+                children=(
+                    _field("logic_channel", "Channel used for logic fidelity.", kind="string", default="YFP/CFP"),
+                    _field(
+                        "intensity_channel", "Channel used for intensity scaling.", kind="string", default="YFP/OD600"
+                    ),
+                ),
+            ),
+            _field(
+                "reference",
+                "Reference design and aggregation policy for vec8 normalization.",
+                children=(
+                    _field("design_id", "Reference design id.", kind="string", default="REF"),
+                    _field("stat", "Reference aggregation statistic.", kind="string", default="mean"),
+                ),
+            ),
+            _field("design_by", "Grouping columns for logic designs.", kind="string_list", default=["design_id"]),
+            _field("time_column", "Column containing assay time in hours.", kind="string", default="time"),
+            _field(
+                "time_mode",
+                "Time-selection mode for vec8 extraction.",
+                kind="string",
+                choices=("nearest", "last_before", "first_after", "exact"),
+                default="nearest",
+            ),
+            _field("target_time_h", "Target timepoint for vec8 extraction.", kind="number", allow_none=True),
+            _field("time_tolerance_h", "Nearest-time tolerance in hours.", kind="number", default=0.5),
+            _field(
+                "logic_map_ref", "Reference to annotations.logic_maps entry.", kind="string", default="induction_logic"
+            ),
+            _field(
+                "promote",
+                "Promotion settings for tidy_plus_map conversion.",
+                children=(
+                    _field("synthesize_batch", "Add a synthetic batch column when missing.", kind="bool", default=True),
+                ),
+            ),
+            _field(
+                "require_all_corners_per_design",
+                "Require each design to expose all logic corners before vec8 export.",
+                kind="bool",
+                default=True,
+            ),
+            _field(
+                "exclude_reference_from_output",
+                "Drop the reference design from the final vec8 output.",
+                kind="bool",
+                default=True,
+            ),
+            _field(
+                "carry_metadata",
+                "Metadata columns to carry through vec8 output.",
+                kind="string_list",
+                default=["sequence", "id"],
+            ),
+        ),
+        analysis_fields=(
+            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            _field("include_vec8", "Build the vec8 summary table.", kind="bool", default=True),
+            _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
+            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
+            _field(
+                "preprocessing",
+                "Pre-ingest cleanup policy for blanks and overflow.",
+                children=(
+                    _field(
+                        "blank",
+                        "Blank-correction policy.",
+                        children=(
+                            _field(
+                                "method",
+                                "Blank handling strategy.",
+                                kind="string",
+                                choices=("disregard", "subtract"),
+                                default="disregard",
+                            ),
+                            _field(
+                                "capture_blanks",
+                                "Emit a blanks side table for downstream QC.",
+                                kind="bool",
+                                default=True,
+                            ),
+                        ),
+                    ),
+                    _field(
+                        "overflow",
+                        "Overflow handling policy for saturated channels.",
+                        children=(
+                            _field(
+                                "action",
+                                "Overflow action.",
+                                kind="string",
+                                choices=("max", "drop", "nan", "none"),
+                                default="max",
+                            ),
+                            _field("clip_quantile", "Quantile cap used when action=max.", kind="number", default=0.999),
+                            _field(
+                                "cap_strategy",
+                                "How per-channel caps are determined when action=max.",
+                                kind="string",
+                                choices=("provided", "infer", "quantile"),
+                                default="quantile",
+                            ),
+                            _field(
+                                "per_channel_caps",
+                                "Explicit per-channel caps when cap_strategy=provided.",
+                                kind="mapping",
+                                allow_unknown=True,
+                                allow_none=True,
+                            ),
+                            _field(
+                                "flag_column",
+                                "Column used to mark overflowed wells before capping.",
+                                kind="string",
+                                default="overflow",
+                            ),
+                            _field(
+                                "treat_inf_as_overflow",
+                                "Treat infinite values as overflowed rows.",
+                                kind="bool",
+                                default=True,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
         factors=(
             ProtocolFactorSpec(name="design_id", role="design", summary="Design grouping for logic comparison."),
             ProtocolFactorSpec(name="time", role="time", summary="Selected summary timepoint."),
@@ -419,70 +908,62 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         figures=(
             ProtocolFigureSpec(
-                id="logic_summary",
-                kind="summary",
-                summary="SFXI vec8 summary and corner-balanced logic view.",
+                id="raw_kinetics",
+                kind="qc",
+                summary="Raw kinetics view over OD600 and reporter channels.",
                 primary=True,
             ),
-        ),
-        deliverables=(
-            ProtocolDeliverableSpec(
-                id="time_series",
-                surface="plots",
-                summary="Primary time-series kinetics panel.",
-                default=True,
+            ProtocolFigureSpec(
+                id="endpoint_by_condition",
+                kind="summary",
+                summary="Endpoint comparison grouped by treatment/condition.",
+                primary=True,
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_by_channel",
-                surface="plots",
-                summary="Snapshot barplots grouped by treatment/channel.",
-                default=True,
+            ProtocolFigureSpec(
+                id="endpoint_by_design",
+                kind="summary",
+                summary="Endpoint comparison grouped by construct/design.",
+                primary=True,
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_by_design",
-                surface="plots",
-                summary="Snapshot barplots grouped by design.",
-                default=True,
-            ),
-            ProtocolDeliverableSpec(
-                id="snapshot_state",
-                surface="plots",
-                summary="2x2 state summary panel for alias-mapped treatment states.",
-            ),
-            ProtocolDeliverableSpec(
-                id="ts_and_snap_intensity",
-                surface="plots",
+            ProtocolFigureSpec(
+                id="intensity_overview",
+                kind="kinetics",
                 summary="Combined time-series and endpoint view of the intensity channel.",
-                default=True,
+                primary=True,
             ),
-            ProtocolDeliverableSpec(
-                id="ts_and_snap_ratio",
-                surface="plots",
-                summary="Combined time-series and endpoint view of the dual-reporter ratio.",
+            ProtocolFigureSpec(
+                id="logic_symmetry",
+                kind="summary",
+                summary="Logic symmetry geometry over the configured response channel.",
             ),
-            ProtocolDeliverableSpec(
-                id="distributions",
-                surface="plots",
-                summary="Distribution view of the primary ratio channel.",
+        ),
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="logic_overview",
+                summary="Default SFXI overview with kinetics and endpoint summaries.",
+                figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_heatmap_yfp_cfp",
-                surface="plots",
-                summary="Snapshot heatmap for YFP/CFP.",
+            ProtocolPlotProfileSpec(
+                id="logic_geometry",
+                summary="Geometry-only logic symmetry review.",
+                figures=("logic_symmetry",),
             ),
-            ProtocolDeliverableSpec(
-                id="snapshot_heatmap_cfp_od600",
-                surface="plots",
-                summary="Snapshot heatmap for CFP/OD600.",
+            ProtocolPlotProfileSpec(
+                id="logic_full",
+                summary="Full logic review with kinetics and symmetry geometry.",
+                figures=(
+                    "raw_kinetics",
+                    "endpoint_by_condition",
+                    "endpoint_by_design",
+                    "intensity_overview",
+                    "logic_symmetry",
+                ),
             ),
-            ProtocolDeliverableSpec(
-                id="logic_symmetry_yfp_cfp",
-                surface="plots",
-                summary="Logic symmetry view over the YFP/CFP channel.",
-            ),
-            ProtocolDeliverableSpec(
-                id="vec8_xlsx",
-                surface="exports",
+        ),
+        default_plot_profile="logic_overview",
+        artifacts=(
+            ProtocolArtifactSpec(
+                id="logic_summary_workbook",
                 summary="Workbook export of the SFXI vec8 summary.",
             ),
         ),
@@ -504,8 +985,19 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     with_={
                         "mode": binding_value("ingest.mode", "auto"),
                         "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
+                        "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "add_sheet": binding_value("ingest.add_sheet", False),
+                        "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                        "time_step_h": binding_value("ingest.time_step_h", None),
+                        "auto_roots": binding_value("ingest.auto_roots", None),
+                        "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                        "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                        "auto_pick": binding_value("ingest.auto_pick", "single"),
+                        "auto_recursive": binding_value("ingest.auto_recursive", False),
+                        "add_source_column": binding_value("ingest.add_source_column", False),
+                        "source_col": binding_value("ingest.source_col", "source_file"),
+                        "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),
                 ProtocolPluginDefaultsSpec(
@@ -563,6 +1055,76 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         family="panel_analysis",
         summary="Flow-cytometry panel protocol for gated event tables and channel-level summaries.",
         tags=("cytometry", "fcs", "panel"),
+        input_fields=(
+            _field(
+                "ingest",
+                "Flow-cytometer ingest and channel naming settings.",
+                children=(
+                    _field("auto_roots", "Directories to scan for .fcs files.", kind="string_list", allow_none=True),
+                    _field(
+                        "auto_include", "Filename globs to include.", kind="string_list", default=["*.fcs", "*.FCS"]
+                    ),
+                    _field(
+                        "auto_exclude", "Filename globs to exclude.", kind="string_list", default=list(DEFAULT_EXCLUDE)
+                    ),
+                    _field(
+                        "auto_pick",
+                        "Multi-file selection policy.",
+                        kind="string",
+                        choices=("single", "latest", "merge"),
+                        default="merge",
+                    ),
+                    _field(
+                        "auto_recursive",
+                        "Recurse into child directories when discovering files.",
+                        kind="bool",
+                        default=False,
+                    ),
+                    _field(
+                        "channel_name_field", "FCS metadata field used as channel label.", kind="string", default="pns"
+                    ),
+                    _field(
+                        "channel_map",
+                        "Optional channel rename mapping.",
+                        kind="mapping",
+                        allow_unknown=True,
+                        allow_none=True,
+                    ),
+                    _field("drop_channels", "Channels to drop after ingest.", kind="string_list", allow_none=True),
+                    _field(
+                        "sample_id_from",
+                        "How sample ids are derived from filenames.",
+                        kind="string",
+                        choices=("stem", "name"),
+                        default="stem",
+                    ),
+                    _field("time_value", "Time value applied to snapshot cytometry rows.", kind="number", default=0.0),
+                    _field("print_summary", "Print an ingest summary to the log.", kind="bool", default=True),
+                ),
+            ),
+            _field(
+                "metadata",
+                "Metadata merge requirements for the cytometry panel.",
+                children=(
+                    _field("key", "Join key between metadata and sample rows.", kind="string", default="sample_id"),
+                    _field(
+                        "require_columns",
+                        "Metadata columns that must exist after merge.",
+                        kind="string_list",
+                        default=[],
+                    ),
+                    _field(
+                        "require_non_null",
+                        "Require merged metadata columns to be non-null.",
+                        kind="bool",
+                        default=False,
+                    ),
+                ),
+            ),
+        ),
+        analysis_fields=(
+            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
+        ),
         factors=(
             ProtocolFactorSpec(name="sample", role="sample", summary="Sample/run identifier."),
             ProtocolFactorSpec(name="condition", role="condition", summary="Experimental condition."),

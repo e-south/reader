@@ -10,6 +10,7 @@ Author(s): Eric J. South
 import json
 import subprocess
 import sys
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +23,10 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
+import reader.workbench._cli_bootstrap  # noqa: F401
 from reader.errors import ConfigError, ReaderError, RecordError
+from reader.protocols import ProtocolBinding
+from reader.protocols.model import ProtocolBindingValueRef
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
@@ -38,6 +42,7 @@ from reader.workbench.graph import (
     OutputRef,
     RecordRef,
     ResourceRef,
+    input_ref_display,
     input_ref_to_dict,
     materialize_workbench,
     output_ref_to_dict,
@@ -45,6 +50,7 @@ from reader.workbench.graph import (
     select_workbench_specs,
 )
 from reader.workbench.notebooks import write_experiment_notebook
+from reader.workbench.records import DataFrameArtifactRecord, record_to_dict
 from reader.workbench.templates import (
     builtin_notebook_template_catalog,
     compatible_notebook_templates,
@@ -68,9 +74,10 @@ app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
     help=(
-        "reader — experiment pipeline runner.\n\n"
-        "Run pipelines to generate dataframe records, then render plots, exports, or notebooks. "
-        "Start with 'reader demo' or 'reader ls'."
+        "reader — experimental workbench.\n\n"
+        "Discover assays and experiments, inspect compiled workflow plans, validate authoring YAML, "
+        "run pipelines, and materialize plots, exports, or notebooks. "
+        "Start with 'reader demo', 'reader ls', or 'reader protocols'."
     ),
 )
 console = Console(theme=THEME)
@@ -154,6 +161,161 @@ def _handle_reader_error(err: ReaderError) -> None:
     _abort(str(err))
 
 
+def _count_visible_files(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.rglob("*") if item.is_file() and not item.name.startswith("."))
+
+
+def _count_visible_glob(path: Path, pattern: str) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.rglob(pattern) if item.is_file() and not item.name.startswith("."))
+
+
+def _visible_relative_files(path: Path, *, base: Path, limit: int = 8) -> list[str]:
+    if not path.exists():
+        return []
+    files = sorted(item for item in path.rglob("*") if item.is_file() and not item.name.startswith("."))
+    relative: list[str] = []
+    for item in files[:limit]:
+        try:
+            relative.append(str(item.relative_to(base)))
+        except ValueError:
+            relative.append(str(item))
+    return relative
+
+
+def _format_relative_path(path: Path, *, base: Path) -> str:
+    try:
+        return str(path.relative_to(base))
+    except ValueError:
+        return str(path)
+
+
+def _resolve_output_subdir(outputs_dir: Path, subdir: str) -> Path:
+    return outputs_dir if subdir in ("", ".", "./") else outputs_dir / subdir
+
+
+def _preview_output_files(path: Path, *, base: Path, limit: int = 4) -> str:
+    files = _visible_relative_files(path, base=base, limit=limit)
+    if not files:
+        return "—"
+    remaining = _count_visible_files(path) - len(files)
+    preview = ", ".join(files)
+    if remaining > 0:
+        preview += f", … (+{remaining} more)"
+    return preview
+
+
+def _preview_identifiers(values: list[str], *, limit: int = 4) -> str:
+    if not values:
+        return "—"
+    preview = ", ".join(values[:limit])
+    remaining = len(values) - limit
+    if remaining > 0:
+        preview += f", … (+{remaining} more)"
+    return preview
+
+
+def _render_compact_value(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, tuple):
+        value = list(value)
+    try:
+        return json.dumps(value, ensure_ascii=True, sort_keys=True)
+    except TypeError:
+        return str(value)
+
+
+def _flatten_binding_rows(value, *, prefix: str = "") -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    if isinstance(value, dict):
+        for key in sorted(value):
+            child_path = f"{prefix}.{key}" if prefix else str(key)
+            rows.extend(_flatten_binding_rows(value[key], prefix=child_path))
+        return rows
+    rows.append((prefix or "value", _render_compact_value(value)))
+    return rows
+
+
+def _normalize_output_format(
+    value: str | None,
+    *,
+    default: str = "table",
+    allowed: tuple[str, ...] = ("table", "json"),
+) -> str:
+    if not isinstance(value, str):
+        return default
+    fmt = value.strip().lower() or default
+    if fmt not in allowed:
+        raise typer.BadParameter(f"format must be one of: {', '.join(allowed)}")
+    return fmt
+
+
+def _normalize_flag(value: bool | object, *, default: bool = False) -> bool:
+    return value if isinstance(value, bool) else default
+
+
+def _normalize_status_filter(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    allowed = {"ok", "config_error"}
+    if normalized not in allowed:
+        raise typer.BadParameter(f"status must be one of: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _json_friendly(value):
+    if isinstance(value, ProtocolBindingValueRef):
+        payload = {"binding_value": value.key}
+        if value.has_default:
+            payload["default"] = _json_friendly(value.default)
+        return payload
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_friendly(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_friendly(item) for item in value]
+    if isinstance(value, list):
+        return [_json_friendly(item) for item in value]
+    return value
+
+
+def _emit_json(payload: object) -> None:
+    typer.echo(json.dumps(_json_friendly(payload), indent=2, sort_keys=True))
+
+
+def _summarize_outputs_dir(
+    outputs_dir: Path,
+    *,
+    plots_subdir: str = "plots",
+    exports_subdir: str = "exports",
+    notebooks_subdir: str = "notebooks",
+) -> dict[str, int]:
+    plots_dir = outputs_dir if plots_subdir in ("", ".", "./") else outputs_dir / plots_subdir
+    exports_dir = outputs_dir if exports_subdir in ("", ".", "./") else outputs_dir / exports_subdir
+    notebooks_dir = outputs_dir if notebooks_subdir in ("", ".", "./") else outputs_dir / notebooks_subdir
+    artifacts_dir = outputs_dir / "artifacts"
+    return {
+        "records": _count_visible_glob(artifacts_dir, "*.parquet"),
+        "plots": _count_visible_files(plots_dir),
+        "exports": _count_visible_files(exports_dir),
+        "notebooks": _count_visible_files(notebooks_dir),
+    }
+
+
 def _render_marimo_help(target: Path, *, mode: str, has_fcs: bool) -> None:
     sync_cmd = "uv sync --locked --group notebooks"
     if has_fcs:
@@ -206,11 +368,29 @@ def protocols(
         metavar="NAME",
         help="Filter protocols by semantic family.",
     ),
+    example_config: bool = typer.Option(
+        False,
+        "--example-config",
+        help="Print a starter YAML outline for the named protocol.",
+    ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     runtime = builtin_runtime()
     try:
+        fmt = _normalize_output_format(format)
+        if example_config and not name:
+            raise typer.BadParameter("--example-config requires a protocol name.")
         if name:
             descriptor = runtime.protocols.resolve(name)
+            if fmt == "json":
+                _emit_json(_protocol_descriptor_payload(descriptor, runtime=runtime))
+                return
+            bound_protocol, compiled_plan = _default_protocol_plan(descriptor=descriptor, runtime=runtime)
             table = _table(f"Protocol: {descriptor.protocol}")
             table.add_column("Section", style="accent")
             table.add_column("Details")
@@ -229,18 +409,88 @@ def protocols(
                 table.add_row("Primary ranking", descriptor.ranking.primary_metric)
             table.add_row("Default notebook", descriptor.execution.notebook.default_template)
             table.add_row("Allowed notebooks", ", ".join(descriptor.execution.notebook.allowed_templates))
-            if descriptor.deliverables:
-                plot_ids = [item.id for item in descriptor.deliverables if item.surface == "plots"]
-                export_ids = [item.id for item in descriptor.deliverables if item.surface == "exports"]
-                if plot_ids:
-                    table.add_row("Plot deliverables", ", ".join(plot_ids))
-                if export_ids:
-                    table.add_row("Export deliverables", ", ".join(export_ids))
+            if descriptor.default_plot_profile is not None:
+                table.add_row("Default plot profile", descriptor.default_plot_profile)
             if descriptor.execution.plugin_defaults:
                 table.add_row(
                     "Plugin defaults", ", ".join(item.plugin for item in descriptor.execution.plugin_defaults)
                 )
             console.print(Panel(table, border_style="accent", box=box.ROUNDED))
+            input_rows = _protocol_surface_rows(descriptor.input_fields)
+            if input_rows:
+                console.print(
+                    Panel(_protocol_surface_table("Inputs Surface", input_rows), border_style="accent", box=box.ROUNDED)
+                )
+            analysis_rows = _protocol_surface_rows(descriptor.analysis_fields)
+            if analysis_rows:
+                console.print(
+                    Panel(
+                        _protocol_surface_table("Analysis Surface", analysis_rows),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
+                )
+            if descriptor.plot_profiles:
+                console.print(Panel(_protocol_plot_profiles_table(descriptor), border_style="accent", box=box.ROUNDED))
+            if descriptor.figures:
+                console.print(Panel(_protocol_plot_outputs_table(descriptor), border_style="accent", box=box.ROUNDED))
+            if descriptor.artifacts:
+                console.print(Panel(_protocol_artifacts_table(descriptor), border_style="accent", box=box.ROUNDED))
+            if compiled_plan.pipeline:
+                console.print(
+                    Panel(_protocol_pipeline_table(compiled_plan.pipeline), border_style="accent", box=box.ROUNDED)
+                )
+            if compiled_plan.plots:
+                console.print(
+                    Panel(
+                        _protocol_surface_impl_table(
+                            "Plot Implementations",
+                            compiled_plan.plots,
+                            _plot_output_summaries(bound_protocol),
+                        ),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
+                )
+            if compiled_plan.exports:
+                console.print(
+                    Panel(
+                        _protocol_surface_impl_table(
+                            "Export Implementations",
+                            compiled_plan.exports,
+                            _export_output_summaries(bound_protocol),
+                        ),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
+                )
+            if example_config:
+                console.print(
+                    Panel(
+                        _protocol_example_config(descriptor),
+                        title="Starter YAML",
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
+                )
+            return
+
+        if fmt == "json":
+            _emit_json(
+                {
+                    "protocols": [
+                        {
+                            "protocol": descriptor.protocol,
+                            "domain": descriptor.domain,
+                            "family": descriptor.family,
+                            "summary": descriptor.summary,
+                            "tags": list(descriptor.tags),
+                        }
+                        for descriptor in runtime.protocols.all()
+                        if (not domain or descriptor.domain == domain) and (not family or descriptor.family == family)
+                    ]
+                }
+            )
             return
 
         table = _table("Protocols")
@@ -259,8 +509,77 @@ def protocols(
         raise typer.BadParameter(str(e)) from e
 
 
-def _load_job_models(job_path: Path) -> tuple[ReaderSpec, WorkbenchDecl]:
+@app.command(help="Scaffold a new experiment directory from a protocol starter config.")
+def init(
+    target: str = typer.Argument(..., metavar="DIR", help="Experiment directory to create."),
+    protocol: str = typer.Option(
+        ...,
+        "--protocol",
+        "-p",
+        metavar="ID",
+        help="Protocol id to bind, for example: plate_reader/dual_reporter_screen.",
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        metavar="TEXT",
+        help="Optional human-readable experiment title.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite config.yaml when the target directory already contains one.",
+    ),
+):
     runtime = builtin_runtime()
+    try:
+        descriptor = runtime.protocols.resolve(protocol)
+    except ConfigError as e:
+        raise typer.BadParameter(str(e)) from e
+    target_dir = Path(target).expanduser()
+    if target_dir.suffix:
+        raise typer.BadParameter("init expects a directory path, not a file path")
+    target_dir = target_dir.resolve()
+    config_path = target_dir / "config.yaml"
+    if config_path.exists() and not force:
+        _abort(f"{config_path} already exists. Pass --force to overwrite it.")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "inputs").mkdir(exist_ok=True)
+    (target_dir / "notebooks").mkdir(exist_ok=True)
+    example_document = _protocol_example_document(descriptor)
+    experiment_block = dict(example_document["experiment"])
+    experiment_block["id"] = target_dir.name
+    if title:
+        experiment_block["title"] = title
+    example_document["experiment"] = experiment_block
+    config_path.write_text(yaml.safe_dump(example_document, sort_keys=False), encoding="utf-8")
+    summary = Table(box=box.ROUNDED, expand=True, show_header=False)
+    summary.add_column("Field", style="accent", no_wrap=True)
+    summary.add_column("Value")
+    summary.add_row("Protocol", descriptor.protocol)
+    summary.add_row("Experiment", experiment_block["id"])
+    summary.add_row("Config", str(config_path))
+    summary.add_row("Inputs dir", str(target_dir / "inputs"))
+    summary.add_row("Notebook dir", str(target_dir / "notebooks"))
+    console.print(Panel(summary, title="Experiment scaffolded", border_style="accent", box=box.ROUNDED))
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"reader inspect {config_path}",
+                    f"reader validate {config_path} --no-files",
+                    f"reader protocols {descriptor.protocol}",
+                ]
+            ),
+            title="Next steps",
+            border_style="accent",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _load_job_models(job_path: Path, *, runtime: ReaderRuntime | None = None) -> tuple[ReaderSpec, WorkbenchDecl]:
+    runtime = runtime or builtin_runtime()
     spec = ReaderSpec.load(job_path)
     return spec, build_workbench_decl(spec, source_path=job_path, protocols=runtime.protocols)
 
@@ -335,6 +654,477 @@ def _template_requirements_satisfied(
 
 def _bind_decl_protocol(*, decl: WorkbenchDecl, runtime: ReaderRuntime):
     return runtime.bind_protocol(decl.experiment_semantics.protocol)
+
+
+def _plot_output_summaries(bound_protocol) -> dict[str, str]:
+    return {item.id: item.summary for item in bound_protocol.descriptor.figures}
+
+
+def _export_output_summaries(bound_protocol) -> dict[str, str]:
+    return {item.id: item.summary for item in bound_protocol.descriptor.artifacts}
+
+
+def _selected_plan_payload(*, spec: ReaderSpec, decl: WorkbenchDecl, runtime: ReaderRuntime) -> dict[str, object]:
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
+    workbench = resolve_workbench(decl)
+    plot_ids = [spec_decl.id for spec_decl in workbench.plots]
+    export_ids = [spec_decl.id for spec_decl in workbench.exports]
+    notebook_templates = [notebook.template for notebook in workbench.notebooks]
+    pipeline_ids = [step.id for step in workbench.pipeline]
+    return {
+        "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile or "—",
+        "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template or "—",
+        "pipeline": {
+            "count": len(pipeline_ids),
+            "ids": pipeline_ids,
+        },
+        "plots": {
+            "count": len(plot_ids),
+            "ids": plot_ids,
+        },
+        "exports": {
+            "count": len(export_ids),
+            "ids": export_ids,
+        },
+        "notebooks": {
+            "count": len(notebook_templates),
+            "templates": notebook_templates,
+        },
+    }
+
+
+def _selected_plan_summary(selected: dict[str, object] | None) -> str:
+    if not selected:
+        return "—"
+    pipeline = dict(selected["pipeline"])
+    plots = dict(selected["plots"])
+    exports = dict(selected["exports"])
+    notebooks = dict(selected["notebooks"])
+    profile = str(selected.get("plot_profile") or "—")
+    return f"{profile} • {pipeline['count']} st • {plots['count']} pl • {exports['count']} ex • {notebooks['count']} nb"
+
+
+def _generated_summary(generated: dict[str, int]) -> str:
+    return (
+        f"{generated['records']} rec • "
+        f"{generated['plots']} pl • "
+        f"{generated['exports']} ex • "
+        f"{generated['notebooks']} nb"
+    )
+
+
+def _protocol_surface_rows(fields) -> list[tuple[str, str, str, str, str]]:
+    rows: list[tuple[str, str, str, str, str]] = []
+    for field in fields:
+        rows.extend(field.iter_rows())
+    return rows
+
+
+def _protocol_surface_table(title: str, rows: list[tuple[str, str, str, str, str]]) -> Table:
+    table = _table(title)
+    table.add_column("Path", style="accent")
+    table.add_column("Type")
+    table.add_column("Required", justify="center")
+    table.add_column("Default")
+    table.add_column("Summary")
+    for path, kind, required, default, summary in rows:
+        table.add_row(path, kind, required, default, summary)
+    return table
+
+
+def _protocol_plot_profiles_table(descriptor) -> Table:
+    table = _table("Plot Profiles")
+    table.add_column("id", style="accent")
+    table.add_column("figures")
+    table.add_column("summary")
+    for item in descriptor.plot_profiles:
+        table.add_row(item.id, ", ".join(item.figures), item.summary)
+    return table
+
+
+def _protocol_plot_outputs_table(descriptor) -> Table:
+    table = _table("Plot Outputs")
+    table.add_column("id", style="accent")
+    table.add_column("kind")
+    table.add_column("primary", justify="center")
+    table.add_column("summary")
+    for item in descriptor.figures:
+        table.add_row(item.id, item.kind, "yes" if item.primary else "no", item.summary)
+    return table
+
+
+def _protocol_artifacts_table(descriptor) -> Table:
+    table = _table("Export Artifacts")
+    table.add_column("id", style="accent")
+    table.add_column("summary")
+    for item in descriptor.artifacts:
+        table.add_row(item.id, item.summary)
+    return table
+
+
+def _default_protocol_plan(*, descriptor, runtime: ReaderRuntime):
+    bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
+    return bound_protocol, bound_protocol.compile()
+
+
+def _protocol_pipeline_table(steps) -> Table:
+    table = _table("Default Pipeline")
+    table.add_column("#", justify="right", style="muted")
+    table.add_column("stage", style="accent")
+    table.add_column("id", overflow="fold")
+    table.add_column("plugin", overflow="fold")
+    for idx, step in enumerate(steps, 1):
+        stage = step.plugin.split("/", 1)[0]
+        table.add_row(str(idx), stage, step.id, step.plugin)
+    return table
+
+
+def _protocol_surface_impl_table(title: str, steps, summaries: dict[str, str]) -> Table:
+    table = _table(title)
+    table.add_column("id", style="accent", overflow="fold")
+    table.add_column("plugin", overflow="fold")
+    table.add_column("from", overflow="fold")
+    table.add_column("summary", overflow="fold")
+    for step in steps:
+        from_refs = ", ".join(f"{label} <- {_binding_display(ref)}" for label, ref in (step.reads or {}).items()) or "—"
+        table.add_row(step.id, step.plugin, from_refs, summaries.get(step.id, "—"))
+    return table
+
+
+_EXAMPLE_OMIT = object()
+
+
+def _protocol_field_example_value(field) -> object:
+    if field.kind == "mapping":
+        example: dict[str, object] = {}
+        for child in field.children:
+            child_value = _protocol_field_example_value(child)
+            if child_value is _EXAMPLE_OMIT:
+                continue
+            example[child.key] = child_value
+        if example:
+            return example
+        if field.has_default:
+            return deepcopy(field.default)
+        if field.required:
+            return {}
+        return _EXAMPLE_OMIT
+    if field.has_default:
+        return deepcopy(field.default)
+    if field.required:
+        return "<required>"
+    return _EXAMPLE_OMIT
+
+
+def _protocol_surface_example(fields) -> dict[str, object]:
+    example: dict[str, object] = {}
+    for field in fields:
+        value = _protocol_field_example_value(field)
+        if value is _EXAMPLE_OMIT:
+            continue
+        example[field.key] = value
+    return example
+
+
+def _protocol_example_document(descriptor) -> dict[str, object]:
+    protocol_block: dict[str, object] = {"id": descriptor.protocol}
+    inputs = _protocol_surface_example(descriptor.input_fields)
+    if inputs:
+        protocol_block["inputs"] = inputs
+    analysis = _protocol_surface_example(descriptor.analysis_fields)
+    if analysis:
+        protocol_block["analysis"] = analysis
+
+    outputs: dict[str, object] = {
+        "notebook": {"template": descriptor.execution.notebook.default_template},
+    }
+    if descriptor.plot_profiles or descriptor.figures:
+        plots: dict[str, object] = {}
+        if descriptor.default_plot_profile is not None:
+            plots["profile"] = descriptor.default_plot_profile
+        elif descriptor.figures:
+            plots["include"] = [item.id for item in descriptor.figures if item.primary]
+        if plots:
+            outputs["plots"] = plots
+    default_artifacts = [item.id for item in descriptor.artifacts if item.default]
+    if default_artifacts:
+        outputs["exports"] = {"include": default_artifacts}
+    protocol_block["outputs"] = outputs
+
+    return {
+        "schema": "reader/v7",
+        "experiment": {"id": "example_experiment"},
+        "protocol": protocol_block,
+        "resources": {},
+        "annotations": {},
+    }
+
+
+def _protocol_example_config(descriptor) -> str:
+    return yaml.safe_dump(_protocol_example_document(descriptor), sort_keys=False)
+
+
+def _binding_display(ref) -> str:
+    record_id = getattr(ref, "record_id", None)
+    if isinstance(record_id, str) and record_id:
+        return record_id
+    resource_id = getattr(ref, "resource_id", None)
+    if isinstance(resource_id, str) and resource_id:
+        return f"resource({resource_id})"
+    path = getattr(ref, "path", None)
+    if path is not None:
+        return str(path)
+    return input_ref_display(ref)
+
+
+def _serialize_reads(reads) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for label, ref in (reads or {}).items():
+        item: dict[str, object] = {
+            "label": label,
+            "display": _binding_display(ref),
+        }
+        record_id = getattr(ref, "record_id", None)
+        resource_id = getattr(ref, "resource_id", None)
+        path = getattr(ref, "path", None)
+        if isinstance(record_id, str) and record_id:
+            item["ref"] = {"record": record_id}
+        elif isinstance(resource_id, str) and resource_id:
+            item["ref"] = {"resource": resource_id}
+        elif path is not None:
+            item["ref"] = {"file": str(path)}
+        else:
+            item["ref"] = {"display": _binding_display(ref)}
+        payload.append(item)
+    return payload
+
+
+def _pipeline_writes_payload(step, *, runtime: ReaderRuntime) -> list[dict[str, object]]:
+    plugin_cls = runtime.plugins.resolve_descriptor(step.plugin).cls
+    outputs: list[dict[str, object]] = []
+    for output_name, port in plugin_cls.output_ports().items():
+        if port.kind == "dataframe":
+            record_ref = (step.writes or {}).get(output_name, OutputRef(record_id=f"{step.id}/{output_name}"))
+            outputs.append(
+                {
+                    "label": output_name,
+                    "kind": port.kind,
+                    "display": record_ref.record_id,
+                    "ref": output_ref_to_dict(record_ref),
+                }
+            )
+            continue
+        outputs.append(
+            {
+                "label": output_name,
+                "kind": port.kind,
+                "display": output_name,
+            }
+        )
+    return outputs
+
+
+def _pipeline_step_payload(step, *, runtime: ReaderRuntime) -> dict[str, object]:
+    return {
+        "stage": step.plugin.split("/", 1)[0],
+        "id": step.id,
+        "plugin": step.plugin,
+        "reads": _serialize_reads(step.reads),
+        "writes": _pipeline_writes_payload(step, runtime=runtime),
+    }
+
+
+def _spec_step_payload(step, *, summary: str) -> dict[str, object]:
+    return {
+        "id": step.id,
+        "plugin": step.plugin,
+        "summary": summary,
+        "reads": _serialize_reads(step.reads),
+    }
+
+
+def _record_detail_text(record, *, base: Path) -> str:
+    if isinstance(record, DataFrameArtifactRecord):
+        return f"{record.contract_id} • {_format_relative_path(record.path, base=base)}"
+    return ", ".join(_format_relative_path(path, base=base) for path in record.files) or "—"
+
+
+def _record_payload(record, *, outputs_dir: Path, base: Path, revision_count: int | None = None) -> dict[str, object]:
+    payload = record_to_dict(record, outputs_dir=outputs_dir)
+    payload["producer_label"] = f"{record.producer.kind}:{record.producer.id}"
+    payload["detail"] = _record_detail_text(record, base=base)
+    if revision_count is not None:
+        payload["revision_count"] = revision_count
+    return payload
+
+
+def _iter_record_payloads(
+    *,
+    store,
+    outputs_dir: Path,
+    base: Path,
+    include_history: bool = False,
+) -> list[dict[str, object]]:
+    latest_records = store.iter_latest_records()
+    if not include_history:
+        return [_record_payload(record, outputs_dir=outputs_dir, base=base) for record in latest_records]
+    revision_counts = {record.record_id: len(store.record_history(record.record_id)) for record in latest_records}
+    return [
+        _record_payload(
+            record,
+            outputs_dir=outputs_dir,
+            base=base,
+            revision_count=revision_counts[record.record_id],
+        )
+        for record in latest_records
+    ]
+
+
+def _protocol_descriptor_payload(descriptor, *, runtime: ReaderRuntime) -> dict[str, object]:
+    bound_protocol, compiled_plan = _default_protocol_plan(descriptor=descriptor, runtime=runtime)
+    return {
+        "protocol": descriptor.protocol,
+        "domain": descriptor.domain,
+        "family": descriptor.family,
+        "summary": descriptor.summary,
+        "tags": list(descriptor.tags),
+        "factors": [
+            {
+                "name": item.name,
+                "role": item.role,
+                "summary": item.summary,
+                "required": item.required,
+                "repeatable": item.repeatable,
+            }
+            for item in descriptor.factors
+        ],
+        "control_rules": [
+            {
+                "id": item.id,
+                "summary": item.summary,
+                "match_on": list(item.match_on),
+                "control_selector": item.control_selector,
+            }
+            for item in descriptor.control_rules
+        ],
+        "windows": [
+            {
+                "id": item.id,
+                "summary": item.summary,
+                "anchor": item.anchor,
+                "selector": item.selector,
+                "params": dict(item.params),
+            }
+            for item in descriptor.windows
+        ],
+        "metrics": [
+            {
+                "id": item.id,
+                "summary": item.summary,
+                "stage": item.stage,
+                "formula": item.formula,
+                "depends_on": list(item.depends_on),
+                "notes": list(item.notes),
+            }
+            for item in descriptor.metrics
+        ],
+        "effect_signs": [
+            {
+                "target": item.target,
+                "expected_sign": item.expected_sign,
+                "summary": item.summary,
+            }
+            for item in descriptor.effect_signs
+        ],
+        "ranking": (
+            {
+                "primary_metric": descriptor.ranking.primary_metric,
+                "direction": descriptor.ranking.direction,
+                "summary": descriptor.ranking.summary,
+                "penalties": list(descriptor.ranking.penalties),
+                "supporting_metrics": list(descriptor.ranking.supporting_metrics),
+            }
+            if descriptor.ranking is not None
+            else None
+        ),
+        "notebook_policy": {
+            "default_template": descriptor.execution.notebook.default_template,
+            "allowed_templates": list(descriptor.execution.notebook.allowed_templates),
+            "summary": descriptor.execution.notebook.summary,
+        },
+        "plugin_defaults": [
+            {
+                "plugin": item.plugin,
+                "summary": item.summary,
+                "with": dict(item.with_ or {}),
+            }
+            for item in descriptor.execution.plugin_defaults
+        ],
+        "input_surface": [
+            {
+                "path": path,
+                "kind": kind,
+                "required": required == "yes",
+                "default": None if default == "—" else default,
+                "summary": summary,
+            }
+            for path, kind, required, default, summary in _protocol_surface_rows(descriptor.input_fields)
+        ],
+        "analysis_surface": [
+            {
+                "path": path,
+                "kind": kind,
+                "required": required == "yes",
+                "default": None if default == "—" else default,
+                "summary": summary,
+            }
+            for path, kind, required, default, summary in _protocol_surface_rows(descriptor.analysis_fields)
+        ],
+        "plot_profiles": [
+            {
+                "id": item.id,
+                "figures": list(item.figures),
+                "summary": item.summary,
+            }
+            for item in descriptor.plot_profiles
+        ],
+        "figures": [
+            {
+                "id": item.id,
+                "kind": item.kind,
+                "primary": item.primary,
+                "summary": item.summary,
+            }
+            for item in descriptor.figures
+        ],
+        "artifacts": [
+            {
+                "id": item.id,
+                "summary": item.summary,
+                "default": item.default,
+            }
+            for item in descriptor.artifacts
+        ],
+        "default_plot_profile": descriptor.default_plot_profile,
+        "starter_config": _protocol_example_document(descriptor),
+        "compiled": {
+            "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in compiled_plan.pipeline],
+            "plots": [
+                _spec_step_payload(step, summary=_plot_output_summaries(bound_protocol).get(step.id, "—"))
+                for step in compiled_plan.plots
+            ],
+            "exports": [
+                _spec_step_payload(step, summary=_export_output_summaries(bound_protocol).get(step.id, "—"))
+                for step in compiled_plan.exports
+            ],
+            "notebooks": [
+                {
+                    "template": notebook.template,
+                }
+                for notebook in compiled_plan.notebooks
+            ],
+        },
+    }
 
 
 def _default_notebook_name() -> str:
@@ -496,7 +1286,7 @@ def notebook(
     template_name: str | None = typer.Option(
         None,
         "--template",
-        help="Notebook template (defaults to the protocol default or protocol.deliverables.notebook.template).",
+        help="Notebook template (defaults to the protocol default or protocol.outputs.notebook.template).",
     ),
     list_templates: bool = typer.Option(
         False,
@@ -696,15 +1486,59 @@ def ls(
         "--all",
         help="Include scaffold/template directories alongside runnable experiments.",
     ),
+    protocol: str | None = typer.Option(
+        None,
+        "--protocol",
+        metavar="ID",
+        help="Only show experiments bound to the given protocol id.",
+    ),
+    status: str | None = typer.Option(
+        None,
+        "--status",
+        metavar="STATE",
+        help="Only show experiments with status: ok | config_error.",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Show protocol id, selected-plan summary, and generated output counts for each experiment.",
+    ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     # If user didn't override --root, auto-detect nearest experiments/ so this
     # works from anywhere inside the repository.
+    include_scaffolds = _normalize_flag(include_scaffolds)
+    details = _normalize_flag(details)
+    fmt = _normalize_output_format(format)
+    protocol_filter = protocol.strip() if isinstance(protocol, str) and protocol.strip() else None
+    status_filter = _normalize_status_filter(status)
+
+    def _inventory_payload(experiments: list[dict[str, object]]) -> dict[str, object]:
+        return {
+            "root": str(root_path),
+            "count": len(experiments),
+            "details": details,
+            "filters": {
+                "protocol": protocol_filter,
+                "status": status_filter,
+            },
+            "experiments": experiments,
+        }
+
     if str(root).strip() == "./experiments":
         root_path = _find_nearest_experiments_dir(Path.cwd())
     else:
         root_path = Path(root).resolve()
     jobs = _find_jobs(root_path, include_scaffolds=include_scaffolds)
     if not jobs:
+        if fmt == "json":
+            _emit_json(_inventory_payload([]))
+            return
         console.print(
             Panel.fit(
                 f"No experiments found under [path]{root_path}[/path].",
@@ -713,32 +1547,397 @@ def ls(
             )
         )
         return
-    t = _table("Experiments")
-    t.add_column("#", justify="right", style="muted")
-    name_values = [p.parent.name for p in jobs]
-    max_name = max((len(n) for n in name_values), default=12)
-    max_width = int((console.width or 80) * 0.6)
-    name_width = max(12, min(max_name + 2, max_width))
-    t.add_column("Name", style="accent", max_width=name_width, overflow="fold")
-    t.add_column("Outputs", justify="center", width=7)
+    entries: list[dict[str, object]] = []
+    runtime = builtin_runtime() if details else None
     for i, p in enumerate(jobs, 1):
         name = p.parent.name
-        outputs_ok = False
+        entry: dict[str, object] = {
+            "index": i,
+            "name": name,
+            "config": str(p),
+            "root": str(p.parent),
+            "protocol": None,
+            "generated": {"records": 0, "plots": 0, "exports": 0, "notebooks": 0},
+            "selected": None,
+            "has_outputs": False,
+            "status": "ok",
+            "error": None,
+        }
         try:
-            _, decl = _load_job_models(p)
-            man = decl.experiment_semantics.layout.outputs_dir / "manifests" / "records.json"
-            outputs_ok = man.exists()
-        except ReaderError:
-            outputs_ok = False
-        t.add_row(str(i), name, _checkmark(outputs_ok))
+            if details:
+                spec, decl = _load_job_models(p, runtime=runtime)
+                entry["selected"] = _selected_plan_payload(spec=spec, decl=decl, runtime=runtime)
+            else:
+                spec = ReaderSpec.load(p)
+            entry["protocol"] = spec.protocol.id
+            outputs_dir = (p.parent / spec.paths.outputs).resolve()
+            output_counts = _summarize_outputs_dir(
+                outputs_dir,
+                plots_subdir=spec.paths.plots,
+                exports_subdir=spec.paths.exports,
+                notebooks_subdir=spec.paths.notebooks,
+            )
+            entry["generated"] = output_counts
+            entry["has_outputs"] = any(output_counts.values())
+            if details:
+                entry["generated_examples"] = {
+                    "records": _preview_output_files(outputs_dir / "artifacts", base=p.parent),
+                    "plots": _preview_output_files(
+                        _resolve_output_subdir(outputs_dir, spec.paths.plots), base=p.parent
+                    ),
+                    "exports": _preview_output_files(
+                        _resolve_output_subdir(outputs_dir, spec.paths.exports),
+                        base=p.parent,
+                    ),
+                    "notebooks": _preview_output_files(
+                        _resolve_output_subdir(outputs_dir, spec.paths.notebooks),
+                        base=p.parent,
+                    ),
+                }
+        except ReaderError as err:
+            entry["status"] = "config_error"
+            entry["error"] = str(err)
+        protocol_value = entry["protocol"]
+        if protocol_filter and protocol_value != protocol_filter:
+            continue
+        if status_filter and entry["status"] != status_filter:
+            continue
+        entries.append(entry)
+
+    if not entries:
+        if fmt == "json":
+            _emit_json(_inventory_payload([]))
+            return
+        filters = []
+        if protocol_filter:
+            filters.append(f"protocol={protocol_filter}")
+        if status_filter:
+            filters.append(f"status={status_filter}")
+        suffix = f" for filters ({', '.join(filters)})" if filters else ""
+        console.print(
+            Panel.fit(
+                f"No experiments found under [path]{root_path}[/path]{suffix}.",
+                border_style="warn",
+                box=box.ROUNDED,
+            )
+        )
+        return
+
+    if fmt == "json":
+        _emit_json(_inventory_payload(entries))
+        return
+
+    t = _table("Experiments")
+    t.add_column("#", justify="right", style="muted")
+    name_values = [str(entry["name"]) for entry in entries]
+    max_name = max((len(n) for n in name_values), default=12)
+    max_width = int((console.width or 80) * (0.35 if details else 0.6))
+    name_width = max(12, min(max_name + 2, max_width))
+    t.add_column("Name", style="accent", max_width=name_width, overflow="ellipsis")
+    if details:
+        t.add_column("Protocol", max_width=28, overflow="ellipsis")
+        t.add_column("Status", width=12)
+        t.add_column("Selected", overflow="fold")
+        t.add_column("Generated", overflow="fold")
+        t.add_column("Issue", overflow="fold")
+    else:
+        t.add_column("Outputs", justify="center", width=7)
+    for entry in entries:
+        status = str(entry["status"])
+        generated = dict(entry["generated"])
+        if details:
+            t.add_row(
+                str(entry["index"]),
+                str(entry["name"]),
+                str(entry["protocol"] or "—"),
+                status,
+                _selected_plan_summary(entry.get("selected") if isinstance(entry, dict) else None),
+                _generated_summary(generated),
+                str(entry["error"] or "—"),
+            )
+        else:
+            outputs_cell = "[error]ERR[/error]" if status != "ok" else _checkmark(bool(entry["has_outputs"]))
+            t.add_row(str(entry["index"]), str(entry["name"]), outputs_cell)
     console.print(
         Panel(
             t,
             border_style="accent",
             box=box.ROUNDED,
-            subtitle=f"[muted]root: [path]{root_path}[/path] — {len(jobs)} found[/muted]",
+            subtitle=(
+                f"[muted]root: [path]{root_path}[/path] — {len(entries)} shown"
+                + (f" (protocol={protocol_filter})" if protocol_filter else "")
+                + (f" (status={status_filter})" if status_filter else "")
+                + "[/muted]"
+            ),
         )
     )
+
+
+@app.command(help="Inspect one experiment: inputs, pipeline chain, plots, artifacts, and generated outputs.")
+def inspect(
+    job: str | None = typer.Argument(
+        None,
+        metavar="[CONFIG]",
+        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+    ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
+):
+    try:
+        job_path = _infer_job_path(job)
+        spec, decl = _load_job_models(job_path)
+    except ReaderError as e:
+        _handle_reader_error(e)
+    fmt = _normalize_output_format(format)
+    runtime = builtin_runtime()
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
+    workbench = resolve_workbench(decl)
+    exp_root = decl.experiment.root
+    inputs_dir = exp_root / "inputs"
+    outputs_dir = decl.experiment_semantics.layout.outputs_dir
+    output_counts = _summarize_outputs_dir(
+        outputs_dir,
+        plots_subdir=decl.experiment_semantics.layout.plots_subdir,
+        exports_subdir=decl.experiment_semantics.layout.exports_subdir,
+        notebooks_subdir=decl.experiment_semantics.layout.notebooks_subdir,
+    )
+    plots_dir = _resolve_output_subdir(outputs_dir, decl.experiment_semantics.layout.plots_subdir)
+    exports_dir = _resolve_output_subdir(outputs_dir, decl.experiment_semantics.layout.exports_subdir)
+    notebooks_dir = _resolve_output_subdir(outputs_dir, decl.experiment_semantics.layout.notebooks_subdir)
+    artifacts_dir = outputs_dir / "artifacts"
+    store = runtime.record_store(
+        outputs_dir,
+        plots_subdir=decl.experiment_semantics.layout.plots_subdir,
+        exports_subdir=decl.experiment_semantics.layout.exports_subdir,
+        create=False,
+    )
+    input_files = _visible_relative_files(inputs_dir, base=exp_root, limit=8)
+    resource_rows = [
+        (resource_id, _format_relative_path(entry.path, base=exp_root))
+        for resource_id, entry in sorted(decl.experiment_semantics.resources.by_id.items())
+    ]
+    plot_summaries = _plot_output_summaries(bound_protocol)
+    export_summaries = _export_output_summaries(bound_protocol)
+    authoring_rows: list[tuple[str, str, str]] = []
+    for section, values in (
+        ("inputs", spec.protocol.inputs),
+        ("analysis", spec.protocol.analysis),
+        ("outputs", spec.protocol.outputs.model_dump(exclude_none=True)),
+    ):
+        for path, value in _flatten_binding_rows(values):
+            authoring_rows.append((section, path, value))
+    records_payload = (
+        _iter_record_payloads(store=store, outputs_dir=outputs_dir, base=exp_root) if store.catalog_exists() else []
+    )
+
+    payload = {
+        "experiment": {
+            "id": decl.experiment.id,
+            "protocol": bound_protocol.id,
+            "config": str(job_path),
+            "root": str(exp_root),
+            "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile,
+            "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template,
+        },
+        "authoring": {
+            "inputs": spec.protocol.inputs,
+            "analysis": spec.protocol.analysis,
+            "outputs": spec.protocol.outputs.model_dump(exclude_none=True),
+        },
+        "inputs": {
+            "files": input_files,
+            "resources": [
+                {
+                    "id": resource_id,
+                    "path": path_text,
+                }
+                for resource_id, path_text in resource_rows
+            ],
+        },
+        "generated": {
+            "counts": output_counts,
+            "examples": {
+                "records": _preview_output_files(artifacts_dir, base=exp_root),
+                "plots": _preview_output_files(plots_dir, base=exp_root),
+                "exports": _preview_output_files(exports_dir, base=exp_root),
+                "notebooks": _preview_output_files(notebooks_dir, base=exp_root),
+            },
+            "records": records_payload,
+        },
+        "pipeline": [_pipeline_step_payload(step, runtime=runtime) for step in workbench.pipeline],
+        "plots": [
+            _spec_step_payload(spec_decl, summary=plot_summaries.get(spec_decl.id, "—"))
+            for spec_decl in workbench.plots
+        ],
+        "exports": [
+            _spec_step_payload(spec_decl, summary=export_summaries.get(spec_decl.id, "—"))
+            for spec_decl in workbench.exports
+        ],
+        "notebooks": [
+            {
+                "template": notebook.template,
+            }
+            for notebook in workbench.notebooks
+        ],
+    }
+
+    if fmt == "json":
+        _emit_json(payload)
+        return
+
+    overview = Table(box=box.ROUNDED, expand=True, show_header=False)
+    overview.add_column("Field", style="accent", no_wrap=True)
+    overview.add_column("Value")
+    overview.add_row("Experiment", decl.experiment.id)
+    overview.add_row("Protocol", bound_protocol.id)
+    overview.add_row("Config", str(job_path))
+    overview.add_row("Root", str(exp_root))
+    overview.add_row(
+        "Inputs",
+        f"{_count_visible_files(inputs_dir)} file(s) under {_format_relative_path(inputs_dir, base=exp_root)}",
+    )
+    overview.add_row(
+        "Generated",
+        (
+            f"{output_counts['records']} records, {output_counts['plots']} plots, "
+            f"{output_counts['exports']} exports, {output_counts['notebooks']} notebooks"
+        ),
+    )
+    overview.add_row("Plot profile", spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile or "—")
+    overview.add_row(
+        "Notebook",
+        spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template or "—",
+    )
+    console.print(Panel(overview, title="Experiment overview", border_style="accent", box=box.ROUNDED))
+
+    authoring = _table("Authoring bindings")
+    authoring.add_column("section", style="accent", width=10)
+    authoring.add_column("path", overflow="fold")
+    authoring.add_column("value", overflow="fold")
+    if authoring_rows:
+        for section, path, value in authoring_rows:
+            authoring.add_row(section, path, value)
+    else:
+        authoring.add_row("—", "—", "No explicit bindings; protocol defaults only.")
+    console.print(Panel(authoring, border_style="accent", box=box.ROUNDED))
+
+    filesystem = _table("Inputs + resources")
+    filesystem.add_column("kind", style="accent", width=10)
+    filesystem.add_column("entry")
+    filesystem.add_column("details")
+    if input_files:
+        for relpath in input_files:
+            filesystem.add_row("input", relpath, "detected under inputs/")
+        remaining_inputs = _count_visible_files(inputs_dir) - len(input_files)
+        if remaining_inputs > 0:
+            filesystem.add_row("input", "…", f"{remaining_inputs} more file(s)")
+    else:
+        filesystem.add_row("input", "—", "No visible files under inputs/")
+    if resource_rows:
+        for resource_id, path_text in resource_rows:
+            filesystem.add_row("resource", resource_id, path_text)
+    console.print(Panel(filesystem, border_style="accent", box=box.ROUNDED))
+
+    generated = _table("Generated outputs")
+    generated.add_column("kind", style="accent", width=10)
+    generated.add_column("count", justify="right", width=7)
+    generated.add_column("examples", overflow="fold")
+    generated.add_row("records", str(output_counts["records"]), _preview_output_files(artifacts_dir, base=exp_root))
+    generated.add_row("plots", str(output_counts["plots"]), _preview_output_files(plots_dir, base=exp_root))
+    generated.add_row("exports", str(output_counts["exports"]), _preview_output_files(exports_dir, base=exp_root))
+    generated.add_row("notebooks", str(output_counts["notebooks"]), _preview_output_files(notebooks_dir, base=exp_root))
+    console.print(Panel(generated, border_style="accent", box=box.ROUNDED))
+
+    records_table = _table("Record catalog")
+    records_table.add_column("record", style="accent", overflow="fold")
+    records_table.add_column("kind", width=18)
+    records_table.add_column("producer", overflow="fold")
+    records_table.add_column("detail", overflow="fold")
+    if records_payload:
+        for record in records_payload:
+            records_table.add_row(
+                str(record["record_id"]),
+                str(record["kind"]),
+                str(record["producer_label"]),
+                str(record["detail"]),
+            )
+    else:
+        records_table.add_row("—", "—", "—", "No records catalog found under outputs/manifests/records.json.")
+    console.print(Panel(records_table, border_style="accent", box=box.ROUNDED))
+
+    pipeline_table = _table("Pipeline chain")
+    pipeline_table.add_column("#", justify="right", style="muted")
+    pipeline_table.add_column("stage", style="accent")
+    pipeline_table.add_column("id", overflow="fold")
+    pipeline_table.add_column("plugin", overflow="fold")
+    pipeline_table.add_column("from", overflow="fold")
+    pipeline_table.add_column("writes", overflow="fold")
+    for idx, step in enumerate(workbench.pipeline, 1):
+        payload_row = _pipeline_step_payload(step, runtime=runtime)
+        from_refs = ", ".join(f"{item['label']} <- {item['display']}" for item in payload_row["reads"]) or "—"
+        writes = (
+            ", ".join(
+                (f"{item['label']} -> {item['display']}" if item.get("kind") == "dataframe" else str(item["label"]))
+                for item in payload_row["writes"]
+            )
+            or "—"
+        )
+        pipeline_table.add_row(str(idx), str(payload_row["stage"]), step.id, step.plugin, from_refs, writes)
+    console.print(
+        Panel(
+            pipeline_table,
+            border_style="accent",
+            box=box.ROUNDED,
+            subtitle=f"[muted]{len(tuple(workbench.pipeline))} step(s)[/muted]",
+        )
+    )
+
+    plot_table = _table("Plot outputs")
+    plot_table.add_column("#", justify="right", style="muted")
+    plot_table.add_column("id", style="accent", overflow="fold")
+    plot_table.add_column("summary", overflow="fold")
+    plot_table.add_column("from", overflow="fold")
+    if workbench.plots:
+        for idx, spec_decl in enumerate(workbench.plots, 1):
+            from_refs = (
+                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (spec_decl.reads or {}).items())
+                or "—"
+            )
+            plot_table.add_row(str(idx), spec_decl.id, plot_summaries.get(spec_decl.id, "—"), from_refs)
+    else:
+        plot_table.add_row("—", "—", "No plot outputs selected.", "—")
+    console.print(Panel(plot_table, border_style="accent", box=box.ROUNDED))
+
+    export_table = _table("Export artifacts")
+    export_table.add_column("#", justify="right", style="muted")
+    export_table.add_column("id", style="accent", overflow="fold")
+    export_table.add_column("summary", overflow="fold")
+    export_table.add_column("from", overflow="fold")
+    if workbench.exports:
+        for idx, spec_decl in enumerate(workbench.exports, 1):
+            from_refs = (
+                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (spec_decl.reads or {}).items())
+                or "—"
+            )
+            export_table.add_row(str(idx), spec_decl.id, export_summaries.get(spec_decl.id, "—"), from_refs)
+    else:
+        export_table.add_row("—", "—", "No export artifacts selected.", "—")
+    console.print(Panel(export_table, border_style="accent", box=box.ROUNDED))
+
+    notebook_table = _table("Notebooks")
+    notebook_table.add_column("#", justify="right", style="muted")
+    notebook_table.add_column("template", style="accent")
+    notebook_table.add_column("status")
+    if workbench.notebooks:
+        for idx, notebook in enumerate(workbench.notebooks, 1):
+            notebook_table.add_row(str(idx), notebook.template, "selected")
+    else:
+        notebook_table.add_row("—", "—", "No notebook template selected.")
+    console.print(Panel(notebook_table, border_style="accent", box=box.ROUNDED))
 
 
 @app.command(help="Show planned steps and contracts (no execution).")
@@ -786,7 +1985,7 @@ def validate(
         _handle_reader_error(e)
 
 
-@app.command(help="Print the expanded config (recipes + overrides applied).")
+@app.command(help="Print the authoring config plus compiled runtime plan.")
 def config(
     job: str | None = typer.Argument(
         None,
@@ -808,14 +2007,12 @@ def config(
     fmt = str(format).strip().lower()
     payload = spec.model_dump(by_alias=True)
     materialized = materialize_workbench(decl)
-    payload.setdefault("pipeline", {})
-    payload["pipeline"]["steps"] = materialized["pipeline"]
-    payload.setdefault("plots", {})
-    payload.setdefault("exports", {})
-    payload.setdefault("notebooks", {})
-    payload["plots"]["specs"] = materialized["plots"]
-    payload["exports"]["specs"] = materialized["exports"]
-    payload["notebooks"]["specs"] = materialized["notebooks"]
+    payload["compiled"] = {
+        "pipeline": materialized["pipeline"],
+        "plots": materialized["plots"],
+        "exports": materialized["exports"],
+        "notebooks": materialized["notebooks"],
+    }
     if fmt == "json":
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
@@ -987,6 +2184,7 @@ def _run_plot_job(
     _, decl = _load_job_models(job_path)
     runtime = builtin_runtime()
     workbench = resolve_workbench(decl)
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=runtime)
     if not list_only:
         _require_dataframe_records(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
@@ -1005,10 +2203,16 @@ def _run_plot_job(
     if list_only:
         t = _table("Plots")
         t.add_column("#", justify="right", style="muted")
-        t.add_column("id", style="accent")
-        t.add_column("plugin")
+        t.add_column("id", style="accent", overflow="fold")
+        t.add_column("summary", overflow="fold")
+        t.add_column("from", overflow="fold")
+        t.add_column("plugin", overflow="fold")
+        plot_summaries = _plot_output_summaries(bound_protocol)
         for i, s in enumerate(selected, 1):
-            t.add_row(str(i), s.id, s.plugin)
+            from_refs = (
+                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (s.reads or {}).items()) or "—"
+            )
+            t.add_row(str(i), s.id, plot_summaries.get(s.id, "—"), from_refs, s.plugin)
         console.print(
             Panel(
                 t,
@@ -1226,6 +2430,7 @@ def export(
     except ReaderError as e:
         _handle_reader_error(e)
     workbench = resolve_workbench(decl)
+    bound_protocol = _bind_decl_protocol(decl=decl, runtime=builtin_runtime())
     export_specs = list(workbench.exports)
     if not export_specs:
         if list_only:
@@ -1242,10 +2447,16 @@ def export(
     if list_only:
         t = _table("Exports")
         t.add_column("#", justify="right", style="muted")
-        t.add_column("id", style="accent")
-        t.add_column("plugin")
+        t.add_column("id", style="accent", overflow="fold")
+        t.add_column("summary", overflow="fold")
+        t.add_column("from", overflow="fold")
+        t.add_column("plugin", overflow="fold")
+        export_summaries = _export_output_summaries(bound_protocol)
         for i, s in enumerate(selected, 1):
-            t.add_row(str(i), s.id, s.plugin)
+            from_refs = (
+                ", ".join(f"{label} <- {input_ref_display(ref)}" for label, ref in (s.reads or {}).items()) or "—"
+            )
+            t.add_row(str(i), s.id, export_summaries.get(s.id, "—"), from_refs, s.plugin)
         console.print(
             Panel(
                 t,
@@ -1331,6 +2542,12 @@ def records(
         help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
     ),
     all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
     try:
         _, decl = _load_job_models(_infer_job_path(job))
@@ -1345,11 +2562,27 @@ def records(
             _abort("No outputs/manifests/records.json found. Run 'reader run' first to produce records.")
     except ReaderError as e:
         _handle_reader_error(e)
+    fmt = _normalize_output_format(format)
 
     try:
         latest_records = store.iter_latest_records()
     except ReaderError as e:
         _handle_reader_error(e)
+
+    if fmt == "json":
+        _emit_json(
+            {
+                "all": all,
+                "count": len(latest_records),
+                "records": _iter_record_payloads(
+                    store=store,
+                    outputs_dir=outputs_dir,
+                    base=decl.experiment.root,
+                    include_history=all,
+                ),
+            }
+        )
+        return
 
     if all:
         if not latest_records:
@@ -1452,12 +2685,52 @@ def plugins(
         metavar="NAME",
         help="Filter by semantic family, for example: time_series | metadata_merge | workbook_ingest",
     ),
+    protocol: str | None = typer.Option(
+        None,
+        "--protocol",
+        metavar="ID",
+        help="Limit to plugins used by the named protocol's default compiled plan.",
+    ),
+    format: str = typer.Option(
+        "table",
+        "--format",
+        metavar="FMT",
+        help="Output format: table | json (default: table).",
+    ),
 ):
+    protocol = protocol if isinstance(protocol, str) else None
+    fmt = _normalize_output_format(format)
     try:
-        reg = builtin_runtime().plugins
+        runtime = builtin_runtime()
+        reg = runtime.plugins
+        descriptors = reg.catalog().filter(category=category, domain=domain, family=family)
+        if protocol:
+            bound_protocol = runtime.bind_protocol(ProtocolBinding(id=protocol))
+            plan = bound_protocol.compile()
+            allowed_plugins = {step.plugin for step in (*plan.pipeline, *plan.plots, *plan.exports)}
+            descriptors = [descriptor for descriptor in descriptors if descriptor.plugin in allowed_plugins]
     except ReaderError as e:
         _handle_reader_error(e)
-    descriptors = reg.catalog().filter(category=category, domain=domain, family=family)
+    if fmt == "json":
+        _emit_json(
+            {
+                "protocol": protocol,
+                "count": len(descriptors),
+                "plugins": [
+                    {
+                        "category": descriptor.category,
+                        "domain": descriptor.domain,
+                        "family": descriptor.family,
+                        "key": descriptor.key,
+                        "plugin": descriptor.plugin,
+                        "summary": descriptor.summary,
+                        "class": f"{descriptor.cls.__module__}.{descriptor.cls.__name__}",
+                    }
+                    for descriptor in descriptors
+                ],
+            }
+        )
+        return
     t = _table("Plugins")
     t.add_column("category", style="accent")
     t.add_column("domain")
@@ -1479,7 +2752,10 @@ def plugins(
             t,
             border_style="accent",
             box=box.ROUNDED,
-            subtitle=f"[muted]{len(descriptors)} plugin(s) discovered[/muted]",
+            subtitle=(
+                f"[muted]{len(descriptors)} plugin(s) discovered"
+                f"{f' • protocol: {protocol}' if protocol else ''}[/muted]"
+            ),
         )
     )
 
@@ -1662,15 +2938,22 @@ def _apply_step_overrides(
 def demo():
     steps = [
         ("1", "Find experiments", "reader ls"),
-        ("2", "List protocols", "reader protocols"),
-        ("3", "Explain plan", "reader explain 1"),
-        ("4", "Validate config + inputs", "reader validate 1"),
-        ("5", "Run pipeline (records)", "reader run 1"),
-        ("6", "See records", "reader records 1"),
-        ("7", "List plot specs", "reader plot 1 --list"),
-        ("8", "Save plots", "reader plot 1"),
-        ("9", "Run exports", "reader export 1"),
-        ("10", "Notebook (marimo)", "reader notebook 1"),
+        ("2", "Show experiment details", "reader inspect 1"),
+        ("3", "List protocols", "reader protocols"),
+        (
+            "4",
+            "Scaffold a new experiment",
+            "reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen",
+        ),
+        ("5", "Starter YAML for a protocol", "reader protocols plate_reader/dual_reporter_screen --example-config"),
+        ("6", "Explain plan", "reader explain 1"),
+        ("7", "Validate config + inputs", "reader validate 1"),
+        ("8", "Run pipeline (records)", "reader run 1"),
+        ("9", "See records", "reader records 1"),
+        ("10", "List plot specs", "reader plot 1 --list"),
+        ("11", "Save plots", "reader plot 1"),
+        ("12", "Run exports", "reader export 1"),
+        ("13", "Notebook (marimo)", "reader notebook 1"),
     ]
     t = _table("Reader Demo")
     t.add_column("#", justify="right", style="muted")

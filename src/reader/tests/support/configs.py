@@ -44,22 +44,22 @@ def base_reader_config(
     experiment_id: str = "exp_001",
     title: str | None = None,
     protocol_id: str = "workbench/generic",
-    protocol_parameters: dict | None = None,
+    protocol_inputs: dict | None = None,
     protocol_analysis: dict | None = None,
-    protocol_deliverables: dict | None = None,
+    protocol_outputs: dict | None = None,
     outputs: str = "./outputs",
     plotting: dict | None = None,
     annotations: dict | None = None,
     resources: dict | None = None,
 ) -> dict:
     payload = {
-        "schema": "reader/v6",
+        "schema": "reader/v7",
         "experiment": {"id": experiment_id},
         "protocol": {
             "id": protocol_id,
-            "parameters": deepcopy(protocol_parameters or {}),
+            "inputs": deepcopy(protocol_inputs or {}),
             "analysis": deepcopy(protocol_analysis or {}),
-            "deliverables": deepcopy(protocol_deliverables or {}),
+            "outputs": deepcopy(protocol_outputs or {}),
         },
         "paths": {"outputs": outputs, "plots": "plots", "exports": "exports", "notebooks": "notebooks"},
     }

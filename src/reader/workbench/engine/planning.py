@@ -14,6 +14,7 @@ from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.graph import (
     OutputRef,
     ensure_unique_workbench_ids,
+    input_ref_display,
     output_ref_display,
     resolve_workbench,
 )
@@ -44,7 +45,11 @@ def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
         input_lines: list[str] = []
         for name, port in plugin_cls.input_ports().items():
             suffix = ", optional" if port.optional else ""
-            input_lines.append(f"{name} ({port.render()}{suffix})")
+            bound_ref = (step.reads or {}).get(name)
+            if bound_ref is not None:
+                input_lines.append(f"{name} <- {input_ref_display(bound_ref)} ({port.render()}{suffix})")
+            else:
+                input_lines.append(f"{name} ({port.render()}{suffix})")
 
         output_lines: list[str] = []
         for out_name, port in plugin_cls.output_ports().items():
@@ -139,6 +144,7 @@ def explain(
     runtime: ReaderRuntime | None = None,
 ) -> None:
     runtime = runtime or builtin_runtime()
+    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
     workbench = resolve_workbench(decl)
     pipeline_steps = list(workbench.pipeline)
     plot_specs = list(plot_specs) if plot_specs is not None else list(workbench.plots)
@@ -149,6 +155,23 @@ def explain(
     if "plot" in categories:
         ensure_mpl_cache_dir()
     registry = registry or (runtime.plugins if categories else None)
+    summary = Table(box=box.ROUNDED, expand=True, show_header=False)
+    summary.add_column("Field", style="accent", no_wrap=True)
+    summary.add_column("Value")
+    summary.add_row("Protocol", bound_protocol.id)
+    summary.add_row("Input sections", ", ".join(sorted(bound_protocol.inputs)) if bound_protocol.inputs else "—")
+    summary.add_row("Analysis knobs", ", ".join(sorted(bound_protocol.analysis)) if bound_protocol.analysis else "—")
+    summary.add_row(
+        "Pipeline flow",
+        " -> ".join(step.id for step in pipeline_steps) if pipeline_steps else "—",
+    )
+    summary.add_row("Plots", ", ".join(step.id for step in plot_specs) if plot_specs else "—")
+    summary.add_row("Exports", ", ".join(step.id for step in export_specs) if export_specs else "—")
+    summary.add_row("Notebooks", ", ".join(step.template for step in notebook_specs) if notebook_specs else "—")
+    resources = tuple(decl.experiment_semantics.resources.by_id.keys())
+    if resources:
+        summary.add_row("Resources", ", ".join(resources))
+    console.print(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Protocol plan"))
     if pipeline_steps:
         if registry is None:
             raise RuntimeError("pipeline explanation requires a plugin registry")

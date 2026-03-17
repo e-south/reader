@@ -24,7 +24,7 @@ def test_resolve_palette_book_uses_shared_plot_style(tmp_path) -> None:
             experiment_id="exp_plot_style",
             protocol_id="plate_reader/dual_reporter_screen",
             protocol_analysis={"include_fold_change": False},
-            protocol_deliverables={"plots": {"profile": "none", "include": ["time_series"]}},
+            protocol_outputs={"plots": {"profile": "none", "include": ["raw_kinetics"]}},
             resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
             plotting={"palette": "muted"},
         ),

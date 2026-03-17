@@ -9,16 +9,21 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
 
 import pandas as pd
 from pydantic import Field, model_validator
 
-from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
 from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig
+
+
+def _load_snapshot_heatmap_impl():
+    module = import_module("reader.domains.plate_reader.plots.snapshot_heatmap")
+    return module.plot_snapshot_heatmap, module.prepare_snapshot_heatmap_inputs
 
 
 class HeatmapCfg(PluginConfig):
@@ -62,6 +67,7 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
             raise ValueError("snapshot_heatmap requires experiment semantics in the run context")
         df_in: pd.DataFrame | None = inputs.get("df")
         fc_in: pd.DataFrame | None = inputs.get("fc")
+        plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs = _load_snapshot_heatmap_impl()
 
         prepared = prepare_snapshot_heatmap_inputs(ctx=ctx, df_in=df_in, fc_in=fc_in, cfg=cfg)
         channel = str(cfg.channel)

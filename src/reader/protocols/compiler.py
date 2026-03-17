@@ -15,20 +15,20 @@ from reader.workbench.decl.model import (
 )
 from reader.workbench.recipes.registry import resolve_recipe_steps
 
-PLATE_READER_PLOT_DELIVERABLES = {
-    "time_series",
-    "snapshot_by_channel",
-    "snapshot_by_design",
-    "snapshot_state",
-    "ts_and_snap_intensity",
-    "ts_and_snap_ratio",
-    "distributions",
-    "snapshot_heatmap_yfp_cfp",
-    "snapshot_heatmap_cfp_od600",
-    "logic_symmetry_yfp_cfp",
+PLATE_READER_PLOT_OUTPUTS = {
+    "raw_kinetics",
+    "endpoint_by_condition",
+    "endpoint_by_design",
+    "state_summary",
+    "intensity_overview",
+    "ratio_overview",
+    "value_distributions",
+    "ratio_heatmap",
+    "support_heatmap",
+    "logic_symmetry",
 }
-PLATE_READER_EXPORT_DELIVERABLES = {"crosstalk_pairs_csv"}
-LOGIC_EXPORT_DELIVERABLES = {"vec8_xlsx"}
+PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
+LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
 
 
 def compile_generic_protocol(protocol: Any):
@@ -71,33 +71,24 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
             )
         pipeline.append(_plate_reader_crosstalk_pairs_step(config=crosstalk_cfg))
 
-    plot_profile = _deliverable_profile(
-        protocol, surface="plots", default=("rfp_full" if measurement == "rfp_od600" else "yfp_full")
-    )
-    defaults = _plate_reader_plot_profile_defaults(profile=plot_profile, measurement=measurement)
-    selected_plots = protocol.select_deliverables(
-        surface="plots",
-        defaults=defaults,
-        allowed=PLATE_READER_PLOT_DELIVERABLES,
+    selected_plots = protocol.select_plot_outputs(
+        allowed=_plate_reader_plot_output_ids(measurement=measurement),
     )
     plots = [
-        _plate_reader_plot_deliverable(
+        _plate_reader_plot_output(
             protocol,
-            deliverable_id=deliverable_id,
+            output_id=deliverable_id,
             measurement=measurement,
         )
         for deliverable_id in selected_plots
     ]
 
-    default_exports = ("crosstalk_pairs_csv",) if include_crosstalk_export else ()
-    selected_exports = protocol.select_deliverables(
-        surface="exports",
+    default_exports = ("crosstalk_pairs_table",) if include_crosstalk_export else ()
+    selected_exports = protocol.select_export_outputs(
         defaults=default_exports,
-        allowed=PLATE_READER_EXPORT_DELIVERABLES,
+        allowed=PLATE_READER_EXPORT_OUTPUTS,
     )
-    exports = [
-        _plate_reader_export_deliverable(protocol, deliverable_id=deliverable_id) for deliverable_id in selected_exports
-    ]
+    exports = [_plate_reader_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports]
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
@@ -125,28 +116,29 @@ def compile_logic_sfxi_screen(protocol: Any):
         pipeline.append(_sfxi_promote_step())
         pipeline.append(_sfxi_vec8_step())
 
-    plot_profile = _deliverable_profile(protocol, surface="plots", default="yfp_full")
-    defaults = _logic_plot_profile_defaults(plot_profile)
     plots = [
-        _plate_reader_plot_deliverable(protocol, deliverable_id=deliverable_id, measurement="yfp_cfp")
-        for deliverable_id in protocol.select_deliverables(
-            surface="plots",
-            defaults=defaults,
-            allowed=PLATE_READER_PLOT_DELIVERABLES,
+        _plate_reader_plot_output(protocol, output_id=deliverable_id, measurement="yfp_cfp")
+        for deliverable_id in protocol.select_plot_outputs(
+            allowed={
+                "raw_kinetics",
+                "endpoint_by_condition",
+                "endpoint_by_design",
+                "intensity_overview",
+                "logic_symmetry",
+            },
         )
     ]
 
     default_exports = (
-        ("vec8_xlsx",) if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8) else ()
+        ("logic_summary_workbook",)
+        if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8)
+        else ()
     )
-    selected_exports = protocol.select_deliverables(
-        surface="exports",
+    selected_exports = protocol.select_export_outputs(
         defaults=default_exports,
-        allowed=LOGIC_EXPORT_DELIVERABLES,
+        allowed=LOGIC_EXPORT_OUTPUTS,
     )
-    exports = [
-        _logic_export_deliverable(protocol, deliverable_id=deliverable_id) for deliverable_id in selected_exports
-    ]
+    exports = [_logic_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports]
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
@@ -233,46 +225,28 @@ def _cfg_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:
     raise ConfigError(f"{key} must be true or false")
 
 
-def _deliverable_profile(protocol: Any, *, surface: str, default: str) -> str:
-    block = (
-        getattr(protocol, "deliverables", {}).get(surface, {})
-        if isinstance(getattr(protocol, "deliverables", {}), dict)
-        else {}
-    )
-    if not isinstance(block, dict):
-        raise ConfigError(f"protocol.deliverables.{surface} for {protocol.id!r} must be a mapping")
-    value = block.get("profile", default)
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"protocol.deliverables.{surface}.profile for {protocol.id!r} must be a non-empty string")
-    return value
-
-
-def _plate_reader_plot_profile_defaults(profile: str, *, measurement: str) -> tuple[str, ...]:
-    profiles: dict[str, tuple[str, ...]] = {
-        "yfp_full": ("time_series", "snapshot_by_channel", "snapshot_by_design", "ts_and_snap_intensity"),
-        "rfp_full": ("time_series", "snapshot_by_channel", "snapshot_by_design", "ts_and_snap_intensity"),
-        "yfp_time_series": ("time_series", "distributions"),
-        "dual_reporter_core": ("time_series", "snapshot_state", "ts_and_snap_ratio"),
-        "none": (),
-    }
-    if profile not in profiles:
-        options = ", ".join(sorted(profiles))
-        raise ConfigError(f"protocol.deliverables.plots.profile must be one of: {options}")
-    defaults = profiles[profile]
+def _plate_reader_plot_output_ids(*, measurement: str) -> set[str]:
+    if measurement == "yfp_cfp":
+        return {
+            "raw_kinetics",
+            "endpoint_by_condition",
+            "endpoint_by_design",
+            "state_summary",
+            "intensity_overview",
+            "ratio_overview",
+            "value_distributions",
+            "ratio_heatmap",
+            "support_heatmap",
+        }
     if measurement == "rfp_od600":
-        defaults = tuple("snapshot_state" if item == "snapshot_state" else item for item in defaults)
-    return defaults
-
-
-def _logic_plot_profile_defaults(profile: str) -> tuple[str, ...]:
-    profiles: dict[str, tuple[str, ...]] = {
-        "yfp_full": ("time_series", "snapshot_by_channel", "snapshot_by_design", "ts_and_snap_intensity"),
-        "none": (),
-    }
-    if profile not in profiles:
-        options = ", ".join(sorted(profiles))
-        raise ConfigError(f"protocol.deliverables.plots.profile must be one of: {options}")
-    return profiles[profile]
+        return {
+            "raw_kinetics",
+            "endpoint_by_condition",
+            "endpoint_by_design",
+            "intensity_overview",
+            "value_distributions",
+        }
+    raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
 
 
 def _plate_reader_base_steps(
@@ -414,10 +388,10 @@ def _sfxi_vec8_step() -> PluginStepDecl:
     )
 
 
-def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measurement: str) -> PluginStepDecl:
-    settings = protocol.deliverable_settings(surface="plots", deliverable_id=deliverable_id)
+def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str) -> PluginStepDecl:
+    settings = protocol.plot_view_config(figure_id=output_id)
     plot_reads = _plate_reader_plot_reads(measurement=measurement)
-    if deliverable_id == "time_series":
+    if output_id == "raw_kinetics":
         defaults = {
             "partition": {"by": "design_id"},
             "hue": "treatment",
@@ -427,12 +401,12 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "add_sheet_line": True,
         }
         return _step(
-            id="time_series",
+            id="raw_kinetics",
             plugin="plot/time_series",
             reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "snapshot_by_channel":
+    if output_id == "endpoint_by_condition":
         defaults = {
             "x": "treatment",
             "y": (["OD600", "YFP/OD600"] if measurement == "yfp_cfp" else ["OD600", "RFP/OD600"]),
@@ -440,12 +414,12 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "time": 14.0,
         }
         return _step(
-            id="snapshot_by_channel",
+            id="endpoint_by_condition",
             plugin="plot/snapshot_barplot",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "snapshot_by_design":
+    if output_id == "endpoint_by_design":
         defaults = {
             "x": "design_id",
             "y": ("YFP/OD600" if measurement == "yfp_cfp" else "RFP/OD600"),
@@ -453,12 +427,12 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "time": 14.0,
         }
         return _step(
-            id="snapshot_by_design",
+            id="endpoint_by_design",
             plugin="plot/snapshot_barplot",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "snapshot_state":
+    if output_id == "state_summary":
         defaults = {
             "x": "treatment_alias",
             "y": ["OD600", "CFP/OD600", "YFP/OD600", "YFP/CFP"],
@@ -466,12 +440,12 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "time": 14.0,
         }
         return _step(
-            id="snapshot_state",
+            id="state_summary",
             plugin="plot/snapshot_barplot",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "ts_and_snap_intensity":
+    if output_id == "intensity_overview":
         if measurement == "yfp_cfp":
             defaults = {
                 "partition": {"by": "design_id"},
@@ -482,7 +456,7 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
                 "snap_channel": "YFP/OD600",
                 "snap_time": 14.0,
             }
-            step_id = "ts_and_snap_intensity"
+            step_id = "intensity_overview"
         else:
             defaults = {
                 "partition": {"by": "design_id"},
@@ -493,14 +467,14 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
                 "snap_channel": "RFP/OD600",
                 "snap_time": 14.0,
             }
-            step_id = "ts_and_snap_intensity"
+            step_id = "intensity_overview"
         return _step(
             id=step_id,
             plugin="plot/ts_and_snap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "ts_and_snap_ratio":
+    if output_id == "ratio_overview":
         defaults = {
             "partition": {"by": "design_id_alias"},
             "ts_channel": "OD600",
@@ -512,20 +486,22 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "snap_time": 14.0,
         }
         return _step(
-            id="ts_and_snap_ratio",
+            id="ratio_overview",
             plugin="plot/ts_and_snap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "distributions":
+    if output_id == "value_distributions":
         defaults = {"channels": ["YFP/CFP"], "partition": {"by": "design_id"}}
+        if measurement == "rfp_od600":
+            defaults["channels"] = ["RFP/OD600"]
         return _step(
-            id="distributions",
+            id="value_distributions",
             plugin="plot/distributions",
             reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "snapshot_heatmap_yfp_cfp":
+    if output_id == "ratio_heatmap":
         defaults = {
             "channel": "YFP/CFP",
             "time": 14.0,
@@ -533,12 +509,12 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "y": "design_id_alias",
         }
         return _step(
-            id="snapshot_heatmap_yfp_cfp",
+            id="ratio_heatmap",
             plugin="plot/snapshot_heatmap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "snapshot_heatmap_cfp_od600":
+    if output_id == "support_heatmap":
         defaults = {
             "channel": "CFP/OD600",
             "time": 14.0,
@@ -546,45 +522,45 @@ def _plate_reader_plot_deliverable(protocol: Any, *, deliverable_id: str, measur
             "y": "design_id_alias",
         }
         return _step(
-            id="snapshot_heatmap_cfp_od600",
+            id="support_heatmap",
             plugin="plot/snapshot_heatmap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    if deliverable_id == "logic_symmetry_yfp_cfp":
+    if output_id == "logic_symmetry":
         defaults = {"response_channel": "YFP/CFP"}
         return _step(
-            id="logic_symmetry_yfp_cfp",
+            id="logic_symmetry",
             plugin="plot/logic_symmetry",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
-    raise ConfigError(f"Unknown plate-reader plot deliverable {deliverable_id!r}")
+    raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
 
 
-def _plate_reader_export_deliverable(protocol: Any, *, deliverable_id: str) -> PluginStepDecl:
-    if deliverable_id == "crosstalk_pairs_csv":
+def _plate_reader_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
+    if output_id == "crosstalk_pairs_table":
         defaults = {"path": "crosstalk_pairs.csv"}
-        settings = protocol.deliverable_settings(surface="exports", deliverable_id=deliverable_id)
+        settings = protocol.export_artifact_config(artifact_id=output_id)
         return _step(
-            id="crosstalk_pairs_csv",
+            id="crosstalk_pairs_table",
             plugin="export/csv",
             reads={"df": RecordInputDecl(record_id="crosstalk_pairs/table")},
             with_=_deep_merge(defaults, settings),
         )
-    raise ConfigError(f"Unknown plate-reader export deliverable {deliverable_id!r}")
+    raise ConfigError(f"Unknown plate-reader export output {output_id!r}")
 
 
-def _logic_export_deliverable(protocol: Any, *, deliverable_id: str) -> PluginStepDecl:
-    if deliverable_id == "vec8_xlsx":
-        settings = protocol.deliverable_settings(surface="exports", deliverable_id=deliverable_id)
+def _logic_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
+    if output_id == "logic_summary_workbook":
+        settings = protocol.export_artifact_config(artifact_id=output_id)
         return _step(
-            id="vec8_xlsx",
+            id="logic_summary_workbook",
             plugin="export/xlsx",
             reads={"df": RecordInputDecl(record_id="sfxi_vec8/vec8")},
             with_=_deep_merge({"path": "sfxi/vec8.xlsx", "sheet_name": "vec8"}, settings),
         )
-    raise ConfigError(f"Unknown logic export deliverable {deliverable_id!r}")
+    raise ConfigError(f"Unknown logic export output {output_id!r}")
 
 
 def _deep_merge(*mappings: dict[str, Any]) -> dict[str, Any]:

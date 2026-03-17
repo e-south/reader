@@ -139,7 +139,7 @@ def _bind_resources(resources: dict[str, ResourceSpec], *, root: Path) -> Resour
 def _bind_protocol(spec: ProtocolBindingSpec) -> ProtocolBinding:
     return ProtocolBinding(
         id=spec.id,
-        parameters=dict(spec.parameters or {}),
+        inputs=dict(spec.inputs or {}),
         analysis=dict(spec.analysis or {}),
-        deliverables=spec.deliverables.model_dump(exclude_none=True),
+        outputs=spec.outputs.model_dump(exclude_none=True),
     )

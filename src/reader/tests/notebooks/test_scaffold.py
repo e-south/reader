@@ -105,7 +105,7 @@ def test_notebook_scaffold_uses_configured_notebook_spec(tmp_path: Path) -> None
         base_reader_config(
             experiment_id="exp_nb",
             protocol_id="cytometry/flow_panel",
-            protocol_deliverables={"notebook": {"template": "notebook/cytometry"}},
+            protocol_outputs={"notebook": {"template": "notebook/cytometry"}},
             resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
         ),
     )

@@ -155,6 +155,7 @@ def test_explain_surfaces_runtime_contract_promotions() -> None:
     explain(decl, console=console, registry=registry)
     rendered = console.export_text()
     assert "plate_reader/test_transform" in rendered
+    assert "df <- input/df" in rendered
     assert "runtime may promote to" in rendered
     assert "plate_reader.annotated.v1" in rendered
 
@@ -179,7 +180,7 @@ def test_explain_renders_notebook_specs_without_plugin_registry() -> None:
     spec = ReaderSpec.model_validate(
         base_reader_config(
             experiment_id="exp",
-            protocol_deliverables={"notebook": {"template": "notebook/eda"}},
+            protocol_outputs={"notebook": {"template": "notebook/eda"}},
         )
     )
     console = Console(theme=THEME, record=True, width=100)

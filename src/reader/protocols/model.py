@@ -12,7 +12,19 @@ from reader.workbench.decl.model import NotebookTemplateCallDecl, PluginStepDecl
 MetricStage = Literal["raw", "support", "derived", "comparison", "summary", "ranking", "qc", "burden", "leakiness"]
 FigureKind = Literal["qc", "kinetics", "summary", "ranking", "architecture"]
 RankingDirection = Literal["higher_is_better", "lower_is_better"]
-DeliverableSurface = Literal["plots", "exports"]
+ConfigFieldKind = Literal[
+    "mapping",
+    "string",
+    "bool",
+    "number",
+    "integer",
+    "string_list",
+    "number_list",
+    "scalar_list",
+    "mapping_list",
+    "scalar",
+    "any",
+]
 
 _UNSET = object()
 
@@ -20,18 +32,168 @@ _UNSET = object()
 @dataclass(frozen=True)
 class ProtocolBinding:
     id: str
-    parameters: dict[str, Any] = field(default_factory=dict)
+    inputs: dict[str, Any] = field(default_factory=dict)
     analysis: dict[str, Any] = field(default_factory=dict)
-    deliverables: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         protocol_id = str(self.id).strip()
         if not protocol_id:
             raise ValueError("ProtocolBinding.id must be a non-empty string.")
         object.__setattr__(self, "id", protocol_id)
-        object.__setattr__(self, "parameters", dict(self.parameters or {}))
+        object.__setattr__(self, "inputs", dict(self.inputs or {}))
         object.__setattr__(self, "analysis", dict(self.analysis or {}))
-        object.__setattr__(self, "deliverables", dict(self.deliverables or {}))
+        object.__setattr__(self, "outputs", dict(self.outputs or {}))
+
+
+@dataclass(frozen=True)
+class ProtocolConfigFieldSpec:
+    key: str
+    summary: str
+    kind: ConfigFieldKind = "mapping"
+    required: bool = False
+    allow_none: bool = False
+    choices: tuple[str, ...] = ()
+    children: tuple[ProtocolConfigFieldSpec, ...] = ()
+    allow_unknown: bool = False
+    default: Any = _UNSET
+
+    def __post_init__(self) -> None:
+        key = str(self.key).strip()
+        if not key:
+            raise ValueError("ProtocolConfigFieldSpec.key must be a non-empty string.")
+        summary = str(self.summary).strip()
+        if not summary:
+            raise ValueError("ProtocolConfigFieldSpec.summary must be a non-empty string.")
+        object.__setattr__(self, "key", key)
+        object.__setattr__(self, "summary", summary)
+        object.__setattr__(self, "choices", tuple(str(value).strip() for value in self.choices if str(value).strip()))
+        child_keys: set[str] = set()
+        for child in self.children:
+            if child.key in child_keys:
+                raise ValueError(f"Duplicate child key {child.key!r} in ProtocolConfigFieldSpec {key!r}.")
+            child_keys.add(child.key)
+        if self.kind != "mapping" and self.children:
+            raise ValueError("ProtocolConfigFieldSpec.children are only allowed when kind='mapping'.")
+
+    @property
+    def has_default(self) -> bool:
+        return self.default is not _UNSET
+
+    def render_default(self) -> str:
+        if not self.has_default:
+            return "—"
+        if self.default is None:
+            return "null"
+        if isinstance(self.default, (str, int, float, bool)):
+            return str(self.default)
+        if isinstance(self.default, list):
+            return "[" + ", ".join(str(item) for item in self.default) + "]"
+        if isinstance(self.default, tuple):
+            return "[" + ", ".join(str(item) for item in self.default) + "]"
+        if isinstance(self.default, dict):
+            keys = ", ".join(str(key) for key in self.default)
+            return "{...}" if not keys else "{" + keys + "}"
+        return str(self.default)
+
+    def iter_rows(self, *, prefix: str = "") -> tuple[tuple[str, str, str, str, str], ...]:
+        path = f"{prefix}{self.key}"
+        rows = [
+            (
+                path,
+                self.kind,
+                "yes" if self.required else "no",
+                self.render_default(),
+                self.summary,
+            )
+        ]
+        child_prefix = f"{path}."
+        for child in self.children:
+            rows.extend(child.iter_rows(prefix=child_prefix))
+        return tuple(rows)
+
+    def validate(self, value: Any, *, path: str) -> None:
+        if value is None:
+            if self.allow_none:
+                return
+            raise ConfigError(f"{path} must not be null")
+
+        if self.kind == "mapping":
+            if not isinstance(value, dict):
+                raise ConfigError(f"{path} must be a mapping")
+            allowed = {child.key: child for child in self.children}
+            unknown = sorted(key for key in value if key not in allowed)
+            if unknown and not self.allow_unknown:
+                options = ", ".join(sorted(allowed)) or "—"
+                raise ConfigError(f"{path} has unknown keys {unknown}. Allowed keys: {options}")
+            for child in self.children:
+                child_path = f"{path}.{child.key}"
+                if child.key not in value:
+                    if child.required and not child.has_default:
+                        raise ConfigError(f"{child_path} is required")
+                    continue
+                child.validate(value[child.key], path=child_path)
+            return
+
+        if self.kind == "string":
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"{path} must be a non-empty string")
+            if self.choices and value not in self.choices:
+                options = ", ".join(self.choices)
+                raise ConfigError(f"{path} must be one of: {options}")
+            return
+
+        if self.kind == "bool":
+            if not isinstance(value, bool):
+                raise ConfigError(f"{path} must be true or false")
+            return
+
+        if self.kind == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(f"{path} must be a number")
+            return
+
+        if self.kind == "integer":
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(f"{path} must be an integer")
+            return
+
+        if self.kind == "string_list":
+            if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+                raise ConfigError(f"{path} must be a list of non-empty strings")
+            if self.choices:
+                invalid = sorted(item for item in value if item not in self.choices)
+                if invalid:
+                    options = ", ".join(self.choices)
+                    raise ConfigError(f"{path} contains unsupported values {invalid}. Allowed values: {options}")
+            return
+
+        if self.kind == "number_list":
+            if not isinstance(value, list) or any(
+                isinstance(item, bool) or not isinstance(item, (int, float)) for item in value
+            ):
+                raise ConfigError(f"{path} must be a list of numbers")
+            return
+
+        if self.kind == "scalar_list":
+            if not isinstance(value, list) or any(isinstance(item, (dict, list)) for item in value):
+                raise ConfigError(f"{path} must be a flat list of scalar values")
+            return
+
+        if self.kind == "mapping_list":
+            if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+                raise ConfigError(f"{path} must be a list of mappings")
+            return
+
+        if self.kind == "scalar":
+            if isinstance(value, (dict, list)):
+                raise ConfigError(f"{path} must be a scalar value")
+            return
+
+        if self.kind == "any":
+            return
+
+        raise ConfigError(f"{path} uses unsupported field kind {self.kind!r}")
 
 
 @dataclass(frozen=True)
@@ -155,17 +317,30 @@ class ProtocolFigureSpec:
 
 
 @dataclass(frozen=True)
-class ProtocolDeliverableSpec:
+class ProtocolPlotProfileSpec:
     id: str
-    surface: DeliverableSurface
+    summary: str
+    figures: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not str(self.id).strip():
+            raise ValueError("ProtocolPlotProfileSpec.id must be a non-empty string.")
+        if not str(self.summary).strip():
+            raise ValueError("ProtocolPlotProfileSpec.summary must be a non-empty string.")
+        object.__setattr__(self, "figures", tuple(str(value) for value in self.figures))
+
+
+@dataclass(frozen=True)
+class ProtocolArtifactSpec:
+    id: str
     summary: str
     default: bool = False
 
     def __post_init__(self) -> None:
         if not str(self.id).strip():
-            raise ValueError("ProtocolDeliverableSpec.id must be a non-empty string.")
+            raise ValueError("ProtocolArtifactSpec.id must be a non-empty string.")
         if not str(self.summary).strip():
-            raise ValueError("ProtocolDeliverableSpec.summary must be a non-empty string.")
+            raise ValueError("ProtocolArtifactSpec.summary must be a non-empty string.")
 
 
 @dataclass(frozen=True)
@@ -268,13 +443,17 @@ class ProtocolDescriptor:
     summary: str
     execution: ProtocolExecutionPlan
     tags: tuple[str, ...] = ()
+    input_fields: tuple[ProtocolConfigFieldSpec, ...] = ()
+    analysis_fields: tuple[ProtocolConfigFieldSpec, ...] = ()
     factors: tuple[ProtocolFactorSpec, ...] = ()
     control_rules: tuple[ProtocolControlRule, ...] = ()
     windows: tuple[ProtocolWindowSpec, ...] = ()
     metrics: tuple[ProtocolMetricSpec, ...] = ()
     effect_signs: tuple[ProtocolEffectSignSpec, ...] = ()
     figures: tuple[ProtocolFigureSpec, ...] = ()
-    deliverables: tuple[ProtocolDeliverableSpec, ...] = ()
+    plot_profiles: tuple[ProtocolPlotProfileSpec, ...] = ()
+    default_plot_profile: str | None = None
+    artifacts: tuple[ProtocolArtifactSpec, ...] = ()
     ranking: ProtocolRankingSpec | None = None
 
     def __post_init__(self) -> None:
@@ -286,25 +465,56 @@ class ProtocolDescriptor:
         if not str(self.summary).strip():
             raise ValueError("ProtocolDescriptor.summary must be a non-empty string.")
         object.__setattr__(self, "tags", tuple(str(value) for value in self.tags))
-        seen: set[tuple[str, str]] = set()
-        for item in self.deliverables:
-            key = (item.surface, item.id)
-            if key in seen:
-                raise ValueError(f"Duplicate protocol deliverable {item.surface}:{item.id!r}.")
-            seen.add(key)
+        figure_ids: set[str] = set()
+        for item in self.figures:
+            if item.id in figure_ids:
+                raise ValueError(f"Duplicate protocol figure {item.id!r}.")
+            figure_ids.add(item.id)
+        profile_ids: set[str] = set()
+        for item in self.plot_profiles:
+            if item.id in profile_ids:
+                raise ValueError(f"Duplicate protocol plot profile {item.id!r}.")
+            profile_ids.add(item.id)
+            unknown = sorted(set(item.figures) - figure_ids)
+            if unknown:
+                raise ValueError(f"Protocol plot profile {item.id!r} references unknown figures: {', '.join(unknown)}.")
+        if self.default_plot_profile is not None:
+            default_plot_profile = str(self.default_plot_profile).strip()
+            if not default_plot_profile:
+                raise ValueError("ProtocolDescriptor.default_plot_profile must be a non-empty string when provided.")
+            if default_plot_profile not in profile_ids:
+                raise ValueError(
+                    f"ProtocolDescriptor.default_plot_profile {default_plot_profile!r} is not defined in plot_profiles."
+                )
+            object.__setattr__(self, "default_plot_profile", default_plot_profile)
+        artifact_ids: set[str] = set()
+        for item in self.artifacts:
+            if item.id in artifact_ids:
+                raise ValueError(f"Duplicate protocol artifact {item.id!r}.")
+            artifact_ids.add(item.id)
+
+    def validate_authoring(self, *, inputs: dict[str, Any], analysis: dict[str, Any]) -> None:
+        _validate_protocol_surface(inputs, fields=self.input_fields, path="protocol.inputs", protocol_id=self.protocol)
+        _validate_protocol_surface(
+            analysis,
+            fields=self.analysis_fields,
+            path="protocol.analysis",
+            protocol_id=self.protocol,
+        )
 
 
 @dataclass(frozen=True)
 class BoundProtocol:
     descriptor: ProtocolDescriptor
-    parameters: dict[str, Any] = field(default_factory=dict)
+    inputs: dict[str, Any] = field(default_factory=dict)
     analysis: dict[str, Any] = field(default_factory=dict)
-    deliverables: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", dict(self.parameters or {}))
+        object.__setattr__(self, "inputs", dict(self.inputs or {}))
         object.__setattr__(self, "analysis", dict(self.analysis or {}))
-        object.__setattr__(self, "deliverables", dict(self.deliverables or {}))
+        object.__setattr__(self, "outputs", dict(self.outputs or {}))
+        self.descriptor.validate_authoring(inputs=self.inputs, analysis=self.analysis)
 
     @property
     def id(self) -> str:
@@ -329,6 +539,10 @@ class BoundProtocol:
     @property
     def default_notebook_template(self) -> str:
         return self.execution.notebook.default_template
+
+    @property
+    def default_plot_profile(self) -> str | None:
+        return self.descriptor.default_plot_profile
 
     @property
     def allowed_notebook_templates(self) -> tuple[str, ...]:
@@ -379,61 +593,105 @@ class BoundProtocol:
         return _deep_merge(defaults, dict(step_with or {}))
 
     def configured_notebook_template(self) -> str | None:
-        block = self._deliverable_block("notebook")
+        block = self._output_block("notebook")
         template = block.get("template")
         if template is None:
             return None
         if not isinstance(template, str) or not template.strip():
-            raise ConfigError(f"protocol.deliverables.notebook.template for {self.id!r} must be a non-empty string")
+            raise ConfigError(f"protocol.outputs.notebook.template for {self.id!r} must be a non-empty string")
         return template.strip()
 
-    def select_deliverables(
+    def select_plot_outputs(
         self,
         *,
-        surface: DeliverableSurface,
-        defaults: tuple[str, ...],
+        default_profile: str | None = None,
         allowed: set[str],
     ) -> tuple[str, ...]:
-        block = self._deliverable_block(surface)
+        block = self._output_block("plots")
+        profile = block.get("profile", default_profile or self.descriptor.default_plot_profile or "none")
+        profile_ids = self._plot_profile_members(profile=profile, allowed=allowed)
         include = self._validate_deliverable_ids(
             block.get("include", ()),
-            where=f"protocol.deliverables.{surface}.include",
+            where="protocol.outputs.plots.include",
             allowed=allowed,
         )
         exclude = set(
             self._validate_deliverable_ids(
                 block.get("exclude", ()),
-                where=f"protocol.deliverables.{surface}.exclude",
+                where="protocol.outputs.plots.exclude",
                 allowed=allowed,
             )
         )
-        for deliverable_id in self._validate_deliverable_settings(surface=surface, allowed=allowed):
-            if deliverable_id not in allowed:
+        for figure_id in self._validate_named_output_configs(section="plots", key="views", allowed=allowed):
+            if figure_id not in allowed:
                 options = ", ".join(sorted(allowed)) or "—"
                 raise ConfigError(
-                    f"protocol.deliverables.{surface}.settings.{deliverable_id!r} is unknown for {self.id!r}. "
-                    f"Available ids: {options}"
+                    f"protocol.outputs.plots.views.{figure_id!r} is unknown for {self.id!r}. Available ids: {options}"
                 )
         selected: list[str] = []
-        for deliverable_id in (*defaults, *include):
-            if deliverable_id in exclude:
+        for figure_id in (*profile_ids, *include):
+            if figure_id in exclude:
                 continue
-            if deliverable_id not in selected:
-                selected.append(deliverable_id)
+            if figure_id not in selected:
+                selected.append(figure_id)
         return tuple(selected)
 
-    def deliverable_settings(self, *, surface: DeliverableSurface, deliverable_id: str) -> dict[str, Any]:
-        block = self._deliverable_block(surface)
-        settings = block.get("settings", {})
-        if not isinstance(settings, dict):
-            raise ConfigError(f"protocol.deliverables.{surface}.settings for {self.id!r} must be a mapping")
-        configured = settings.get(deliverable_id, {})
+    def plot_view_config(self, *, figure_id: str) -> dict[str, Any]:
+        block = self._output_block("plots")
+        views = block.get("views", {})
+        if not isinstance(views, dict):
+            raise ConfigError(f"protocol.outputs.plots.views for {self.id!r} must be a mapping")
+        configured = views.get(figure_id, {})
         if configured is None:
             return {}
         if not isinstance(configured, dict):
-            raise ConfigError(
-                f"protocol.deliverables.{surface}.settings.{deliverable_id!r} for {self.id!r} must be a mapping"
+            raise ConfigError(f"protocol.outputs.plots.views.{figure_id!r} for {self.id!r} must be a mapping")
+        return deepcopy(configured)
+
+    def select_export_outputs(
+        self,
+        *,
+        defaults: tuple[str, ...],
+        allowed: set[str],
+    ) -> tuple[str, ...]:
+        block = self._output_block("exports")
+        include = self._validate_deliverable_ids(
+            block.get("include", ()),
+            where="protocol.outputs.exports.include",
+            allowed=allowed,
+        )
+        exclude = set(
+            self._validate_deliverable_ids(
+                block.get("exclude", ()),
+                where="protocol.outputs.exports.exclude",
+                allowed=allowed,
             )
+        )
+        for artifact_id in self._validate_named_output_configs(section="exports", key="artifacts", allowed=allowed):
+            if artifact_id not in allowed:
+                options = ", ".join(sorted(allowed)) or "—"
+                raise ConfigError(
+                    f"protocol.outputs.exports.artifacts.{artifact_id!r} is unknown for {self.id!r}. "
+                    f"Available ids: {options}"
+                )
+        selected: list[str] = []
+        for artifact_id in (*defaults, *include):
+            if artifact_id in exclude:
+                continue
+            if artifact_id not in selected:
+                selected.append(artifact_id)
+        return tuple(selected)
+
+    def export_artifact_config(self, *, artifact_id: str) -> dict[str, Any]:
+        block = self._output_block("exports")
+        artifacts = block.get("artifacts", {})
+        if not isinstance(artifacts, dict):
+            raise ConfigError(f"protocol.outputs.exports.artifacts for {self.id!r} must be a mapping")
+        configured = artifacts.get(artifact_id, {})
+        if configured is None:
+            return {}
+        if not isinstance(configured, dict):
+            raise ConfigError(f"protocol.outputs.exports.artifacts.{artifact_id!r} for {self.id!r} must be a mapping")
         return deepcopy(configured)
 
     def _protocol_plugin_defaults(self, plugin_id: str) -> dict[str, Any]:
@@ -442,13 +700,32 @@ class BoundProtocol:
                 return self._resolve_binding_refs(item.with_, where=f"protocol {self.id} plugin {plugin_id}")
         return {}
 
-    def _deliverable_block(self, surface: str) -> dict[str, Any]:
-        raw = self.deliverables.get(surface, {})
+    def _output_block(self, section: str) -> dict[str, Any]:
+        raw = self.outputs.get(section, {})
         if raw is None:
             return {}
         if not isinstance(raw, dict):
-            raise ConfigError(f"protocol.deliverables.{surface} for {self.id!r} must be a mapping")
+            raise ConfigError(f"protocol.outputs.{section} for {self.id!r} must be a mapping")
         return dict(raw)
+
+    def _plot_profile_members(self, *, profile: Any, allowed: set[str]) -> tuple[str, ...]:
+        if not isinstance(profile, str) or not profile.strip():
+            raise ConfigError(f"protocol.outputs.plots.profile for {self.id!r} must be a non-empty string")
+        profile_id = profile.strip()
+        if profile_id == "none":
+            return ()
+        for item in self.descriptor.plot_profiles:
+            if item.id == profile_id:
+                members = tuple(figure_id for figure_id in item.figures if figure_id in allowed)
+                if len(members) != len(item.figures):
+                    unknown = sorted(set(item.figures) - allowed)
+                    raise ConfigError(
+                        f"protocol.outputs.plots.profile {profile_id!r} includes unsupported figures "
+                        f"for {self.id!r}: {', '.join(unknown)}"
+                    )
+                return members
+        options = ", ".join(["none", *[item.id for item in self.descriptor.plot_profiles]]) or "—"
+        raise ConfigError(f"protocol.outputs.plots.profile must be one of: {options}")
 
     def _validate_deliverable_ids(self, raw: Any, *, where: str, allowed: set[str]) -> tuple[str, ...]:
         if raw in (None, ()):
@@ -466,22 +743,26 @@ class BoundProtocol:
             values.append(deliverable_id)
         return tuple(values)
 
-    def _validate_deliverable_settings(self, *, surface: str, allowed: set[str]) -> tuple[str, ...]:
-        block = self._deliverable_block(surface)
-        settings = block.get("settings", {})
+    def _validate_named_output_configs(self, *, section: str, key: str, allowed: set[str]) -> tuple[str, ...]:
+        block = self._output_block(section)
+        settings = block.get(key, {})
         if settings in (None, {}):
             return ()
         if not isinstance(settings, dict):
-            raise ConfigError(f"protocol.deliverables.{surface}.settings for {self.id!r} must be a mapping")
+            raise ConfigError(f"protocol.outputs.{section}.{key} for {self.id!r} must be a mapping")
         ids: list[str] = []
         for deliverable_id, config in settings.items():
             if not isinstance(deliverable_id, str) or not deliverable_id.strip():
-                raise ConfigError(
-                    f"protocol.deliverables.{surface}.settings for {self.id!r} must use non-empty deliverable ids"
-                )
+                raise ConfigError(f"protocol.outputs.{section}.{key} for {self.id!r} must use non-empty ids")
             if not isinstance(config, dict):
                 raise ConfigError(
-                    f"protocol.deliverables.{surface}.settings.{deliverable_id!r} for {self.id!r} must be a mapping"
+                    f"protocol.outputs.{section}.{key}.{deliverable_id!r} for {self.id!r} must be a mapping"
+                )
+            if deliverable_id.strip() not in allowed:
+                options = ", ".join(sorted(allowed)) or "—"
+                raise ConfigError(
+                    f"protocol.outputs.{section}.{key}.{deliverable_id!r} is unknown for {self.id!r}. "
+                    f"Available ids: {options}"
                 )
             ids.append(deliverable_id.strip())
         return tuple(ids)
@@ -493,7 +774,7 @@ class BoundProtocol:
                 return deepcopy(resolved)
             if value.has_default:
                 return deepcopy(value.default)
-            raise ConfigError(f"{where} requires protocol.parameters.{value.key}")
+            raise ConfigError(f"{where} requires protocol.inputs.{value.key}")
         if isinstance(value, dict):
             return {key: self._resolve_binding_refs(item, where=where) for key, item in value.items()}
         if isinstance(value, list):
@@ -503,12 +784,19 @@ class BoundProtocol:
         return deepcopy(value)
 
     def _lookup_parameter_value(self, key: str) -> tuple[bool, Any]:
-        current: Any = self.parameters
+        current: Any = self.inputs
         for part in key.split("."):
             if not isinstance(current, dict) or part not in current:
                 return False, None
             current = current[part]
         return True, current
+
+    def authoring_rows(self, *, section: Literal["inputs", "analysis"]) -> tuple[tuple[str, str, str, str, str], ...]:
+        fields = self.descriptor.input_fields if section == "inputs" else self.descriptor.analysis_fields
+        rows: list[tuple[str, str, str, str, str]] = []
+        for field_spec in fields:
+            rows.extend(field_spec.iter_rows())
+        return tuple(rows)
 
 
 def _deep_merge(*mappings: dict[str, Any]) -> dict[str, Any]:
@@ -520,6 +808,29 @@ def _deep_merge(*mappings: dict[str, Any]) -> dict[str, Any]:
                 continue
             merged[key] = deepcopy(value)
     return merged
+
+
+def _validate_protocol_surface(
+    raw: dict[str, Any],
+    *,
+    fields: tuple[ProtocolConfigFieldSpec, ...],
+    path: str,
+    protocol_id: str,
+) -> None:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path} for {protocol_id!r} must be a mapping")
+    allowed = {field.key: field for field in fields}
+    unknown = sorted(key for key in raw if key not in allowed)
+    if unknown:
+        options = ", ".join(sorted(allowed)) or "—"
+        raise ConfigError(f"{path} for {protocol_id!r} has unknown keys {unknown}. Allowed keys: {options}")
+    for field_spec in fields:
+        field_path = f"{path}.{field_spec.key}"
+        if field_spec.key not in raw:
+            if field_spec.required and not field_spec.has_default:
+                raise ConfigError(f"{field_path} for {protocol_id!r} is required")
+            continue
+        field_spec.validate(raw[field_spec.key], path=field_path)
 
 
 class ProtocolCatalog:
@@ -545,9 +856,9 @@ class ProtocolCatalog:
     def bind(self, binding: ProtocolBinding) -> BoundProtocol:
         return BoundProtocol(
             descriptor=self.resolve(binding.id),
-            parameters=binding.parameters,
+            inputs=binding.inputs,
             analysis=binding.analysis,
-            deliverables=binding.deliverables,
+            outputs=binding.outputs,
         )
 
     def list(self, *, domain: str | None = None, family: str | None = None) -> list[tuple[str, str]]:

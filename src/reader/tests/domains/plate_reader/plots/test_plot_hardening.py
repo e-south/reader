@@ -289,17 +289,17 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
 
 def test_validate_rejects_unknown_heatmap_order_ref(tmp_path) -> None:
     data = {
-        "schema": "reader/v6",
+        "schema": "reader/v7",
         "experiment": {"id": "exp_semantics"},
         "protocol": {
             "id": "plate_reader/dual_reporter_screen",
             "analysis": {"include_fold_change": False},
-            "deliverables": {
+            "outputs": {
                 "plots": {
                     "profile": "none",
-                    "include": ["snapshot_heatmap_yfp_cfp"],
-                    "settings": {
-                        "snapshot_heatmap_yfp_cfp": {
+                    "include": ["ratio_heatmap"],
+                    "views": {
+                        "ratio_heatmap": {
                             "channel": "YFP/CFP",
                             "time": 0.0,
                             "x": "treatment_alias",

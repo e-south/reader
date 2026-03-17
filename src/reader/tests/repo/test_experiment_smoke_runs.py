@@ -50,7 +50,7 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     cfg_path = _stage_experiment(tmp_path, "2025/20250614_sensor_panel_M9_glu")
     decl = load_decl(cfg_path)
     workbench = resolve_workbench(decl)
-    plot_ts = next(plot for plot in workbench.plots if plot.id == "time_series")
+    plot_ts = next(plot for plot in workbench.plots if plot.id == "raw_kinetics")
 
     _run(decl, include_pipeline=True, include_plots=False, include_exports=False)
     _run(decl, include_pipeline=False, include_plots=True, include_exports=False, plot_specs=[plot_ts])
@@ -74,7 +74,7 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     assert not (manifests / "plots_manifest.json").exists()
     assert not (manifests / "exports_manifest.json").exists()
     assert "ingest/df" in latest_ids
-    assert "plot:time_series" in latest_ids
+    assert "plot:raw_kinetics" in latest_ids
     assert any(plots_dir.glob("*.pdf"))
 
 
@@ -82,7 +82,7 @@ def test_sfxi_v3_generates_records_and_export_from_clean_temp_copy(tmp_path: Pat
     cfg_path = _stage_experiment(tmp_path, "2025/20250915_sfxi_pSingle_ref")
     decl = load_decl(cfg_path)
     workbench = resolve_workbench(decl)
-    export_vec8 = next(export for export in workbench.exports if export.id == "vec8_xlsx")
+    export_vec8 = next(export for export in workbench.exports if export.id == "logic_summary_workbook")
 
     _run(decl, include_pipeline=True, include_plots=False, include_exports=False)
     _run(decl, include_pipeline=False, include_plots=False, include_exports=True, export_specs=[export_vec8])
@@ -105,5 +105,5 @@ def test_sfxi_v3_generates_records_and_export_from_clean_temp_copy(tmp_path: Pat
     assert not (manifests / "plots_manifest.json").exists()
     assert not (manifests / "exports_manifest.json").exists()
     assert "sfxi_vec8/vec8" in latest_ids
-    assert "export:vec8_xlsx" in latest_ids
+    assert "export:logic_summary_workbook" in latest_ids
     assert (outputs / layout.exports_subdir / "sfxi" / "vec8.xlsx").exists()

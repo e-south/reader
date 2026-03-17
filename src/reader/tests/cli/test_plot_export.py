@@ -23,11 +23,11 @@ def _base_config() -> dict:
     return base_reader_config(
         experiment_id="exp_cli",
         protocol_id="plate_reader/dual_reporter_screen",
-        protocol_parameters={"fold_change": {"report_times": [14.0]}},
+        protocol_inputs={"fold_change": {"report_times": [14.0]}},
         protocol_analysis={"crosstalk_pairs": {"enabled": True, "export": True}},
-        protocol_deliverables={
-            "plots": {"profile": "none", "include": ["time_series", "snapshot_by_channel"]},
-            "exports": {"include": ["crosstalk_pairs_csv"]},
+        protocol_outputs={
+            "plots": {"profile": "none", "include": ["raw_kinetics", "endpoint_by_condition"]},
+            "exports": {"include": ["crosstalk_pairs_table"]},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
@@ -36,25 +36,26 @@ def _base_config() -> dict:
 def test_plot_list_filters(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
-    result = runner.invoke(app, ["plot", str(cfg), "--list"])
+    result = runner.invoke(app, ["plot", str(cfg), "--list"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "time_series" in result.output
-    assert "snapshot_by_channel" in result.output
+    assert "raw_kinetics" in result.output
+    assert "2 total" in result.output
+    assert "df <- ratio_yfp_od600/df" in result.output
 
-    result = runner.invoke(app, ["plot", str(cfg), "--list", "--only", "time_series"])
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--only", "raw_kinetics"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "time_series" in result.output
-    assert "snapshot_by_channel" not in result.output
+    assert "raw_kinetics" in result.output
+    assert "endpoint_by_condition" not in result.output
 
-    result = runner.invoke(app, ["plot", str(cfg), "--list", "--exclude", "time_series"])
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--exclude", "raw_kinetics"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "time_series" not in result.output
-    assert "snapshot_by_channel" in result.output
+    assert "raw_kinetics" not in result.output
+    assert "endpoint_by_condition" in result.output
 
 
 def test_plot_list_empty(tmp_path: Path) -> None:
     cfg = _base_config()
-    cfg["protocol"]["deliverables"]["plots"] = {"profile": "none"}
+    cfg["protocol"]["outputs"]["plots"] = {"profile": "none"}
     cfg_path = write_config(tmp_path, cfg)
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg_path), "--list"])
@@ -99,18 +100,24 @@ def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
 def test_export_list_filters(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
-    result = runner.invoke(app, ["export", str(cfg), "--list"])
+    result = runner.invoke(app, ["export", str(cfg), "--list"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "crosstalk_pairs_csv" in result.output
+    assert "crosstalk-safe" in result.output
+    assert "from" in result.output
+    assert "export/csv" in result.output
 
-    result = runner.invoke(app, ["export", str(cfg), "--list", "--only", "crosstalk_pairs_csv"])
+    result = runner.invoke(
+        app,
+        ["export", str(cfg), "--list", "--only", "crosstalk_pairs_table"],
+        env={"COLUMNS": "200"},
+    )
     assert result.exit_code == 0
-    assert "crosstalk_pairs_csv" in result.output
+    assert "crosstalk_pairs_table" in result.output
 
 
 def test_export_list_empty(tmp_path: Path) -> None:
     cfg = _base_config()
-    cfg["protocol"]["deliverables"]["exports"] = {"exclude": ["crosstalk_pairs_csv"]}
+    cfg["protocol"]["outputs"]["exports"] = {"exclude": ["crosstalk_pairs_table"]}
     cfg_path = write_config(tmp_path, cfg)
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg_path), "--list"])
@@ -146,7 +153,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "time_series", "--mode", "none"],
+        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "raw_kinetics", "--mode", "none"],
     )
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
@@ -159,7 +166,7 @@ def test_plot_notebook_scaffold(tmp_path: Path) -> None:
 def test_plot_override_parses_runtime_inputs_to_typed_refs(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, _base_config())
     decl = load_decl(cfg_path)
-    plot_spec = next(spec for spec in resolve_workbench(decl).plots if spec.id == "time_series")
+    plot_spec = next(spec for spec in resolve_workbench(decl).plots if spec.id == "raw_kinetics")
 
     overrides = _parse_input_overrides(
         ["df=override/df", "sample_map={file: ./inputs/metadata.xlsx}"],

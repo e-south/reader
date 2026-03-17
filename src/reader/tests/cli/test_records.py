@@ -17,7 +17,7 @@ from reader.workbench.records import RecordStore
 def test_records_requires_catalog(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v6\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -29,7 +29,7 @@ def test_records_requires_catalog(tmp_path) -> None:
 def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v6\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     outputs = tmp_path / "outputs"
@@ -67,7 +67,7 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
 def test_records_all_shows_revision_counts(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "schema: reader/v6\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     outputs = tmp_path / "outputs"

@@ -90,34 +90,42 @@ class AnnotationSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class NotebookDeliverablesSpec(BaseModel):
+class NotebookOutputsSpec(BaseModel):
     template: str | None = None
 
     model_config = {"extra": "forbid"}
 
 
-class SurfaceDeliverablesSpec(BaseModel):
+class PlotOutputsSpec(BaseModel):
     profile: str | None = None
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
-    settings: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    views: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
 
-class DeliverablesSpec(BaseModel):
-    notebook: NotebookDeliverablesSpec = Field(default_factory=NotebookDeliverablesSpec)
-    plots: SurfaceDeliverablesSpec = Field(default_factory=SurfaceDeliverablesSpec)
-    exports: SurfaceDeliverablesSpec = Field(default_factory=SurfaceDeliverablesSpec)
+class ExportOutputsSpec(BaseModel):
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    artifacts: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
+class OutputsSpec(BaseModel):
+    notebook: NotebookOutputsSpec = Field(default_factory=NotebookOutputsSpec)
+    plots: PlotOutputsSpec = Field(default_factory=PlotOutputsSpec)
+    exports: ExportOutputsSpec = Field(default_factory=ExportOutputsSpec)
 
     model_config = {"extra": "forbid"}
 
 
 class ProtocolBindingSpec(BaseModel):
     id: str
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
     analysis: dict[str, Any] = Field(default_factory=dict)
-    deliverables: DeliverablesSpec = Field(default_factory=DeliverablesSpec)
+    outputs: OutputsSpec = Field(default_factory=OutputsSpec)
 
     model_config = {"extra": "forbid"}
 
@@ -143,8 +151,8 @@ class ReaderSpec(BaseModel):
     @field_validator("schema_", mode="after")
     @classmethod
     def _validate_schema(cls, v: str) -> str:
-        if v != "reader/v6":
-            raise ConfigError("Config schema must be 'reader/v6'. This repo only supports reader/v6.")
+        if v != "reader/v7":
+            raise ConfigError("Config schema must be 'reader/v7'. This repo only supports reader/v7.")
         return v
 
     @classmethod

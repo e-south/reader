@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import sys
 from pathlib import Path
 
 from reader.protocols import ProtocolBinding
@@ -24,7 +26,7 @@ def test_bound_protocol_applies_executable_defaults() -> None:
     protocol = runtime.bind_protocol(
         ProtocolBinding(
             id="logic/sfxi_screen",
-            parameters={
+            inputs={
                 "target_time_h": 10.0,
                 "logic_map_ref": "induction_logic",
                 "reference": {"design_id": "CUSTOM"},
@@ -73,3 +75,22 @@ def test_runtime_composition_only_lives_in_runtime_package() -> None:
     assert not builtin_violations, f"builtin_contract_catalog() escaped runtime root: {builtin_violations}"
     assert not protocol_violations, f"builtin_protocol_catalog() escaped runtime root: {protocol_violations}"
     assert not plugin_violations, f"load_plugin_catalog() escaped runtime root: {plugin_violations}"
+
+
+def test_plot_registry_import_does_not_eager_load_snapshot_heatmap_domain_module() -> None:
+    sys.modules.pop("reader.plugins.plot.snapshot_heatmap", None)
+    sys.modules.pop("reader.domains.plate_reader.plots.snapshot_heatmap", None)
+
+    importlib.import_module("reader.plugins.plot.snapshot_heatmap")
+
+    assert "reader.domains.plate_reader.plots.snapshot_heatmap" not in sys.modules
+
+
+def test_plotting_mpl_import_does_not_eager_load_plotting_style_module() -> None:
+    sys.modules.pop("reader.plotting", None)
+    sys.modules.pop("reader.plotting.mpl", None)
+    sys.modules.pop("reader.plotting.style", None)
+
+    importlib.import_module("reader.plotting.mpl")
+
+    assert "reader.plotting.style" not in sys.modules
