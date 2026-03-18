@@ -76,6 +76,8 @@
   - `reader protocols <protocol-id>`
   - `reader protocols <protocol-id> --example-config`
   - `reader plugins --protocol <protocol-id> --category transform`
+  - `reader protocols plate_reader/retron_sponge_screen` for matched-control sponge screens
+  - `reader protocols plate_reader/dual_reporter_screen` for general dual-reporter sensor panels
 - I need to scaffold a new experiment from an assay:
   - `reader init ./experiments/<new-experiment> --protocol <protocol-id>`
   - `reader inspect ./experiments/<new-experiment>/config.yaml`

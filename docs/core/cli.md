@@ -61,6 +61,7 @@ Filter the inventory down to one assay family or just broken configs:
 
 ```bash
 reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+reader ls --root experiments --details --protocol plate_reader/retron_sponge_screen
 reader ls --root experiments --details --status config_error
 ```
 
@@ -80,6 +81,7 @@ reader plugins --category plot
 reader plugins --protocol plate_reader/dual_reporter_screen --category transform
 reader protocols
 reader protocols plate_reader/dual_reporter_screen
+reader protocols plate_reader/retron_sponge_screen
 reader protocols plate_reader/dual_reporter_screen --example-config
 reader protocols --family screen_analysis
 reader notebook --list-templates
@@ -90,6 +92,8 @@ Scaffold a new experiment from a protocol:
 ```bash
 reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
 ```
+
+Use `plate_reader/dual_reporter_screen` for general plate-reader sensor panels. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
 
 Inspect one experiment end to end:
 
@@ -139,6 +143,7 @@ machine-readable contract:
 ```bash
 reader ls --root experiments --details --status config_error --format json
 reader protocols plate_reader/dual_reporter_screen --format json
+reader protocols plate_reader/retron_sponge_screen --format json
 reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
 reader records CONFIG|DIR|INDEX --format json
 ```

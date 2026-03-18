@@ -32,6 +32,7 @@ uv run reader ls --root experiments --details --format json
 uv run reader ls --root experiments --details --readiness
 uv run reader ls --root experiments --details --readiness --format json
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+uv run reader ls --root experiments --details --protocol plate_reader/retron_sponge_screen
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
 uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
 uv run reader inspect experiments/template/config.yaml
@@ -43,9 +44,12 @@ uv run reader explain experiments/template/config.yaml --format json
 uv run reader run experiments/template/config.yaml --dry-run --format json
 uv run reader records experiments/template/config.yaml --format json
 uv run reader protocols plate_reader/dual_reporter_screen --example-config
+uv run reader protocols plate_reader/retron_sponge_screen --format json
 uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
+
+Use `plate_reader/dual_reporter_screen` for general plate-reader sensor panels and `plate_reader/retron_sponge_screen` when the assay logic depends on matched same-sensor tetO normalization, induced sponge effects, burden, leakiness, and cross-sensor ranking.
 
 ## Workbench layout
 
