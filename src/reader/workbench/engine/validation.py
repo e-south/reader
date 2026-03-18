@@ -20,6 +20,7 @@ from reader.workbench.graph import (
     input_ref_display,
     resolve_workbench,
 )
+from reader.workbench.registry import Plugin, PreflightIssue
 from reader.workbench.templates import require_notebook_template_for_protocol
 
 from ._shared import collect_categories
@@ -213,6 +214,46 @@ def _validate_notebook_specs(items: list[Any], *, protocol: Any) -> None:
         require_notebook_template_for_protocol(spec_item.template, protocol=protocol)
 
 
+def _resolve_exp_path(path: Path, *, exp_root: Path | None) -> Path:
+    if path.is_absolute() or exp_root is None:
+        return path
+    return (exp_root / path).resolve()
+
+
+def _render_rel(path: Path, *, exp_root: Path | None) -> Path:
+    if exp_root is None:
+        return path
+    try:
+        return path.relative_to(exp_root)
+    except Exception:
+        return path
+
+
+def _plugin_preflight_issues(
+    *,
+    items: list[Any],
+    label: str,
+    registry: Any,
+    protocol: Any,
+    exp_root: Path | None,
+) -> list[tuple[str, str, PreflightIssue]]:
+    if exp_root is None:
+        return []
+    issues: list[tuple[str, str, PreflightIssue]] = []
+    for step in items:
+        plugin_cls = registry.resolve(step.plugin)
+        if getattr(plugin_cls.preflight_readiness, "__func__", plugin_cls.preflight_readiness) is getattr(
+            Plugin.preflight_readiness,
+            "__func__",
+            Plugin.preflight_readiness,
+        ):
+            continue
+        cfg = plugin_cls.ConfigModel.model_validate(_effective_step_with(protocol=protocol, step=step))
+        for issue in plugin_cls.preflight_readiness(exp_dir=exp_root, cfg=cfg, reads=(step.reads or {})):
+            issues.append((label, step.id, issue))
+    return issues
+
+
 def validation_summary(
     decl: WorkbenchDecl,
     *,
@@ -265,8 +306,9 @@ def validation_summary(
         _validate_notebook_specs(notebook_specs, protocol=bound_protocol)
 
     files_checked = None
-    missing_files: list[tuple[str, str, str, Path]] = []
-    missing_roots: list[tuple[str, str, Path]] = []
+    file_issues: list[str] = []
+    dependency_issues: list[str] = []
+    readiness_errors: list[str] = []
     if check_files:
         entries: list[tuple[str, str, str, Path]] = []
         roots: list[tuple[str, str, Path]] = []
@@ -274,38 +316,49 @@ def validation_summary(
             for step in items:
                 for key, target in (step.reads or {}).items():
                     if isinstance(target, FileRef | ResourceRef):
-                        entries.append((label, step.id, key, target.path))
+                        entries.append((label, step.id, key, _resolve_exp_path(target.path, exp_root=exp_root)))
                 with_block = _effective_step_with(protocol=bound_protocol, step=step) if hasattr(step, "with_") else {}
                 auto_roots = with_block.get("auto_roots")
                 if isinstance(auto_roots, list):
                     for root in auto_roots:
-                        roots.append((label, step.id, Path(root)))
+                        roots.append((label, step.id, _resolve_exp_path(Path(root), exp_root=exp_root)))
         files_checked = (len(entries), len(roots))
         for label, step_id, key, path in entries:
             if not path.exists():
-                missing_files.append((label, step_id, key, path))
+                file_issues.append(f"{label}:{step_id} • {key} → {_render_rel(path, exp_root=exp_root)}")
         for label, step_id, root in roots:
             if not root.exists():
-                missing_roots.append((label, step_id, root))
-        if missing_files or missing_roots:
-            lines = ["Missing input files:"]
-            for label, step_id, key, path in missing_files:
-                rel = path
-                if exp_root is not None:
-                    try:
-                        rel = path.relative_to(exp_root)
-                    except Exception:
-                        rel = path
-                lines.append(f"- {label}:{step_id} • {key} → {rel}")
-            for label, step_id, root in missing_roots:
-                rel = root
-                if exp_root is not None:
-                    try:
-                        rel = root.relative_to(exp_root)
-                    except Exception:
-                        rel = root
-                lines.append(f"- {label}:{step_id} • auto_roots → {rel}")
-            raise ConfigError("\n".join(lines))
+                file_issues.append(f"{label}:{step_id} • auto_roots → {_render_rel(root, exp_root=exp_root)}")
+        if registry is not None:
+            for label, step_id, issue in (
+                _plugin_preflight_issues(
+                    items=pipeline_steps,
+                    label="pipeline",
+                    registry=registry,
+                    protocol=bound_protocol,
+                    exp_root=exp_root,
+                )
+                + _plugin_preflight_issues(
+                    items=plot_specs,
+                    label="plot",
+                    registry=registry,
+                    protocol=bound_protocol,
+                    exp_root=exp_root,
+                )
+                + _plugin_preflight_issues(
+                    items=export_specs,
+                    label="export",
+                    registry=registry,
+                    protocol=bound_protocol,
+                    exp_root=exp_root,
+                )
+            ):
+                rendered = f"{label}:{step_id} • {issue.message}"
+                if issue.kind == "dependency":
+                    dependency_issues.append(rendered)
+                else:
+                    file_issues.append(rendered)
+        readiness_errors = [*file_issues, *dependency_issues]
 
     file_total, root_total = files_checked or (0, 0)
     if not check_files:
@@ -313,13 +366,15 @@ def validation_summary(
             "mode": "skipped",
             "checked": False,
             "declared": {"file_inputs": 0, "auto_roots": 0},
+            "issues": 0,
             "summary": "skipped (--no-files)",
         }
-    elif file_total == 0 and root_total == 0:
+    elif file_total == 0 and root_total == 0 and not file_issues:
         files_payload = {
             "mode": "none_declared",
             "checked": True,
             "declared": {"file_inputs": 0, "auto_roots": 0},
+            "issues": 0,
             "summary": "none declared",
         }
     else:
@@ -328,15 +383,41 @@ def validation_summary(
             parts.append(f"{file_total} file input(s)")
         if root_total:
             parts.append(f"{root_total} auto_root(s)")
+        if file_issues:
+            parts.append(f"{len(file_issues)} issue(s)")
         files_payload = {
-            "mode": "ok",
+            "mode": "error" if file_issues else "ok",
             "checked": True,
             "declared": {"file_inputs": file_total, "auto_roots": root_total},
-            "summary": f"ok ({', '.join(parts)})",
+            "issues": len(file_issues),
+            "summary": (f"error ({', '.join(parts)})" if file_issues else f"ok ({', '.join(parts)})"),
         }
 
+    if not check_files:
+        dependencies_payload = {
+            "checked": False,
+            "issues": 0,
+            "summary": "skipped (--no-files)",
+        }
+    else:
+        dependencies_payload = {
+            "checked": True,
+            "issues": len(dependency_issues),
+            "summary": (f"error ({len(dependency_issues)} issue(s))" if dependency_issues else "ok"),
+        }
+
+    checks = [
+        "schema",
+        "plugin availability",
+        "reads",
+        "output labels",
+        "plugin config",
+    ]
+    if check_files:
+        checks.append("runtime readiness")
+
     return {
-        "status": "ok",
+        "status": "error" if readiness_errors else "ok",
         "protocol": decl.experiment_semantics.protocol.id,
         "counts": {
             "pipeline": len(pipeline_steps),
@@ -344,15 +425,15 @@ def validation_summary(
             "exports": len(export_specs),
             "notebooks": len(notebook_specs),
         },
-        "checks": [
-            "schema",
-            "plugin availability",
-            "reads",
-            "output labels",
-            "plugin config",
-        ],
+        "checks": checks,
         "files": files_payload,
-        "tip": "use 'reader explain' to see inputs/outputs",
+        "dependencies": dependencies_payload,
+        "errors": readiness_errors,
+        "tip": (
+            "fix readiness issues or use 'reader validate --no-files' for config-only checks"
+            if readiness_errors
+            else "use 'reader explain' to see inputs/outputs"
+        ),
     }
 
 
@@ -363,15 +444,16 @@ def validate(
     check_files: bool = False,
     exp_root: Path | None = None,
     runtime: ReaderRuntime | None = None,
-) -> None:
+) -> dict[str, Any]:
     summary = validation_summary(
         decl,
         check_files=check_files,
         exp_root=exp_root,
         runtime=runtime,
     )
+    ok = summary["status"] == "ok"
     lines = [
-        "[green]✓ Config validated[/green]",
+        "[green]✓ Config validated[/green]" if ok else "[error]✗ Validation failed[/error]",
         f"[dim]protocol[/dim]: {summary['protocol']}",
         f"[dim]pipeline[/dim]: {summary['counts']['pipeline']}",
         f"[dim]plots[/dim]: {summary['counts']['plots']}",
@@ -380,5 +462,10 @@ def validate(
         f"[dim]checks[/dim]: {', '.join(summary['checks'])}",
     ]
     lines.append(f"[dim]files[/dim]: {summary['files']['summary']}")
+    lines.append(f"[dim]dependencies[/dim]: {summary['dependencies']['summary']}")
+    if summary["errors"]:
+        lines.append("[dim]errors[/dim]:")
+        lines.extend(f"- {item}" for item in summary["errors"])
     lines.append(f"[dim]tip[/dim]: {summary['tip']}")
-    console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
+    console.print(Panel.fit("\n".join(lines), border_style=("green" if ok else "error"), box=box.ROUNDED))
+    return summary

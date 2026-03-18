@@ -378,14 +378,20 @@ def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
     assert payload["summary"]["status"] == "ok"
     assert payload["summary"]["counts"]["pipeline"] >= 1
     assert payload["validation"]["files"]["mode"] == "skipped"
+    assert payload["validation"]["dependencies"]["checked"] is False
+    assert payload["validation"]["errors"] == []
     assert "protocol" not in payload["validation"]
 
 
-def test_validate_json_surfaces_file_check_selection(tmp_path: Path) -> None:
+def test_validate_json_surfaces_file_check_selection(monkeypatch, tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
 
     runner = CliRunner()
     result = runner.invoke(cli.app, ["validate", str(cfg), "--format", "json"])
@@ -394,6 +400,24 @@ def test_validate_json_surfaces_file_check_selection(tmp_path: Path) -> None:
     assert payload["selection"]["check_files"] is True
     assert payload["summary"]["status"] == "ok"
     assert payload["validation"]["files"]["checked"] is True
+    assert payload["validation"]["dependencies"]["checked"] is True
+    assert payload["validation"]["errors"] == []
+
+
+def test_validate_json_surfaces_runtime_readiness_errors(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["validate", str(cfg), "--format", "json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["summary"]["status"] == "error"
+    assert payload["validation"]["files"]["mode"] == "error"
+    assert payload["validation"]["dependencies"]["summary"] == "ok"
+    assert any("No raw .xlsx files discovered" in item for item in payload["validation"]["errors"])
 
 
 class _PluginCfg(PluginConfig):

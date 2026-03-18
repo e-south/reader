@@ -356,14 +356,18 @@ def validate(
                     summary=summary,
                 )
             )
+            if summary["status"] != "ok":
+                raise typer.Exit(code=1)
             return
-        validate_job(
+        summary = validate_job(
             decl,
             console=shared.console,
             check_files=not no_files,
             exp_root=decl.experiment.root,
             runtime=runtime,
         )
+        if summary["status"] != "ok":
+            raise typer.Exit(code=1)
     except ReaderError as err:
         handle_reader_error(err)
 

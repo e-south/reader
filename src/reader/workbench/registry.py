@@ -13,7 +13,8 @@ import importlib
 import importlib.metadata as md
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -35,6 +36,12 @@ class PluginConfig(BaseModel):
     """Base class for per-plugin configs (pydantic v2)."""
 
     model_config = {"extra": "forbid"}
+
+
+@dataclass(frozen=True)
+class PreflightIssue:
+    kind: str
+    message: str
 
 
 class Plugin(ABC):
@@ -76,6 +83,17 @@ class Plugin(ABC):
             if surface is not None:
                 surfaces[name] = surface
         return surfaces
+
+    @classmethod
+    def preflight_readiness(
+        cls,
+        *,
+        exp_dir: Path,
+        cfg: PluginConfig,
+        reads: Mapping[str, Any],
+    ) -> tuple[PreflightIssue, ...]:
+        del exp_dir, cfg, reads
+        return ()
 
     @classmethod
     def passthrough_output_ports(

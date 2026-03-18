@@ -244,6 +244,8 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     file_path = inputs_dir / "metadata.xlsx"
     file_path.write_text("stub", encoding="utf-8")
+    raw_path = inputs_dir / "run1.xlsx"
+    raw_path.write_text("stub", encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(app, ["validate", str(cfg_path)])
     assert result.exit_code == 0
@@ -251,7 +253,7 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
     file_path.unlink()
     result = runner.invoke(app, ["validate", str(cfg_path)])
     assert result.exit_code == 1
-    assert "Missing input files" in result.output
+    assert "inputs/metadata.xlsx" in result.output
 
 
 def test_validate_no_files_skips_checks(tmp_path: Path) -> None:

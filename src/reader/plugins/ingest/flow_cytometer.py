@@ -11,6 +11,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
@@ -24,7 +25,7 @@ from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
 from reader.workbench.ports import dataframe_output, file_path_input
-from reader.workbench.registry import Plugin, PluginConfig
+from reader.workbench.registry import Plugin, PluginConfig, PreflightIssue
 
 DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
 
@@ -63,6 +64,32 @@ class FlowCytometerIngest(Plugin):
             "df": dataframe_output("df", "tidy.v1"),
             "channels": dataframe_output("channels", "cytometer.channels.v1"),
         }
+
+    @classmethod
+    def preflight_readiness(cls, *, exp_dir, cfg: FlowCytometerCfg, reads):
+        issues: list[PreflightIssue] = []
+        if importlib.util.find_spec("flowio") is None:
+            issues.append(
+                PreflightIssue(
+                    kind="dependency",
+                    message="flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry",
+                )
+            )
+        if "raw" not in reads:
+            try:
+                discover_auto_input_files(
+                    exp_dir=exp_dir,
+                    auto_roots=cfg.auto_roots,
+                    auto_include=cfg.auto_include,
+                    auto_exclude=cfg.auto_exclude,
+                    auto_recursive=cfg.auto_recursive,
+                    auto_pick=cfg.auto_pick,
+                    discovery_label=".fcs files",
+                    singular_label=".fcs file",
+                )
+            except ParseError as err:
+                issues.append(PreflightIssue(kind="file", message=str(err)))
+        return tuple(issues)
 
     def _discover(self, ctx, cfg: FlowCytometerCfg) -> list[Path]:
         return discover_auto_input_files(

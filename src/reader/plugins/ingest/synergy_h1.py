@@ -19,7 +19,7 @@ from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 from reader.workbench.ports import dataframe_output, file_path_input
-from reader.workbench.registry import Plugin, PluginConfig
+from reader.workbench.registry import Plugin, PluginConfig, PreflightIssue
 
 
 class SynergyH1UnifiedCfg(PluginConfig):
@@ -63,6 +63,25 @@ class SynergyH1(Plugin):
     @classmethod
     def output_ports(cls):
         return {"df": dataframe_output("df", "tidy.v1")}
+
+    @classmethod
+    def preflight_readiness(cls, *, exp_dir, cfg: SynergyH1UnifiedCfg, reads):
+        if "raw" in reads:
+            return ()
+        try:
+            discover_auto_input_files(
+                exp_dir=exp_dir,
+                auto_roots=cfg.auto_roots,
+                auto_include=cfg.auto_include,
+                auto_exclude=cfg.auto_exclude,
+                auto_recursive=cfg.auto_recursive,
+                auto_pick=cfg.auto_pick,
+                discovery_label="raw .xlsx files",
+                singular_label="workbook",
+            )
+        except ParseError as err:
+            return (PreflightIssue(kind="file", message=str(err)),)
+        return ()
 
     # ---------- helpers ----------
 

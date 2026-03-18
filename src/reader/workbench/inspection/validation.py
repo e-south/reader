@@ -23,6 +23,8 @@ def validation_surface_payload(
         },
         "validation": {
             "files": payload.pop("files"),
+            "dependencies": payload.pop("dependencies"),
+            "errors": payload.pop("errors"),
             "tip": payload.pop("tip"),
         },
     }
