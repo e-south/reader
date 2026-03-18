@@ -40,6 +40,8 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     overview.add_column("Field", style="accent", no_wrap=True)
     overview.add_column("Value")
     overview.add_row("Experiment", str(experiment.get("id") or "—"))
+    if str(experiment.get("lifecycle") or "active") != "active":
+        overview.add_row("Lifecycle", str(experiment.get("lifecycle") or "—"))
     overview.add_row("Protocol", str(experiment.get("protocol") or "—"))
     overview.add_row("Config", str(experiment.get("config") or "—"))
     overview.add_row("Root", str(experiment.get("root") or "—"))

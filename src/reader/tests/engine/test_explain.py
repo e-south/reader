@@ -71,7 +71,7 @@ def _workbench_decl(
         ),
     )
     return WorkbenchDecl(
-        experiment=ExperimentDecl(id="exp", title="exp", root=Path("/tmp/reader")),
+        experiment=ExperimentDecl(id="exp", title="exp", lifecycle="active", root=Path("/tmp/reader")),
         experiment_semantics=semantics,
         plotting_palette=None,
         pipeline=PipelineDecl(runtime={}, steps=pipeline),

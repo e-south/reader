@@ -62,7 +62,7 @@ In general there are two ways to use marimo:
 ### Using reader templates
 
 Templates let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
-Use `reader notebook` for broad exploration across dataframe records.
+Use `uv run reader notebook` for broad exploration across dataframe records.
 By default, notebooks are written under `outputs/notebooks/`.
 
 Scaffold a notebook (opens Marimo by default):
@@ -88,15 +88,15 @@ The dataset dropdown drives the canonical `df_active` variable.
 See what’s available:
 
 ```bash
-reader notebook --list-templates
+uv run reader notebook --list-templates
 ```
 
 Notes:
 
-* `reader notebook` only scaffolds the notebook; it does not run the pipeline.
-* `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
+* `uv run reader notebook` only scaffolds the notebook; it does not run the pipeline.
+* `uv run reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
-* Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `reader run` or opt in with `reader notebook --scan-records`.
+* Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
 * Common templates include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
 * Template behavior is capability-driven:
   - plot filtering is only available for templates that declare plot-filter support

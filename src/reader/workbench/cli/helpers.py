@@ -8,6 +8,7 @@ import typer
 from reader.errors import RecordError
 from reader.protocols import ProtocolBinding
 from reader.runtime import ReaderRuntime, builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
 from reader.workbench.engine._shared import pipeline_has_plugin
@@ -157,7 +158,7 @@ def infer_job_path(job: str | None) -> Path:
                 raise typer.BadParameter(
                     f"CONFIG directory {path!s} has no 'config.yaml'. "
                     "Pass a file path, an experiment directory that contains config.yaml, or a numeric index "
-                    "(see 'reader ls')."
+                    f"(see '{reader_command('ls')}')."
                 )
             return path.resolve()
         if value.isdigit():
@@ -165,16 +166,16 @@ def infer_job_path(job: str | None) -> Path:
             root_path = find_nearest_experiments_dir(Path.cwd())
             jobs = find_jobs(root_path)
             if not jobs:
-                raise typer.BadParameter(f"No experiments found under {root_path}. Use 'reader ls' first.")
+                raise typer.BadParameter(f"No experiments found under {root_path}. Use '{reader_command('ls')}' first.")
             if idx < 1 or idx > len(jobs):
                 raise typer.BadParameter(
                     f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path}). "
-                    "Use 'reader ls' to see the index numbers."
+                    f"Use '{reader_command('ls')}' to see the index numbers."
                 )
             return jobs[idx - 1]
         raise typer.BadParameter(
             f"CONFIG not found: {job!r}. Pass a path to a config.yaml, an experiment directory, "
-            "or a numeric experiment index from 'reader ls'."
+            f"or a numeric experiment index from '{reader_command('ls')}'."
         )
 
     cwd = Path.cwd()
@@ -188,7 +189,7 @@ def infer_job_path(job: str | None) -> Path:
     raise typer.BadParameter(
         "Missing CONFIG and no 'config.yaml' found in the current or parent directories. "
         "Run inside an experiment dir or pass a path to the config (or the experiment dir). "
-        "Tip: use 'reader ls' to list experiments and pass its index."
+        f"Tip: use '{reader_command('ls')}' to list experiments and pass its index."
     )
 
 
@@ -210,17 +211,17 @@ def require_dataframe_records(decl: WorkbenchDecl, job_path: Path, *, runtime: R
     )
     if not store.catalog_exists():
         raise RecordError(
-            f"No outputs/manifests/records.json found. Run 'reader run {job_path}' first to generate dataframe records."
+            f"No outputs/manifests/records.json found. Run '{reader_command('run', job_path)}' first to generate dataframe records."
         )
     try:
         records = store.iter_latest_records(kind="dataframe_artifact")
     except RecordError as exc:
         raise RecordError(
-            f"Could not read record catalog at {store.records_path}. Run 'reader run {job_path}' first."
+            f"Could not read record catalog at {store.records_path}. Run '{reader_command('run', job_path)}' first."
         ) from exc
     if not records:
         raise RecordError(
-            f"No dataframe records listed in outputs/manifests/records.json. Run 'reader run {job_path}' first."
+            f"No dataframe records listed in outputs/manifests/records.json. Run '{reader_command('run', job_path)}' first."
         )
 
 
@@ -245,7 +246,7 @@ def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str) -> str:
         return which_str
     options = ", ".join(step.id for step in pipeline[:12])
     raise typer.BadParameter(
-        f"Unknown pipeline step id '{which_str}'. Tip: use 'reader steps' to list ids "
+        f"Unknown pipeline step id '{which_str}'. Tip: use '{reader_command('steps')}' to list ids "
         f"(first few: {options}{' …' if len(pipeline) > 12 else ''})."
     )
 

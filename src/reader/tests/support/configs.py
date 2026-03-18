@@ -43,6 +43,7 @@ def base_reader_config(
     *,
     experiment_id: str = "exp_001",
     title: str | None = None,
+    lifecycle: str | None = None,
     protocol_id: str = "workbench/generic",
     protocol_inputs: dict | None = None,
     protocol_analysis: dict | None = None,
@@ -65,6 +66,8 @@ def base_reader_config(
     }
     if title is not None:
         payload["experiment"]["title"] = title
+    if lifecycle is not None:
+        payload["experiment"]["lifecycle"] = lifecycle
     if plotting is not None:
         payload["plotting"] = deepcopy(plotting)
     if annotations is not None:

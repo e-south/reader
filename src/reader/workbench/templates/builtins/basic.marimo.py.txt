@@ -75,7 +75,7 @@ def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_war
     if record_warning:
         mo.md(record_warning)
     if not record_labels:
-        note = record_note or "No datasets found. Run `reader run` first."
+        note = record_note or "No datasets found. Run `uv run reader run` first."
         mo.md(note)
         record_dropdown = None
     else:

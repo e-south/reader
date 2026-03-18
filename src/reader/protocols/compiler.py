@@ -20,20 +20,22 @@ from reader.workbench.decl.model import (
 )
 from reader.workbench.recipes.registry import resolve_recipe_steps
 
-PLATE_READER_PLOT_OUTPUTS = {
-    "raw_kinetics",
-    "endpoint_by_condition",
-    "endpoint_by_design",
-    "state_summary",
-    "intensity_overview",
-    "ratio_overview",
-    "value_distributions",
-    "ratio_heatmap",
-    "support_heatmap",
-    "logic_symmetry",
-}
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
+_RETRON_SPONGE_DEFAULTS = {
+    "semantic_metrics": {
+        "relevant_stress_map": {
+            "spyP": "3% EtOH",
+            "sulAp": "100 nM ciprofloxacin",
+            "soxSp": "15 µM PMS",
+        },
+        "sensor_target_map": {
+            "spyP": ["CpxR", "BaeR"],
+            "sulAp": ["LexA"],
+            "soxSp": ["SoxR", "SoxS"],
+        },
+    }
+}
 
 
 def compile_generic_protocol(protocol: Any):
@@ -58,9 +60,9 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
     strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
-    blank_cfg = _analysis_child(preprocessing, key="blank")
-    overflow_cfg = _analysis_child(preprocessing, key="overflow")
-    crosstalk_cfg = _analysis_child(analysis, key="crosstalk_pairs")
+    blank_cfg = _analysis_mapping(preprocessing, key="blank")
+    overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
+    crosstalk_cfg = _analysis_mapping(analysis, key="crosstalk_pairs")
     include_crosstalk_pairs = _cfg_bool(crosstalk_cfg, key="enabled", default=False)
     include_crosstalk_export = _cfg_bool(crosstalk_cfg, key="export", default=include_crosstalk_pairs)
 
@@ -104,7 +106,10 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
         exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
         semantic_program=_plate_reader_semantic_program(
-            protocol, measurement=measurement, include_crosstalk_pairs=include_crosstalk_pairs
+            protocol,
+            measurement=measurement,
+            include_crosstalk_pairs=include_crosstalk_pairs,
+            include_fold_change=include_fold_change,
         ),
     )
 
@@ -120,9 +125,11 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=False)
     strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
-    blank_cfg = _analysis_child(preprocessing, key="blank")
-    overflow_cfg = _analysis_child(preprocessing, key="overflow")
-    semantic_cfg = _analysis_mapping(analysis, key="semantic_metrics")
+    blank_cfg = _analysis_mapping(preprocessing, key="blank")
+    overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
+    semantic_cfg = _deep_merge(
+        _RETRON_SPONGE_DEFAULTS["semantic_metrics"], _analysis_mapping(analysis, key="semantic_metrics")
+    )
 
     pipeline = list(_plate_reader_base_steps(measurement=measurement, blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
     pipeline.append(_plate_reader_semantic_metrics_step(measurement=measurement, config=semantic_cfg))
@@ -162,8 +169,8 @@ def compile_logic_sfxi_screen(protocol: Any):
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
     include_vec8 = _analysis_bool(analysis, key="include_vec8", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
-    blank_cfg = _analysis_child(preprocessing, key="blank")
-    overflow_cfg = _analysis_child(preprocessing, key="overflow")
+    blank_cfg = _analysis_mapping(preprocessing, key="blank")
+    overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
 
     pipeline = list(_plate_reader_base_steps(measurement="yfp_cfp", blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
     if include_fold_change:
@@ -258,6 +265,20 @@ def _semantic_program(
     active_profile: str | None = None,
 ) -> ProtocolSemanticProgram:
     descriptor_program = protocol.descriptor.semantic_program(active_profile=active_profile)
+    valid_ids = {
+        *(node.id for node in descriptor_program.controls),
+        *(node.id for node in descriptor_program.windows),
+        *(node.id for node in descriptor_program.metrics),
+    }
+    if descriptor_program.ranking is not None:
+        valid_ids.add(descriptor_program.ranking.id)
+    unknown_override_ids = sorted(set(overrides) - valid_ids)
+    if unknown_override_ids:
+        options = ", ".join(sorted(valid_ids)) or "—"
+        raise ConfigError(
+            f"Semantic execution overrides reference unknown ids {unknown_override_ids} for protocol {protocol.id!r}. "
+            f"Known semantic ids: {options}"
+        )
 
     def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
         return tuple(
@@ -269,6 +290,9 @@ def _semantic_program(
                 stage=node.stage,
                 formula=node.formula,
                 depends_on=node.depends_on,
+                value_space=node.value_space,
+                unit=node.unit,
+                comparable_group=node.comparable_group,
                 anchor=node.anchor,
                 selector=node.selector,
                 params=node.params,
@@ -293,6 +317,9 @@ def _semantic_program(
             stage=ranking.stage,
             formula=ranking.formula,
             depends_on=ranking.depends_on,
+            value_space=ranking.value_space,
+            unit=ranking.unit,
+            comparable_group=ranking.comparable_group,
             anchor=ranking.anchor,
             selector=ranking.selector,
             params=ranking.params,
@@ -321,7 +348,13 @@ def _plate_reader_semantic_program(
     *,
     measurement: str,
     include_crosstalk_pairs: bool,
+    include_fold_change: bool,
 ) -> ProtocolSemanticProgram:
+    active_profile = _dual_reporter_semantic_profile(
+        measurement=measurement,
+        include_fold_change=include_fold_change,
+        include_crosstalk_pairs=include_crosstalk_pairs,
+    )
     overrides: dict[str, ProtocolSemanticExecution] = {
         "OD": ProtocolSemanticExecution(
             status="compiled",
@@ -388,6 +421,41 @@ def _plate_reader_semantic_program(
                     record_ids=("ratio_rfp_od600/df",),
                     note="The primary RFP/OD600 ratio is materialized as a ratio step output.",
                 ),
+                "RFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_rfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_rfp_od600/df",),
+                    note="The RFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+            }
+        )
+    if include_fold_change:
+        fold_change_step_id = "fold_change__yfp_over_cfp" if measurement == "yfp_cfp" else "fold_change__rfp_od600"
+        fold_change_record_id = (
+            "fold_change__yfp_over_cfp/table" if measurement == "yfp_cfp" else "fold_change__rfp_od600/table"
+        )
+        fold_change_note = (
+            "Nearest-time fold-change summaries are materialized from the primary ratio channel."
+            if measurement == "yfp_cfp"
+            else "Nearest-time fold-change summaries are materialized from the primary RFP/OD600 ratio channel."
+        )
+        overrides.update(
+            {
+                "FC": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=(fold_change_step_id,),
+                    plugin_ids=("transform/fold_change",),
+                    record_ids=(fold_change_record_id,),
+                    note=fold_change_note,
+                ),
+                "log2FC": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=(fold_change_step_id,),
+                    plugin_ids=("transform/fold_change",),
+                    record_ids=(fold_change_record_id,),
+                    note=fold_change_note,
+                ),
             }
         )
     if include_crosstalk_pairs:
@@ -397,9 +465,9 @@ def _plate_reader_semantic_program(
             plugin_ids=("transform/crosstalk_pairs",),
             record_ids=("crosstalk_pairs/table",),
             config_paths=("protocol.analysis.crosstalk_pairs",),
-            note="When crosstalk pair analysis is enabled, the exported pair table is compiled from fold-change output.",
+            note="When crosstalk pair analysis is enabled, pair selection is compiled from fold-change output.",
         )
-    return _semantic_program(protocol, overrides=overrides, active_profile=measurement)
+    return _semantic_program(protocol, overrides=overrides, active_profile=active_profile)
 
 
 def _plate_reader_retron_sponge_semantic_program(
@@ -572,15 +640,6 @@ def _analysis_mapping(raw: dict[str, Any], *, key: str) -> dict[str, Any]:
     return dict(value)
 
 
-def _analysis_child(raw: dict[str, Any], *, key: str) -> dict[str, Any]:
-    value = raw.get(key, {})
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ConfigError(f"protocol.analysis.{key} must be a mapping")
-    return dict(value)
-
-
 def _analysis_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:
     value = raw.get(key, default)
     if isinstance(value, bool):
@@ -594,6 +653,27 @@ def _analysis_choice(raw: dict[str, Any], *, key: str, default: str, allowed: se
         options = ", ".join(sorted(allowed))
         raise ConfigError(f"protocol.analysis.{key} must be one of: {options}")
     return value
+
+
+def _dual_reporter_semantic_profile(
+    *,
+    measurement: str,
+    include_fold_change: bool,
+    include_crosstalk_pairs: bool,
+) -> str:
+    if measurement == "yfp_cfp":
+        if include_crosstalk_pairs:
+            return "yfp_cfp_crosstalk"
+        if include_fold_change:
+            return "yfp_cfp_fold_change"
+        return "yfp_cfp_raw"
+    if measurement == "rfp_od600":
+        if include_crosstalk_pairs:
+            raise ConfigError("plate_reader/dual_reporter_screen does not support crosstalk_pairs with rfp_od600.")
+        if include_fold_change:
+            return "rfp_od600_fold_change"
+        return "rfp_od600_raw"
+    raise ConfigError(f"Unsupported plate-reader measurement family {measurement!r}")
 
 
 def _cfg_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:

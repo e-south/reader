@@ -148,6 +148,27 @@ def _input_df_single_reporter() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _input_df_explicit_semantics() -> pd.DataFrame:
+    df = _input_df()
+    design_parts = df["design_id_alias"].str.split("/", n=1, expand=True)
+    df["sensor_id"] = design_parts[0]
+    df["sponge_id"] = design_parts[1]
+    df["genotype_id"] = df["design_id_alias"]
+    df["stress_condition_id"] = df["treatment"].map(lambda value: "3% EtOH" if "EtOH" in str(value) else "H2O")
+    df["is_relevant_stress_flag"] = df["stress_condition_id"].eq("3% EtOH")
+    df["expected_sign"] = -1
+    df["is_relevant_pair"] = df["sponge_id"].eq("CpxR")
+    df["matched_control_group_id"] = df.apply(
+        lambda row: (
+            f"{row['sheet_name']}::{row['sensor_id']}::{row['stress_condition_id']}::"
+            f"{'-IPTG' if row['treatment_alias'].startswith('-IPTG') else '+IPTG'}"
+        ),
+        axis=1,
+    )
+    df["sponge_family"] = df["sponge_id"].map(lambda value: "control" if value == "tetO" else "mono")
+    return df
+
+
 def test_retron_sponge_metrics_plugin_emits_trace_and_summary_tables():
     plugin = RetronSpongeMetrics()
     cfg = RetronSpongeMetricsCfg(
@@ -226,3 +247,32 @@ def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
     assert d_auc > 0
     assert o_auc > 0
     assert m_auc > 0
+
+
+def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        sensor_column="sensor_id",
+        sponge_column="sponge_id",
+        genotype_column="genotype_id",
+        stress_condition_column="stress_condition_id",
+        relevant_stress_column="is_relevant_stress_flag",
+        expected_sign_column="expected_sign",
+        relevant_sensor_pair_column="is_relevant_pair",
+        matched_control_group_column="matched_control_group_id",
+        sponge_family_size_column="sponge_family",
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df_explicit_semantics()}, cfg)
+    summary = outputs["summary"]
+
+    d_auc = summary[
+        (summary["metric"] == "D_AUC")
+        & (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+    ]["value"].iloc[0]
+
+    assert {"R_pre", "D_AUC", "O_AUC", "S_AUC"} <= set(summary["metric"])
+    assert d_auc < 0

@@ -33,6 +33,12 @@ class RetronSpongeMetricsCfg(PluginConfig):
     sensor_column: str | None = None
     sponge_column: str | None = None
     genotype_column: str | None = None
+    stress_condition_column: str | None = None
+    relevant_stress_column: str | None = None
+    expected_sign_column: str | None = None
+    relevant_sensor_pair_column: str | None = None
+    matched_control_group_column: str | None = None
+    sponge_family_size_column: str | None = None
     design_separator: str = "/"
     control_name: str = "tetO"
     no_stress_label: str = "H2O"

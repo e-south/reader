@@ -38,7 +38,9 @@ resources:
 - `schema`
   Must be `reader/v7`.
 - `experiment`
-  Explicit experiment identity. `experiment.id` is required.
+  Explicit experiment identity. `experiment.id` is required. Optional `experiment.lifecycle`
+  may be `draft` or `template` for intentionally non-runnable configs; omit it for
+  normal active experiments.
 - `protocol`
   Assay binding plus human-facing semantic config.
 - `resources`

@@ -2,18 +2,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from reader.tests.support import REPO_ROOT
 
 EXPERIMENT_CONFIGS = sorted(REPO_ROOT.glob("experiments/**/config.yaml"))
 
-EXPECTED_FILE_PREFLIGHT_BLOCKERS = {
-    "experiments/2025/20250702_sensor_panel_M9_glu/config.yaml": "inputs/metadata.xlsx",
-    "experiments/2026/20260313_mono_functional_sponges/config.yaml": "No raw .xlsx files discovered",
-    "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml": "No raw .xlsx files discovered",
-    "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml": "No raw .xlsx files discovered",
-    "experiments/2026/202603XX_tetra_functional_sponges/config.yaml": "No raw .xlsx files discovered",
-    "experiments/2026/202603XX_tri_functional_sponges/config.yaml": "No raw .xlsx files discovered",
-    "experiments/template/config.yaml": "No raw .xlsx files discovered",
+
+def repo_rel(path: Path) -> str:
+    return str(path.relative_to(REPO_ROOT))
+
+
+def _experiment_lifecycle(path: Path) -> str:
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    experiment = data.get("experiment") or {}
+    if not isinstance(experiment, dict):
+        return "active"
+    lifecycle = experiment.get("lifecycle", "active")
+    return str(lifecycle).strip().lower() or "active"
+
+
+EXPERIMENT_LIFECYCLES = {repo_rel(path): _experiment_lifecycle(path) for path in EXPERIMENT_CONFIGS}
+
+NON_ACTIVE_LIFECYCLE_CONFIGS = {
+    rel: lifecycle for rel, lifecycle in EXPERIMENT_LIFECYCLES.items() if lifecycle != "active"
 }
 
 OPTIONAL_DEPENDENCY_BLOCKERS = {
@@ -23,10 +35,6 @@ OPTIONAL_DEPENDENCY_BLOCKERS = {
 END_TO_END_RUNNABLE_CONFIGS = [
     config_path
     for config_path in EXPERIMENT_CONFIGS
-    if str(config_path.relative_to(REPO_ROOT)) not in EXPECTED_FILE_PREFLIGHT_BLOCKERS
-    and str(config_path.relative_to(REPO_ROOT)) not in OPTIONAL_DEPENDENCY_BLOCKERS
+    if repo_rel(config_path) not in NON_ACTIVE_LIFECYCLE_CONFIGS
+    and repo_rel(config_path) not in OPTIONAL_DEPENDENCY_BLOCKERS
 ]
-
-
-def repo_rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))

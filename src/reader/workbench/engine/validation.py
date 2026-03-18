@@ -10,6 +10,7 @@ from rich.panel import Panel
 from reader.errors import ConfigError, ExecutionError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.experiment import ExperimentSemantics
 from reader.workbench.graph import (
@@ -305,28 +306,32 @@ def validation_summary(
     if notebook_specs:
         _validate_notebook_specs(notebook_specs, protocol=bound_protocol)
 
+    declared_entries: list[tuple[str, str, str, Path]] = []
+    declared_roots: list[tuple[str, str, Path]] = []
+    if exp_root is not None:
+        for label, items in (("pipeline", pipeline_steps), ("plot", plot_specs), ("export", export_specs)):
+            for step in items:
+                for key, target in (step.reads or {}).items():
+                    if isinstance(target, FileRef | ResourceRef):
+                        declared_entries.append(
+                            (label, step.id, key, _resolve_exp_path(target.path, exp_root=exp_root))
+                        )
+                with_block = _effective_step_with(protocol=bound_protocol, step=step) if hasattr(step, "with_") else {}
+                auto_roots = with_block.get("auto_roots")
+                if isinstance(auto_roots, list):
+                    for root in auto_roots:
+                        declared_roots.append((label, step.id, _resolve_exp_path(Path(root), exp_root=exp_root)))
+
     files_checked = None
     file_issues: list[str] = []
     dependency_issues: list[str] = []
     readiness_errors: list[str] = []
     if check_files:
-        entries: list[tuple[str, str, str, Path]] = []
-        roots: list[tuple[str, str, Path]] = []
-        for label, items in (("pipeline", pipeline_steps), ("plot", plot_specs), ("export", export_specs)):
-            for step in items:
-                for key, target in (step.reads or {}).items():
-                    if isinstance(target, FileRef | ResourceRef):
-                        entries.append((label, step.id, key, _resolve_exp_path(target.path, exp_root=exp_root)))
-                with_block = _effective_step_with(protocol=bound_protocol, step=step) if hasattr(step, "with_") else {}
-                auto_roots = with_block.get("auto_roots")
-                if isinstance(auto_roots, list):
-                    for root in auto_roots:
-                        roots.append((label, step.id, _resolve_exp_path(Path(root), exp_root=exp_root)))
-        files_checked = (len(entries), len(roots))
-        for label, step_id, key, path in entries:
+        files_checked = (len(declared_entries), len(declared_roots))
+        for label, step_id, key, path in declared_entries:
             if not path.exists():
                 file_issues.append(f"{label}:{step_id} • {key} → {_render_rel(path, exp_root=exp_root)}")
-        for label, step_id, root in roots:
+        for label, step_id, root in declared_roots:
             if not root.exists():
                 file_issues.append(f"{label}:{step_id} • auto_roots → {_render_rel(root, exp_root=exp_root)}")
         if registry is not None:
@@ -360,12 +365,12 @@ def validation_summary(
                     file_issues.append(rendered)
         readiness_errors = [*file_issues, *dependency_issues]
 
-    file_total, root_total = files_checked or (0, 0)
+    file_total, root_total = files_checked or (len(declared_entries), len(declared_roots))
     if not check_files:
         files_payload = {
             "mode": "skipped",
             "checked": False,
-            "declared": {"file_inputs": 0, "auto_roots": 0},
+            "declared": {"file_inputs": file_total, "auto_roots": root_total},
             "issues": 0,
             "summary": "skipped (--no-files)",
         }
@@ -430,7 +435,7 @@ def validation_summary(
         "dependencies": dependencies_payload,
         "errors": readiness_errors,
         "tip": (
-            "fix readiness issues or use 'reader validate --no-files' for config-only checks"
+            f"fix readiness issues or use '{reader_command('validate', '--no-files')}' for config-only checks"
             if readiness_errors
             else "use 'reader explain' to see inputs/outputs"
         ),

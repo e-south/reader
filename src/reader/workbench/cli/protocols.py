@@ -10,6 +10,7 @@ from rich.table import Table
 
 from reader.errors import ConfigError
 from reader.runtime import builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.inspection.protocols import (
     protocol_artifacts_table,
     protocol_descriptor_payload,
@@ -261,9 +262,9 @@ def init(
         Panel(
             "\n".join(
                 [
-                    f"reader inspect {config_path}",
-                    f"reader validate {config_path} --no-files",
-                    f"reader protocols {descriptor.protocol}",
+                    reader_command("inspect", config_path),
+                    reader_command("validate", config_path, "--no-files"),
+                    reader_command("protocols", descriptor.protocol),
                 ]
             ),
             title="Next steps",

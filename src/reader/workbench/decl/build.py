@@ -39,6 +39,7 @@ def build_workbench_decl(
     experiment = ExperimentDecl(
         id=spec.experiment.id,
         title=spec.experiment.title or spec.experiment.id,
+        lifecycle=spec.experiment.lifecycle,
         root=root,
     )
     layout = OutputLayout(

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from reader.errors import RecordError
+from reader.workbench.commands import reader_command
 
 if TYPE_CHECKING:
     from reader.runtime import ReaderRuntime
@@ -67,7 +68,7 @@ def discover_dataframe_records(
     if not record_info and allow_scan:
         if not artifacts_dir.exists():
             if not record_note:
-                record_note = "No outputs/artifacts directory found. Run `reader run` first."
+                record_note = f"No outputs/artifacts directory found. Run `{reader_command('run')}` first."
         else:
             for path in sorted(artifacts_dir.rglob("*.parquet")):
                 step_dir = path.parent.name
@@ -80,19 +81,19 @@ def discover_dataframe_records(
                     record_id=path.stem,
                 )
             if not record_info and not record_note:
-                record_note = "No dataframe records found yet. Run `reader run` first."
+                record_note = f"No dataframe records found yet. Run `{reader_command('run')}` first."
 
     if not record_info and not record_note:
         if records_path.exists():
             record_note = "No dataframe records listed in outputs/manifests/records.json."
         else:
-            record_note = "No outputs/manifests/records.json found. Run `reader run` first."
+            record_note = f"No outputs/manifests/records.json found. Run `{reader_command('run')}` first."
 
     labels = sorted(record_info)
     if allow_scan and any(info.get("source") == "scan" for info in record_info.values()):
         record_warning = (
             "Warning: dataset list was built by scanning outputs/artifacts because "
             "outputs/manifests/records.json was missing, unreadable, or incomplete. "
-            "Run `reader run` to regenerate the canonical record catalog."
+            f"Run `{reader_command('run')}` to regenerate the canonical record catalog."
         )
     return record_info, labels, record_note, record_warning

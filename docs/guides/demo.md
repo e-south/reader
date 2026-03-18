@@ -1,13 +1,13 @@
 ## reader demo
 
-This walkthrough shows a typical flow from discovery to dataframe records, then plots/exports or notebooks. Replace the index (`1`) with a config path or experiment directory as needed.
+This walkthrough shows a typical flow from discovery to dataframe records, then plots/exports or notebooks. Prefer an explicit config path or experiment directory; `CONFIG|DIR|INDEX` works, but paths are deterministic and easier for agents to replay.
 
 ---
 
 1) Find experiments
 
 ```bash
-reader ls
+uv run reader ls
 ```
 
 Example output (shape only):
@@ -22,45 +22,45 @@ Experiments
 2) Inspect the plan (no execution)
 
 ```bash
-reader explain 1
+uv run reader explain ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 3) Validate the config + inputs
 
 ```bash
-reader validate 1
+uv run reader validate ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 4) Run the pipeline (records only)
 
 ```bash
-reader run 1
+uv run reader run ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 5) Inspect records
 
 ```bash
-reader records 1
+uv run reader records ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 6) Generate plots
 
 ```bash
-reader plot 1 --list
-reader plot 1
+uv run reader plot ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
+uv run reader plot ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 7) Generate exports
 
 ```bash
-reader export 1 --list
-reader export 1
+uv run reader export ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
+uv run reader export ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 8) Scaffold a notebook
 
 ```bash
-reader notebook 1
+uv run reader notebook ./experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 ```
 
 If you want a specific template, pass `--template <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).

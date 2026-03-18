@@ -206,6 +206,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert payload["selection"]["readiness"] is True
     assert payload["selection"]["include_scaffolds"] is False
     assert payload["summary"]["experiments"] == 2
+    assert payload["summary"]["by_lifecycle"] == {"active": 1, "unknown": 1}
     assert payload["summary"]["by_readiness"] == {"config_error": 1, "records_ready": 1}
     assert payload["summary"]["by_status"] == {"config_error": 1, "ok": 1}
     assert payload["summary"]["by_protocol"] == {"plate_reader/dual_reporter_screen": 1}
@@ -216,12 +217,40 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert by_name["good_exp"]["selected"]["plots"]["count"] == 1
     assert by_name["good_exp"]["selected"]["exports"]["ids"] == ["crosstalk_pairs_table"]
     assert by_name["good_exp"]["selected"]["plot_profile"] == "none"
+    assert by_name["good_exp"]["lifecycle"] == "active"
     assert by_name["good_exp"]["status"] == "ok"
     assert by_name["good_exp"]["readiness"]["state"] == "records_ready"
     assert by_name["good_exp"]["readiness"]["capabilities"]["plot"] is True
     assert by_name["broken_exp"]["status"] == "config_error"
     assert by_name["broken_exp"]["readiness"]["state"] == "config_error"
     assert "protocol" in by_name["broken_exp"]["error"]
+
+
+def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "legacy_exp"
+    exp_dir.mkdir(parents=True)
+    write_config(exp_dir / "config.yaml", _base_config())
+    inputs_dir = exp_dir / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    plots_dir = exp_dir / "outputs" / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    (plots_dir / "trace.pdf").write_text("plot", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["by_readiness"] == {"legacy_outputs_present": 1}
+    entry = payload["experiments"][0]
+    assert entry["readiness"]["state"] == "legacy_outputs_present"
+    assert entry["readiness"]["records"]["catalog"] is False
+    assert entry["readiness"]["records"]["legacy_outputs_present"] is True
 
 
 def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
@@ -288,14 +317,40 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
     assert empty_payload["experiments"] == []
 
 
+def test_ls_can_filter_by_lifecycle_and_surface_draft_readiness(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    active_dir = exp_root / "2025" / "active_exp"
+    draft_dir = exp_root / "2025" / "draft_exp"
+    active_dir.mkdir(parents=True)
+    draft_dir.mkdir(parents=True)
+    write_config(active_dir / "config.yaml", _base_config())
+    write_config(draft_dir / "config.yaml", {**_base_config(), "experiment": {"id": "draft_exp", "lifecycle": "draft"}})
+
+    runner = CliRunner()
+    by_lifecycle = runner.invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--lifecycle", "draft", "--format", "json"],
+    )
+    assert by_lifecycle.exit_code == 0
+    payload = json.loads(by_lifecycle.output)
+    assert payload["summary"]["experiments"] == 1
+    assert payload["selection"]["lifecycle"] == "draft"
+    assert payload["summary"]["by_lifecycle"] == {"draft": 1}
+    assert payload["summary"]["by_readiness"] == {"draft": 1}
+    assert payload["experiments"][0]["name"] == "draft_exp"
+    assert payload["experiments"][0]["lifecycle"] == "draft"
+    assert payload["experiments"][0]["readiness"]["state"] == "draft"
+    assert payload["experiments"][0]["readiness"]["capabilities"]["run"] is False
+
+
 def test_next_steps_commands_are_clean(tmp_path: Path) -> None:
     spec = ReaderSpec.load(write_config(tmp_path / "config.yaml", _base_config()))
     steps = build_next_steps(build_decl(spec), job_label="1")
     commands = [cmd for cmd, _ in steps]
-    assert any(cmd.startswith("reader records 1") for cmd in commands)
-    assert any(cmd.startswith("reader plot 1") for cmd in commands)
-    assert any("reader export 1" in cmd for cmd in commands)
-    assert any(cmd.startswith("reader notebook 1") for cmd in commands)
+    assert any(cmd.startswith("uv run reader records 1") for cmd in commands)
+    assert any(cmd.startswith("uv run reader plot 1") for cmd in commands)
+    assert any("uv run reader export 1" in cmd for cmd in commands)
+    assert any(cmd.startswith("uv run reader notebook 1") for cmd in commands)
     assert not any("--mode" in cmd for cmd in commands)
     assert not any("--edit" in cmd for cmd in commands)
 
@@ -336,7 +391,9 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
     assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["summary"]["compiled"] >= 1
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
+    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
     assert payload["implementation"]["plan"]["pipeline_count"] >= 1
     assert payload["implementation"]["plan"]["plots"] == []
     assert payload["implementation"]["compiled"]["plots"] == []
@@ -361,7 +418,10 @@ def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: P
     assert payload["authoring"]["protocol"]["id"] == "plate_reader/dual_reporter_screen"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
     assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["by_kind"]["window"]["descriptive_only"] >= 1
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
+    assert payload["semantics"]["program"]["controls"] == []
+    assert payload["semantics"]["program"]["windows"] == []
+    assert payload["semantics"]["program"]["ranking"]["primary_metric"] == "log2FC"
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
@@ -377,7 +437,10 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
-    assert payload["semantics"]["program"]["controls"][0]["execution"]["status"] == "descriptive_only"
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
+    assert payload["semantics"]["program"]["controls"] == []
+    assert payload["semantics"]["program"]["windows"] == []
+    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["summary"]["total"] >= 1
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
@@ -399,6 +462,8 @@ def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
     assert payload["summary"]["status"] == "ok"
     assert payload["summary"]["counts"]["pipeline"] >= 1
     assert payload["validation"]["files"]["mode"] == "skipped"
+    assert payload["validation"]["files"]["declared"]["file_inputs"] >= 1
+    assert payload["validation"]["files"]["declared"]["auto_roots"] == 0
     assert payload["validation"]["dependencies"]["checked"] is False
     assert payload["validation"]["errors"] == []
     assert "protocol" not in payload["validation"]
@@ -509,7 +574,7 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert result.exit_code == 0
     assert "Protocol:" in result.output
     assert "plate_reader/dual_reporter_screen" in result.output
-    assert "Plate-reader screen protocol" in result.output
+    assert "General plate-reader panel protocol" in result.output
     assert "notebook/eda" in result.output
     assert "Inputs Surface" in result.output
     assert "ingest.mode" in result.output
@@ -579,14 +644,18 @@ def test_demo_command_lists_expected_workbench_lifecycle() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["demo"])
     assert result.exit_code == 0
-    assert "reader ls" in result.output
-    assert "reader inspect 1" in result.output
+    assert "uv run reader ls" in result.output
+    assert "--details" in result.output
+    assert "--readiness" in result.output
+    assert "uv run reader inspect" in result.output
+    assert "<experiment>" in result.output
+    assert "config.ya" in result.output
     assert "reader init" in result.output
-    assert "plate_reader/dual_reporter_screen" in result.output
-    assert "reader validate 1" in result.output
-    assert "reader run 1" in result.output
-    assert "reader records 1" in result.output
-    assert "reader notebook 1" in result.output
+    assert "<protocol-id>" in result.output
+    assert "uv run reader validate" in result.output
+    assert "uv run reader run" in result.output
+    assert "uv run reader records" in result.output
+    assert "uv run reader notebook" in result.output
 
 
 def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
@@ -653,9 +722,12 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["experiment"]["lifecycle"] == "active"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
     assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
+    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["inputs"]["counts"]["files"] == 2
@@ -694,8 +766,17 @@ def test_protocols_command_can_emit_json() -> None:
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
     assert metrics["OD"]["execution"]["status"] == "compiled"
     assert metrics["R"]["formula"] == "YFP / CFP"
+    assert metrics["R"]["value_space"] == "linear_ratio"
+    assert metrics["R"]["unit"] == "ratio"
+    assert metrics["R"]["comparable_group"] == "primary_ratio_linear"
     assert metrics["R"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_fold_change"
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
+    assert payload["semantics"]["program"]["controls"] == []
+    assert payload["semantics"]["program"]["windows"] == []
+    assert metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
+    assert metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
+    assert payload["semantics"]["program"]["ranking"] is None
     assert payload["authoring"]["starter_config"]["schema"] == "reader/v7"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
@@ -729,6 +810,9 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert payload["protocol"] == "plate_reader/retron_sponge_screen"
     assert program["active_profile"] == "yfp_cfp"
     assert metrics["R"]["formula"] == "log2(YFP / CFP)"
+    assert metrics["R"]["value_space"] == "log2_ratio"
+    assert metrics["R"]["unit"] == "log2_ratio"
+    assert metrics["R"]["comparable_group"] == "primary_ratio_log2"
     assert metrics["R"]["execution"]["status"] == "compiled"
     assert metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
     assert metrics["D_AUC"]["execution"]["status"] == "compiled"
@@ -758,23 +842,30 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
     payload = json.loads(result.output)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
-    assert program["active_profile"] == "rfp_od600"
-    assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "rfp_od600"}
-    assert set(metrics) == {"OD", "RFP", "R"}
+    assert program["active_profile"] == "rfp_od600_raw"
+    assert {item["id"] for item in program["profiles"]} == {
+        "yfp_cfp_raw",
+        "yfp_cfp_fold_change",
+        "yfp_cfp_crosstalk",
+        "rfp_od600_raw",
+        "rfp_od600_fold_change",
+    }
+    assert set(metrics) == {"OD", "RFP", "RFP_OD", "R"}
     assert metrics["RFP"]["execution"]["status"] == "compiled"
     assert metrics["R"]["formula"] == "RFP / OD600"
+    assert metrics["RFP_OD"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
     assert metrics["R"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
     assert program["controls"] == []
     assert program["windows"] == []
     assert program["ranking"] is None
     assert program["summary"] == {
-        "total": 3,
-        "compiled": 3,
+        "total": 4,
+        "compiled": 4,
         "descriptive_only": 0,
         "by_kind": {
             "control_rule": {"total": 0, "compiled": 0, "descriptive_only": 0},
             "window": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "metric": {"total": 3, "compiled": 3, "descriptive_only": 0},
+            "metric": {"total": 4, "compiled": 4, "descriptive_only": 0},
             "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
         },
     }
@@ -811,6 +902,7 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     assert "YFP" not in metrics
     assert "CFP" not in metrics
     assert metrics["R"]["formula"] == "log2(RFP / OD600)"
+    assert metrics["R"]["value_space"] == "log2_ratio"
     assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
     assert metrics["RFP_OD"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
     assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]

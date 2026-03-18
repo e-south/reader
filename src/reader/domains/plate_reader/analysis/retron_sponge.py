@@ -6,6 +6,9 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+_TRUE_VALUES = {"1", "true", "t", "yes", "y", "relevant", "on"}
+_FALSE_VALUES = {"0", "false", "f", "no", "n", "irrelevant", "off"}
+
 
 def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -18,28 +21,34 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     - missing pre-stress reads or matched tetO controls are hard errors
     """
 
-    required = {
-        "position",
-        "time",
-        "channel",
-        "value",
-        cfg.design_column,
-        cfg.state_column,
-        cfg.raw_treatment_column,
-        cfg.plate_column,
-    }
+    required = {"position", "time", "channel", "value", cfg.state_column, cfg.plate_column, cfg.replicate_column}
+    if cfg.sensor_column and cfg.sponge_column:
+        required.update({cfg.sensor_column, cfg.sponge_column})
+        if cfg.genotype_column:
+            required.add(cfg.genotype_column)
+    else:
+        required.add(cfg.design_column)
+    if cfg.stress_condition_column:
+        required.add(cfg.stress_condition_column)
+    else:
+        required.add(cfg.raw_treatment_column)
+    for optional_column in (
+        cfg.relevant_stress_column,
+        cfg.expected_sign_column,
+        cfg.relevant_sensor_pair_column,
+        cfg.matched_control_group_column,
+        cfg.sponge_family_size_column,
+    ):
+        if optional_column:
+            required.add(optional_column)
     missing = sorted(column for column in required if column not in df.columns)
     if missing:
         raise ValueError(f"retron_sponge_metrics: input dataframe is missing required columns: {missing}")
 
     relevant_stress_map = {str(key): str(value) for key, value in (cfg.relevant_stress_map or {}).items()}
-    if not relevant_stress_map:
-        raise ValueError("retron_sponge_metrics: relevant_stress_map must not be empty")
     sensor_target_map = {
         str(key): tuple(str(item) for item in value) for key, value in (cfg.sensor_target_map or {}).items()
     }
-    if not sensor_target_map:
-        raise ValueError("retron_sponge_metrics: sensor_target_map must not be empty")
 
     expected_sign_map = _expected_sign_map(ctx, cfg)
     channels = {cfg.measurement_channel, cfg.od_channel}
@@ -57,6 +66,11 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
         relevant_stress_map=relevant_stress_map,
         sensor_target_map=sensor_target_map,
         expected_sign_map=expected_sign_map,
+    )
+    relevant_stress_map = _resolve_relevant_stress_map(
+        wide=wide,
+        configured_map=relevant_stress_map,
+        no_stress_label=str(cfg.no_stress_label),
     )
 
     primary_raw = pd.to_numeric(wide[cfg.measurement_channel], errors="coerce")
@@ -278,41 +292,145 @@ def _derive_metadata(
     decoded = raw_state.map(state_map)
     out["IPTG"] = decoded.map(lambda item: item[0])
     out["is_stressed"] = decoded.map(lambda item: bool(item[1]))
-    out["stress_condition"] = out.apply(
-        lambda row: _stress_condition_for_row(
-            raw_treatment=str(row[cfg.raw_treatment_column]),
-            sensor=str(row["sensor"]),
-            relevant_stress_map=relevant_stress_map,
-            no_stress_label=str(cfg.no_stress_label),
-        ),
-        axis=1,
-    )
-    out["is_relevant_stress"] = out.apply(
-        lambda row: bool(str(row["stress_condition"]) == str(relevant_stress_map[str(row["sensor"])])),
-        axis=1,
-    )
-    out["expected_decoy_sign"] = out["sensor"].map(expected_sign_map).astype("Int64")
-    if out["expected_decoy_sign"].isna().any():
-        missing = sorted(set(out.loc[out["expected_decoy_sign"].isna(), "sensor"].astype(str)))
-        raise ValueError("retron_sponge_metrics: expected_decoy_sign is undefined for sensor(s): " + ", ".join(missing))
-    out["relevant_sensor_pair"] = out.apply(
-        lambda row: _relevant_sensor_pair(
-            sensor=str(row["sensor"]),
-            sponge=str(row["sponge"]),
-            control_name=str(cfg.control_name),
-            sensor_target_map=sensor_target_map,
-        ),
-        axis=1,
-    )
-    out["sponge_family_size"] = out["sponge"].map(
-        lambda value: _sponge_family_size(str(value), control_name=str(cfg.control_name))
-    )
-    out["matched_tetO_group"] = out.apply(
-        lambda row: f"{row['plate_id']}::{row['sensor']}::{row['stress_condition']}::{row['IPTG']}",
-        axis=1,
-    )
+    if cfg.stress_condition_column:
+        out["stress_condition"] = out[cfg.stress_condition_column].astype(str)
+    else:
+        if not relevant_stress_map:
+            raise ValueError(
+                "retron_sponge_metrics: relevant_stress_map is required when stress_condition_column is not configured"
+            )
+        out["stress_condition"] = out.apply(
+            lambda row: _stress_condition_for_row(
+                raw_treatment=str(row[cfg.raw_treatment_column]),
+                sensor=str(row["sensor"]),
+                relevant_stress_map=relevant_stress_map,
+                no_stress_label=str(cfg.no_stress_label),
+            ),
+            axis=1,
+        )
+    if cfg.relevant_stress_column:
+        out["is_relevant_stress"] = _boolish_series(out[cfg.relevant_stress_column], label=cfg.relevant_stress_column)
+    else:
+        if not relevant_stress_map:
+            raise ValueError(
+                "retron_sponge_metrics: relevant_stress_column or relevant_stress_map is required to identify "
+                "which stress rows are biologically relevant"
+            )
+        out["is_relevant_stress"] = out.apply(
+            lambda row: bool(str(row["stress_condition"]) == str(relevant_stress_map[str(row["sensor"])])),
+            axis=1,
+        )
+    if cfg.expected_sign_column:
+        out["expected_decoy_sign"] = _sign_series(out[cfg.expected_sign_column], label=cfg.expected_sign_column)
+    else:
+        out["expected_decoy_sign"] = out["sensor"].map(expected_sign_map).astype("Int64")
+        if out["expected_decoy_sign"].isna().any():
+            missing = sorted(set(out.loc[out["expected_decoy_sign"].isna(), "sensor"].astype(str)))
+            raise ValueError(
+                "retron_sponge_metrics: expected_decoy_sign is undefined for sensor(s): " + ", ".join(missing)
+            )
+    if cfg.relevant_sensor_pair_column:
+        out["relevant_sensor_pair"] = _boolish_series(
+            out[cfg.relevant_sensor_pair_column],
+            label=cfg.relevant_sensor_pair_column,
+        )
+    else:
+        if not sensor_target_map:
+            raise ValueError(
+                "retron_sponge_metrics: relevant_sensor_pair_column or sensor_target_map is required to classify "
+                "on-target sensor/sponge pairs"
+            )
+        out["relevant_sensor_pair"] = out.apply(
+            lambda row: _relevant_sensor_pair(
+                sensor=str(row["sensor"]),
+                sponge=str(row["sponge"]),
+                control_name=str(cfg.control_name),
+                sensor_target_map=sensor_target_map,
+            ),
+            axis=1,
+        )
+    if cfg.sponge_family_size_column:
+        out["sponge_family_size"] = out[cfg.sponge_family_size_column].astype(str)
+    else:
+        out["sponge_family_size"] = out["sponge"].map(
+            lambda value: _sponge_family_size(str(value), control_name=str(cfg.control_name))
+        )
+    if cfg.matched_control_group_column:
+        out["matched_tetO_group"] = out[cfg.matched_control_group_column].astype(str)
+    else:
+        out["matched_tetO_group"] = out.apply(
+            lambda row: f"{row['plate_id']}::{row['sensor']}::{row['stress_condition']}::{row['IPTG']}",
+            axis=1,
+        )
     out["time"] = pd.to_numeric(out["time"], errors="raise").astype(float)
     return out
+
+
+def _resolve_relevant_stress_map(
+    *,
+    wide: pd.DataFrame,
+    configured_map: Mapping[str, str],
+    no_stress_label: str,
+) -> dict[str, str]:
+    resolved = {str(key): str(value) for key, value in configured_map.items()}
+    flagged = wide[wide["is_relevant_stress"].astype(bool)]
+    for sensor, group in flagged.groupby("sensor", dropna=False):
+        labels = sorted({str(value) for value in group["stress_condition"] if str(value) != str(no_stress_label)})
+        if not labels:
+            continue
+        if str(sensor) in resolved:
+            if resolved[str(sensor)] not in labels:
+                raise ValueError(
+                    "retron_sponge_metrics: configured relevant_stress_map does not match explicit relevant-stress "
+                    f"rows for sensor={sensor!r}; configured={resolved[str(sensor)]!r}, observed={labels!r}"
+                )
+            continue
+        if len(labels) != 1:
+            raise ValueError(
+                "retron_sponge_metrics: explicit relevant stress rows are ambiguous for "
+                f"sensor={sensor!r}; observed labels={labels!r}"
+            )
+        resolved[str(sensor)] = labels[0]
+    missing = sorted(set(wide["sensor"].astype(str)) - set(resolved))
+    if missing:
+        raise ValueError(
+            "retron_sponge_metrics: relevant stress is undefined for sensor(s): "
+            + ", ".join(missing)
+            + ". Configure relevant_stress_map or provide relevant_stress_column with stress_condition_column."
+        )
+    return resolved
+
+
+def _boolish_series(values: pd.Series, *, label: str) -> pd.Series:
+    return values.map(lambda value: _coerce_boolish(value, label=label))
+
+
+def _coerce_boolish(value: Any, *, label: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool) and value in {0, 1}:
+        return bool(value)
+    text = str(value).strip().casefold()
+    if text in _TRUE_VALUES:
+        return True
+    if text in _FALSE_VALUES:
+        return False
+    raise ValueError(f"retron_sponge_metrics: {label} contains non-boolean value {value!r}")
+
+
+def _sign_series(values: pd.Series, *, label: str) -> pd.Series:
+    return values.map(lambda value: _coerce_sign(value, label=label)).astype("Int64")
+
+
+def _coerce_sign(value: Any, *, label: str) -> int:
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool) and int(value) in {-1, 1}:
+        return int(value)
+    text = str(value).strip().casefold()
+    if text in {"-1", "negative", "neg", "down"}:
+        return -1
+    if text in {"1", "positive", "pos", "up"}:
+        return 1
+    raise ValueError(f"retron_sponge_metrics: {label} contains unsupported sign value {value!r}; use -1 or +1")
 
 
 def _expected_sign_map(ctx, cfg) -> dict[str, int]:

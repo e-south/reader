@@ -47,6 +47,23 @@ def test_load_derives_title_from_id_when_missing(tmp_path: Path) -> None:
     spec = ReaderSpec.load(path)
     assert spec.experiment.id == "exp_alpha"
     assert spec.experiment.title == "exp_alpha"
+    assert spec.experiment.lifecycle == "active"
+
+
+def test_load_accepts_explicit_experiment_lifecycle(tmp_path: Path) -> None:
+    data = _base_config()
+    data["experiment"]["lifecycle"] = "draft"
+    path = write_config(tmp_path, data)
+    spec = ReaderSpec.load(path)
+    assert spec.experiment.lifecycle == "draft"
+
+
+def test_load_rejects_unknown_experiment_lifecycle(tmp_path: Path) -> None:
+    data = _base_config()
+    data["experiment"]["lifecycle"] = "legacy"
+    path = write_config(tmp_path, data)
+    with pytest.raises(ConfigError, match="experiment.lifecycle must be one of"):
+        ReaderSpec.load(path)
 
 
 def test_load_rejects_legacy_workflow_sections(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from rich.console import Console
 
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
 from reader.workbench.inspection.reports import workflow_explain_renderables
@@ -22,7 +23,7 @@ def build_next_steps(
     label = (job_label or "").strip()
 
     def _cmd(base: str, tail: str = "") -> str:
-        return f"{base} {label}{tail}" if label else f"{base}{tail}"
+        return reader_command(base, label, tail)
 
     steps: list[tuple[str, str]] = []
     workbench = resolve_workbench(decl)
@@ -34,12 +35,12 @@ def build_next_steps(
         configured_template=(notebook_specs[0].template if notebook_specs else None)
     )
     require_notebook_template_for_protocol(notebook_template, protocol=bound_protocol)
-    steps.append((_cmd("reader records"), "Review generated workbench records (QC)"))
+    steps.append((_cmd("records"), "Review generated workbench records (QC)"))
     if plot_specs:
-        steps.append((_cmd("reader plot"), "Save plot files to outputs/plots"))
+        steps.append((_cmd("plot"), "Save plot files to outputs/plots"))
     if export_specs:
-        steps.append((_cmd("reader export"), "Write export files to outputs/exports"))
-    steps.append((_cmd("reader notebook"), f"Open a notebook (template {notebook_template})"))
+        steps.append((_cmd("export"), "Write export files to outputs/exports"))
+    steps.append((_cmd("notebook"), f"Open a notebook (template {notebook_template})"))
     return steps
 
 

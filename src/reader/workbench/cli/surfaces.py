@@ -9,6 +9,7 @@ from rich.panel import Panel
 from reader.errors import ReaderError
 from reader.protocols import ProtocolBinding
 from reader.runtime import builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.engine import run_spec
 from reader.workbench.graph import resolve_workbench
 from reader.workbench.inspection.catalogs import plugin_registry_payload, workbench_surface_specs_payload
@@ -80,14 +81,14 @@ def _render_surface_specs_table(
 
 def _surface_next_steps(*, job_hint: str | None, output_dir: Path, include_plot: bool, include_export: bool) -> None:
     def _cmd(base: str, tail: str = "") -> str:
-        return f"{base} {job_hint}{tail}" if job_hint else f"{base}{tail}"
+        return reader_command(base, job_hint, tail)
 
     lines = [f"Artifacts saved in [path]{output_dir}[/path]", "", "Next steps:"]
     if include_plot:
-        lines.append(f"  {_cmd('reader plot')}")
+        lines.append(f"  {_cmd('plot')}")
     if include_export:
-        lines.append(f"  {_cmd('reader export')}")
-    lines.append(f"  {_cmd('reader notebook')}")
+        lines.append(f"  {_cmd('export')}")
+    lines.append(f"  {_cmd('notebook')}")
     shared.console.print(Panel.fit("\n".join(lines), border_style="green", box=box.ROUNDED))
 
 
@@ -333,7 +334,7 @@ def plot(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'reader ls'.",
+        help="Experiment config path, directory, or index from 'uv run reader ls'.",
     ),
     year: str | None = typer.Option(
         None, "--year", metavar="YYYY", help="Run plots for all experiments under experiments/YYYY."
@@ -445,7 +446,7 @@ def export(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'reader ls'.",
+        help="Experiment config path, directory, or index from 'uv run reader ls'.",
     ),
     only: list[str] = EXPORT_ONLY_OPTION,
     exclude: list[str] = EXPORT_EXCLUDE_OPTION,
@@ -488,7 +489,7 @@ def records(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
     format: str = typer.Option(
@@ -506,7 +507,7 @@ def records(
             create=False,
         )
         if not store.catalog_exists():
-            abort("No outputs/manifests/records.json found. Run 'reader run' first to produce records.")
+            abort(f"No outputs/manifests/records.json found. Run '{reader_command('run')}' first to produce records.")
     except ReaderError as err:
         handle_reader_error(err)
     fmt = normalize_output_format(format)
@@ -534,7 +535,7 @@ def records(
         if not latest_records:
             shared.console.print(
                 Panel.fit(
-                    "No record history listed in outputs/manifests/records.json. Run 'reader run' first.",
+                    f"No record history listed in outputs/manifests/records.json. Run '{reader_command('run')}' first.",
                     border_style="warn",
                     box=box.ROUNDED,
                 )
@@ -562,7 +563,7 @@ def records(
         if not latest_records:
             shared.console.print(
                 Panel.fit(
-                    "No records listed in outputs/manifests/records.json. Run 'reader run' first.",
+                    f"No records listed in outputs/manifests/records.json. Run '{reader_command('run')}' first.",
                     border_style="warn",
                     box=box.ROUNDED,
                 )
@@ -588,7 +589,7 @@ def steps(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."

@@ -66,6 +66,9 @@ class ProtocolSemanticProfileOverride:
     summary: str | None = None
     formula: str | None = None
     depends_on: tuple[str, ...] | None = None
+    value_space: str | None = None
+    unit: str | None = None
+    comparable_group: str | None = None
     anchor: str | None = None
     selector: str | None = None
     params: dict[str, Any] | None = None
@@ -81,6 +84,14 @@ class ProtocolSemanticProfileOverride:
             raise ValueError("ProtocolSemanticProfileOverride.summary must be a non-empty string when provided.")
         if self.formula is not None and not str(self.formula).strip():
             raise ValueError("ProtocolSemanticProfileOverride.formula must be a non-empty string when provided.")
+        if self.value_space is not None and not str(self.value_space).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.value_space must be a non-empty string when provided.")
+        if self.unit is not None and not str(self.unit).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.unit must be a non-empty string when provided.")
+        if self.comparable_group is not None and not str(self.comparable_group).strip():
+            raise ValueError(
+                "ProtocolSemanticProfileOverride.comparable_group must be a non-empty string when provided."
+            )
         if self.anchor is not None and not str(self.anchor).strip():
             raise ValueError("ProtocolSemanticProfileOverride.anchor must be a non-empty string when provided.")
         if self.selector is not None and not str(self.selector).strip():
@@ -385,6 +396,9 @@ class ProtocolMetricSpec:
     summary: str
     formula: str
     depends_on: tuple[str, ...] = ()
+    value_space: str | None = None
+    unit: str | None = None
+    comparable_group: str | None = None
     notes: tuple[str, ...] = ()
     profiles: tuple[str, ...] = ()
     profile_overrides: dict[str, ProtocolSemanticProfileOverride] = field(default_factory=dict)
@@ -396,6 +410,12 @@ class ProtocolMetricSpec:
             raise ValueError("ProtocolMetricSpec.summary must be a non-empty string.")
         if not str(self.formula).strip():
             raise ValueError("ProtocolMetricSpec.formula must be a non-empty string.")
+        if self.value_space is not None and not str(self.value_space).strip():
+            raise ValueError("ProtocolMetricSpec.value_space must be a non-empty string when provided.")
+        if self.unit is not None and not str(self.unit).strip():
+            raise ValueError("ProtocolMetricSpec.unit must be a non-empty string when provided.")
+        if self.comparable_group is not None and not str(self.comparable_group).strip():
+            raise ValueError("ProtocolMetricSpec.comparable_group must be a non-empty string when provided.")
         object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on))
         object.__setattr__(self, "notes", tuple(str(value) for value in self.notes))
         object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
@@ -507,6 +527,9 @@ class ProtocolSemanticNode:
     stage: MetricStage | None = None
     formula: str | None = None
     depends_on: tuple[str, ...] = ()
+    value_space: str | None = None
+    unit: str | None = None
+    comparable_group: str | None = None
     anchor: str | None = None
     selector: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
@@ -523,6 +546,12 @@ class ProtocolSemanticNode:
             raise ValueError("ProtocolSemanticNode.id must be a non-empty string.")
         if not str(self.summary).strip():
             raise ValueError("ProtocolSemanticNode.summary must be a non-empty string.")
+        if self.value_space is not None and not str(self.value_space).strip():
+            raise ValueError("ProtocolSemanticNode.value_space must be a non-empty string when provided.")
+        if self.unit is not None and not str(self.unit).strip():
+            raise ValueError("ProtocolSemanticNode.unit must be a non-empty string when provided.")
+        if self.comparable_group is not None and not str(self.comparable_group).strip():
+            raise ValueError("ProtocolSemanticNode.comparable_group must be a non-empty string when provided.")
         object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
         object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on if str(value).strip()))
         object.__setattr__(self, "params", dict(self.params or {}))
@@ -565,6 +594,34 @@ class ProtocolSemanticProgram:
                 if node.id in seen:
                     raise ValueError(f"Duplicate semantic node {node.id!r} in {group_name}.")
                 seen.add(node.id)
+        if self.ranking is not None and self.ranking.kind != "ranking":
+            raise ValueError("ProtocolSemanticProgram.ranking must have kind='ranking'.")
+
+        node_ids = {node.id for node in (*self.controls, *self.windows, *self.metrics)}
+        metric_ids = {node.id for node in self.metrics}
+        for node in self.metrics:
+            for dependency_id in node.depends_on:
+                if dependency_id not in node_ids:
+                    options = ", ".join(sorted(node_ids)) or "—"
+                    raise ValueError(
+                        f"ProtocolSemanticProgram metric {node.id!r} depends on unknown node {dependency_id!r}. "
+                        f"Known semantic ids: {options}."
+                    )
+        if self.ranking is not None:
+            referenced_metrics = (
+                self.ranking.primary_metric,
+                *self.ranking.penalties,
+                *self.ranking.supporting_metrics,
+            )
+            for metric_id in referenced_metrics:
+                if metric_id == "domain_defined":
+                    continue
+                if metric_id not in metric_ids:
+                    options = ", ".join(sorted(metric_ids)) or "—"
+                    raise ValueError(
+                        f"ProtocolSemanticProgram ranking references unknown metric {metric_id!r}. "
+                        f"Known metrics: {options}."
+                    )
 
 
 @dataclass(frozen=True)
@@ -913,6 +970,24 @@ class ProtocolDescriptor:
                         if _override(item.profile_overrides) is not None
                         and _override(item.profile_overrides).depends_on is not None
                         else item.depends_on
+                    ),
+                    value_space=(
+                        _override(item.profile_overrides).value_space
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).value_space is not None
+                        else item.value_space
+                    ),
+                    unit=(
+                        _override(item.profile_overrides).unit
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).unit is not None
+                        else item.unit
+                    ),
+                    comparable_group=(
+                        _override(item.profile_overrides).comparable_group
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).comparable_group is not None
+                        else item.comparable_group
                     ),
                 )
                 for item in self.metrics

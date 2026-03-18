@@ -11,6 +11,7 @@ from rich.table import Table
 from reader.errors import ConfigError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl, load_workbench_decl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
 
@@ -57,7 +58,9 @@ def run_spec(
 
     if not include_pipeline:
         if resume_from or until:
-            raise ConfigError("--from/--until require pipeline execution; use reader run for sliced runs.")
+            raise ConfigError(
+                f"--from/--until require pipeline execution; use {reader_command('run')} for sliced runs."
+            )
         pipeline_steps = []
     else:
         pipeline_steps = slice_pipeline_steps(pipeline_steps, resume_from=resume_from, until=until)

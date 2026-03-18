@@ -6,8 +6,8 @@ import pytest
 from rich.console import Console
 
 from reader.tests.repo.experiment_matrix import (
-    EXPECTED_FILE_PREFLIGHT_BLOCKERS,
     EXPERIMENT_CONFIGS,
+    NON_ACTIVE_LIFECYCLE_CONFIGS,
     OPTIONAL_DEPENDENCY_BLOCKERS,
     repo_rel,
 )
@@ -42,9 +42,7 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
     summary = validation_summary(decl, check_files=True, exp_root=decl.experiment.root)
     rel = repo_rel(config_path)
 
-    if rel in EXPECTED_FILE_PREFLIGHT_BLOCKERS:
-        assert summary["status"] == "error", rel
-        assert any(EXPECTED_FILE_PREFLIGHT_BLOCKERS[rel] in item for item in summary["errors"]), rel
+    if rel in NON_ACTIVE_LIFECYCLE_CONFIGS:
         return
 
     if rel in OPTIONAL_DEPENDENCY_BLOCKERS:
@@ -54,6 +52,17 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
         return
 
     assert summary["status"] == "ok", f"{rel}: {summary['errors']}"
+
+
+def test_repo_non_active_configs_declare_explicit_lifecycle() -> None:
+    assert NON_ACTIVE_LIFECYCLE_CONFIGS == {
+        "experiments/2026/20260313_mono_functional_sponges/config.yaml": "draft",
+        "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml": "draft",
+        "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml": "draft",
+        "experiments/2026/202603XX_tetra_functional_sponges/config.yaml": "draft",
+        "experiments/2026/202603XX_tri_functional_sponges/config.yaml": "draft",
+        "experiments/template/config.yaml": "template",
+    }
 
 
 @pytest.mark.parametrize("relative_path", RETRON_SPONGE_CONFIGS)

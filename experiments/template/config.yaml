@@ -2,6 +2,7 @@ schema: reader/v7
 experiment:
   id: template
   title: biosensor_panel_M9_glu
+  lifecycle: template
 protocol:
   id: logic/sfxi_screen
   inputs:

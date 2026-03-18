@@ -91,6 +91,7 @@ def experiment_identity_payload(
     return {
         "id": decl.experiment.id,
         "title": decl.experiment.title,
+        "lifecycle": decl.experiment.lifecycle,
         "protocol": protocol_id or decl.experiment_semantics.protocol.id,
         "config": str(job_path),
         "root": str(decl.experiment.root),

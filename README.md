@@ -4,9 +4,9 @@
 
 `reader` is a protocol-driven experimental workbench for structured assay data. It gives experiment authors one central YAML surface to declare assay inputs, analysis choices, and requested outputs, then compiles that authoring surface into a deterministic runtime plan that ingests raw data, applies transforms, emits traceable records, and materializes plots, exports, and notebooks.
 
-It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “is this experiment blocked or ready to run?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
+It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “is this experiment blocked or ready to run?”, “is this a draft scaffold or an active experiment?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
 
-The default UX is human-first: tables for normal use, JSON for automation and agent harnesses. Start with `reader ls --details --readiness`, `reader protocols`, `reader inspect`, and `reader explain`; the detailed contract shapes for discovery, readiness, inspection, validation, records, plots, and exports live in the docs index and CLI reference instead of being duplicated here.
+The default UX is human-first: tables for normal use, JSON for automation and agent harnesses. Start with `uv run reader ls --details --readiness`, `uv run reader protocols`, `uv run reader inspect`, and `uv run reader explain`; the detailed contract shapes for discovery, readiness, inspection, validation, records, plots, and exports live in the docs index and CLI reference instead of being duplicated here.
 
 ---
 
@@ -31,10 +31,11 @@ uv run reader ls --root experiments
 uv run reader ls --root experiments --details --format json
 uv run reader ls --root experiments --details --readiness
 uv run reader ls --root experiments --details --readiness --format json
+uv run reader ls --root experiments --details --lifecycle draft
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
 uv run reader ls --root experiments --details --protocol plate_reader/retron_sponge_screen
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
-uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
+uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 uv run reader inspect experiments/template/config.yaml
 uv run reader inspect experiments/template/config.yaml --format json
 uv run reader config experiments/template/config.yaml --format json
@@ -43,13 +44,15 @@ uv run reader validate experiments/template/config.yaml --no-files --format json
 uv run reader explain experiments/template/config.yaml --format json
 uv run reader run experiments/template/config.yaml --dry-run --format json
 uv run reader records experiments/template/config.yaml --format json
-uv run reader protocols plate_reader/dual_reporter_screen --example-config
+uv run reader protocols <protocol-id> --example-config
 uv run reader protocols plate_reader/retron_sponge_screen --format json
 uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
 
 Use `plate_reader/dual_reporter_screen` for general plate-reader sensor panels and `plate_reader/retron_sponge_screen` when the assay logic depends on matched same-sensor tetO normalization, induced sponge effects, burden, leakiness, and cross-sensor ranking.
+
+Use `experiment.lifecycle: draft` or `experiment.lifecycle: template` for intentionally non-runnable configs. Active experiments should omit `experiment.lifecycle` entirely.
 
 ## Workbench layout
 

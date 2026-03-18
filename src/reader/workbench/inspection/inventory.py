@@ -12,6 +12,7 @@ def _sorted_counter(values: list[str]) -> dict[str, int]:
 
 def inventory_summary_payload(entries: list[dict[str, object]]) -> dict[str, object]:
     statuses = [str(entry.get("status") or "unknown") for entry in entries]
+    lifecycles = [str(entry.get("lifecycle") or "unknown") for entry in entries]
     readiness_states = [
         str(readiness.get("state"))
         for readiness in (entry.get("readiness") for entry in entries)
@@ -26,6 +27,7 @@ def inventory_summary_payload(entries: list[dict[str, object]]) -> dict[str, obj
     payload = {
         "experiments": len(entries),
         "by_status": _sorted_counter(statuses),
+        "by_lifecycle": _sorted_counter(lifecycles),
         "by_protocol": _sorted_counter(protocols),
         "outputs": {
             "with_outputs": with_outputs,
@@ -45,6 +47,7 @@ def inventory_surface_payload(
     readiness: bool,
     protocol: str | None,
     status: str | None,
+    lifecycle: str | None,
     experiments: list[dict[str, object]],
 ) -> dict[str, object]:
     return {
@@ -58,6 +61,7 @@ def inventory_surface_payload(
             "readiness": readiness,
             "protocol": protocol,
             "status": status,
+            "lifecycle": lifecycle,
         },
         "summary": inventory_summary_payload(experiments),
         "experiments": deepcopy(experiments),

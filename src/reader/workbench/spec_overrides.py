@@ -29,7 +29,7 @@ def build_surface_command(
     inputs: list[str] | None = None,
     sets: list[str] | None = None,
 ) -> list[str]:
-    parts = [command, str(job_path)]
+    parts = ["uv", "run", *command.split(), str(job_path)]
     if list_only:
         parts += ["--list"]
     if only:

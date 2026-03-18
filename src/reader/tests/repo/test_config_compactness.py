@@ -37,6 +37,8 @@ def test_repo_experiment_configs_omit_redundant_defaults(config_path: Path) -> N
     )
     if "title" in experiment and "id" in experiment:
         assert experiment["title"] != experiment["id"], f"{config_path}: omit experiment.title when it matches id"
+    if "lifecycle" in experiment:
+        assert experiment["lifecycle"] != "active", f"{config_path}: omit experiment.lifecycle when it is active"
 
     protocol = data.get("protocol") or {}
     assert isinstance(protocol, dict), f"{config_path}: protocol block is required"

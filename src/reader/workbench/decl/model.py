@@ -11,6 +11,7 @@ from reader.workbench.experiment import ExperimentSemantics
 class ExperimentDecl:
     id: str
     title: str
+    lifecycle: str
     root: Path
 
 

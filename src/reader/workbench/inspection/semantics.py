@@ -42,6 +42,9 @@ def semantic_node_payload(node) -> dict[str, object]:
         payload["stage"] = node.stage
         payload["formula"] = node.formula
         payload["depends_on"] = list(node.depends_on)
+        payload["value_space"] = node.value_space
+        payload["unit"] = node.unit
+        payload["comparable_group"] = node.comparable_group
     if node.kind == "ranking":
         payload["primary_metric"] = node.primary_metric
         payload["direction"] = node.direction

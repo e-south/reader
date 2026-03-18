@@ -36,7 +36,7 @@ app = typer.Typer(
         "reader — experimental workbench.\n\n"
         "Discover assays and experiments, inspect compiled workflow plans, validate authoring YAML, "
         "run pipelines, and materialize plots, exports, or notebooks. "
-        "Start with 'reader demo', 'reader ls', or 'reader protocols'."
+        "Start with 'uv run reader demo', 'uv run reader ls', or 'uv run reader protocols'."
     ),
 )
 console = Console(theme=THEME)
@@ -147,6 +147,18 @@ def normalize_status_filter(value: str | None) -> str | None:
     allowed = {"ok", "config_error"}
     if normalized not in allowed:
         raise typer.BadParameter(f"status must be one of: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def normalize_lifecycle_filter(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    allowed = {"active", "draft", "template"}
+    if normalized not in allowed:
+        raise typer.BadParameter(f"lifecycle must be one of: {', '.join(sorted(allowed))}")
     return normalized
 
 

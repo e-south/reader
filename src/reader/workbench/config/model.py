@@ -12,6 +12,7 @@ from reader.errors import ConfigError
 class ExperimentSpec(BaseModel):
     id: str
     title: str | None = None
+    lifecycle: str = "active"
 
     model_config = {"extra": "forbid"}
 
@@ -21,6 +22,17 @@ class ExperimentSpec(BaseModel):
         if not isinstance(v, str) or not v.strip():
             raise ConfigError("experiment.id must be a non-empty string")
         return v
+
+    @field_validator("lifecycle", mode="after")
+    @classmethod
+    def _validate_lifecycle(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ConfigError("experiment.lifecycle must be a non-empty string")
+        lifecycle = v.strip().lower()
+        allowed = {"active", "draft", "template"}
+        if lifecycle not in allowed:
+            raise ConfigError(f"experiment.lifecycle must be one of: {', '.join(sorted(allowed))}")
+        return lifecycle
 
 
 class PathsSpec(BaseModel):

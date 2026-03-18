@@ -10,6 +10,7 @@ from rich.table import Table
 
 from reader.errors import ReaderError
 from reader.runtime import builtin_runtime
+from reader.workbench.commands import reader_command
 from reader.workbench.config import ReaderSpec
 from reader.workbench.engine import explain as explain_job
 from reader.workbench.engine import run_job
@@ -50,6 +51,7 @@ from .shared import (
     emit_json,
     handle_reader_error,
     normalize_flag,
+    normalize_lifecycle_filter,
     normalize_output_format,
     normalize_status_filter,
     table,
@@ -78,6 +80,12 @@ def ls(
         metavar="STATE",
         help="Only show experiments with status: ok | config_error.",
     ),
+    lifecycle: str | None = typer.Option(
+        None,
+        "--lifecycle",
+        metavar="KIND",
+        help="Only show experiments with lifecycle: active | draft | template.",
+    ),
     details: bool = typer.Option(
         False,
         "--details",
@@ -101,6 +109,7 @@ def ls(
     fmt = normalize_output_format(format)
     protocol_filter = protocol.strip() if isinstance(protocol, str) and protocol.strip() else None
     status_filter = normalize_status_filter(status)
+    lifecycle_filter = normalize_lifecycle_filter(lifecycle)
     if readiness and not details:
         raise typer.BadParameter("--readiness requires --details")
 
@@ -118,6 +127,7 @@ def ls(
                     readiness=readiness,
                     protocol=protocol_filter,
                     status=status_filter,
+                    lifecycle=lifecycle_filter,
                     experiments=[],
                 )
             )
@@ -136,6 +146,7 @@ def ls(
             "config": str(config_path),
             "root": str(config_path.parent),
             "protocol": None,
+            "lifecycle": None,
             "generated": {"records": 0, "plots": 0, "exports": 0, "notebooks": 0},
             "selected": None,
             "has_outputs": False,
@@ -150,6 +161,7 @@ def ls(
             else:
                 spec = ReaderSpec.load(config_path)
             entry["protocol"] = spec.protocol.id
+            entry["lifecycle"] = spec.experiment.lifecycle
             outputs_dir = (config_path.parent / spec.paths.outputs).resolve()
             counts = summarize_outputs_dir(
                 outputs_dir,
@@ -188,6 +200,8 @@ def ls(
             continue
         if status_filter and entry["status"] != status_filter:
             continue
+        if lifecycle_filter and entry["lifecycle"] != lifecycle_filter:
+            continue
         entries.append(entry)
 
     if not entries:
@@ -200,6 +214,7 @@ def ls(
                     readiness=readiness,
                     protocol=protocol_filter,
                     status=status_filter,
+                    lifecycle=lifecycle_filter,
                     experiments=[],
                 )
             )
@@ -209,6 +224,8 @@ def ls(
             filters.append(f"protocol={protocol_filter}")
         if status_filter:
             filters.append(f"status={status_filter}")
+        if lifecycle_filter:
+            filters.append(f"lifecycle={lifecycle_filter}")
         suffix = f" for filters ({', '.join(filters)})" if filters else ""
         shared.console.print(
             Panel.fit(
@@ -228,6 +245,7 @@ def ls(
                 readiness=readiness,
                 protocol=protocol_filter,
                 status=status_filter,
+                lifecycle=lifecycle_filter,
                 experiments=entries,
             )
         )
@@ -243,6 +261,7 @@ def ls(
     listing.add_column("Name", style="accent", max_width=name_width, overflow="ellipsis")
     if details:
         listing.add_column("Protocol", max_width=28, overflow="ellipsis")
+        listing.add_column("Lifecycle", width=10)
         listing.add_column("Status", width=12)
         listing.add_column("Selected", overflow="fold")
         listing.add_column("Generated", overflow="fold")
@@ -260,6 +279,7 @@ def ls(
                 str(entry["index"]),
                 str(entry["name"]),
                 str(entry["protocol"] or "—"),
+                str(entry["lifecycle"] or "—"),
                 status_value,
                 selected_plan_summary(entry.get("selected") if isinstance(entry, dict) else None),
                 generated_summary(generated),
@@ -280,6 +300,7 @@ def ls(
                 f"[muted]root: [path]{root_path}[/path] — {len(entries)} shown"
                 + (f" (protocol={protocol_filter})" if protocol_filter else "")
                 + (f" (status={status_filter})" if status_filter else "")
+                + (f" (lifecycle={lifecycle_filter})" if lifecycle_filter else "")
                 + "[/muted]"
             ),
         )
@@ -298,6 +319,8 @@ def ls(
         )
         status_bits = [f"{key}={value}" for key, value in dict(inventory_summary["by_status"]).items()]
         summary.add_row("Status", ", ".join(status_bits) if status_bits else "—")
+        lifecycle_bits = [f"{key}={value}" for key, value in dict(inventory_summary["by_lifecycle"]).items()]
+        summary.add_row("Lifecycle", ", ".join(lifecycle_bits) if lifecycle_bits else "—")
         protocol_bits = [f"{key}={value}" for key, value in dict(inventory_summary["by_protocol"]).items()]
         summary.add_row("Protocols", ", ".join(protocol_bits) if protocol_bits else "—")
         readiness_bits = [f"{key}={value}" for key, value in dict(inventory_summary.get("by_readiness") or {}).items()]
@@ -311,7 +334,7 @@ def inspect(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
@@ -339,7 +362,7 @@ def explain(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
@@ -347,7 +370,7 @@ def explain(
 ):
     try:
         job_path = infer_job_path(job)
-        append_journal(job_path, f"reader explain {job_path}")
+        append_journal(job_path, reader_command("explain", job_path))
         spec, decl = load_job_models(job_path)
         runtime = builtin_runtime()
         fmt = normalize_output_format(format)
@@ -364,7 +387,7 @@ def validate(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     no_files: bool = typer.Option(False, "--no-files", help="Skip file existence checks (config-only validation)."),
     format: str = typer.Option(
@@ -373,7 +396,7 @@ def validate(
 ):
     try:
         job_path = infer_job_path(job)
-        append_journal(job_path, f"reader validate {job_path}")
+        append_journal(job_path, reader_command("validate", job_path))
         _, decl = load_job_models(job_path)
         runtime = builtin_runtime()
         fmt = normalize_output_format(format)
@@ -409,7 +432,7 @@ def config(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     format: str = typer.Option("yaml", "--format", metavar="FMT", help="Output format: yaml | json (default: yaml)."),
 ):
@@ -442,7 +465,7 @@ def run(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'reader ls' (defaults to nearest ./config.yaml)",
+        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
     ),
     from_step: str | None = typer.Option(
         None,
@@ -472,7 +495,7 @@ def run(
     compact: bool = typer.Option(False, "--compact", help="Use concise progress output instead of per-step logs."),
 ):
     job_path = infer_job_path(job)
-    parts = ["reader run", str(job_path)]
+    parts = [reader_command("run", job_path)]
     if only and (from_step or until):
         raise typer.BadParameter("--only cannot be combined with --from/--until")
 

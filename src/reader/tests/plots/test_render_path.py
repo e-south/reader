@@ -81,7 +81,7 @@ def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
     )
 
     decl = WorkbenchDecl(
-        experiment=ExperimentDecl(id="exp_plot", title="exp_plot", root=tmp_path),
+        experiment=ExperimentDecl(id="exp_plot", title="exp_plot", lifecycle="active", root=tmp_path),
         experiment_semantics=ExperimentSemantics(
             protocol=ProtocolBinding(id="workbench/generic"),
             annotations=AnnotationSemantics(),

@@ -144,7 +144,7 @@ def test_plot_requires_records(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(cfg)])
     assert result.exit_code != 0
     assert "outputs/manifests/records.json" in result.output
-    assert "reader run" in result.output
+    assert "uv run reader run" in result.output
 
 
 def test_export_requires_records(tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ def test_export_requires_records(tmp_path: Path) -> None:
     result = runner.invoke(app, ["export", str(cfg)])
     assert result.exit_code != 0
     assert "outputs/manifests/records.json" in result.output
-    assert "reader run" in result.output
+    assert "uv run reader run" in result.output
 
 
 def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
