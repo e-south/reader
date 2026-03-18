@@ -43,9 +43,9 @@ def test_run_dry_run_json_surfaces_slice(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["dry_run"] is True
     assert payload["slice"]["from"] == "labels"
-    assert payload["plan"]["pipeline_flow"][0] == "labels"
-    assert payload["plots"] == []
-    assert payload["exports"] == []
+    assert payload["implementation"]["plan"]["pipeline_flow"][0] == "labels"
+    assert payload["implementation"]["compiled"]["plots"] == []
+    assert payload["implementation"]["compiled"]["exports"] == []
 
 
 def test_run_json_requires_dry_run(tmp_path: Path) -> None:

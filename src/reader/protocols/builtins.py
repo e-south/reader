@@ -394,7 +394,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 id="R",
                 stage="derived",
                 summary="Primary within-well dual-reporter ratio.",
-                formula="log2(YFP / CFP)",
+                formula="YFP / CFP",
                 depends_on=("YFP", "CFP"),
             ),
             ProtocolMetricSpec(

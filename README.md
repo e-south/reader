@@ -6,7 +6,7 @@
 
 It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
 
-The discovery commands keep a human table view by default and also support `--format json` for agent harnesses and machine-readable inspection. `reader ls --details` now acts like a workbench inventory surface: it shows the assay protocol, selected runtime plan summary, generated results on disk, carries a top-level summary by protocol/status/output state in JSON mode, and supports `--protocol` / `--status` filters when the experiment tree grows. `reader protocols`, `reader inspect`, and `reader explain` now also expose a first-class semantic program, so assay controls, windows, metrics, and ranking are reported alongside the compiled runtime chain instead of living only in descriptor prose.
+The default UX is human-first: tables for normal use, JSON for automation and agent harnesses. Start with `reader ls`, `reader protocols`, `reader inspect`, and `reader explain`; the detailed contract shapes for discovery, inspection, validation, records, plots, and exports live in the docs index and CLI reference instead of being duplicated here.
 
 ---
 
@@ -30,13 +30,16 @@ uv sync --locked --group dev --group notebooks
 uv run reader ls --root experiments
 uv run reader ls --root experiments --details --format json
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
 uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
 uv run reader inspect experiments/template/config.yaml
 uv run reader inspect experiments/template/config.yaml --format json
+uv run reader config experiments/template/config.yaml --format json
 uv run reader steps experiments/template/config.yaml --format json
 uv run reader validate experiments/template/config.yaml --no-files --format json
 uv run reader explain experiments/template/config.yaml --format json
 uv run reader run experiments/template/config.yaml --dry-run --format json
+uv run reader records experiments/template/config.yaml --format json
 uv run reader protocols plate_reader/dual_reporter_screen --example-config
 uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json

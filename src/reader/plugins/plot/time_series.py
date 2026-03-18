@@ -33,6 +33,8 @@ class TimeSeriesCfg(PluginConfig):
     time_window: list[float] | None = None
     ci: float = 95.0
     ci_alpha: float = 0.15
+    ci_boot: int = Field(default=100, ge=1)
+    ci_seed: int = 0
     legend_loc: str = "upper left"
     show_replicates: bool = False
     filename: str | None = None
@@ -75,6 +77,8 @@ class TimeSeriesPlot(FigurePlotPlugin):
             palette_book=ctx.palette_book,
             ci=cfg.ci,
             ci_alpha=cfg.ci_alpha,
+            ci_boot=cfg.ci_boot,
+            ci_seed=cfg.ci_seed,
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
             filename=cfg.filename,

@@ -1,138 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
-
-from rich import box
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.decl import WorkbenchDecl
-from reader.workbench.graph import (
-    OutputRef,
-    ensure_unique_workbench_ids,
-    input_ref_display,
-    output_ref_display,
-    resolve_workbench,
-)
-from reader.workbench.templates import require_notebook_template_for_protocol, resolve_notebook_template_descriptor
+from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
+from reader.workbench.inspection.reports import workflow_explain_renderables
+from reader.workbench.templates import require_notebook_template_for_protocol
 
 from ._shared import collect_categories
-
-
-def _plan_table(steps: list[Any], registry: Any, *, title: str) -> Table:
-    table = Table(
-        title=title,
-        title_justify="left",
-        title_style="bold cyan",
-        header_style="bold",
-        box=box.ROUNDED,
-        expand=True,
-        show_lines=False,
-    )
-    table.add_column("#", justify="right", style="muted")
-    table.add_column("Step ID", style="accent")
-    table.add_column("Plugin")
-    table.add_column("Type")
-    table.add_column("Inputs")
-    table.add_column("Outputs")
-    for index, step in enumerate(steps, 1):
-        descriptor = registry.resolve_descriptor(step.plugin)
-        plugin_cls = descriptor.cls
-        input_lines: list[str] = []
-        for name, port in plugin_cls.input_ports().items():
-            suffix = ", optional" if port.optional else ""
-            bound_ref = (step.reads or {}).get(name)
-            if bound_ref is not None:
-                input_lines.append(f"{name} <- {input_ref_display(bound_ref)} ({port.render()}{suffix})")
-            else:
-                input_lines.append(f"{name} ({port.render()}{suffix})")
-
-        output_lines: list[str] = []
-        for out_name, port in plugin_cls.output_ports().items():
-            if port.kind == "dataframe":
-                label_ref = (step.writes or {}).get(out_name, OutputRef(record_id=f"{step.id}/{out_name}"))
-                output_lines.append(f"{output_ref_display(label_ref)} ({port.render()})")
-                continue
-            if title.lower().startswith("plot"):
-                output_lines.append(f"{out_name} ({port.render()} → outputs/plots/)")
-                continue
-            if title.lower().startswith("export"):
-                output_lines.append(f"{out_name} ({port.render()} → outputs/exports/)")
-                continue
-            output_lines.append(f"{out_name} ({port.render()})")
-
-        table.add_row(
-            str(index),
-            step.id,
-            step.plugin,
-            f"{descriptor.domain}/{descriptor.family}",
-            "\n".join(input_lines) if input_lines else "—",
-            "\n".join(output_lines) if output_lines else "—",
-        )
-    return table
-
-
-def _notebook_table(steps: list[Any], *, title: str) -> Table:
-    table = Table(
-        title=title,
-        title_justify="left",
-        title_style="bold cyan",
-        header_style="bold",
-        box=box.ROUNDED,
-        expand=True,
-        show_lines=False,
-    )
-    table.add_column("#", justify="right", style="muted")
-    table.add_column("Spec ID", style="accent")
-    table.add_column("Template")
-    table.add_column("Type")
-    table.add_column("Config")
-    for index, step in enumerate(steps, 1):
-        descriptor = resolve_notebook_template_descriptor(step.template)
-        table.add_row(
-            str(index),
-            step.id,
-            step.template,
-            descriptor.family,
-            "—",
-        )
-    return table
-
-
-def _semantic_program_table(program) -> Table:
-    table = Table(
-        title="Semantic Program",
-        title_justify="left",
-        title_style="bold cyan",
-        header_style="bold",
-        box=box.ROUNDED,
-        expand=True,
-        show_lines=False,
-    )
-    table.add_column("Kind", style="accent")
-    table.add_column("ID", style="accent")
-    table.add_column("Execution")
-    table.add_column("Compiled Via")
-    table.add_column("Summary")
-
-    def _add(kind: str, node) -> None:
-        compiled_via = ", ".join(node.execution.step_ids) or "—"
-        summary = node.summary if not node.execution.note else f"{node.summary} ({node.execution.note})"
-        table.add_row(kind, node.id, node.execution.status, compiled_via, summary)
-
-    for node in program.controls:
-        _add("control_rule", node)
-    for node in program.windows:
-        _add("window", node)
-    for node in program.metrics:
-        _add("metric", node)
-    if program.ranking is not None:
-        _add("ranking", program.ranking)
-    return table
 
 
 def build_next_steps(
@@ -187,74 +64,15 @@ def explain(
     if "plot" in categories:
         ensure_mpl_cache_dir()
     registry = registry or (runtime.plugins if categories else None)
-    summary = Table(box=box.ROUNDED, expand=True, show_header=False)
-    summary.add_column("Field", style="accent", no_wrap=True)
-    summary.add_column("Value")
-    summary.add_row("Protocol", bound_protocol.id)
-    summary.add_row("Input sections", ", ".join(sorted(bound_protocol.inputs)) if bound_protocol.inputs else "—")
-    summary.add_row("Analysis knobs", ", ".join(sorted(bound_protocol.analysis)) if bound_protocol.analysis else "—")
-    summary.add_row(
-        "Pipeline flow",
-        " -> ".join(step.id for step in pipeline_steps) if pipeline_steps else "—",
-    )
-    summary.add_row("Plots", ", ".join(step.id for step in plot_specs) if plot_specs else "—")
-    summary.add_row("Exports", ", ".join(step.id for step in export_specs) if export_specs else "—")
-    summary.add_row("Notebooks", ", ".join(step.template for step in notebook_specs) if notebook_specs else "—")
-    resources = tuple(decl.experiment_semantics.resources.by_id.keys())
-    if resources:
-        summary.add_row("Resources", ", ".join(resources))
-    console.print(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Protocol plan"))
-    if decl.experiment_semantics.protocol_program is not None:
-        console.print(
-            Panel(
-                _semantic_program_table(decl.experiment_semantics.protocol_program),
-                border_style="cyan",
-                box=box.ROUNDED,
-            )
-        )
-    if pipeline_steps:
-        if registry is None:
-            raise RuntimeError("pipeline explanation requires a plugin registry")
-        pipeline = _plan_table(pipeline_steps, registry, title="Pipeline")
-        console.print(
-            Panel(
-                pipeline,
-                border_style="cyan",
-                box=box.ROUNDED,
-                subtitle=Text(f"{len(pipeline_steps)} steps", style="dim"),
-            )
-        )
-    if plot_specs:
-        if registry is None:
-            raise RuntimeError("plot explanation requires a plugin registry")
-        plots_table = _plan_table(plot_specs, registry, title="Plots")
-        console.print(
-            Panel(
-                plots_table,
-                border_style="cyan",
-                box=box.ROUNDED,
-                subtitle=Text(f"{len(plot_specs)} specs", style="dim"),
-            )
-        )
-    if export_specs:
-        if registry is None:
-            raise RuntimeError("export explanation requires a plugin registry")
-        exports_table = _plan_table(export_specs, registry, title="Exports")
-        console.print(
-            Panel(
-                exports_table,
-                border_style="cyan",
-                box=box.ROUNDED,
-                subtitle=Text(f"{len(export_specs)} specs", style="dim"),
-            )
-        )
-    if notebook_specs:
-        notebooks_table = _notebook_table(notebook_specs, title="Notebooks")
-        console.print(
-            Panel(
-                notebooks_table,
-                border_style="cyan",
-                box=box.ROUNDED,
-                subtitle=Text(f"{len(notebook_specs)} specs", style="dim"),
-            )
-        )
+    if (pipeline_steps or plot_specs or export_specs) and registry is None:
+        raise RuntimeError("plugin-backed workflow explanation requires a plugin registry")
+    for renderable in workflow_explain_renderables(
+        bound_protocol=bound_protocol,
+        decl=decl,
+        pipeline_steps=pipeline_steps,
+        plot_specs=plot_specs,
+        export_specs=export_specs,
+        notebook_specs=notebook_specs,
+        registry=registry,
+    ):
+        console.print(renderable)

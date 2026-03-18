@@ -57,6 +57,8 @@ def plot_ts_and_snap(
     ts_log_transform: bool | list[str] = False,
     ts_ci: float = 95.0,
     ts_ci_alpha: float = 0.15,
+    ts_ci_boot: int = 100,
+    ts_ci_seed: int = 0,
     ts_show_replicates: bool = False,
     ts_legend_loc: str = "upper right",
     # snapshot (right)
@@ -198,6 +200,8 @@ def plot_ts_and_snap(
                     show_replicates=ts_show_replicates,
                     ci=ts_ci,
                     ci_alpha=ts_ci_alpha,
+                    ci_boot=ts_ci_boot,
+                    ci_seed=ts_ci_seed,
                     line_alpha=float(fig_kwargs.get("line_alpha", 0.85)),
                     mean_marker_alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
                     replicate_alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),

@@ -38,6 +38,8 @@ class TSAndSnapCfg(PluginConfig):
     ts_log_transform: bool | list[str] = False
     ts_ci: float = 95.0
     ts_ci_alpha: float = 0.15
+    ts_ci_boot: int = Field(default=100, ge=1)
+    ts_ci_seed: int = 0
     ts_show_replicates: bool = False
     ts_legend_loc: str = "upper right"
 
@@ -88,6 +90,8 @@ class TSAndSnapPlot(FigurePlotPlugin):
             ts_log_transform=cfg.ts_log_transform,
             ts_ci=cfg.ts_ci,
             ts_ci_alpha=cfg.ts_ci_alpha,
+            ts_ci_boot=cfg.ts_ci_boot,
+            ts_ci_seed=cfg.ts_ci_seed,
             ts_show_replicates=cfg.ts_show_replicates,
             ts_legend_loc=cfg.ts_legend_loc,
             # snap (right)

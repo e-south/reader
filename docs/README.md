@@ -45,6 +45,7 @@
 - I need machine-readable discovery for an agent or automation:
   - `reader ls --details --format json`
   - `reader ls --details --protocol <protocol-id> --format json`
+  - `reader config <config|dir|index> --format json`
   - `reader inspect <config|dir|index> --format json`
   - `reader steps <config|dir|index> --format json`
   - `reader validate <config|dir|index> --no-files --format json`
@@ -55,9 +56,17 @@
   - `reader plot <config|dir|index> --list --format json`
   - `reader export <config|dir|index> --list --format json`
   - `reader records <config|dir|index> --format json`
-  - `reader ls` JSON includes a fleet summary by protocol/status/output state.
-  - `reader protocols` / `inspect` / `explain` JSON include a protocol semantic program with explicit `compiled` vs `descriptive_only` execution status for controls, windows, metrics, and ranking.
+  - `reader ls` JSON uses `catalog`, `selection`, `summary`, and `experiments`, with fleet totals grouped by protocol, status, and output state.
+  - `reader protocols`, `reader config`, `reader steps`, `reader inspect`, and `reader explain` JSON all use the same top-level layers: `authoring`, `semantics`, and `implementation`.
+  - `reader records` JSON carries experiment identity, the manifest path, summary counts by record kind/producer, and optional revision counts with `--all`.
+  - `reader plugins` JSON keeps registry filters under `selection` and adds ontology summaries by category, domain, and family.
+  - `semantics.program` carries explicit `compiled` vs `descriptive_only` execution status for controls, windows, metrics, and ranking.
+  - `semantics.program.summary` gives fast coverage counts so agents can see whether a protocol is mostly executable or still largely descriptive.
+  - `reader config --format json` keeps the full `reader/v7` document under `authoring` and the compiled runtime chain under `implementation`.
+  - `reader validate --format json` keeps preflight mode under `selection`, summary totals under `summary`, and file-check details under `validation`.
+  - `reader inspect` / `reader explain` keep runtime filesystem state under `implementation`, not mixed into top-level assay semantics.
   - `reader steps` / `inspect` / `plot --list` / `export --list` JSON include upstream producer and contract-surface metadata for record bindings.
+  - `reader plot --list` / `reader export --list` JSON keep user filters under `selection` and add compact output summaries by plugin, domain, and family.
 - I need to discover available assays and their outputs:
   - `reader protocols`
   - `reader protocols <protocol-id>`

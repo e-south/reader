@@ -184,11 +184,14 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["count"] == 2
-    assert payload["summary"]["status"] == {"config_error": 1, "ok": 1}
-    assert payload["summary"]["protocols"] == {"plate_reader/dual_reporter_screen": 1}
-    assert payload["summary"]["with_outputs"] == 1
-    assert payload["summary"]["without_outputs"] == 1
+    assert payload["catalog"]["kind"] == "experiments"
+    assert payload["catalog"]["root"] == str(exp_root.resolve())
+    assert payload["selection"]["details"] is True
+    assert payload["selection"]["include_scaffolds"] is False
+    assert payload["summary"]["experiments"] == 2
+    assert payload["summary"]["by_status"] == {"config_error": 1, "ok": 1}
+    assert payload["summary"]["by_protocol"] == {"plate_reader/dual_reporter_screen": 1}
+    assert payload["summary"]["outputs"] == {"with_outputs": 1, "without_outputs": 1}
     by_name = {item["name"]: item for item in payload["experiments"]}
     assert by_name["good_exp"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert by_name["good_exp"]["generated"]["records"] == 1
@@ -239,8 +242,8 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
     )
     assert by_protocol.exit_code == 0
     protocol_payload = json.loads(by_protocol.output)
-    assert protocol_payload["count"] == 1
-    assert protocol_payload["filters"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert protocol_payload["summary"]["experiments"] == 1
+    assert protocol_payload["selection"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert protocol_payload["experiments"][0]["name"] == "good_plate"
 
     by_status = runner.invoke(
@@ -249,8 +252,8 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
     )
     assert by_status.exit_code == 0
     status_payload = json.loads(by_status.output)
-    assert status_payload["count"] == 1
-    assert status_payload["filters"]["status"] == "config_error"
+    assert status_payload["summary"]["experiments"] == 1
+    assert status_payload["selection"]["status"] == "config_error"
     assert status_payload["experiments"][0]["name"] == "broken_exp"
 
     no_matches = runner.invoke(
@@ -259,8 +262,8 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
     )
     assert no_matches.exit_code == 0
     empty_payload = json.loads(no_matches.output)
-    assert empty_payload["count"] == 0
-    assert empty_payload["filters"]["protocol"] == "logic/sfxi_screen"
+    assert empty_payload["summary"]["experiments"] == 0
+    assert empty_payload["selection"]["protocol"] == "logic/sfxi_screen"
     assert empty_payload["experiments"] == []
 
 
@@ -308,13 +311,41 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["count"] >= 1
-    first = payload["pipeline"][0]
+    assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
+    assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["compiled"] >= 1
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
+    assert payload["implementation"]["plan"]["pipeline_count"] >= 1
+    assert payload["implementation"]["plan"]["plots"] == []
+    assert payload["implementation"]["compiled"]["plots"] == []
+    assert payload["implementation"]["compiled"]["exports"] == []
+    first = payload["implementation"]["compiled"]["pipeline"][0]
     assert first["stage"] == "ingest"
     assert first["semantics"]["category"] == "ingest"
     assert first["writes"][0]["display"] == "ingest/df"
+    assert "semantic_program" not in payload
+    assert "count" not in payload
+    assert "pipeline" not in payload
+
+
+def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["config", str(cfg), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["authoring"]["schema"] == "reader/v7"
+    assert payload["authoring"]["protocol"]["id"] == "plate_reader/dual_reporter_screen"
+    assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["by_kind"]["window"]["descriptive_only"] >= 1
+    assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
+    assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
+    assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
+    assert "compiled" not in payload
+    assert "protocol" not in payload
 
 
 def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
@@ -324,11 +355,16 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["semantic_program"]["controls"][0]["execution"]["status"] == "descriptive_only"
-    assert payload["plan"]["pipeline_flow"][0] == "ingest"
-    assert "sample_map" in payload["plan"]["resources"]
-    assert payload["plots"][0]["semantics"]["category"] == "plot"
-    assert payload["exports"][0]["semantics"]["category"] == "export"
+    assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
+    assert payload["semantics"]["program"]["controls"][0]["execution"]["status"] == "descriptive_only"
+    assert payload["semantics"]["program"]["summary"]["total"] >= 1
+    assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
+    assert "sample_map" in payload["implementation"]["plan"]["resources"]
+    assert payload["implementation"]["compiled"]["plots"][0]["semantics"]["category"] == "plot"
+    assert payload["implementation"]["compiled"]["exports"][0]["semantics"]["category"] == "export"
+    assert "semantic_program" not in payload
+    assert "plan" not in payload
+    assert "pipeline" not in payload
 
 
 def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
@@ -338,9 +374,26 @@ def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["validation"]["status"] == "ok"
-    assert payload["validation"]["counts"]["pipeline"] >= 1
+    assert payload["selection"]["check_files"] is False
+    assert payload["summary"]["status"] == "ok"
+    assert payload["summary"]["counts"]["pipeline"] >= 1
     assert payload["validation"]["files"]["mode"] == "skipped"
+    assert "protocol" not in payload["validation"]
+
+
+def test_validate_json_surfaces_file_check_selection(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["validate", str(cfg), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["selection"]["check_files"] is True
+    assert payload["summary"]["status"] == "ok"
+    assert payload["validation"]["files"]["checked"] is True
 
 
 class _PluginCfg(PluginConfig):
@@ -552,13 +605,19 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
+    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
-    assert payload["generated"]["records"][0]["record_id"] == "ingest/df"
-    assert payload["pipeline"][0]["id"] == "ingest"
-    assert payload["plots"][0]["id"] == "raw_kinetics"
-    assert payload["pipeline"][0]["writes"][0]["surface"]["minimum"] == "tidy.v1"
+    assert "sample_map" in payload["implementation"]["plan"]["resources"]
+    assert payload["implementation"]["inputs"]["counts"]["files"] == 1
+    assert payload["implementation"]["generated"]["records"][0]["record_id"] == "ingest/df"
+    assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
+    assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
+    assert payload["implementation"]["compiled"]["pipeline"][0]["writes"][0]["surface"]["minimum"] == "tidy.v1"
+    assert "semantic_program" not in payload
+    assert "generated" not in payload
+    assert "pipeline" not in payload
 
 
 def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
@@ -579,12 +638,18 @@ def test_protocols_command_can_emit_json() -> None:
     result = runner.invoke(cli.app, ["protocols", "plate_reader/dual_reporter_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    metrics = {item["id"]: item for item in payload["semantics"]["program"]["metrics"]}
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["semantic_program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantic_program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["starter_config"]["schema"] == "reader/v7"
-    assert payload["compiled"]["pipeline"][0]["id"] == "ingest"
-    assert any(item["id"] == "screen_overview" for item in payload["plot_profiles"])
+    assert metrics["OD"]["execution"]["status"] == "compiled"
+    assert metrics["R"]["formula"] == "YFP / CFP"
+    assert metrics["R"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
+    assert payload["authoring"]["starter_config"]["schema"] == "reader/v7"
+    assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
+    assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
+    assert payload["implementation"]["defaults"][0]["parameters"]["mode"]["source"] == "protocol.inputs.ingest.mode"
+    assert "plugin_defaults" not in payload
+    assert "semantic_program" not in payload
 
 
 def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> None:
@@ -593,11 +658,13 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["protocol"] == "logic/sfxi_screen"
-    assert payload["semantic_program"]["controls"][0]["execution"]["status"] == "compiled"
-    assert payload["semantic_program"]["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
-    assert payload["semantic_program"]["windows"][0]["execution"]["status"] == "compiled"
-    assert payload["semantic_program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
-    assert payload["semantic_program"]["ranking"]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["compiled"] == 4
+    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
+    assert payload["semantics"]["program"]["controls"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
+    assert payload["semantics"]["program"]["windows"][0]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
+    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
 
 
 def test_plugins_command_can_emit_json() -> None:
@@ -608,9 +675,13 @@ def test_plugins_command_can_emit_json() -> None:
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["count"] >= 1
+    assert payload["selection"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["selection"]["category"] == "transform"
+    assert payload["summary"]["plugins"] >= 1
+    assert set(payload["summary"]["by_category"]) == {"transform"}
     assert all(item["category"] == "transform" for item in payload["plugins"])
+    assert "protocol" not in payload
+    assert "count" not in payload
 
 
 def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
@@ -642,6 +713,43 @@ def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["records", str(cfg_path), "--all", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["all"] is True
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["catalog"]["path"].endswith("outputs/manifests/records.json")
+    assert payload["selection"]["include_history"] is True
+    assert payload["summary"]["records"] == 1
+    assert payload["summary"]["history"]["included"] is True
+    assert payload["summary"]["history"]["revisions"] == 2
+    assert payload["summary"]["by_kind"] == {"dataframe_artifact": 1}
+    assert payload["summary"]["by_producer"] == {"pipeline:ingest": 1}
     assert payload["records"][0]["record_id"] == "ingest/df"
     assert payload["records"][0]["revision_count"] == 2
+    assert "all" not in payload
+    assert "count" not in payload
+
+
+def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path / "config.yaml", _base_config())
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=_tidy_df(),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test1",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["records", str(cfg_path), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["id"] == "exp"
+    assert payload["selection"]["include_history"] is False
+    assert payload["summary"]["records"] == 1
+    assert payload["summary"]["history"]["included"] is False
+    assert payload["summary"]["history"]["revisions"] is None
+    assert payload["records"][0]["record_id"] == "ingest/df"
+    assert "revision_count" not in payload["records"][0]

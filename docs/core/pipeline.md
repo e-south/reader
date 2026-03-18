@@ -191,7 +191,8 @@ These commands show:
 - what experiments exist, which protocol each one binds, and how many outputs already exist
 - the same experiment inventory as a machine-readable contract for agents and automation
 - a starter experiment directory for a chosen protocol
-- the root, bound authoring values, inputs/resources, pipeline chain, selected plots, export artifacts, notebook policy, generated output examples, and record catalog for one experiment
+- one bound experiment as explicit `authoring`, `semantics`, and `implementation` layers, including inputs/resources, generated output examples, and the compiled runtime chain
+- the same three-layer JSON contract for `reader config`, `reader steps`, `reader inspect`, and `reader explain`, so automation does not need to reconcile multiple experiment surfaces
 - the authoring inputs and analysis surface for the selected protocol, plus the default compiled pipeline and output implementations, in either table or JSON form
 - the plugin registry filtered to the transform kernel a given protocol actually uses
 - a starter YAML outline for that protocol

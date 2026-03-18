@@ -42,9 +42,9 @@ Emit the same inventory as JSON for agents or automation:
 reader ls --root experiments --details --format json
 ```
 
-The JSON payload includes a top-level `summary` block with counts by protocol,
-status, and output presence so agents do not need to reconstruct fleet state by
-walking every row.
+The JSON payload uses explicit `catalog`, `selection`, `summary`, and
+`experiments` blocks so agents do not need to reconstruct fleet state by
+walking every row or guessing which filters produced the current view.
 
 Filter the inventory down to one assay family or just broken configs:
 
@@ -86,8 +86,8 @@ Inspect one experiment end to end:
 reader inspect CONFIG|DIR|INDEX
 ```
 
-Emit the bound authoring surface, generated outputs, record catalog, and
-compiled chain as JSON:
+Emit the experiment as layered JSON with `authoring`, `semantics`, and
+`implementation`:
 
 ```bash
 reader inspect CONFIG|DIR|INDEX --format json
@@ -110,12 +110,15 @@ Protocol descriptions are the main discovery surface for user-facing outputs:
 
 - `reader protocols <id>` lists the protocol input/analysis surface, plot profiles, plot outputs, export artifacts, and the default compiled pipeline/plot/export implementations behind them.
 - `reader protocols <id> --example-config` prints a starter `reader/v7` YAML outline.
-- `reader protocols <id> --format json` exposes the same semantic surface plus the compiled default runtime chain in machine-readable form.
-- `reader protocols <id>`, `reader inspect`, and `reader explain` now surface a protocol semantic program, with explicit execution status for controls, windows, metrics, and ranking nodes so users can see what is compiled today versus what remains descriptive-only.
-- `reader plugins --protocol <id> --category transform|plot|export|ingest` scopes the registry to the plugins a protocol actually uses by default.
+- `reader protocols <id> --format json` exposes the assay in three explicit layers: `authoring`, `semantics`, and `implementation`.
+- `reader config ... --format json`, `reader steps ... --format json`, `reader inspect ... --format json`, and `reader explain ... --format json` use the same three top-level layers for one bound experiment.
+- `reader protocols <id>`, `reader config`, `reader steps`, `reader inspect`, and `reader explain` surface a semantic program with explicit execution status for controls, windows, metrics, and ranking nodes so users can see what is compiled today versus what remains descriptive-only.
+- `reader plugins --protocol <id> --category transform|plot|export|ingest` scopes the registry to the plugins a protocol actually uses by default, and JSON mode adds explicit `selection` plus ontology summaries by category, domain, and family.
 - `reader ls --details` is the scalable workbench inventory view: protocol id, selected runtime plan summary, generated output summary, and explicit config-error state.
 - `reader inspect ...` shows the experiment root, bound authoring values, inputs/resources, transform chain, selected plot outputs, export artifacts, current generated outputs, and the latest record catalog.
-- `reader plot ... --list` and `reader export ... --list` show the concrete outputs selected after protocol compilation.
+- `reader config ... --format json` keeps the full `reader/v7` document under `authoring`, then shows assay semantics and the fully compiled runtime chain beside it.
+- `reader steps ... --format json` keeps the same top-level contract but narrows `implementation` to the pipeline slice and its bindings.
+- `reader plot ... --list` and `reader export ... --list` show the concrete outputs selected after protocol compilation, and JSON mode adds explicit `catalog`, `selection`, and output-summary blocks so agents do not need to reconstruct registry shape from raw rows.
 
 For agent harnesses and scripted audits, the discovery commands support a shared
 machine-readable contract:
@@ -128,10 +131,19 @@ reader records CONFIG|DIR|INDEX --format json
 ```
 
 These JSON payloads now carry upstream producer and contract-surface metadata
-for record bindings, and the protocol/inspect/explain routes include a semantic
-program block with explicit `compiled` vs `descriptive_only` assay-node status,
-so a consumer can see both the runtime chain and the assay semantics it does or
-does not implement today.
+for record bindings. `reader protocols`, `reader config`, `reader steps`,
+`reader inspect`, and `reader explain` all separate their machine-readable
+surface into `authoring`, `semantics`, and `implementation`, and the
+semantic-program block includes explicit `compiled` vs `descriptive_only`
+assay-node status. `semantics.program.summary` adds compiled/descriptive
+coverage counts, so a consumer can see both the runtime chain and how much of
+the assay semantic surface is implemented today. `reader records --format json`
+is the companion result-inventory surface for one experiment: it includes the
+experiment identity, manifest path, summary counts by record kind and producer,
+and optional revision counts when `--all` is requested. `reader plugins
+--format json` keeps registry filters in `selection` and ontology totals in
+`summary`, while `reader plot --list --format json` and `reader export --list
+--format json` do the same for resolved output specs.
 
 ---
 
@@ -155,12 +167,19 @@ Print the config as JSON:
 reader config CONFIG|DIR|INDEX --format json
 ```
 
+In JSON mode, `authoring` is the full `reader/v7` document, while
+`implementation` carries the compiled plan.
+
 Validate schema, wiring, and inputs:
 
 ```bash
 reader validate CONFIG|DIR|INDEX
 reader validate CONFIG|DIR|INDEX --format json
 ```
+
+In JSON mode, `reader validate` keeps the preflight mode in `selection`, then
+separates overall status/counts into `summary` from file-check details in
+`validation`.
 
 Skip file checks (config-only):
 
@@ -196,6 +215,20 @@ reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --format json
 ```
 
 `reader run` fails fast if `--from` comes after `--until` in pipeline order.
+
+Inspect the emitted record catalog:
+
+```bash
+reader records CONFIG|DIR|INDEX
+reader records CONFIG|DIR|INDEX --format json
+reader records CONFIG|DIR|INDEX --all --format json
+```
+
+In JSON mode, `reader records` keeps experiment identity at the top level, then
+adds the record-manifest path, a summary by record kind and producer, and the
+latest record entries. `--all` does not dump every historical revision; it adds
+per-record revision counts and a total revision summary so the surface stays
+compact.
 
 Useful flags:
 
@@ -233,6 +266,10 @@ List resolved semantic plot outputs and their upstream dataframe bindings:
 reader plot CONFIG|DIR|INDEX --list
 reader plot CONFIG|DIR|INDEX --list --format json
 ```
+
+In JSON mode, `reader plot --list` keeps the bound experiment at the top level,
+then adds `catalog`, `selection`, and `summary` blocks before the resolved
+`plots` entries.
 
 Dry-run a plot plan without executing:
 
@@ -274,6 +311,10 @@ List resolved semantic export artifacts and their upstream dataframe bindings:
 reader export CONFIG|DIR|INDEX --list
 reader export CONFIG|DIR|INDEX --list --format json
 ```
+
+In JSON mode, `reader export --list` mirrors the same shape as plot listings:
+experiment identity, then `catalog`, `selection`, `summary`, and resolved
+`exports` entries.
 
 Dry-run an export plan without executing:
 

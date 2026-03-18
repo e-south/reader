@@ -16,8 +16,9 @@ from typer.testing import CliRunner
 
 from reader.tests.support import base_reader_config, default_notebook_name, load_decl, write_config
 from reader.workbench import FileRef, RecordRef, resolve_workbench
-from reader.workbench.cli import _apply_step_overrides, _parse_input_overrides, app
+from reader.workbench.cli import app
 from reader.workbench.experiment import ResourceCatalog
+from reader.workbench.spec_overrides import apply_step_overrides, parse_input_overrides
 
 
 def _base_config() -> dict:
@@ -90,10 +91,14 @@ def test_plot_list_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["count"] == 2
-    assert payload["filters"]["only"] == []
+    assert payload["catalog"] == {"kind": "plot", "protocol": "plate_reader/dual_reporter_screen"}
+    assert payload["selection"] == {"only": [], "exclude": []}
+    assert payload["summary"]["plots"] == 2
+    assert payload["summary"]["by_domain"] == {"plate_reader": 2}
     assert payload["plots"][0]["id"] == "raw_kinetics"
     assert payload["plots"][0]["semantics"]["category"] == "plot"
+    assert "count" not in payload
+    assert "filters" not in payload
 
 
 def test_plot_list_json_empty(tmp_path: Path) -> None:
@@ -104,7 +109,9 @@ def test_plot_list_json_empty(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["count"] == 0
+    assert payload["selection"] == {"only": [], "exclude": []}
+    assert payload["summary"]["plots"] == 0
+    assert payload["summary"]["by_plugin"] == {}
     assert payload["plots"] == []
 
 
@@ -114,7 +121,8 @@ def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> Non
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["count"] == 1
+    assert payload["summary"]["plots"] == 1
+    assert payload["summary"]["by_family"] == {"geometry_plot": 1}
     read = payload["plots"][0]["reads"][0]
     assert read["contract"] == "plate_reader.annotated.v1"
     assert read["source"]["producer"]["id"] == "ratio_yfp_od600"
@@ -199,9 +207,13 @@ def test_export_list_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["count"] == 1
+    assert payload["catalog"] == {"kind": "export", "protocol": "plate_reader/dual_reporter_screen"}
+    assert payload["selection"] == {"only": [], "exclude": []}
+    assert payload["summary"]["exports"] == 1
+    assert payload["summary"]["by_domain"] == {"generic": 1}
     assert payload["exports"][0]["id"] == "crosstalk_pairs_table"
     assert payload["exports"][0]["semantics"]["category"] == "export"
+    assert "count" not in payload
 
 
 def test_export_list_json_empty(tmp_path: Path) -> None:
@@ -212,7 +224,9 @@ def test_export_list_json_empty(tmp_path: Path) -> None:
     result = runner.invoke(app, ["export", str(cfg_path), "--list", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["count"] == 0
+    assert payload["selection"] == {"only": [], "exclude": []}
+    assert payload["summary"]["exports"] == 0
+    assert payload["summary"]["by_family"] == {}
     assert payload["exports"] == []
 
 
@@ -267,12 +281,12 @@ def test_plot_override_parses_runtime_inputs_to_typed_refs(tmp_path: Path) -> No
     decl = load_decl(cfg_path)
     plot_spec = next(spec for spec in resolve_workbench(decl).plots if spec.id == "raw_kinetics")
 
-    overrides = _parse_input_overrides(
+    overrides = parse_input_overrides(
         ["df=override/df", "sample_map={file: ./inputs/metadata.xlsx}"],
         root=tmp_path,
         resources=ResourceCatalog(),
     )
-    updated = _apply_step_overrides(
+    updated = apply_step_overrides(
         [plot_spec],
         input_overrides=overrides,
         set_overrides=[],

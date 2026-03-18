@@ -13,12 +13,14 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 from rich.console import Console
 
+from reader.domains.plate_reader.plots.panels import time_series as time_series_panel
 from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
 from reader.errors import ConfigError
@@ -377,3 +379,53 @@ def test_snapshot_heatmap_config_rejects_mixed_order_sources() -> None:
                 "order_x_ref": "states",
             }
         )
+
+
+def test_draw_time_series_panel_passes_bounded_bootstrap_controls(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_lineplot(*args, **kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(time_series_panel.sns, "lineplot", _fake_lineplot)
+    fig, ax = plt.subplots()
+    try:
+        df = pd.DataFrame(
+            {
+                "time": [0.0, 0.0, 1.0, 1.0],
+                "value": [1.0, 1.2, 1.4, 1.6],
+                "treatment": ["a", "a", "a", "a"],
+            }
+        )
+        time_series_panel.draw_time_series_panel(
+            ax,
+            data=df,
+            x_col="time",
+            hue_col="treatment",
+            hue_levels=["a"],
+            color_map={"a": "#3366cc"},
+            marker_map={"a": "o"},
+            show_replicates=False,
+            ci=95.0,
+            ci_alpha=0.2,
+            ci_boot=17,
+            ci_seed=23,
+            line_alpha=0.9,
+            mean_marker_alpha=0.8,
+            replicate_alpha=0.3,
+            add_sheet_lines=False,
+            sheet_lines=None,
+            sheet_line_kwargs=None,
+            log_y=False,
+            xlabel="Time (h)",
+            ylabel="YFP",
+            legend_loc="upper left",
+            show_legend=False,
+        )
+    finally:
+        plt.close(fig)
+
+    assert captured["errorbar"] == ("ci", 95.0)
+    assert captured["n_boot"] == 17
+    assert captured["seed"] == 23

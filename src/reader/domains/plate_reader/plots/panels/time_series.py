@@ -30,6 +30,18 @@ def _maybe_log(ax, enable: bool) -> None:
             ax.set_ylim(bottom=max(1e-12, ymin))
 
 
+def _lineplot_errorbar_kwargs(*, ci: float, ci_alpha: float, ci_boot: int, ci_seed: int) -> dict[str, object]:
+    if float(ci) <= 0:
+        return {"errorbar": None}
+    return {
+        "errorbar": ("ci", float(ci)),
+        "err_style": "band",
+        "err_kws": {"alpha": float(ci_alpha)},
+        "n_boot": max(1, int(ci_boot)),
+        "seed": int(ci_seed),
+    }
+
+
 def draw_time_series_panel(
     ax,
     *,
@@ -42,6 +54,8 @@ def draw_time_series_panel(
     show_replicates: bool,
     ci: float,
     ci_alpha: float,
+    ci_boot: int,
+    ci_seed: int,
     line_alpha: float,
     mean_marker_alpha: float,
     replicate_alpha: float,
@@ -82,9 +96,6 @@ def draw_time_series_panel(
         hue=hue_col,
         hue_order=hue_levels,
         estimator="mean",
-        errorbar=("ci", float(ci)),
-        err_style="band",
-        err_kws={"alpha": float(ci_alpha)},
         lw=1.8,
         alpha=line_alpha,
         legend=False,
@@ -92,6 +103,7 @@ def draw_time_series_panel(
         palette=[color_map[h] for h in hue_levels],
         marker=None,
         zorder=1,
+        **_lineplot_errorbar_kwargs(ci=ci, ci_alpha=ci_alpha, ci_boot=ci_boot, ci_seed=ci_seed),
     )
 
     means = data.groupby([hue_col, x_col], dropna=False)["value"].mean().reset_index()
