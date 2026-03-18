@@ -4,9 +4,9 @@
 
 `reader` is a protocol-driven experimental workbench for structured assay data. It gives experiment authors one central YAML surface to declare assay inputs, analysis choices, and requested outputs, then compiles that authoring surface into a deterministic runtime plan that ingests raw data, applies transforms, emits traceable records, and materializes plots, exports, and notebooks.
 
-It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
+It is meant to stay ergonomic for users and honest for maintainers. Users should be able to answer plain questions such as “what assay does this experiment use?”, “is this experiment blocked or ready to run?”, “what gets ingested?”, “what transform chain runs?”, and “what plots or artifacts will be produced?” from the CLI and docs without reading compiler code or plugin internals. Maintainers should be able to add new assay families, ingest adapters, transforms, plots, and artifacts without turning the public YAML surface into a junk drawer.
 
-The default UX is human-first: tables for normal use, JSON for automation and agent harnesses. Start with `reader ls`, `reader protocols`, `reader inspect`, and `reader explain`; the detailed contract shapes for discovery, inspection, validation, records, plots, and exports live in the docs index and CLI reference instead of being duplicated here.
+The default UX is human-first: tables for normal use, JSON for automation and agent harnesses. Start with `reader ls --details --readiness`, `reader protocols`, `reader inspect`, and `reader explain`; the detailed contract shapes for discovery, readiness, inspection, validation, records, plots, and exports live in the docs index and CLI reference instead of being duplicated here.
 
 ---
 
@@ -29,6 +29,8 @@ The default UX is human-first: tables for normal use, JSON for automation and ag
 uv sync --locked --group dev --group notebooks
 uv run reader ls --root experiments
 uv run reader ls --root experiments --details --format json
+uv run reader ls --root experiments --details --readiness
+uv run reader ls --root experiments --details --readiness --format json
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
 uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen

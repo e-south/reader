@@ -36,15 +36,26 @@ Show protocol ids, selected-plan summaries, and current output counts:
 reader ls --root experiments --details
 ```
 
+Add readiness state so the inventory tells you whether each experiment is
+blocked, ready to run, or already has a record catalog:
+
+```bash
+reader ls --root experiments --details --readiness
+```
+
 Emit the same inventory as JSON for agents or automation:
 
 ```bash
 reader ls --root experiments --details --format json
+reader ls --root experiments --details --readiness --format json
 ```
 
 The JSON payload uses explicit `catalog`, `selection`, `summary`, and
 `experiments` blocks so agents do not need to reconstruct fleet state by
 walking every row or guessing which filters produced the current view.
+When `--readiness` is enabled, `selection.readiness` is `true`, each experiment
+entry gains a `readiness` block, and `summary.by_readiness` counts the fleet by
+`config_error`, `blocked`, `runnable`, or `records_ready`.
 
 Filter the inventory down to one assay family or just broken configs:
 
@@ -115,7 +126,9 @@ Protocol descriptions are the main discovery surface for user-facing outputs:
 - `reader protocols <id>`, `reader config`, `reader steps`, `reader inspect`, and `reader explain` surface a semantic program with explicit execution status for controls, windows, metrics, and ranking nodes so users can see what is compiled today versus what remains descriptive-only.
 - `reader plugins --protocol <id> --category transform|plot|export|ingest` scopes the registry to the plugins a protocol actually uses by default, and JSON mode adds explicit `selection` plus ontology summaries by category, domain, and family.
 - `reader ls --details` is the scalable workbench inventory view: protocol id, selected runtime plan summary, generated output summary, and explicit config-error state.
+- `reader ls --details --readiness` adds preflight-aware state so users and agents can see whether an experiment is blocked, runnable, or already has records without separately composing `validate`, `run`, and `records`.
 - `reader inspect ...` shows the experiment root, bound authoring values, inputs/resources, transform chain, selected plot outputs, export artifacts, current generated outputs, and the latest record catalog.
+- `reader inspect ...` now also carries readiness under `implementation`, including preflight status, record-catalog presence, concrete capabilities, and suggested next commands.
 - `reader config ... --format json` keeps the full `reader/v7` document under `authoring`, then shows assay semantics and the fully compiled runtime chain beside it.
 - `reader steps ... --format json` keeps the same top-level contract but narrows `implementation` to the pipeline slice and its bindings.
 - `reader plot ... --list` and `reader export ... --list` show the concrete outputs selected after protocol compilation, and JSON mode adds explicit `catalog`, `selection`, and output-summary blocks so agents do not need to reconstruct registry shape from raw rows.
@@ -143,7 +156,10 @@ experiment identity, manifest path, summary counts by record kind and producer,
 and optional revision counts when `--all` is requested. `reader plugins
 --format json` keeps registry filters in `selection` and ontology totals in
 `summary`, while `reader plot --list --format json` and `reader export --list
---format json` do the same for resolved output specs.
+--format json` do the same for resolved output specs. `reader ls --details
+--readiness --format json` is the fleet-level preflight surface, and `reader
+inspect --format json` embeds the same readiness view for one experiment under
+`implementation.readiness`.
 
 ---
 
@@ -154,6 +170,10 @@ Inspect the experiment summary before reading the lower-level plan:
 ```bash
 reader inspect CONFIG|DIR|INDEX
 ```
+
+The human view now includes a readiness panel so you can see, in one place,
+whether the config is blocked by files or dependencies, already has records,
+and which next command is appropriate.
 
 Print the compiled config/IR:
 
@@ -180,6 +200,10 @@ reader validate CONFIG|DIR|INDEX --format json
 In JSON mode, `reader validate` keeps the preflight mode in `selection`, then
 separates overall status/counts into `summary` from file-check details in
 `validation`.
+
+If you want the same preflight signal while browsing the whole workbench, use
+`reader ls --details --readiness`. If you want the readiness view beside one
+experiment’s compiled plan and current outputs, use `reader inspect`.
 
 Skip file checks (config-only):
 
