@@ -12,13 +12,18 @@ def _sorted_counter(values: list[str]) -> dict[str, int]:
 
 def inventory_summary_payload(entries: list[dict[str, object]]) -> dict[str, object]:
     statuses = [str(entry.get("status") or "unknown") for entry in entries]
+    readiness_states = [
+        str(readiness.get("state"))
+        for readiness in (entry.get("readiness") for entry in entries)
+        if isinstance(readiness, dict) and readiness.get("state")
+    ]
     protocols = [
         str(protocol)
         for protocol in (entry.get("protocol") for entry in entries)
         if isinstance(protocol, str) and protocol
     ]
     with_outputs = sum(1 for entry in entries if bool(entry.get("has_outputs")))
-    return {
+    payload = {
         "experiments": len(entries),
         "by_status": _sorted_counter(statuses),
         "by_protocol": _sorted_counter(protocols),
@@ -27,6 +32,9 @@ def inventory_summary_payload(entries: list[dict[str, object]]) -> dict[str, obj
             "without_outputs": len(entries) - with_outputs,
         },
     }
+    if readiness_states:
+        payload["by_readiness"] = _sorted_counter(readiness_states)
+    return payload
 
 
 def inventory_surface_payload(
@@ -34,6 +42,7 @@ def inventory_surface_payload(
     root: Path,
     include_scaffolds: bool,
     details: bool,
+    readiness: bool,
     protocol: str | None,
     status: str | None,
     experiments: list[dict[str, object]],
@@ -46,6 +55,7 @@ def inventory_surface_payload(
         "selection": {
             "include_scaffolds": include_scaffolds,
             "details": details,
+            "readiness": readiness,
             "protocol": protocol,
             "status": status,
         },

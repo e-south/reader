@@ -10,7 +10,7 @@ from rich.table import Table
 
 from reader.errors import ConfigError
 from reader.runtime import builtin_runtime
-from reader.workbench.inspection import (
+from reader.workbench.inspection.protocols import (
     protocol_artifacts_table,
     protocol_descriptor_payload,
     protocol_example_config,
@@ -21,9 +21,11 @@ from reader.workbench.inspection import (
     protocol_surface_impl_table,
     protocol_surface_rows,
     protocol_surface_table,
-    semantic_program_table,
 )
 from reader.workbench.inspection.runtime import binding_display, export_output_summaries, plot_output_summaries
+from reader.workbench.inspection.semantics import (
+    semantic_program_table,
+)
 
 from . import shared
 from .helpers import default_protocol_plan

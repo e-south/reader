@@ -17,7 +17,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
-from reader.protocols import builtin_protocol_catalog
+from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.tests.support import base_reader_config, build_decl, write_config
 from reader.workbench import PluginSemantics, cli
@@ -155,6 +155,18 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
     assert "1 rec" in output
 
 
+def test_ls_readiness_requires_details(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "real_exp"
+    exp_dir.mkdir(parents=True)
+    write_config(exp_dir / "config.yaml", _base_config())
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--readiness"])
+    assert result.exit_code != 0
+    assert "--readiness requires --details" in result.output
+
+
 def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     good_dir = exp_root / "2025" / "good_exp"
@@ -163,6 +175,10 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     bad_dir.mkdir(parents=True)
     write_config(good_dir / "config.yaml", _base_config())
     (bad_dir / "config.yaml").write_text("schema: reader/v7\nexperiment:\n  id: broken\n", encoding="utf-8")
+    inputs_dir = good_dir / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
 
     outputs = good_dir / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
@@ -180,15 +196,17 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         cli.app,
-        ["ls", "--root", str(exp_root), "--details", "--format", "json"],
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["catalog"]["kind"] == "experiments"
     assert payload["catalog"]["root"] == str(exp_root.resolve())
     assert payload["selection"]["details"] is True
+    assert payload["selection"]["readiness"] is True
     assert payload["selection"]["include_scaffolds"] is False
     assert payload["summary"]["experiments"] == 2
+    assert payload["summary"]["by_readiness"] == {"config_error": 1, "records_ready": 1}
     assert payload["summary"]["by_status"] == {"config_error": 1, "ok": 1}
     assert payload["summary"]["by_protocol"] == {"plate_reader/dual_reporter_screen": 1}
     assert payload["summary"]["outputs"] == {"with_outputs": 1, "without_outputs": 1}
@@ -199,7 +217,10 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert by_name["good_exp"]["selected"]["exports"]["ids"] == ["crosstalk_pairs_table"]
     assert by_name["good_exp"]["selected"]["plot_profile"] == "none"
     assert by_name["good_exp"]["status"] == "ok"
+    assert by_name["good_exp"]["readiness"]["state"] == "records_ready"
+    assert by_name["good_exp"]["readiness"]["capabilities"]["plot"] is True
     assert by_name["broken_exp"]["status"] == "config_error"
+    assert by_name["broken_exp"]["readiness"]["state"] == "config_error"
     assert "protocol" in by_name["broken_exp"]["error"]
 
 
@@ -573,6 +594,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
+    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -593,6 +615,8 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["inspect", str(cfg_path)])
     assert result.exit_code == 0
     assert "Experiment overview" in result.output
+    assert "Readiness" in result.output
+    assert "records ready" in result.output
     assert "Authoring bindings" in result.output
     assert "Semantic Program" in result.output
     assert "fold_change.report_times" in result.output
@@ -610,6 +634,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
+    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -633,7 +658,11 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     assert payload["semantics"]["program"]["summary"]["descriptive_only"] >= 1
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
-    assert payload["implementation"]["inputs"]["counts"]["files"] == 1
+    assert payload["implementation"]["inputs"]["counts"]["files"] == 2
+    assert payload["implementation"]["readiness"]["state"] == "records_ready"
+    assert payload["implementation"]["readiness"]["capabilities"]["run"] is True
+    assert payload["implementation"]["readiness"]["capabilities"]["plot"] is True
+    assert payload["implementation"]["readiness"]["records"]["catalog"] is True
     assert payload["implementation"]["generated"]["records"][0]["record_id"] == "ingest/df"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
@@ -728,6 +757,56 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
             "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
         },
     }
+
+
+def test_plate_reader_rfp_profile_uses_profile_aware_plugin_defaults() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/dual_reporter_screen",
+            inputs={"fold_change": {"report_times": [14.0]}},
+            analysis={"measurement": "rfp_od600"},
+        )
+    )
+
+    ingest = protocol.effective_plugin_config(plugin_id="ingest/synergy_h1")
+    fold_change = protocol.effective_plugin_config(plugin_id="transform/fold_change")
+
+    assert ingest["channels"] == ["OD600", "RFP"]
+    assert fold_change["target"] == "RFP/OD600"
+
+
+def test_dual_reporter_ranking_references_declared_metrics() -> None:
+    descriptor = builtin_protocol_catalog().resolve("plate_reader/dual_reporter_screen")
+    ranking = descriptor.ranking
+    metric_ids = {item.id for item in descriptor.metrics}
+
+    assert ranking is not None
+    assert ranking.primary_metric in metric_ids
+    assert set(ranking.penalties).issubset(metric_ids)
+    assert set(ranking.supporting_metrics).issubset(metric_ids)
+
+
+def test_cytometry_protocol_rejects_unsupported_plot_selection(tmp_path: Path) -> None:
+    cfg = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="cyto",
+            protocol_id="cytometry/flow_panel",
+            protocol_inputs={
+                "ingest": {"auto_roots": ["./inputs"]},
+                "metadata": {"require_columns": ["design_id", "treatment"]},
+            },
+            protocol_outputs={"plots": {"include": ["cytometry_qc"]}},
+            resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
+        ),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["explain", str(cfg)])
+
+    assert result.exit_code != 0
+    assert "cytometry/flow_panel does not currently compile plot outputs" in result.output
+    assert "cytometry_qc" in result.output
 
 
 def test_plugins_command_can_emit_json() -> None:

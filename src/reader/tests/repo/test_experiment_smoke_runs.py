@@ -7,6 +7,7 @@ import pytest
 from rich.console import Console
 
 from reader.contracts import builtin_contract_catalog
+from reader.tests.repo.experiment_matrix import END_TO_END_RUNNABLE_CONFIGS, repo_rel
 from reader.tests.support import REPO_ROOT, load_decl
 from reader.workbench import resolve_workbench
 from reader.workbench.engine import run_spec
@@ -44,6 +45,41 @@ def _run(
         log_level="ERROR",
         verbose=False,
     )
+
+
+@pytest.mark.parametrize("config_path", END_TO_END_RUNNABLE_CONFIGS, ids=repo_rel)
+def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path: Path) -> None:
+    rel_dir = str(config_path.parent.relative_to(REPO_ROOT / "experiments"))
+    cfg_path = _stage_experiment(tmp_path, rel_dir)
+    decl = load_decl(cfg_path)
+    workbench = resolve_workbench(decl)
+
+    _run(decl, include_pipeline=True, include_plots=True, include_exports=True)
+
+    layout = decl.experiment_semantics.layout
+    outputs = layout.outputs_dir
+    store = RecordStore(
+        outputs,
+        contracts=builtin_contract_catalog(),
+        plots_subdir=layout.plots_subdir,
+        exports_subdir=layout.exports_subdir,
+        create=False,
+    )
+
+    latest_ids = {record.record_id for record in store.iter_latest_records()}
+    expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
+    expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
+    plots_dir = outputs / layout.plots_subdir
+    exports_dir = outputs / layout.exports_subdir
+
+    assert (outputs / "manifests" / "records.json").exists()
+    assert "ingest/df" in latest_ids
+    assert expected_plot_ids.issubset(latest_ids)
+    assert expected_export_ids.issubset(latest_ids)
+    if expected_plot_ids:
+        assert any(path.is_file() for path in plots_dir.rglob("*"))
+    if expected_export_ids:
+        assert any(path.is_file() for path in exports_dir.rglob("*"))
 
 
 def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(tmp_path: Path) -> None:

@@ -294,6 +294,29 @@ def binding_value(key: str, default: Any = _UNSET) -> ProtocolBindingValueRef:
 
 
 @dataclass(frozen=True)
+class ProtocolAnalysisChoiceRef:
+    key: str
+    cases: dict[str, Any]
+    default: Any = _UNSET
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.key, str) or not self.key.strip():
+            raise ValueError("ProtocolAnalysisChoiceRef.key must be a non-empty string.")
+        if not isinstance(self.cases, dict) or not self.cases:
+            raise ValueError("ProtocolAnalysisChoiceRef.cases must be a non-empty mapping.")
+        object.__setattr__(self, "key", self.key.strip())
+        object.__setattr__(self, "cases", {str(case_key): deepcopy(value) for case_key, value in self.cases.items()})
+
+    @property
+    def has_default(self) -> bool:
+        return self.default is not _UNSET
+
+
+def analysis_choice(key: str, cases: dict[str, Any], default: Any = _UNSET) -> ProtocolAnalysisChoiceRef:
+    return ProtocolAnalysisChoiceRef(key=key, cases=cases, default=default)
+
+
+@dataclass(frozen=True)
 class ProtocolFactorSpec:
     name: str
     role: str
@@ -684,6 +707,7 @@ class ProtocolDescriptor:
                 raise ValueError(f"Duplicate protocol artifact {item.id!r}.")
             artifact_ids.add(item.id)
         self._validate_semantic_profile_references(semantic_profile_ids)
+        self._validate_ranking_metric_references()
 
     def _validate_semantic_profile_references(self, profile_ids: set[str]) -> None:
         if not profile_ids:
@@ -720,6 +744,42 @@ class ProtocolDescriptor:
                     + ", ".join(unknown_overrides)
                     + "."
                 )
+
+    def _validate_ranking_metric_references(self) -> None:
+        if self.ranking is None:
+            return
+        metric_ids = {item.id for item in self.metrics}
+
+        def _assert_known(metric_id: str, *, where: str) -> None:
+            if metric_id == "domain_defined":
+                return
+            if metric_id not in metric_ids:
+                options = ", ".join(sorted(metric_ids)) or "—"
+                raise ValueError(f"{where} references unknown metric {metric_id!r}. Known metrics: {options}.")
+
+        _assert_known(self.ranking.primary_metric, where="ProtocolDescriptor.ranking.primary_metric")
+        for metric_id in self.ranking.penalties:
+            _assert_known(metric_id, where="ProtocolDescriptor.ranking.penalties")
+        for metric_id in self.ranking.supporting_metrics:
+            _assert_known(metric_id, where="ProtocolDescriptor.ranking.supporting_metrics")
+        for profile_id, override in self.ranking.profile_overrides.items():
+            if override.primary_metric is not None:
+                _assert_known(
+                    override.primary_metric,
+                    where=f"ProtocolDescriptor.ranking.profile_overrides[{profile_id!r}].primary_metric",
+                )
+            if override.penalties is not None:
+                for metric_id in override.penalties:
+                    _assert_known(
+                        metric_id,
+                        where=f"ProtocolDescriptor.ranking.profile_overrides[{profile_id!r}].penalties",
+                    )
+            if override.supporting_metrics is not None:
+                for metric_id in override.supporting_metrics:
+                    _assert_known(
+                        metric_id,
+                        where=f"ProtocolDescriptor.ranking.profile_overrides[{profile_id!r}].supporting_metrics",
+                    )
 
     def validate_authoring(self, *, inputs: dict[str, Any], analysis: dict[str, Any]) -> None:
         _validate_protocol_surface(inputs, fields=self.input_fields, path="protocol.inputs", protocol_id=self.protocol)
@@ -1175,8 +1235,17 @@ class BoundProtocol:
             if found:
                 return deepcopy(resolved)
             if value.has_default:
-                return deepcopy(value.default)
+                return self._resolve_binding_refs(value.default, where=where)
             raise ConfigError(f"{where} requires protocol.inputs.{value.key}")
+        if isinstance(value, ProtocolAnalysisChoiceRef):
+            found, resolved = self._lookup_analysis_value(value.key)
+            if found:
+                selected = value.cases.get(str(resolved))
+                if selected is not None:
+                    return deepcopy(selected)
+            if value.has_default:
+                return deepcopy(value.default)
+            raise ConfigError(f"{where} requires protocol.analysis.{value.key}")
         if isinstance(value, dict):
             return {key: self._resolve_binding_refs(item, where=where) for key, item in value.items()}
         if isinstance(value, list):
@@ -1187,6 +1256,14 @@ class BoundProtocol:
 
     def _lookup_parameter_value(self, key: str) -> tuple[bool, Any]:
         current: Any = self.inputs
+        for part in key.split("."):
+            if not isinstance(current, dict) or part not in current:
+                return False, None
+            current = current[part]
+        return True, current
+
+    def _lookup_analysis_value(self, key: str) -> tuple[bool, Any]:
+        current: Any = self.analysis
         for part in key.split("."):
             if not isinstance(current, dict) or part not in current:
                 return False, None

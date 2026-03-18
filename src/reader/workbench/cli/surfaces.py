@@ -11,13 +11,9 @@ from reader.protocols import ProtocolBinding
 from reader.runtime import builtin_runtime
 from reader.workbench.engine import run_spec
 from reader.workbench.graph import resolve_workbench
-from reader.workbench.inspection import (
-    experiment_identity_payload,
-    experiment_steps_payload,
-    plugin_registry_payload,
-    record_catalog_payload,
-    workbench_surface_specs_payload,
-)
+from reader.workbench.inspection.catalogs import plugin_registry_payload, workbench_surface_specs_payload
+from reader.workbench.inspection.experiments import experiment_identity_payload, experiment_steps_payload
+from reader.workbench.inspection.results import record_catalog_payload
 from reader.workbench.inspection.runtime import (
     export_output_summaries,
     plot_output_summaries,

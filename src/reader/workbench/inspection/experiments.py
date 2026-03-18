@@ -18,6 +18,7 @@ from .common import (
     summarize_outputs_dir,
     visible_relative_files,
 )
+from .readiness import experiment_readiness_payload
 from .results import record_entries_payload
 from .runtime import (
     compiled_workbench_payload,
@@ -48,6 +49,7 @@ def experiment_implementation_payload(
     compiled: dict[str, object] | None = None,
     inputs: dict[str, object] | None = None,
     generated: dict[str, object] | None = None,
+    readiness: dict[str, object] | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {}
     if plan is not None:
@@ -58,6 +60,8 @@ def experiment_implementation_payload(
         payload["inputs"] = deepcopy(inputs)
     if generated is not None:
         payload["generated"] = deepcopy(generated)
+    if readiness is not None:
+        payload["readiness"] = deepcopy(readiness)
     return payload
 
 
@@ -378,5 +382,6 @@ def experiment_inspect_payload(
                 },
                 "records": records_payload,
             },
+            readiness=experiment_readiness_payload(job_path=job_path, decl=decl, runtime=runtime),
         ),
     )

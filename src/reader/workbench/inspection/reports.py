@@ -20,6 +20,7 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     compiled = dict(implementation.get("compiled") or {})
     inputs = dict(implementation.get("inputs") or {})
     generated = dict(implementation.get("generated") or {})
+    readiness = dict(implementation.get("readiness") or {})
     generated_counts = dict(generated.get("counts") or {})
     generated_examples = dict(generated.get("examples") or {})
     input_counts = dict(inputs.get("counts") or {})
@@ -55,6 +56,37 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     overview.add_row("Plot profile", str(experiment.get("plot_profile") or "—"))
     overview.add_row("Notebook", str(experiment.get("notebook_template") or "—"))
     renderables.append(Panel(overview, title="Experiment overview", border_style="accent", box=box.ROUNDED))
+
+    if readiness:
+        readiness_table = _table("Readiness")
+        readiness_table.add_column("field", style="accent", width=18)
+        readiness_table.add_column("value", overflow="fold")
+        preflight = dict(readiness.get("preflight") or {})
+        capabilities = dict(readiness.get("capabilities") or {})
+        next_steps = [dict(item) for item in (readiness.get("next_steps") or []) if isinstance(item, dict)]
+        readiness_table.add_row("State", str(readiness.get("summary") or readiness.get("state") or "—"))
+        readiness_table.add_row(
+            "Preflight",
+            (
+                f"{preflight.get('status', '—')} • "
+                f"files={preflight.get('files', '—')} • "
+                f"deps={preflight.get('dependencies', '—')}"
+            ),
+        )
+        readiness_table.add_row(
+            "Capabilities",
+            ", ".join(f"{key}={'yes' if bool(value) else 'no'}" for key, value in capabilities.items()) or "—",
+        )
+        errors = [str(item) for item in (readiness.get("errors") or [])]
+        readiness_table.add_row("Issues", errors[0] if errors else "—")
+        if len(errors) > 1:
+            readiness_table.add_row("More issues", f"{len(errors) - 1} more")
+        if next_steps:
+            readiness_table.add_row(
+                "Next",
+                "\n".join(f"{item.get('command')} — {item.get('description')}" for item in next_steps[:4]),
+            )
+        renderables.append(Panel(readiness_table, border_style="accent", box=box.ROUNDED))
 
     authoring_table = _table("Authoring bindings")
     authoring_table.add_column("section", style="accent", width=10)

@@ -28,6 +28,7 @@ from .model import (
     ProtocolSemanticProfileOverride,
     ProtocolSemanticProfileSpec,
     ProtocolWindowSpec,
+    analysis_choice,
     binding_value,
 )
 
@@ -619,10 +620,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
         ),
         ranking=ProtocolRankingSpec(
-            primary_metric="O_AUC",
+            primary_metric="O",
             direction="higher_is_better",
             penalties=("T_growth_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
-            supporting_metrics=("S_AUC", "D_END", "M_AUC"),
+            supporting_metrics=("S_AUC", "D", "M"),
             summary="Rank hits by sign-corrected effect size, then penalize burden and leakiness.",
             profiles=("yfp_cfp",),
         ),
@@ -638,7 +639,14 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     summary="Dual-reporter screens default to CFP/YFP/OD600 ingest in auto mode.",
                     with_={
                         "mode": binding_value("ingest.mode", "auto"),
-                        "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
+                        "channels": binding_value(
+                            "ingest.channels",
+                            analysis_choice(
+                                "measurement",
+                                cases={"rfp_od600": ["OD600", "RFP"]},
+                                default=["OD600", "CFP", "YFP"],
+                            ),
+                        ),
                         "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "add_sheet": binding_value("ingest.add_sheet", False),
@@ -658,7 +666,14 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     plugin="transform/fold_change",
                     summary="Shared fold-change defaults keep plate-reader comparisons and naming consistent.",
                     with_={
-                        "target": binding_value("fold_change.target", "YFP/CFP"),
+                        "target": binding_value(
+                            "fold_change.target",
+                            analysis_choice(
+                                "measurement",
+                                cases={"rfp_od600": "RFP/OD600"},
+                                default="YFP/CFP",
+                            ),
+                        ),
                         "report_times": binding_value("fold_change.report_times"),
                         "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
                         "agg": binding_value("fold_change.agg", "median"),

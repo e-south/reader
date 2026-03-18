@@ -16,19 +16,23 @@ from reader.workbench.engine import run_job
 from reader.workbench.engine import validate as validate_job
 from reader.workbench.engine import validation_summary as validate_summary_job
 from reader.workbench.graph import materialize_workbench
-from reader.workbench.inspection import (
+from reader.workbench.inspection.common import preview_output_files, resolve_output_subdir, summarize_outputs_dir
+from reader.workbench.inspection.experiments import (
     experiment_config_json_payload,
     experiment_explain_payload,
     experiment_identity_payload,
     experiment_inspect_payload,
     experiment_run_dry_run_payload,
-    inventory_summary_payload,
-    inventory_surface_payload,
-    validation_surface_payload,
 )
-from reader.workbench.inspection.common import preview_output_files, resolve_output_subdir, summarize_outputs_dir
+from reader.workbench.inspection.inventory import inventory_summary_payload, inventory_surface_payload
+from reader.workbench.inspection.readiness import (
+    config_error_readiness_payload,
+    experiment_readiness_payload,
+    readiness_summary_text,
+)
 from reader.workbench.inspection.reports import experiment_inspect_renderables
 from reader.workbench.inspection.runtime import generated_summary, selected_plan_payload, selected_plan_summary
+from reader.workbench.inspection.validation import validation_surface_payload
 
 from . import shared
 from .helpers import (
@@ -79,6 +83,11 @@ def ls(
         "--details",
         help="Show protocol id, selected-plan summary, and generated output counts for each experiment.",
     ),
+    readiness: bool = typer.Option(
+        False,
+        "--readiness",
+        help="With --details, run per-experiment preflight and record-state checks.",
+    ),
     format: str = typer.Option(
         "table",
         "--format",
@@ -88,9 +97,12 @@ def ls(
 ):
     include_scaffolds = normalize_flag(include_scaffolds)
     details = normalize_flag(details)
+    readiness = normalize_flag(readiness)
     fmt = normalize_output_format(format)
     protocol_filter = protocol.strip() if isinstance(protocol, str) and protocol.strip() else None
     status_filter = normalize_status_filter(status)
+    if readiness and not details:
+        raise typer.BadParameter("--readiness requires --details")
 
     root_path = (
         find_nearest_experiments_dir(Path.cwd()) if str(root).strip() == "./experiments" else Path(root).resolve()
@@ -103,6 +115,7 @@ def ls(
                     root=root_path,
                     include_scaffolds=include_scaffolds,
                     details=details,
+                    readiness=readiness,
                     protocol=protocol_filter,
                     status=status_filter,
                     experiments=[],
@@ -128,6 +141,7 @@ def ls(
             "has_outputs": False,
             "status": "ok",
             "error": None,
+            "readiness": None,
         }
         try:
             if details:
@@ -159,9 +173,17 @@ def ls(
                         base=config_path.parent,
                     ),
                 }
+                if readiness:
+                    entry["readiness"] = experiment_readiness_payload(
+                        job_path=config_path,
+                        decl=decl,
+                        runtime=runtime,
+                    )
         except ReaderError as err:
             entry["status"] = "config_error"
             entry["error"] = str(err)
+            if readiness:
+                entry["readiness"] = config_error_readiness_payload(str(err))
         if protocol_filter and entry["protocol"] != protocol_filter:
             continue
         if status_filter and entry["status"] != status_filter:
@@ -175,6 +197,7 @@ def ls(
                     root=root_path,
                     include_scaffolds=include_scaffolds,
                     details=details,
+                    readiness=readiness,
                     protocol=protocol_filter,
                     status=status_filter,
                     experiments=[],
@@ -202,6 +225,7 @@ def ls(
                 root=root_path,
                 include_scaffolds=include_scaffolds,
                 details=details,
+                readiness=readiness,
                 protocol=protocol_filter,
                 status=status_filter,
                 experiments=entries,
@@ -222,6 +246,8 @@ def ls(
         listing.add_column("Status", width=12)
         listing.add_column("Selected", overflow="fold")
         listing.add_column("Generated", overflow="fold")
+        if readiness:
+            listing.add_column("Readiness", overflow="fold")
         listing.add_column("Issue", overflow="fold")
     else:
         listing.add_column("Outputs", justify="center", width=7)
@@ -237,6 +263,9 @@ def ls(
                 status_value,
                 selected_plan_summary(entry.get("selected") if isinstance(entry, dict) else None),
                 generated_summary(generated),
+                readiness_summary_text(entry.get("readiness") if isinstance(entry, dict) else None)
+                if readiness
+                else "",
                 str(entry["error"] or "—"),
             )
         else:
@@ -271,6 +300,9 @@ def ls(
         summary.add_row("Status", ", ".join(status_bits) if status_bits else "—")
         protocol_bits = [f"{key}={value}" for key, value in dict(inventory_summary["by_protocol"]).items()]
         summary.add_row("Protocols", ", ".join(protocol_bits) if protocol_bits else "—")
+        readiness_bits = [f"{key}={value}" for key, value in dict(inventory_summary.get("by_readiness") or {}).items()]
+        if readiness_bits:
+            summary.add_row("Readiness", ", ".join(readiness_bits))
         shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED, title="Inventory summary"))
 
 

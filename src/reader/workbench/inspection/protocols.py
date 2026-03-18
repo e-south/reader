@@ -8,7 +8,7 @@ from rich import box
 from rich.table import Table
 
 from reader.protocols import ProtocolBinding
-from reader.protocols.model import ProtocolBindingValueRef
+from reader.protocols.model import ProtocolAnalysisChoiceRef, ProtocolBindingValueRef
 
 from .runtime import compiled_workbench_payload, record_producer_map
 from .semantics import semantic_program_payload
@@ -238,7 +238,17 @@ def _runtime_default_value_payload(value: Any) -> Any:
             "source": f"protocol.inputs.{value.key}",
         }
         if value.has_default:
-            payload["default"] = deepcopy(value.default)
+            payload["default"] = _runtime_default_value_payload(value.default)
+        else:
+            payload["required"] = True
+        return payload
+    if isinstance(value, ProtocolAnalysisChoiceRef):
+        payload: dict[str, object] = {
+            "source": f"protocol.analysis.{value.key}",
+            "cases": {key: _runtime_default_value_payload(item) for key, item in value.cases.items()},
+        }
+        if value.has_default:
+            payload["default"] = _runtime_default_value_payload(value.default)
         else:
             payload["required"] = True
         return payload

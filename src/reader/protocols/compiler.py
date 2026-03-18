@@ -167,6 +167,18 @@ def compile_cytometry_flow_panel(protocol: Any):
     analysis = _analysis_options(protocol)
     strict = _analysis_bool(analysis, key="strict", default=True)
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
+    try:
+        selected_plots = protocol.select_plot_outputs(allowed=set())
+    except ConfigError as exc:
+        raise ConfigError(f"cytometry/flow_panel does not currently compile plot outputs. {exc}") from exc
+    try:
+        selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
+    except ConfigError as exc:
+        raise ConfigError(f"cytometry/flow_panel does not currently compile export artifacts. {exc}") from exc
+    if selected_plots:
+        raise ConfigError("cytometry/flow_panel does not currently compile plot outputs.")
+    if selected_exports:
+        raise ConfigError("cytometry/flow_panel does not currently compile export artifacts.")
     return CompiledProtocolPlan(
         runtime={"strict": strict},
         pipeline=(
