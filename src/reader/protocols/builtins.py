@@ -25,6 +25,8 @@ from .model import (
     ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolRankingSpec,
+    ProtocolSemanticProfileOverride,
+    ProtocolSemanticProfileSpec,
     ProtocolWindowSpec,
     binding_value,
 )
@@ -107,10 +109,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         domain="plate_reader",
         family="screen_analysis",
         summary=(
-            "Dual-reporter screen protocol for inducer/stress assays with matched same-sensor controls, "
-            "baseline-shifted ratio traces, and burden/leakiness-aware ranking."
+            "Plate-reader screen protocol with dual-reporter and single-reporter measurement profiles, "
+            "matched-control comparison semantics, and extensible ranking hooks."
         ),
-        tags=("plate_reader", "dual_reporter", "screen", "ratio"),
+        tags=("plate_reader", "dual_reporter", "single_reporter", "screen", "ratio"),
         input_fields=(
             _field(
                 "ingest",
@@ -338,6 +340,24 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFactorSpec(name="time", role="time", summary="Time after assay start."),
             ProtocolFactorSpec(name="plate_id", role="plate", summary="Plate-local normalization boundary."),
         ),
+        semantic_profiles=(
+            ProtocolSemanticProfileSpec(
+                id="yfp_cfp",
+                family="dual_reporter_ratio",
+                summary="Dual-reporter YFP/CFP screen semantics with matched-control comparison nodes.",
+                primary_metric="R",
+                primary_readout="YFP / CFP",
+                tags=("dual_reporter", "ratio"),
+            ),
+            ProtocolSemanticProfileSpec(
+                id="rfp_od600",
+                family="single_reporter_ratio",
+                summary="Single-reporter RFP/OD600 screen semantics for simpler treatment/condition assays.",
+                primary_metric="R",
+                primary_readout="RFP / OD600",
+                tags=("single_reporter", "ratio"),
+            ),
+        ),
         control_rules=(
             ProtocolControlRule(
                 id="matched_same_sensor_control",
@@ -347,6 +367,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
                 match_on=("sensor", "plate_id", "stress_condition", "IPTG", "time"),
                 control_selector="matched_tetO_group",
+                profiles=("yfp_cfp",),
             ),
         ),
         windows=(
@@ -356,6 +377,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 anchor="stress_time_zero",
                 selector="last_n_before",
                 params={"n": 3},
+                profiles=("yfp_cfp",),
             ),
             ProtocolWindowSpec(
                 id="primary_post_stress",
@@ -363,6 +385,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 anchor="stress_time_zero",
                 selector="first_after_until_plateau",
                 params={"plateau_reference": "matched_same_sensor_control"},
+                profiles=("yfp_cfp",),
             ),
             ProtocolWindowSpec(
                 id="endpoint_last_n",
@@ -370,18 +393,21 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 anchor="primary_post_stress",
                 selector="last_n_within",
                 params={"n": 3},
+                profiles=("yfp_cfp",),
             ),
         ),
         metrics=(
             ProtocolMetricSpec(id="OD", stage="raw", summary="Raw OD600 trace.", formula="OD600"),
-            ProtocolMetricSpec(id="CFP", stage="raw", summary="Raw CFP trace.", formula="CFP"),
-            ProtocolMetricSpec(id="YFP", stage="raw", summary="Raw YFP trace.", formula="YFP"),
+            ProtocolMetricSpec(id="CFP", stage="raw", summary="Raw CFP trace.", formula="CFP", profiles=("yfp_cfp",)),
+            ProtocolMetricSpec(id="YFP", stage="raw", summary="Raw YFP trace.", formula="YFP", profiles=("yfp_cfp",)),
+            ProtocolMetricSpec(id="RFP", stage="raw", summary="Raw RFP trace.", formula="RFP", profiles=("rfp_od600",)),
             ProtocolMetricSpec(
                 id="YFP_OD",
                 stage="support",
                 summary="Supporting YFP per biomass proxy.",
                 formula="YFP / OD600",
                 depends_on=("YFP", "OD"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="CFP_OD",
@@ -389,13 +415,21 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Supporting CFP per biomass proxy.",
                 formula="CFP / OD600",
                 depends_on=("CFP", "OD"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="R",
                 stage="derived",
-                summary="Primary within-well dual-reporter ratio.",
+                summary="Primary within-well assay ratio.",
                 formula="YFP / CFP",
                 depends_on=("YFP", "CFP"),
+                profile_overrides={
+                    "rfp_od600": ProtocolSemanticProfileOverride(
+                        summary="Primary within-well single-reporter ratio.",
+                        formula="RFP / OD600",
+                        depends_on=("RFP", "OD"),
+                    )
+                },
             ),
             ProtocolMetricSpec(
                 id="B",
@@ -403,6 +437,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Baseline-shifted reporter ratio relative to the well's own pre-stress state.",
                 formula="R(t) - mean(R over pre_stress_last_n)",
                 depends_on=("R", "pre_stress_last_n"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="C",
@@ -410,6 +445,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Matched-control-normalized sponge deviation.",
                 formula="B(t) - mean(B matched_same_sensor_control at t)",
                 depends_on=("B", "matched_same_sensor_control"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="D",
@@ -417,6 +453,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Induced sponge effect after matched-control normalization.",
                 formula="mean(C +IPTG) - mean(C -IPTG)",
                 depends_on=("C",),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="M",
@@ -424,6 +461,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Stress modulation of the induced sponge effect.",
                 formula="D(relevant_stress) - D(H2O)",
                 depends_on=("D",),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="O",
@@ -431,6 +469,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Sign-corrected induced sponge effect for cross-sensor ranking.",
                 formula="expected_decoy_sign * D",
                 depends_on=("D",),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="S_AUC",
@@ -438,6 +477,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Cross-sensor scaled effect size relative to native sensor response.",
                 formula="O_AUC / abs(G_sensor)",
                 depends_on=("O", "G_sensor"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="L_pre",
@@ -445,6 +485,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Pre-stress leakiness relative to matched control.",
                 formula="R_pre(real,-IPTG) - mean(R_pre matched_control,-IPTG)",
                 depends_on=("R",),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="L_post_AUC",
@@ -452,6 +493,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Uninduced post-stress leakiness over the primary window.",
                 formula="AUC(mean(C -IPTG))",
                 depends_on=("C", "primary_post_stress"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="T_ratio_AUC",
@@ -459,6 +501,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="tetO ratio burden under induction.",
                 formula="AUC(mean(B tetO,+IPTG) - mean(B tetO,-IPTG))",
                 depends_on=("B", "primary_post_stress"),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="T_growth_AUC",
@@ -466,6 +509,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="tetO growth burden under induction.",
                 formula="AUC(mean(mu tetO,+IPTG) - mean(mu tetO,-IPTG))",
                 depends_on=("primary_post_stress",),
+                profiles=("yfp_cfp",),
             ),
             ProtocolMetricSpec(
                 id="T_finalOD",
@@ -473,6 +517,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Endpoint OD burden for the tetO control.",
                 formula="mean(OD tetO,+IPTG,end) - mean(OD tetO,-IPTG,end)",
                 depends_on=("OD", "endpoint_last_n"),
+                profiles=("yfp_cfp",),
             ),
         ),
         effect_signs=(
@@ -579,6 +624,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             penalties=("T_growth_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
             supporting_metrics=("S_AUC", "D_END", "M_AUC"),
             summary="Rank hits by sign-corrected effect size, then penalize burden and leakiness.",
+            profiles=("yfp_cfp",),
         ),
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(

@@ -64,7 +64,7 @@ def test_ls_compact_name_column(monkeypatch, tmp_path: Path) -> None:
     write_config(exp_dir / "config.yaml", _base_config())
 
     test_console = Console(width=60, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
     cli.ls(root=str(exp_root), include_scaffolds=False)
 
     output = test_console.export_text()
@@ -82,7 +82,7 @@ def test_ls_excludes_template_dirs_by_default(monkeypatch, tmp_path: Path) -> No
     write_config(template_dir / "config.yaml", _base_config())
 
     test_console = Console(width=80, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
     cli.ls(root=str(exp_root), include_scaffolds=False)
 
     output = test_console.export_text()
@@ -113,7 +113,7 @@ def test_ls_all_includes_template_dirs(monkeypatch, tmp_path: Path) -> None:
     write_config(template_dir / "config.yaml", _base_config())
 
     test_console = Console(width=80, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
     cli.ls(root=str(exp_root), include_scaffolds=True)
 
     output = test_console.export_text()
@@ -144,7 +144,7 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
     (plots_dir / "trace.pdf").write_text("plot", encoding="utf-8")
 
     test_console = Console(width=120, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
     cli.ls(root=str(exp_root), include_scaffolds=False, details=True)
 
     output = test_console.export_text()
@@ -429,10 +429,9 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
         )
     )
     test_console = Console(width=100, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
     monkeypatch.setattr(
-        cli,
-        "builtin_runtime",
+        "reader.workbench.cli.surfaces.builtin_runtime",
         lambda: ReaderRuntime(
             contracts=builtin_contract_catalog(),
             protocols=builtin_protocol_catalog(),
@@ -465,7 +464,7 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert result.exit_code == 0
     assert "Protocol:" in result.output
     assert "plate_reader/dual_reporter_screen" in result.output
-    assert "Dual-reporter screen protocol" in result.output
+    assert "Plate-reader screen protocol" in result.output
     assert "notebook/eda" in result.output
     assert "Inputs Surface" in result.output
     assert "ingest.mode" in result.output
@@ -622,7 +621,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
 
 def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
     test_console = Console(width=160, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli, "console", test_console)
+    monkeypatch.setattr(cli.shared, "console", test_console)
 
     cli.plugins(category="transform", domain=None, family=None, protocol="plate_reader/dual_reporter_screen")
 
@@ -665,6 +664,46 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     assert payload["semantics"]["program"]["windows"][0]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
     assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+
+
+def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path: Path) -> None:
+    cfg_path = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="exp_rfp",
+            protocol_id="plate_reader/dual_reporter_screen",
+            protocol_inputs={"fold_change": {"report_times": [14.0]}},
+            protocol_analysis={"measurement": "rfp_od600", "include_fold_change": False},
+            protocol_outputs={"plots": {"profile": "none", "include": ["raw_kinetics"]}},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        ),
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    program = payload["semantics"]["program"]
+    metrics = {item["id"]: item for item in program["metrics"]}
+    assert program["active_profile"] == "rfp_od600"
+    assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "rfp_od600"}
+    assert set(metrics) == {"OD", "RFP", "R"}
+    assert metrics["RFP"]["execution"]["status"] == "compiled"
+    assert metrics["R"]["formula"] == "RFP / OD600"
+    assert metrics["R"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
+    assert program["controls"] == []
+    assert program["windows"] == []
+    assert program["ranking"] is None
+    assert program["summary"] == {
+        "total": 3,
+        "compiled": 3,
+        "descriptive_only": 0,
+        "by_kind": {
+            "control_rule": {"total": 0, "compiled": 0, "descriptive_only": 0},
+            "window": {"total": 0, "compiled": 0, "descriptive_only": 0},
+            "metric": {"total": 3, "compiled": 3, "descriptive_only": 0},
+            "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
+        },
+    }
 
 
 def test_plugins_command_can_emit_json() -> None:

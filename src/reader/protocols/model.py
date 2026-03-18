@@ -32,6 +32,82 @@ _UNSET = object()
 
 
 @dataclass(frozen=True)
+class ProtocolSemanticProfileSpec:
+    id: str
+    family: str
+    summary: str
+    primary_metric: str | None = None
+    primary_readout: str | None = None
+    tags: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        profile_id = str(self.id).strip()
+        family = str(self.family).strip()
+        summary = str(self.summary).strip()
+        if not profile_id:
+            raise ValueError("ProtocolSemanticProfileSpec.id must be a non-empty string.")
+        if not family:
+            raise ValueError("ProtocolSemanticProfileSpec.family must be a non-empty string.")
+        if not summary:
+            raise ValueError("ProtocolSemanticProfileSpec.summary must be a non-empty string.")
+        object.__setattr__(self, "id", profile_id)
+        object.__setattr__(self, "family", family)
+        object.__setattr__(self, "summary", summary)
+        if self.primary_metric is not None and not str(self.primary_metric).strip():
+            raise ValueError("ProtocolSemanticProfileSpec.primary_metric must be a non-empty string when provided.")
+        if self.primary_readout is not None and not str(self.primary_readout).strip():
+            raise ValueError("ProtocolSemanticProfileSpec.primary_readout must be a non-empty string when provided.")
+        object.__setattr__(self, "tags", tuple(str(value).strip() for value in self.tags if str(value).strip()))
+
+
+@dataclass(frozen=True)
+class ProtocolSemanticProfileOverride:
+    enabled: bool = True
+    summary: str | None = None
+    formula: str | None = None
+    depends_on: tuple[str, ...] | None = None
+    anchor: str | None = None
+    selector: str | None = None
+    params: dict[str, Any] | None = None
+    match_on: tuple[str, ...] | None = None
+    control_selector: str | None = None
+    primary_metric: str | None = None
+    direction: RankingDirection | None = None
+    penalties: tuple[str, ...] | None = None
+    supporting_metrics: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.summary is not None and not str(self.summary).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.summary must be a non-empty string when provided.")
+        if self.formula is not None and not str(self.formula).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.formula must be a non-empty string when provided.")
+        if self.anchor is not None and not str(self.anchor).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.anchor must be a non-empty string when provided.")
+        if self.selector is not None and not str(self.selector).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.selector must be a non-empty string when provided.")
+        if self.control_selector is not None and not str(self.control_selector).strip():
+            raise ValueError(
+                "ProtocolSemanticProfileOverride.control_selector must be a non-empty string when provided."
+            )
+        if self.primary_metric is not None and not str(self.primary_metric).strip():
+            raise ValueError("ProtocolSemanticProfileOverride.primary_metric must be a non-empty string when provided.")
+        if self.depends_on is not None:
+            object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on if str(value).strip()))
+        if self.params is not None:
+            object.__setattr__(self, "params", dict(self.params or {}))
+        if self.match_on is not None:
+            object.__setattr__(self, "match_on", tuple(str(value) for value in self.match_on if str(value).strip()))
+        if self.penalties is not None:
+            object.__setattr__(self, "penalties", tuple(str(value) for value in self.penalties if str(value).strip()))
+        if self.supporting_metrics is not None:
+            object.__setattr__(
+                self,
+                "supporting_metrics",
+                tuple(str(value) for value in self.supporting_metrics if str(value).strip()),
+            )
+
+
+@dataclass(frozen=True)
 class ProtocolBinding:
     id: str
     inputs: dict[str, Any] = field(default_factory=dict)
@@ -240,6 +316,8 @@ class ProtocolControlRule:
     summary: str
     match_on: tuple[str, ...] = ()
     control_selector: str | None = None
+    profiles: tuple[str, ...] = ()
+    profile_overrides: dict[str, ProtocolSemanticProfileOverride] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.id).strip():
@@ -249,6 +327,8 @@ class ProtocolControlRule:
         object.__setattr__(self, "match_on", tuple(str(value) for value in self.match_on))
         if self.control_selector is not None and not str(self.control_selector).strip():
             raise ValueError("ProtocolControlRule.control_selector must be a non-empty string when provided.")
+        object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
+        object.__setattr__(self, "profile_overrides", dict(self.profile_overrides or {}))
 
 
 @dataclass(frozen=True)
@@ -258,6 +338,8 @@ class ProtocolWindowSpec:
     anchor: str
     selector: str
     params: dict[str, Any] = field(default_factory=dict)
+    profiles: tuple[str, ...] = ()
+    profile_overrides: dict[str, ProtocolSemanticProfileOverride] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.id).strip():
@@ -269,6 +351,8 @@ class ProtocolWindowSpec:
         if not str(self.selector).strip():
             raise ValueError("ProtocolWindowSpec.selector must be a non-empty string.")
         object.__setattr__(self, "params", dict(self.params or {}))
+        object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
+        object.__setattr__(self, "profile_overrides", dict(self.profile_overrides or {}))
 
 
 @dataclass(frozen=True)
@@ -279,6 +363,8 @@ class ProtocolMetricSpec:
     formula: str
     depends_on: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    profiles: tuple[str, ...] = ()
+    profile_overrides: dict[str, ProtocolSemanticProfileOverride] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.id).strip():
@@ -289,6 +375,8 @@ class ProtocolMetricSpec:
             raise ValueError("ProtocolMetricSpec.formula must be a non-empty string.")
         object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on))
         object.__setattr__(self, "notes", tuple(str(value) for value in self.notes))
+        object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
+        object.__setattr__(self, "profile_overrides", dict(self.profile_overrides or {}))
 
 
 @dataclass(frozen=True)
@@ -352,6 +440,8 @@ class ProtocolRankingSpec:
     penalties: tuple[str, ...] = ()
     supporting_metrics: tuple[str, ...] = ()
     summary: str = ""
+    profiles: tuple[str, ...] = ()
+    profile_overrides: dict[str, ProtocolSemanticProfileOverride] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.primary_metric).strip():
@@ -360,6 +450,8 @@ class ProtocolRankingSpec:
             raise ValueError("ProtocolRankingSpec.summary must be a non-empty string.")
         object.__setattr__(self, "penalties", tuple(str(value) for value in self.penalties))
         object.__setattr__(self, "supporting_metrics", tuple(str(value) for value in self.supporting_metrics))
+        object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
+        object.__setattr__(self, "profile_overrides", dict(self.profile_overrides or {}))
 
 
 @dataclass(frozen=True)
@@ -388,6 +480,7 @@ class ProtocolSemanticNode:
     id: str
     kind: SemanticNodeKind
     summary: str
+    profiles: tuple[str, ...] = ()
     stage: MetricStage | None = None
     formula: str | None = None
     depends_on: tuple[str, ...] = ()
@@ -407,6 +500,7 @@ class ProtocolSemanticNode:
             raise ValueError("ProtocolSemanticNode.id must be a non-empty string.")
         if not str(self.summary).strip():
             raise ValueError("ProtocolSemanticNode.summary must be a non-empty string.")
+        object.__setattr__(self, "profiles", tuple(str(value).strip() for value in self.profiles if str(value).strip()))
         object.__setattr__(self, "depends_on", tuple(str(value) for value in self.depends_on if str(value).strip()))
         object.__setattr__(self, "params", dict(self.params or {}))
         object.__setattr__(self, "match_on", tuple(str(value) for value in self.match_on if str(value).strip()))
@@ -421,6 +515,8 @@ class ProtocolSemanticNode:
 @dataclass(frozen=True)
 class ProtocolSemanticProgram:
     protocol: str
+    profiles: tuple[ProtocolSemanticProfileSpec, ...] = ()
+    active_profile: str | None = None
     controls: tuple[ProtocolSemanticNode, ...] = ()
     windows: tuple[ProtocolSemanticNode, ...] = ()
     metrics: tuple[ProtocolSemanticNode, ...] = ()
@@ -429,6 +525,13 @@ class ProtocolSemanticProgram:
     def __post_init__(self) -> None:
         if not str(self.protocol).strip():
             raise ValueError("ProtocolSemanticProgram.protocol must be a non-empty string.")
+        profile_ids: set[str] = set()
+        for profile in self.profiles:
+            if profile.id in profile_ids:
+                raise ValueError(f"Duplicate semantic profile {profile.id!r}.")
+            profile_ids.add(profile.id)
+        if self.active_profile is not None and self.active_profile not in profile_ids:
+            raise ValueError(f"Unknown active semantic profile {self.active_profile!r}.")
         for group_name, nodes in (
             ("controls", self.controls),
             ("windows", self.windows),
@@ -532,6 +635,7 @@ class ProtocolDescriptor:
     windows: tuple[ProtocolWindowSpec, ...] = ()
     metrics: tuple[ProtocolMetricSpec, ...] = ()
     effect_signs: tuple[ProtocolEffectSignSpec, ...] = ()
+    semantic_profiles: tuple[ProtocolSemanticProfileSpec, ...] = ()
     figures: tuple[ProtocolFigureSpec, ...] = ()
     plot_profiles: tuple[ProtocolPlotProfileSpec, ...] = ()
     default_plot_profile: str | None = None
@@ -547,16 +651,21 @@ class ProtocolDescriptor:
         if not str(self.summary).strip():
             raise ValueError("ProtocolDescriptor.summary must be a non-empty string.")
         object.__setattr__(self, "tags", tuple(str(value) for value in self.tags))
+        semantic_profile_ids: set[str] = set()
+        for item in self.semantic_profiles:
+            if item.id in semantic_profile_ids:
+                raise ValueError(f"Duplicate protocol semantic profile {item.id!r}.")
+            semantic_profile_ids.add(item.id)
         figure_ids: set[str] = set()
         for item in self.figures:
             if item.id in figure_ids:
                 raise ValueError(f"Duplicate protocol figure {item.id!r}.")
             figure_ids.add(item.id)
-        profile_ids: set[str] = set()
+        plot_profile_ids: set[str] = set()
         for item in self.plot_profiles:
-            if item.id in profile_ids:
+            if item.id in plot_profile_ids:
                 raise ValueError(f"Duplicate protocol plot profile {item.id!r}.")
-            profile_ids.add(item.id)
+            plot_profile_ids.add(item.id)
             unknown = sorted(set(item.figures) - figure_ids)
             if unknown:
                 raise ValueError(f"Protocol plot profile {item.id!r} references unknown figures: {', '.join(unknown)}.")
@@ -564,7 +673,7 @@ class ProtocolDescriptor:
             default_plot_profile = str(self.default_plot_profile).strip()
             if not default_plot_profile:
                 raise ValueError("ProtocolDescriptor.default_plot_profile must be a non-empty string when provided.")
-            if default_plot_profile not in profile_ids:
+            if default_plot_profile not in plot_profile_ids:
                 raise ValueError(
                     f"ProtocolDescriptor.default_plot_profile {default_plot_profile!r} is not defined in plot_profiles."
                 )
@@ -574,6 +683,43 @@ class ProtocolDescriptor:
             if item.id in artifact_ids:
                 raise ValueError(f"Duplicate protocol artifact {item.id!r}.")
             artifact_ids.add(item.id)
+        self._validate_semantic_profile_references(semantic_profile_ids)
+
+    def _validate_semantic_profile_references(self, profile_ids: set[str]) -> None:
+        if not profile_ids:
+            return
+        groups = (
+            ("control_rules", self.control_rules),
+            ("windows", self.windows),
+            ("metrics", self.metrics),
+        )
+        for group_name, items in groups:
+            for item in items:
+                unknown = sorted(set(item.profiles) - profile_ids)
+                if unknown:
+                    raise ValueError(
+                        f"ProtocolDescriptor.{group_name} item {item.id!r} references unknown semantic profiles: "
+                        f"{', '.join(unknown)}."
+                    )
+                unknown_overrides = sorted(set(item.profile_overrides) - profile_ids)
+                if unknown_overrides:
+                    raise ValueError(
+                        f"ProtocolDescriptor.{group_name} item {item.id!r} overrides unknown semantic profiles: "
+                        f"{', '.join(unknown_overrides)}."
+                    )
+        if self.ranking is not None:
+            unknown = sorted(set(self.ranking.profiles) - profile_ids)
+            if unknown:
+                raise ValueError(
+                    "ProtocolDescriptor.ranking references unknown semantic profiles: " + ", ".join(unknown) + "."
+                )
+            unknown_overrides = sorted(set(self.ranking.profile_overrides) - profile_ids)
+            if unknown_overrides:
+                raise ValueError(
+                    "ProtocolDescriptor.ranking overrides unknown semantic profiles: "
+                    + ", ".join(unknown_overrides)
+                    + "."
+                )
 
     def validate_authoring(self, *, inputs: dict[str, Any], analysis: dict[str, Any]) -> None:
         _validate_protocol_surface(inputs, fields=self.input_fields, path="protocol.inputs", protocol_id=self.protocol)
@@ -584,52 +730,175 @@ class ProtocolDescriptor:
             protocol_id=self.protocol,
         )
 
-    def semantic_program(self) -> ProtocolSemanticProgram:
+    def semantic_program(self, *, active_profile: str | None = None) -> ProtocolSemanticProgram:
+        profile_ids = tuple(item.id for item in self.semantic_profiles)
+        if active_profile is not None and active_profile not in profile_ids:
+            raise ValueError(f"Unknown semantic profile {active_profile!r} for protocol {self.protocol!r}.")
+
+        def _profile_enabled(
+            *,
+            profiles: tuple[str, ...],
+            profile_overrides: dict[str, ProtocolSemanticProfileOverride],
+        ) -> bool:
+            if active_profile is None:
+                return True
+            if profiles and active_profile not in profiles:
+                return False
+            override = profile_overrides.get(active_profile)
+            return not (override is not None and not override.enabled)
+
+        def _override(
+            profile_overrides: dict[str, ProtocolSemanticProfileOverride],
+        ) -> ProtocolSemanticProfileOverride | None:
+            if active_profile is None:
+                return None
+            return profile_overrides.get(active_profile)
+
+        def _node_profiles(
+            profiles: tuple[str, ...],
+            profile_overrides: dict[str, ProtocolSemanticProfileOverride],
+        ) -> tuple[str, ...]:
+            if profiles:
+                return profiles
+            if profile_ids:
+                return profile_ids
+            if profile_overrides:
+                return tuple(sorted(profile_overrides))
+            return ()
+
         return ProtocolSemanticProgram(
             protocol=self.protocol,
+            profiles=self.semantic_profiles,
+            active_profile=active_profile,
             controls=tuple(
                 ProtocolSemanticNode(
                     id=item.id,
                     kind="control_rule",
-                    summary=item.summary,
-                    match_on=item.match_on,
-                    control_selector=item.control_selector,
+                    summary=(
+                        _override(item.profile_overrides).summary
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).summary is not None
+                        else item.summary
+                    ),
+                    profiles=_node_profiles(item.profiles, item.profile_overrides),
+                    match_on=(
+                        _override(item.profile_overrides).match_on
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).match_on is not None
+                        else item.match_on
+                    ),
+                    control_selector=(
+                        _override(item.profile_overrides).control_selector
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).control_selector is not None
+                        else item.control_selector
+                    ),
                 )
                 for item in self.control_rules
+                if _profile_enabled(profiles=item.profiles, profile_overrides=item.profile_overrides)
             ),
             windows=tuple(
                 ProtocolSemanticNode(
                     id=item.id,
                     kind="window",
-                    summary=item.summary,
-                    anchor=item.anchor,
-                    selector=item.selector,
-                    params=item.params,
+                    summary=(
+                        _override(item.profile_overrides).summary
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).summary is not None
+                        else item.summary
+                    ),
+                    profiles=_node_profiles(item.profiles, item.profile_overrides),
+                    anchor=(
+                        _override(item.profile_overrides).anchor
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).anchor is not None
+                        else item.anchor
+                    ),
+                    selector=(
+                        _override(item.profile_overrides).selector
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).selector is not None
+                        else item.selector
+                    ),
+                    params=(
+                        _override(item.profile_overrides).params
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).params is not None
+                        else item.params
+                    ),
                 )
                 for item in self.windows
+                if _profile_enabled(profiles=item.profiles, profile_overrides=item.profile_overrides)
             ),
             metrics=tuple(
                 ProtocolSemanticNode(
                     id=item.id,
                     kind="metric",
-                    summary=item.summary,
+                    summary=(
+                        _override(item.profile_overrides).summary
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).summary is not None
+                        else item.summary
+                    ),
+                    profiles=_node_profiles(item.profiles, item.profile_overrides),
                     stage=item.stage,
-                    formula=item.formula,
-                    depends_on=item.depends_on,
+                    formula=(
+                        _override(item.profile_overrides).formula
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).formula is not None
+                        else item.formula
+                    ),
+                    depends_on=(
+                        _override(item.profile_overrides).depends_on
+                        if _override(item.profile_overrides) is not None
+                        and _override(item.profile_overrides).depends_on is not None
+                        else item.depends_on
+                    ),
                 )
                 for item in self.metrics
+                if _profile_enabled(profiles=item.profiles, profile_overrides=item.profile_overrides)
             ),
             ranking=(
                 ProtocolSemanticNode(
                     id="ranking",
                     kind="ranking",
-                    summary=self.ranking.summary,
-                    primary_metric=self.ranking.primary_metric,
-                    direction=self.ranking.direction,
-                    penalties=self.ranking.penalties,
-                    supporting_metrics=self.ranking.supporting_metrics,
+                    summary=(
+                        _override(self.ranking.profile_overrides).summary
+                        if _override(self.ranking.profile_overrides) is not None
+                        and _override(self.ranking.profile_overrides).summary is not None
+                        else self.ranking.summary
+                    ),
+                    profiles=_node_profiles(self.ranking.profiles, self.ranking.profile_overrides),
+                    primary_metric=(
+                        _override(self.ranking.profile_overrides).primary_metric
+                        if _override(self.ranking.profile_overrides) is not None
+                        and _override(self.ranking.profile_overrides).primary_metric is not None
+                        else self.ranking.primary_metric
+                    ),
+                    direction=(
+                        _override(self.ranking.profile_overrides).direction
+                        if _override(self.ranking.profile_overrides) is not None
+                        and _override(self.ranking.profile_overrides).direction is not None
+                        else self.ranking.direction
+                    ),
+                    penalties=(
+                        _override(self.ranking.profile_overrides).penalties
+                        if _override(self.ranking.profile_overrides) is not None
+                        and _override(self.ranking.profile_overrides).penalties is not None
+                        else self.ranking.penalties
+                    ),
+                    supporting_metrics=(
+                        _override(self.ranking.profile_overrides).supporting_metrics
+                        if _override(self.ranking.profile_overrides) is not None
+                        and _override(self.ranking.profile_overrides).supporting_metrics is not None
+                        else self.ranking.supporting_metrics
+                    ),
                 )
                 if self.ranking is not None
+                and _profile_enabled(
+                    profiles=self.ranking.profiles,
+                    profile_overrides=self.ranking.profile_overrides,
+                )
                 else None
             ),
         )

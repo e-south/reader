@@ -21,6 +21,7 @@ def semantic_node_payload(node) -> dict[str, object]:
         "id": node.id,
         "kind": node.kind,
         "summary": node.summary,
+        "profiles": list(node.profiles),
         "execution": {
             "status": node.execution.status,
             "step_ids": list(node.execution.step_ids),
@@ -86,6 +87,18 @@ def semantic_program_summary(program) -> dict[str, object]:
 def semantic_program_payload(program) -> dict[str, object]:
     return {
         "protocol": program.protocol,
+        "profiles": [
+            {
+                "id": profile.id,
+                "family": profile.family,
+                "summary": profile.summary,
+                "primary_metric": profile.primary_metric,
+                "primary_readout": profile.primary_readout,
+                "tags": list(profile.tags),
+            }
+            for profile in program.profiles
+        ],
+        "active_profile": program.active_profile,
         "summary": semantic_program_summary(program),
         "controls": [semantic_node_payload(node) for node in program.controls],
         "windows": [semantic_node_payload(node) for node in program.windows],
@@ -96,8 +109,10 @@ def semantic_program_payload(program) -> dict[str, object]:
 
 def semantic_program_table(program) -> Table:
     coverage = semantic_program_summary(program)
+    profile_text = f" • profile: {program.active_profile}" if program.active_profile else ""
     table = _table(
         "Semantic Program"
+        f"{profile_text}"
         f" • {coverage['compiled']}/{coverage['total']} compiled"
         f" • {coverage['descriptive_only']} descriptive"
     )

@@ -189,8 +189,13 @@ def compile_cytometry_flow_panel(protocol: Any):
     )
 
 
-def _semantic_program(protocol: Any, *, overrides: dict[str, ProtocolSemanticExecution]) -> ProtocolSemanticProgram:
-    descriptor_program = protocol.descriptor.semantic_program()
+def _semantic_program(
+    protocol: Any,
+    *,
+    overrides: dict[str, ProtocolSemanticExecution],
+    active_profile: str | None = None,
+) -> ProtocolSemanticProgram:
+    descriptor_program = protocol.descriptor.semantic_program(active_profile=active_profile)
 
     def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
         return tuple(
@@ -198,6 +203,7 @@ def _semantic_program(protocol: Any, *, overrides: dict[str, ProtocolSemanticExe
                 id=node.id,
                 kind=node.kind,
                 summary=node.summary,
+                profiles=node.profiles,
                 stage=node.stage,
                 formula=node.formula,
                 depends_on=node.depends_on,
@@ -221,6 +227,7 @@ def _semantic_program(protocol: Any, *, overrides: dict[str, ProtocolSemanticExe
             id=ranking.id,
             kind=ranking.kind,
             summary=ranking.summary,
+            profiles=ranking.profiles,
             stage=ranking.stage,
             formula=ranking.formula,
             depends_on=ranking.depends_on,
@@ -238,6 +245,8 @@ def _semantic_program(protocol: Any, *, overrides: dict[str, ProtocolSemanticExe
 
     return ProtocolSemanticProgram(
         protocol=descriptor_program.protocol,
+        profiles=descriptor_program.profiles,
+        active_profile=descriptor_program.active_profile,
         controls=_apply(descriptor_program.controls),
         windows=_apply(descriptor_program.windows),
         metrics=_apply(descriptor_program.metrics),
@@ -303,17 +312,19 @@ def _plate_reader_semantic_program(
     else:
         overrides.update(
             {
-                "YFP_OD": ProtocolSemanticExecution(
-                    status="descriptive_only",
-                    note="This measurement family does not materialize YFP/OD600.",
-                ),
-                "CFP_OD": ProtocolSemanticExecution(
-                    status="descriptive_only",
-                    note="This measurement family does not materialize CFP/OD600.",
+                "RFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw RFP values are materialized on the ingest dataframe.",
                 ),
                 "R": ProtocolSemanticExecution(
-                    status="descriptive_only",
-                    note="This measurement family does not materialize the YFP/CFP ratio.",
+                    status="compiled",
+                    step_ids=("ratio_rfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_rfp_od600/df",),
+                    note="The primary RFP/OD600 ratio is materialized as a ratio step output.",
                 ),
             }
         )
@@ -326,7 +337,7 @@ def _plate_reader_semantic_program(
             config_paths=("protocol.analysis.crosstalk_pairs",),
             note="When crosstalk pair analysis is enabled, the exported pair table is compiled from fold-change output.",
         )
-    return _semantic_program(protocol, overrides=overrides)
+    return _semantic_program(protocol, overrides=overrides, active_profile=measurement)
 
 
 def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSemanticProgram:

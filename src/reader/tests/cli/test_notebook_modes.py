@@ -31,7 +31,7 @@ def test_notebook_defaults_to_edit_mode(monkeypatch, tmp_path: Path) -> None:
         called["mode"] = mode
         called["target"] = target
 
-    monkeypatch.setattr(cli, "_launch_marimo", _fake_launch)
+    monkeypatch.setattr(cli.notebook_commands, "_launch_marimo", _fake_launch)
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path)])
     assert result.exit_code == 0
@@ -44,7 +44,7 @@ def test_notebook_mode_none_skips_launch(monkeypatch, tmp_path: Path) -> None:
     def _fail_launch(*args, **kwargs) -> None:
         raise AssertionError("launch should not be called")
 
-    monkeypatch.setattr(cli, "_launch_marimo", _fail_launch)
+    monkeypatch.setattr(cli.notebook_commands, "_launch_marimo", _fail_launch)
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
@@ -62,7 +62,7 @@ def test_notebook_auto_selects_cytometry_preset_from_protocol(monkeypatch, tmp_p
     def _fail_launch(*args, **kwargs) -> None:
         raise AssertionError("launch should not be called")
 
-    monkeypatch.setattr(cli, "_launch_marimo", _fail_launch)
+    monkeypatch.setattr(cli.notebook_commands, "_launch_marimo", _fail_launch)
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
@@ -81,7 +81,7 @@ def test_notebook_auto_selects_sfxi_template_from_protocol(monkeypatch, tmp_path
     def _fail_launch(*args, **kwargs) -> None:
         raise AssertionError("launch should not be called")
 
-    monkeypatch.setattr(cli, "_launch_marimo", _fail_launch)
+    monkeypatch.setattr(cli.notebook_commands, "_launch_marimo", _fail_launch)
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
