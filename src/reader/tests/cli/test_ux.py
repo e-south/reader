@@ -719,6 +719,27 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
 
 
+def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["protocols", "plate_reader/retron_sponge_screen", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    program = payload["semantics"]["program"]
+    metrics = {item["id"]: item for item in program["metrics"]}
+    assert payload["protocol"] == "plate_reader/retron_sponge_screen"
+    assert program["active_profile"] == "yfp_cfp"
+    assert metrics["R"]["formula"] == "log2(YFP / CFP)"
+    assert metrics["R"]["execution"]["status"] == "compiled"
+    assert metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
+    assert metrics["D_AUC"]["execution"]["status"] == "compiled"
+    assert metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert program["controls"][0]["execution"]["status"] == "compiled"
+    assert program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert program["ranking"]["primary_metric"] == "O_AUC"
+    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert payload["implementation"]["compiled"]["pipeline"][-1]["id"] == "semantic_metrics"
+
+
 def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path: Path) -> None:
     cfg_path = write_config(
         tmp_path / "config.yaml",
@@ -757,6 +778,44 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
             "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
         },
     }
+
+
+def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_path: Path) -> None:
+    cfg_path = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="exp_rfp_sponge",
+            protocol_id="plate_reader/retron_sponge_screen",
+            protocol_analysis={
+                "measurement": "rfp_od600",
+                "include_fold_change": False,
+                "semantic_metrics": {
+                    "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
+                    "sensor_target_map": {"sulAp": ["LexA"]},
+                },
+            },
+            protocol_outputs={"plots": {"profile": "none", "include": ["raw_kinetics"]}},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        ),
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    program = payload["semantics"]["program"]
+    metrics = {item["id"]: item for item in program["metrics"]}
+
+    assert program["active_profile"] == "rfp_od600"
+    assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "rfp_od600"}
+    assert {"OD", "RFP", "R", "RFP_OD", "R_pre", "B", "C", "D", "M", "O", "S_AUC"} <= set(metrics)
+    assert "YFP" not in metrics
+    assert "CFP" not in metrics
+    assert metrics["R"]["formula"] == "log2(RFP / OD600)"
+    assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert metrics["RFP_OD"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
+    assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert program["ranking"]["primary_metric"] == "O_AUC"
+    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
 
 
 def test_plate_reader_rfp_profile_uses_profile_aware_plugin_defaults() -> None:

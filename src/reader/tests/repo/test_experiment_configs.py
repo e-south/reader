@@ -18,6 +18,14 @@ from reader.workbench.engine.validation import validation_summary
 
 pytestmark = pytest.mark.integration
 
+RETRON_SPONGE_CONFIGS = (
+    "experiments/2026/20260313_mono_functional_sponges/config.yaml",
+    "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml",
+    "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml",
+    "experiments/2026/202603XX_tri_functional_sponges/config.yaml",
+    "experiments/2026/202603XX_tetra_functional_sponges/config.yaml",
+)
+
 
 @pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
 def test_repo_experiment_configs_load_and_validate(config_path: Path) -> None:
@@ -46,3 +54,11 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
         return
 
     assert summary["status"] == "ok", f"{rel}: {summary['errors']}"
+
+
+@pytest.mark.parametrize("relative_path", RETRON_SPONGE_CONFIGS)
+def test_retron_sponge_repo_configs_use_dedicated_protocol(relative_path: str) -> None:
+    config_path = REPO_ROOT / relative_path
+    decl = load_decl(config_path)
+
+    assert decl.experiment_semantics.protocol.id == "plate_reader/retron_sponge_screen"

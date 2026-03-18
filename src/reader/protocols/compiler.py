@@ -109,6 +109,53 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
     )
 
 
+def compile_plate_reader_retron_sponge_screen(protocol: Any):
+    analysis = _analysis_options(protocol)
+    measurement = _analysis_choice(
+        analysis,
+        key="measurement",
+        default="yfp_cfp",
+        allowed={"yfp_cfp", "rfp_od600"},
+    )
+    include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=False)
+    strict = _analysis_bool(analysis, key="strict", default=True)
+    preprocessing = _analysis_mapping(analysis, key="preprocessing")
+    blank_cfg = _analysis_child(preprocessing, key="blank")
+    overflow_cfg = _analysis_child(preprocessing, key="overflow")
+    semantic_cfg = _analysis_mapping(analysis, key="semantic_metrics")
+
+    pipeline = list(_plate_reader_base_steps(measurement=measurement, blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
+    pipeline.append(_plate_reader_semantic_metrics_step(measurement=measurement, config=semantic_cfg))
+    if include_fold_change:
+        pipeline.append(_plate_reader_fold_change_step(measurement=measurement))
+
+    selected_plots = protocol.select_plot_outputs(
+        allowed=_plate_reader_plot_output_ids(measurement=measurement),
+    )
+    plots = [
+        _plate_reader_plot_output(
+            protocol,
+            output_id=deliverable_id,
+            measurement=measurement,
+        )
+        for deliverable_id in selected_plots
+    ]
+
+    selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
+    if selected_exports:
+        raise ConfigError("plate_reader/retron_sponge_screen does not currently compile export artifacts.")
+
+    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
+    return CompiledProtocolPlan(
+        runtime={"strict": strict},
+        pipeline=tuple(pipeline),
+        plots=tuple(plots),
+        exports=(),
+        notebooks=(default_notebook_call(template),),
+        semantic_program=_plate_reader_retron_sponge_semantic_program(protocol, measurement=measurement),
+    )
+
+
 def compile_logic_sfxi_screen(protocol: Any):
     analysis = _analysis_options(protocol)
     strict = _analysis_bool(analysis, key="strict", default=True)
@@ -355,6 +402,118 @@ def _plate_reader_semantic_program(
     return _semantic_program(protocol, overrides=overrides, active_profile=measurement)
 
 
+def _plate_reader_retron_sponge_semantic_program(
+    protocol: Any,
+    *,
+    measurement: str,
+) -> ProtocolSemanticProgram:
+    trace_binding = ProtocolSemanticExecution(
+        status="compiled",
+        step_ids=("semantic_metrics",),
+        plugin_ids=("transform/retron_sponge_metrics",),
+        record_ids=("semantic_metrics/trace",),
+        config_paths=("protocol.analysis.semantic_metrics",),
+        note="Matched-control sponge kinetics are materialized as a typed trace table.",
+    )
+    summary_binding = ProtocolSemanticExecution(
+        status="compiled",
+        step_ids=("semantic_metrics",),
+        plugin_ids=("transform/retron_sponge_metrics",),
+        record_ids=("semantic_metrics/summary",),
+        config_paths=("protocol.analysis.semantic_metrics",),
+        note="Matched-control sponge summaries are materialized as a typed summary table.",
+    )
+    overrides: dict[str, ProtocolSemanticExecution] = {
+        "matched_same_sensor_control": trace_binding,
+        "pre_stress_last_n": trace_binding,
+        "primary_post_stress": trace_binding,
+        "endpoint_last_n": trace_binding,
+        "OD": ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("ingest",),
+            plugin_ids=("ingest/synergy_h1",),
+            record_ids=("ingest/df",),
+            note="Raw OD600 values are materialized on the ingest dataframe.",
+        ),
+        "R": trace_binding,
+        "R_pre": summary_binding,
+        "B": trace_binding,
+        "C": trace_binding,
+        "C_AUC": summary_binding,
+        "C_END": summary_binding,
+        "mu": trace_binding,
+        "D": trace_binding,
+        "D_AUC": summary_binding,
+        "D_END": summary_binding,
+        "M": trace_binding,
+        "M_AUC": summary_binding,
+        "M_END": summary_binding,
+        "O": trace_binding,
+        "O_AUC": summary_binding,
+        "G_sensor": summary_binding,
+        "S_AUC": summary_binding,
+        "L_pre": summary_binding,
+        "L_post_AUC": summary_binding,
+        "T_ratio_AUC": summary_binding,
+        "T_growth_AUC": summary_binding,
+        "T_finalOD": summary_binding,
+        "ranking": summary_binding,
+    }
+    if measurement == "yfp_cfp":
+        overrides.update(
+            {
+                "CFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw CFP values are materialized on the ingest dataframe.",
+                ),
+                "YFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw YFP values are materialized on the ingest dataframe.",
+                ),
+                "CFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_cfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_cfp_od600/df",),
+                    note="The CFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+                "YFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_yfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_yfp_od600/df",),
+                    note="The YFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+            }
+        )
+    else:
+        overrides.update(
+            {
+                "RFP": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ingest",),
+                    plugin_ids=("ingest/synergy_h1",),
+                    record_ids=("ingest/df",),
+                    note="Raw RFP values are materialized on the ingest dataframe.",
+                ),
+                "RFP_OD": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("ratio_rfp_od600",),
+                    plugin_ids=("transform/ratio",),
+                    record_ids=("ratio_rfp_od600/df",),
+                    note="The RFP/OD600 support channel is materialized as a ratio step output.",
+                ),
+            }
+        )
+    return _semantic_program(protocol, overrides=overrides, active_profile=measurement)
+
+
 def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSemanticProgram:
     overrides: dict[str, ProtocolSemanticExecution] = {}
     if include_vec8:
@@ -560,6 +719,21 @@ def _plate_reader_fold_change_step(*, measurement: str) -> PluginStepDecl:
             writes={"table": RecordOutputDecl(record_id="fold_change__rfp_od600/table")},
         )
     raise ConfigError(f"Unsupported fold-change measurement {measurement!r}")
+
+
+def _plate_reader_semantic_metrics_step(*, measurement: str, config: dict[str, Any]) -> PluginStepDecl:
+    defaults = {"measurement_channel": ("YFP/CFP" if measurement == "yfp_cfp" else "RFP/OD600")}
+    record_id = "ratio_yfp_od600/df" if measurement == "yfp_cfp" else "ratio_rfp_od600/df"
+    return _step(
+        id="semantic_metrics",
+        plugin="transform/retron_sponge_metrics",
+        reads={"df": RecordInputDecl(record_id=record_id)},
+        with_=_deep_merge(defaults, config),
+        writes={
+            "trace": RecordOutputDecl(record_id="semantic_metrics/trace"),
+            "summary": RecordOutputDecl(record_id="semantic_metrics/summary"),
+        },
+    )
 
 
 def _plate_reader_crosstalk_pairs_step(*, config: dict[str, Any]) -> PluginStepDecl:

@@ -9,6 +9,7 @@ from .compiler import (
     compile_generic_protocol,
     compile_logic_sfxi_screen,
     compile_plate_reader_dual_reporter_screen,
+    compile_plate_reader_retron_sponge_screen,
 )
 from .model import (
     ProtocolArtifactSpec,
@@ -1253,6 +1254,454 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             compiler=compile_cytometry_flow_panel,
         ),
     ),
+)
+
+_DUAL_REPORTER_PROTOCOL = next(
+    item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/dual_reporter_screen"
+)
+_DUAL_MEASUREMENT_FIELD = next(item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "measurement")
+_DUAL_STRICT_FIELD = next(item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "strict")
+_DUAL_PREPROCESSING_FIELD = next(
+    item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "preprocessing"
+)
+
+_PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
+    protocol="plate_reader/retron_sponge_screen",
+    domain="plate_reader",
+    family="matched_control_screen",
+    summary=(
+        "Plate-reader retron sponge screen with explicit matched-control kinetics, burden, leakiness, "
+        "and cross-sensor ranking summaries."
+    ),
+    tags=("plate_reader", "retron", "sponge", "matched_control", "screen", "ratio"),
+    input_fields=_DUAL_REPORTER_PROTOCOL.input_fields,
+    analysis_fields=(
+        _DUAL_MEASUREMENT_FIELD,
+        _field("include_fold_change", "Optionally build the fold-change comparison table.", kind="bool", default=False),
+        _DUAL_STRICT_FIELD,
+        _DUAL_PREPROCESSING_FIELD,
+        _field(
+            "semantic_metrics",
+            "Matched-control sponge-analysis settings.",
+            children=(
+                _field(
+                    "design_column",
+                    "Design label column used to derive sensor/sponge identities.",
+                    kind="string",
+                    default="design_id_alias",
+                ),
+                _field("state_column", "2x2 state label column.", kind="string", default="treatment_alias"),
+                _field(
+                    "raw_treatment_column",
+                    "Raw treatment column used to recover the actual stress label.",
+                    kind="string",
+                    default="treatment",
+                ),
+                _field("plate_column", "Plate-normalization boundary column.", kind="string", default="sheet_name"),
+                _field("replicate_column", "Replicate-well identifier column.", kind="string", default="position"),
+                _field("sensor_column", "Optional explicit sensor column.", kind="string", allow_none=True),
+                _field("sponge_column", "Optional explicit sponge column.", kind="string", allow_none=True),
+                _field("genotype_column", "Optional explicit genotype-id column.", kind="string", allow_none=True),
+                _field(
+                    "design_separator",
+                    "Separator used when deriving sensor/sponge from the design label.",
+                    kind="string",
+                    default="/",
+                ),
+                _field(
+                    "control_name", "Control sponge label used for same-sensor matching.", kind="string", default="tetO"
+                ),
+                _field(
+                    "no_stress_label", "Canonical no-stress label for summary outputs.", kind="string", default="H2O"
+                ),
+                _field(
+                    "stress_time_zero_h",
+                    "Stress-addition time in hours on the assay clock.",
+                    kind="number",
+                    default=0.0,
+                ),
+                _field(
+                    "pre_reads", "Number of pre-stress reads used for the baseline window.", kind="integer", default=3
+                ),
+                _field("endpoint_reads", "Number of reads used in the endpoint window.", kind="integer", default=3),
+                _field(
+                    "states",
+                    "Explicit 2x2 induction/stress state labels.",
+                    children=(
+                        _field(
+                            "uninduced_unstressed",
+                            "Label for the H2O, -IPTG state.",
+                            kind="string",
+                            default="-IPTG/-stress",
+                        ),
+                        _field(
+                            "induced_unstressed",
+                            "Label for the H2O, +IPTG state.",
+                            kind="string",
+                            default="+IPTG/-stress",
+                        ),
+                        _field(
+                            "uninduced_stressed",
+                            "Label for the relevant-stress, -IPTG state.",
+                            kind="string",
+                            default="-IPTG/+stress",
+                        ),
+                        _field(
+                            "induced_stressed",
+                            "Label for the relevant-stress, +IPTG state.",
+                            kind="string",
+                            default="+IPTG/+stress",
+                        ),
+                    ),
+                ),
+                _field(
+                    "plateau",
+                    "Primary post-stress window policy.",
+                    children=(
+                        _field(
+                            "mode",
+                            "Window selector: full trace after stress, or stop once the matched tetO control plateaus.",
+                            kind="string",
+                            choices=("full_post_stress", "control_plateau"),
+                            default="full_post_stress",
+                        ),
+                        _field(
+                            "slope_tolerance",
+                            "Absolute OD slope threshold used for plateau detection.",
+                            kind="number",
+                            default=0.01,
+                        ),
+                        _field(
+                            "min_intervals",
+                            "Minimum number of trailing low-slope intervals before calling plateau.",
+                            kind="integer",
+                            default=2,
+                        ),
+                    ),
+                ),
+                _field(
+                    "relevant_stress_map",
+                    "Sensor -> relevant stress label mapping.",
+                    kind="mapping",
+                    allow_unknown=True,
+                ),
+                _field(
+                    "sensor_target_map",
+                    "Sensor -> cognate sponge motif list.",
+                    kind="mapping",
+                    allow_unknown=True,
+                ),
+                _field(
+                    "expected_sign_map",
+                    "Optional explicit sign overrides for cross-sensor ranking.",
+                    kind="mapping",
+                    allow_unknown=True,
+                ),
+            ),
+        ),
+    ),
+    factors=(
+        ProtocolFactorSpec(name="sensor", role="sensor", summary="Reporter promoter / sensor arm."),
+        ProtocolFactorSpec(name="sponge", role="construct", summary="Real or tetO sponge arm."),
+        ProtocolFactorSpec(name="stress_condition", role="stress", summary="Relevant stress or H2O control."),
+        ProtocolFactorSpec(name="IPTG", role="induction", summary="Induction state for sponge expression."),
+        ProtocolFactorSpec(name="replicate_id", role="replicate", summary="Replicate well identifier."),
+        ProtocolFactorSpec(name="time", role="time", summary="Time on the assay clock in hours."),
+        ProtocolFactorSpec(name="plate_id", role="plate", summary="Plate-local normalization boundary."),
+        ProtocolFactorSpec(name="genotype_id", role="construct", summary="Sensor/sponge genotype identifier."),
+    ),
+    semantic_profiles=(
+        ProtocolSemanticProfileSpec(
+            id="yfp_cfp",
+            family="matched_control_dual_reporter",
+            summary="Dual-reporter sponge-screen semantics on the log2(YFP/CFP) axis.",
+            primary_metric="O_AUC",
+            primary_readout="log2(YFP / CFP)",
+            tags=("dual_reporter", "matched_control", "sponge"),
+        ),
+        ProtocolSemanticProfileSpec(
+            id="rfp_od600",
+            family="matched_control_single_reporter",
+            summary="Single-reporter sponge-screen semantics on the log2(RFP/OD600) axis.",
+            primary_metric="O_AUC",
+            primary_readout="log2(RFP / OD600)",
+            tags=("single_reporter", "matched_control", "sponge"),
+        ),
+    ),
+    control_rules=(
+        ProtocolControlRule(
+            id="matched_same_sensor_control",
+            summary=(
+                "Normalize every real sponge well to the same-sensor tetO control on the same plate, "
+                "matched by stress state, induction state, and timepoint."
+            ),
+            match_on=("sensor", "plate_id", "stress_condition", "IPTG", "time"),
+            control_selector="matched_tetO_group",
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+    ),
+    windows=(
+        ProtocolWindowSpec(
+            id="pre_stress_last_n",
+            summary="Use the last N reads before stress addition as the baseline window.",
+            anchor="stress_time_zero",
+            selector="last_n_before",
+            params={"n": 3},
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolWindowSpec(
+            id="primary_post_stress",
+            summary="Use the post-stress kinetic window through the configured end-of-window policy.",
+            anchor="stress_time_zero",
+            selector="configured_post_stress_window",
+            params={"policy": "semantic_metrics.plateau"},
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolWindowSpec(
+            id="endpoint_last_n",
+            summary="Use the last N reads inside the primary post-stress window as the endpoint window.",
+            anchor="primary_post_stress",
+            selector="last_n_within",
+            params={"n": 3},
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+    ),
+    metrics=(
+        ProtocolMetricSpec(id="OD", stage="raw", summary="Raw OD600 trace.", formula="OD600"),
+        ProtocolMetricSpec(id="CFP", stage="raw", summary="Raw CFP trace.", formula="CFP", profiles=("yfp_cfp",)),
+        ProtocolMetricSpec(id="YFP", stage="raw", summary="Raw YFP trace.", formula="YFP", profiles=("yfp_cfp",)),
+        ProtocolMetricSpec(id="RFP", stage="raw", summary="Raw RFP trace.", formula="RFP", profiles=("rfp_od600",)),
+        ProtocolMetricSpec(
+            id="YFP_OD",
+            stage="support",
+            summary="Supporting YFP per biomass proxy.",
+            formula="YFP / OD600",
+            depends_on=("YFP", "OD"),
+            profiles=("yfp_cfp",),
+        ),
+        ProtocolMetricSpec(
+            id="CFP_OD",
+            stage="support",
+            summary="Supporting CFP per biomass proxy.",
+            formula="CFP / OD600",
+            depends_on=("CFP", "OD"),
+            profiles=("yfp_cfp",),
+        ),
+        ProtocolMetricSpec(
+            id="RFP_OD",
+            stage="support",
+            summary="Supporting RFP per biomass proxy.",
+            formula="RFP / OD600",
+            depends_on=("RFP", "OD"),
+            profiles=("rfp_od600",),
+        ),
+        ProtocolMetricSpec(
+            id="R",
+            stage="derived",
+            summary="Primary within-well log2 ratio.",
+            formula="log2(YFP / CFP)",
+            depends_on=("YFP", "CFP"),
+            profile_overrides={
+                "rfp_od600": ProtocolSemanticProfileOverride(
+                    summary="Primary within-well single-reporter log2 ratio.",
+                    formula="log2(RFP / OD600)",
+                    depends_on=("RFP", "OD", "RFP_OD"),
+                )
+            },
+        ),
+        ProtocolMetricSpec(
+            id="R_pre",
+            stage="summary",
+            summary="Mean of the primary ratio in the pre-stress window.",
+            formula="mean(R over pre_stress_last_n)",
+            depends_on=("R", "pre_stress_last_n"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="mu",
+            stage="support",
+            summary="Approximate growth-rate trace from the slope of log(OD600).",
+            formula="d(log(OD600)) / dt",
+            depends_on=("OD",),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="B",
+            stage="derived",
+            summary="Baseline-shifted reporter ratio relative to the well's own pre-stress state.",
+            formula="R(t) - R_pre",
+            depends_on=("R", "R_pre"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="C",
+            stage="comparison",
+            summary="Matched-control-normalized sponge deviation.",
+            formula="B(t) - mean(B matched_same_sensor_control at t)",
+            depends_on=("B", "matched_same_sensor_control"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="C_AUC",
+            stage="summary",
+            summary="AUC of the matched-control-normalized trace over the primary post-stress window.",
+            formula="AUC(C over primary_post_stress)",
+            depends_on=("C", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="C_END",
+            stage="summary",
+            summary="Endpoint mean of the matched-control-normalized trace.",
+            formula="mean(C over endpoint_last_n)",
+            depends_on=("C", "endpoint_last_n"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="D",
+            stage="comparison",
+            summary="Induced sponge effect after matched-control normalization.",
+            formula="mean(C +IPTG) - mean(C -IPTG)",
+            depends_on=("C",),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="D_AUC",
+            stage="summary",
+            summary="AUC of the induced sponge effect.",
+            formula="AUC(D over primary_post_stress)",
+            depends_on=("D", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="D_END",
+            stage="summary",
+            summary="Endpoint mean of the induced sponge effect.",
+            formula="mean(D over endpoint_last_n)",
+            depends_on=("D", "endpoint_last_n"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="M",
+            stage="comparison",
+            summary="Stress modulation of the induced sponge effect.",
+            formula="D(relevant_stress) - D(H2O)",
+            depends_on=("D",),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="M_AUC",
+            stage="summary",
+            summary="AUC of stress modulation over the post-stress window.",
+            formula="AUC(M over primary_post_stress)",
+            depends_on=("M", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="M_END",
+            stage="summary",
+            summary="Endpoint mean of the stress modulation trace.",
+            formula="mean(M over endpoint_last_n)",
+            depends_on=("M", "endpoint_last_n"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="O",
+            stage="ranking",
+            summary="Sign-corrected induced sponge effect.",
+            formula="expected_decoy_sign * D",
+            depends_on=("D",),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="O_AUC",
+            stage="ranking",
+            summary="AUC of the sign-corrected induced sponge effect.",
+            formula="AUC(O over primary_post_stress)",
+            depends_on=("O", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="G_sensor",
+            stage="summary",
+            summary="Native tetO sensor response used for cross-sensor scaling.",
+            formula="AUC(mean(B tetO,-IPTG,relevant stress) - mean(B tetO,-IPTG,H2O))",
+            depends_on=("B", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="S_AUC",
+            stage="ranking",
+            summary="Cross-sensor scaled effect size relative to the native sensor response.",
+            formula="O_AUC / abs(G_sensor)",
+            depends_on=("O_AUC", "G_sensor"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="L_pre",
+            stage="leakiness",
+            summary="Pre-stress leakiness relative to the matched control.",
+            formula="R_pre(real,-IPTG) - mean(R_pre tetO,-IPTG)",
+            depends_on=("R_pre", "matched_same_sensor_control"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="L_post_AUC",
+            stage="leakiness",
+            summary="Uninduced post-stress leakiness over the primary window.",
+            formula="AUC(mean(C -IPTG))",
+            depends_on=("C", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="T_ratio_AUC",
+            stage="burden",
+            summary="tetO ratio burden under induction.",
+            formula="AUC(mean(B tetO,+IPTG) - mean(B tetO,-IPTG))",
+            depends_on=("B", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="T_growth_AUC",
+            stage="burden",
+            summary="tetO growth burden under induction.",
+            formula="AUC(mean(mu tetO,+IPTG) - mean(mu tetO,-IPTG))",
+            depends_on=("mu", "primary_post_stress"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+        ProtocolMetricSpec(
+            id="T_finalOD",
+            stage="burden",
+            summary="Endpoint OD burden for the tetO control.",
+            formula="mean(OD tetO,+IPTG,end) - mean(OD tetO,-IPTG,end)",
+            depends_on=("OD", "endpoint_last_n"),
+            profiles=("yfp_cfp", "rfp_od600"),
+        ),
+    ),
+    effect_signs=_DUAL_REPORTER_PROTOCOL.effect_signs,
+    figures=_DUAL_REPORTER_PROTOCOL.figures,
+    plot_profiles=_DUAL_REPORTER_PROTOCOL.plot_profiles,
+    default_plot_profile=_DUAL_REPORTER_PROTOCOL.default_plot_profile,
+    ranking=ProtocolRankingSpec(
+        primary_metric="O_AUC",
+        direction="higher_is_better",
+        penalties=("T_ratio_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
+        supporting_metrics=("S_AUC", "M_AUC", "D_END"),
+        summary="Rank hits by sign-corrected AUC, then penalize burden and leakiness.",
+        profiles=("yfp_cfp", "rfp_od600"),
+    ),
+    execution=ProtocolExecutionPlan(
+        notebook=_DUAL_REPORTER_PROTOCOL.execution.notebook,
+        plugin_defaults=_DUAL_REPORTER_PROTOCOL.execution.plugin_defaults,
+        compiler=compile_plate_reader_retron_sponge_screen,
+    ),
+)
+
+BUILTIN_PROTOCOLS = (
+    BUILTIN_PROTOCOLS[0],
+    _DUAL_REPORTER_PROTOCOL,
+    _PLATE_READER_RETRON_SPONGE_PROTOCOL,
+    *BUILTIN_PROTOCOLS[2:],
 )
 
 

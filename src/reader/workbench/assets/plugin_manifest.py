@@ -18,6 +18,7 @@ from reader.plugins.transform.fold_change import FoldChange
 from reader.plugins.transform.outlier_filter import OutlierFilter
 from reader.plugins.transform.overflow import OverflowHandling
 from reader.plugins.transform.ratio import RatioTransform
+from reader.plugins.transform.retron_sponge_metrics import RetronSpongeMetrics
 from reader.plugins.transform.sample_map import SampleMapMerge
 from reader.plugins.transform.sample_metadata import SampleMetadataMerge
 from reader.plugins.transform.sfxi import SFXITransform
@@ -147,6 +148,16 @@ _BUILTIN_PLUGIN_CATALOG = AssetCatalog(
                 tags=("ratios", "derived_signal"),
             ),
             plugin_cls=RatioTransform,
+        ),
+        build_plugin_asset(
+            plugin_id="transform/retron_sponge_metrics",
+            semantics=PluginSemantics(
+                domain="plate_reader",
+                family="summary_transform",
+                summary="Compute matched-control sponge-screen kinetics and ranking summaries from annotated traces.",
+                tags=("sponge", "screen", "matched_control", "summary"),
+            ),
+            plugin_cls=RetronSpongeMetrics,
         ),
         build_plugin_asset(
             plugin_id="plot/distributions",

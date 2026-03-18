@@ -4,6 +4,7 @@ from .compiler import (
     compile_generic_protocol,
     compile_logic_sfxi_screen,
     compile_plate_reader_dual_reporter_screen,
+    compile_plate_reader_retron_sponge_screen,
 )
 from .model import (
     BoundProtocol,
@@ -73,4 +74,5 @@ __all__ = [
     "compile_generic_protocol",
     "compile_logic_sfxi_screen",
     "compile_plate_reader_dual_reporter_screen",
+    "compile_plate_reader_retron_sponge_screen",
 ]
