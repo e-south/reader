@@ -64,6 +64,7 @@ def plot_logic_symmetry(
     response_channel: str,
     design_by: list[str] = None,
     batch_col: str = "batch",
+    treatment_column: str | None = None,
     treatment_map: dict[str, str] = None,
     treatment_case_sensitive: bool = True,
     aggregation: dict | None = None,
@@ -179,6 +180,7 @@ def plot_logic_symmetry(
             design_by=design_by,
             batch_col=batch_col,
             treatment_map=treatment_map,
+            treatment_column=treatment_column,
             mode=str(prep.get("mode", "last")),
             target_time=prep.get("target_time"),
             tolerance=float(prep.get("tolerance", 0.51)),
@@ -193,6 +195,7 @@ def plot_logic_symmetry(
     cfg = MappingConfig(
         treatment_map=treatment_map,
         case_sensitive=bool(treatment_case_sensitive),
+        treatment_column=treatment_column,
         design_by=design_by,
         batch_col=batch_col,
         response_channel=response_channel,

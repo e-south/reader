@@ -125,9 +125,9 @@ def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> Non
     assert payload["summary"]["by_family"] == {"geometry_plot": 1}
     read = payload["plots"][0]["reads"][0]
     assert read["contract"] == "plate_reader.annotated.v1"
-    assert read["source"]["producer"]["id"] == "ratio_yfp_od600"
-    assert read["source"]["surface"]["runtime_mode"] == "passthrough"
-    assert "plate_reader.annotated.v1" in read["source"]["surface"]["promoted"]
+    assert read["source"]["producer"]["id"] == "promote_to_tidy_plus_map"
+    assert read["source"]["surface"]["runtime_mode"] == "fixed"
+    assert read["source"]["surface"]["rendered"] == "plate_reader.annotated.v1"
 
 
 def test_plot_json_requires_list(tmp_path: Path) -> None:

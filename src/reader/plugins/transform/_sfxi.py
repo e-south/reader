@@ -13,6 +13,7 @@ def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
     run_cfg = cfg.model_dump()
     run_cfg["treatment_map"] = dict(logic_map.corners)
     run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive
+    run_cfg["treatment_column"] = cfg.treatment_column or logic_map.column
     return build_vec8_from_tidy(df.copy(), run_cfg)
 
 

@@ -828,6 +828,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "Promotion settings for tidy_plus_map conversion.",
                 children=(
                     _field("synthesize_batch", "Add a synthetic batch column when missing.", kind="bool", default=True),
+                    _field(
+                        "drop_where_null_in",
+                        "Drop rows with NULL in these columns before promotion.",
+                        kind="string_list",
+                        default=["treatment", "design_id"],
+                    ),
                 ),
             ),
             _field(
@@ -1049,7 +1055,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ProtocolPluginDefaultsSpec(
                     plugin="validator/to_tidy_plus_map",
                     summary="Promote plate-reader tidy data into the annotated SFXI-compatible table shape.",
-                    with_={"synthesize_batch": binding_value("promote.synthesize_batch", True)},
+                    with_={
+                        "synthesize_batch": binding_value("promote.synthesize_batch", True),
+                        "drop_where_null_in": binding_value(
+                            "promote.drop_where_null_in",
+                            ["treatment", "design_id"],
+                        ),
+                    },
                 ),
                 ProtocolPluginDefaultsSpec(
                     plugin="transform/fold_change",

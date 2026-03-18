@@ -121,21 +121,24 @@ def compile_logic_sfxi_screen(protocol: Any):
     pipeline = list(_plate_reader_base_steps(measurement="yfp_cfp", blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
     if include_fold_change:
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
-    if include_vec8:
+    selected_plot_ids = protocol.select_plot_outputs(
+        allowed={
+            "raw_kinetics",
+            "endpoint_by_condition",
+            "endpoint_by_design",
+            "intensity_overview",
+            "logic_symmetry",
+        },
+    )
+    requires_promoted_df = include_vec8 or "logic_symmetry" in selected_plot_ids
+    if requires_promoted_df:
         pipeline.append(_sfxi_promote_step())
+    if include_vec8:
         pipeline.append(_sfxi_vec8_step())
 
     plots = [
         _plate_reader_plot_output(protocol, output_id=deliverable_id, measurement="yfp_cfp")
-        for deliverable_id in protocol.select_plot_outputs(
-            allowed={
-                "raw_kinetics",
-                "endpoint_by_condition",
-                "endpoint_by_design",
-                "intensity_overview",
-                "logic_symmetry",
-            },
-        )
+        for deliverable_id in selected_plot_ids
     ]
 
     default_exports = (
@@ -736,7 +739,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
         return _step(
             id="logic_symmetry",
             plugin="plot/logic_symmetry",
-            reads={"df": plot_reads["df"]},
+            reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")

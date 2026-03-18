@@ -22,6 +22,7 @@ class SFXICfg(PluginConfig):
     response: dict[str, str]  # {"logic_channel":..., "intensity_channel":...}
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     time_column: str = "time"
+    treatment_column: str | None = None
     time_mode: str = "nearest"  # nearest|last_before|first_after|exact
     target_time_h: float | None = None
     time_tolerance_h: float = 0.5

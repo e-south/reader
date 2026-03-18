@@ -16,7 +16,9 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-REQUIRED_COLS = ["position", "time", "channel", "value", "treatment"]
+from reader.domains.logic.treatment_columns import choose_treatment_column, normalize_treatment_series
+
+REQUIRED_COLS = ["position", "time", "channel", "value"]
 
 
 @dataclass(frozen=True)
@@ -25,30 +27,6 @@ class CornerizeResult:
     points: pd.DataFrame  # wide one row per design with b00.., sd00.., n00..
     chosen_time: float | None
     time_warning: str | None = None
-
-
-def _normalize(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.strip().str.casefold()
-
-
-def _choose_treatment_column(df: pd.DataFrame, treatment_map: dict[str, str], *, case_sensitive: bool) -> str:
-    candidates = [c for c in ("treatment", "treatment_alias") if c in df.columns]
-    if not candidates:
-        raise ValueError("SFXI: neither 'treatment' nor 'treatment_alias' present in tidy data.")
-
-    def _score(col: str) -> int:
-        s = df[col].astype(str)
-        if case_sensitive:
-            want = {str(v) for v in treatment_map.values()}
-        else:
-            want = {str(v).strip().casefold() for v in treatment_map.values()}
-            s = s.str.strip().str.casefold()
-        return int(s.isin(list(want)).sum())
-
-    scores = {c: _score(c) for c in candidates}
-    # Prefer raw 'treatment' on ties — aliases are cosmetic.
-    best = max(scores, key=lambda c: (scores[c], c == "treatment"))
-    return best
 
 
 def _enforce_columns(df: pd.DataFrame, design_by: list[str]) -> None:
@@ -89,17 +67,23 @@ def select_times(
     target_time_h: float | None,
     time_mode: str,
     tolerance_h: float | None,
+    preferred_treatment_column: str | None = None,
 ) -> tuple[pd.DataFrame, float | None, str | None]:
     work = df[df["channel"] == channel].copy()
     # Decide which column to match against (raw preferred; alias tolerated).
-    treatment_col = _choose_treatment_column(work, treatment_map, case_sensitive=case_sensitive)
+    treatment_col = choose_treatment_column(
+        work,
+        treatment_map,
+        case_sensitive=case_sensitive,
+        preferred=preferred_treatment_column,
+    )
     if case_sensitive:
         mapped = [str(v) for v in treatment_map.values()]
         work = work[work[treatment_col].astype(str).isin(mapped)].copy()
     else:
         mapped = [str(v).strip().casefold() for v in treatment_map.values()]
         norm_col = "__norm_treatment"
-        work[norm_col] = _normalize(work[treatment_col])
+        work[norm_col] = normalize_treatment_series(work[treatment_col])
         work = work[work[norm_col].isin(mapped)].copy()
         work["_t_norm"] = work[norm_col]
 
@@ -154,6 +138,7 @@ def cornerize_and_aggregate(
     time_mode: str,
     time_tolerance_h: float | None,
     require_all_corners_per_design: bool,
+    preferred_treatment_column: str | None = None,
 ) -> CornerizeResult:
     _enforce_columns(df, design_by)
 
@@ -167,6 +152,7 @@ def cornerize_and_aggregate(
         channel=channel,
         treatment_map=treatment_map,
         case_sensitive=case_sensitive,
+        preferred_treatment_column=preferred_treatment_column,
         target_time_h=target_time_h,
         time_mode=time_mode,
         tolerance_h=time_tolerance_h,
@@ -183,12 +169,17 @@ def cornerize_and_aggregate(
         rev[key] = k
 
     # Map treatments → {00,10,01,11} using the same column we matched on.
-    corner_source = _choose_treatment_column(snap, treatment_map, case_sensitive=case_sensitive)
+    corner_source = choose_treatment_column(
+        snap,
+        treatment_map,
+        case_sensitive=case_sensitive,
+        preferred=preferred_treatment_column,
+    )
     if case_sensitive:
         corner_values = snap[corner_source].astype(str)
         rev_keys = {str(k): v for k, v in rev.items()}
     else:
-        corner_values = _normalize(snap[corner_source])
+        corner_values = normalize_treatment_series(snap[corner_source])
         rev_keys = {str(k).strip().casefold(): v for k, v in rev.items()}
     snap["corner"] = corner_values.map(rev_keys)
 

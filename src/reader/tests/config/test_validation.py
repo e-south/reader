@@ -226,6 +226,7 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     path = write_config(tmp_path, data)
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
+    assert "promote_to_tidy_plus_map" in [step.id for step in workbench.pipeline]
     assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
     assert [step.id for step in workbench.plots] == ["logic_symmetry"]
     assert workbench.exports == ()

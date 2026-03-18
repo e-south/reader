@@ -14,9 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
-def _norm_case(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.strip().str.casefold()
+from reader.domains.logic.treatment_columns import choose_treatment_column, normalize_treatment_series
 
 
 def _choose_time(times: np.ndarray, *, mode: str, target: float | None, tol: float) -> float:
@@ -54,6 +52,7 @@ def prepare_for_logic_symmetry(
     design_by: list[str],
     batch_col: str,
     treatment_map: dict[str, str],
+    treatment_column: str | None = None,
     mode: str = "last",
     target_time: float | None = None,
     tolerance: float = 0.51,
@@ -61,21 +60,27 @@ def prepare_for_logic_symmetry(
     case_sensitive: bool = True,
     time_column: str = "time",
 ) -> pd.DataFrame:
-    required = set(design_by + [batch_col, "channel", time_column, "treatment", "value"])
+    required = set(design_by + [batch_col, "channel", time_column, "value"])
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Input DataFrame missing required columns: {missing}")
 
     work = df[df["channel"] == response_channel].copy()
+    treatment_col = choose_treatment_column(
+        work,
+        treatment_map,
+        case_sensitive=case_sensitive,
+        preferred=treatment_column,
+    )
     tvals = list(treatment_map.values())
     if not case_sensitive:
-        work["_t_norm"] = _norm_case(work["treatment"])
+        work["_t_norm"] = normalize_treatment_series(work[treatment_col])
         tvals_norm = [str(v).strip().casefold() for v in tvals]
         work = work[work["_t_norm"].isin(tvals_norm)].copy()
         work["_corner"] = work["_t_norm"].map({str(v).strip().casefold(): k for k, v in treatment_map.items()})
     else:
-        work = work[work["treatment"].astype(str).isin([str(v) for v in tvals])].copy()
-        work["_corner"] = work["treatment"].map({v: k for k, v in treatment_map.items()})
+        work = work[work[treatment_col].astype(str).isin([str(v) for v in tvals])].copy()
+        work["_corner"] = work[treatment_col].map({v: k for k, v in treatment_map.items()})
 
     if work.empty:
         raise ValueError("No rows remain after filtering to response_channel and treatment_map labels")

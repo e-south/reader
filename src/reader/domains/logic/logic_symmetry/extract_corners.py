@@ -14,15 +14,18 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from reader.domains.logic.treatment_columns import choose_treatment_column, normalize_treatment_series
+
 LOG = logging.getLogger(__name__)
 
-REQUIRED_BASE_COLS = ["position", "time", "channel", "value", "treatment"]
+REQUIRED_BASE_COLS = ["position", "time", "channel", "value"]
 
 
 @dataclass(frozen=True)
 class MappingConfig:
     treatment_map: dict[str, str]  # keys: "00","10","01","11" → exact data labels
     case_sensitive: bool
+    treatment_column: str | None
     design_by: list[str]
     batch_col: str
     response_channel: str
@@ -47,11 +50,6 @@ def _assert_required_columns(df: pd.DataFrame, cfg: MappingConfig) -> None:
 
     if cfg.response_channel not in df["channel"].unique().tolist():
         raise ValueError(f"response_channel '{cfg.response_channel}' not present in 'channel' column")
-
-
-def _normalize(s: pd.Series) -> pd.Series:
-    # normalization for case-insensitive matching
-    return s.astype(str).str.strip().str.casefold()
 
 
 def _rep_agg(series: pd.Series, how: str) -> float:
@@ -103,22 +101,31 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
     if df.empty:
         raise ValueError(f"No rows for response_channel '{cfg.response_channel}'")
 
+    treatment_col = choose_treatment_column(
+        df,
+        cfg.treatment_map,
+        case_sensitive=cfg.case_sensitive,
+        preferred=cfg.treatment_column,
+    )
+
     # Keep only rows whose treatment matches one of the mapped labels
     map_vals = list(cfg.treatment_map.values())
     if not cfg.case_sensitive:
-        df["_t_norm"] = _normalize(df["treatment"])
+        df["_t_norm"] = normalize_treatment_series(df[treatment_col])
         map_norm = [str(v).strip().casefold() for v in map_vals]
         df = df[df["_t_norm"].isin(map_norm)].copy()
     else:
-        df = df[df["treatment"].astype(str).isin([str(v) for v in map_vals])].copy()
+        df = df[df[treatment_col].astype(str).isin([str(v) for v in map_vals])].copy()
     LOG.info(
         "• extract: kept rows matching treatment_map labels → %d rows; unique treatments kept=%d",
         len(df),
-        df["treatment"].nunique(),
+        df[treatment_col].nunique(),
     )
 
     if df.empty:
-        counts = df["treatment"].value_counts().to_string() if "treatment" in df.columns else "(no treatment column)"
+        counts = (
+            df[treatment_col].value_counts().to_string() if treatment_col in df.columns else "(no treatment column)"
+        )
         raise ValueError(f"No rows match any treatment_map labels. Check spelling/case.\nAvailable counts:\n{counts}")
 
     # Add 'corner' column via reverse lookup (value→corner)
@@ -132,9 +139,9 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
         rev[str(val) if cfg.case_sensitive else str(val).strip().casefold()] = corner
 
     if cfg.case_sensitive:
-        df["corner"] = df["treatment"].astype(str).map(lambda x: rev.get(x))
+        df["corner"] = df[treatment_col].astype(str).map(lambda x: rev.get(x))
     else:
-        df["corner"] = _normalize(df["treatment"]).map(lambda x: rev.get(x))
+        df["corner"] = normalize_treatment_series(df[treatment_col]).map(lambda x: rev.get(x))
 
     # Enforce snapshot rule per (design…, batch, treatment/corner)
     group_cols = cfg.design_by + [cfg.batch_col, "corner"]

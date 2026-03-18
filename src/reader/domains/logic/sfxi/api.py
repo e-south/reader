@@ -67,6 +67,7 @@ class SFXIConfig:
     # mapping
     treatment_map: dict[str, str]  # keys = {"00","10","01","11"}
     treatment_case_sensitive: bool = True
+    treatment_column: str | None = None
 
     # snapshot/time picking
     target_time_h: float | None = None
@@ -130,6 +131,12 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
     if set(tmap.keys()) != {"00", "10", "01", "11"}:
         raise ValueError("sfxi.treatment_map must have exactly the keys {'00','10','01','11'}.")
     tcase = bool(_get(xform_cfg, "treatment_case_sensitive", True))
+    treatment_column_raw = _get(xform_cfg, "treatment_column", None)
+    if treatment_column_raw is not None and (
+        not isinstance(treatment_column_raw, str) or not treatment_column_raw.strip()
+    ):
+        raise ValueError("sfxi.treatment_column must be a non-empty string when provided.")
+    treatment_column = str(treatment_column_raw).strip() if isinstance(treatment_column_raw, str) else None
 
     # time picking
     target_time_h = _get(xform_cfg, "target_time_h", None)
@@ -183,6 +190,7 @@ def load_sfxi_config(xform_cfg: Any) -> SFXIConfig:
         response=response,
         treatment_map=tmap,
         treatment_case_sensitive=tcase,
+        treatment_column=treatment_column,
         target_time_h=(float(target_time_h) if target_time_h is not None else None),
         time_mode=time_mode,
         time_tolerance_h=(float(tol) if tol is not None else None),

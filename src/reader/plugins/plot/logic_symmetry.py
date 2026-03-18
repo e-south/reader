@@ -24,6 +24,7 @@ class LogicSymCfg(PluginConfig):
     response_channel: str
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
+    treatment_column: str | None = None
     logic_map_ref: str
     aggregation: dict[str, Any] = Field(default_factory=dict)
     encodings: dict[str, Any] = Field(default_factory=dict)
@@ -56,6 +57,7 @@ class LogicSymmetryPlot(FigurePlotPlugin):
             response_channel=cfg.response_channel,
             design_by=cfg.design_by,
             batch_col=cfg.batch_col,
+            treatment_column=cfg.treatment_column or logic_map.column,
             treatment_map=dict(logic_map.corners),
             treatment_case_sensitive=logic_map.case_sensitive,
             aggregation=cfg.aggregation,

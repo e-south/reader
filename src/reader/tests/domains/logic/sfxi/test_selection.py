@@ -243,6 +243,54 @@ def test_treatment_alias_selection_and_case_sensitivity():
     assert not sel_ci.points.empty
 
 
+def test_explicit_treatment_column_prefers_logic_map_surface():
+    tmap = {"00": "EtOH", "10": "PMS", "01": "Cipro", "11": "NEG"}
+    rows = []
+    for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):
+        rows.append(
+            {
+                "position": pos,
+                "time": 1.0,
+                "channel": "YFP/CFP",
+                "value": 1.0,
+                "treatment": f"raw_{corner}",
+                "treatment_alias": tmap[corner],
+                "design_id": "G1",
+            }
+        )
+    df = _tidy(rows)
+
+    sel = cornerize_and_aggregate(
+        df,
+        design_by=["design_id"],
+        treatment_map=tmap,
+        case_sensitive=True,
+        time_column="time",
+        channel="YFP/CFP",
+        target_time_h=1.0,
+        time_mode="exact",
+        time_tolerance_h=0.1,
+        require_all_corners_per_design=True,
+        preferred_treatment_column="treatment_alias",
+    )
+    assert not sel.points.empty
+
+    with pytest.raises(ValueError, match="Configured treatment column 'treatment_alias' is missing"):
+        cornerize_and_aggregate(
+            df.drop(columns=["treatment_alias"]),
+            design_by=["design_id"],
+            treatment_map=tmap,
+            case_sensitive=True,
+            time_column="time",
+            channel="YFP/CFP",
+            target_time_h=1.0,
+            time_mode="exact",
+            time_tolerance_h=0.1,
+            require_all_corners_per_design=True,
+            preferred_treatment_column="treatment_alias",
+        )
+
+
 def test_duplicate_treatment_map_values_and_missing_corners():
     tmap_dup = {"00": "A", "10": "A", "01": "B", "11": "C"}
     df = _tidy(_rows_for_times([1.0], tmap_dup, channel="YFP/CFP"))
