@@ -1,0 +1,467 @@
+import marimo
+
+__generated_with = "0.19.1"
+app = marimo.App(width="full")
+
+
+@app.cell(hide_code=True)
+def _():
+    from pathlib import Path
+
+    import marimo as mo
+    try:
+        import polars as pl
+    except Exception:
+        pl = None
+    from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.workbench.notebooks.retron_review import (
+        retron_figure_coverage_rows,
+        retron_plot_guide_rows,
+        retron_plot_rendered_files,
+        retron_transform_ladder_rows,
+    )
+    from reader.workbench.records import discover_dataframe_records
+
+    return (
+        Path,
+        load_notebook_workbench_context,
+        mo,
+        pl,
+        discover_dataframe_records,
+        retron_figure_coverage_rows,
+        retron_plot_guide_rows,
+        retron_plot_rendered_files,
+        retron_transform_ladder_rows,
+    )
+
+
+@app.cell(hide_code=True)
+def _(Path, load_notebook_workbench_context):
+    retron_context = load_notebook_workbench_context(Path(__file__).resolve())
+    retron_decl = retron_context.decl
+    retron_workbench = retron_context.workbench
+    retron_exp_dir = retron_context.experiment_root
+    retron_outputs_dir = retron_context.outputs_dir
+    retron_plots_dir = retron_context.plots_dir
+    retron_exports_dir = retron_context.exports_dir
+    retron_config_path = retron_context.config_path
+    retron_exp_id = retron_decl.experiment.id
+    retron_exp_title = retron_decl.experiment.title or retron_exp_id
+    retron_protocol_id = retron_decl.experiment_semantics.protocol.id
+    return (
+        retron_config_path,
+        retron_decl,
+        retron_exp_dir,
+        retron_exp_id,
+        retron_exp_title,
+        retron_exports_dir,
+        retron_outputs_dir,
+        retron_plots_dir,
+        retron_protocol_id,
+        retron_workbench,
+    )
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_config_path,
+    retron_decl,
+    retron_exp_id,
+    retron_exp_title,
+    retron_exports_dir,
+    retron_plots_dir,
+    retron_protocol_id,
+    retron_plot_rendered_files,
+    retron_plot_guide_rows,
+    retron_workbench,
+):
+    retron_plot_specs = __PLOT_SPECS__
+    retron_stage_order = [
+        "1. QC",
+        "2. Semantic kinetics",
+        "3. Ranking and overview",
+    ]
+    retron_plot_guide = {row["Plot id"]: row for row in retron_plot_guide_rows([spec.get("id", "") for spec in retron_plot_specs])}
+    retron_plot_rows = []
+    retron_stage_rows = {stage: [] for stage in retron_stage_order}
+    for retron_spec in retron_plot_specs:
+        retron_plot_id = str(retron_spec.get("id", ""))
+        retron_plugin = str(retron_spec.get("plugin", ""))
+        _retron_guide = retron_plot_guide.get(retron_plot_id, {})
+        _retron_stage = str(_retron_guide.get("Stage", "3. Ranking and overview"))
+        _retron_files = retron_plot_rendered_files(
+            retron_plots_dir,
+            plot_id=retron_plot_id,
+            plugin=retron_plugin,
+        )
+        retron_row = {
+            "Stage": _retron_stage,
+            "Plot id": retron_plot_id,
+            "Plugin": retron_plugin,
+            "Math / transform": str(_retron_guide.get("Math / transform", "see compiled plot spec")),
+            "How to read": str(_retron_guide.get("How to read", "Interpret in the context of the direct-ratio matched-control workflow.")),
+            "Rendered": "yes" if _retron_files else "no",
+            "Command": f"uv run reader plot {retron_config_path} --only {retron_plot_id}",
+        }
+        retron_plot_rows.append(retron_row)
+        retron_stage_rows.setdefault(_retron_stage, []).append(retron_row)
+
+    retron_export_rows = []
+    for retron_spec in list(retron_workbench.exports):
+        retron_export_path = str((retron_spec.with_ or {}).get("path", ""))
+        retron_export_row = {
+            "Export id": retron_spec.id,
+            "Plugin": retron_spec.plugin,
+            "Path": retron_export_path or "configured by plugin",
+            "Rendered": "yes" if retron_export_path and (retron_exports_dir / retron_export_path).exists() else "no",
+        }
+        retron_export_rows.append(retron_export_row)
+
+    retron_overview_rows = [
+        {"Field": "Experiment id", "Value": retron_exp_id},
+        {"Field": "Protocol", "Value": retron_protocol_id},
+        {"Field": "Selected plots", "Value": str(len(retron_plot_rows))},
+        {"Field": "Semantic exports", "Value": str(len(retron_export_rows))},
+        {"Field": "Configured notebook", "Value": retron_decl.notebooks.specs[0].template},
+    ]
+
+    retron_overview_panel = mo.vstack(
+        [
+            mo.md(
+                f"# Retron sponge screen review\n"
+                f"**Experiment:** `{retron_exp_title}`\n\n"
+                "This notebook is experiment-scoped: it surfaces the selected retron plot portfolio, "
+                "the semantic export surface, and the compiled trace/summary tables without depending "
+                "on hand-edited outputs. Each plot below is annotated with the transform chain it depends on, "
+                "so the notebook stays didactic rather than acting like a file browser."
+            ),
+            mo.ui.table(retron_overview_rows, page_size=len(retron_overview_rows)),
+        ]
+    )
+    return retron_export_rows, retron_overview_panel, retron_plot_rows, retron_stage_order, retron_stage_rows
+
+
+@app.cell(hide_code=True)
+def _(retron_overview_panel):
+    retron_overview_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_transform_ladder_rows):
+    retron_transform_panel = mo.ui.table(
+        retron_transform_ladder_rows(),
+        page_size=12,
+    )
+    return (retron_transform_panel,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_figure_coverage_rows):
+    retron_coverage_panel = mo.ui.table(
+        retron_figure_coverage_rows(),
+        page_size=19,
+    )
+    return (retron_coverage_panel,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_plot_rows, retron_stage_order, retron_stage_rows):
+    retron_plot_blocks = [
+        mo.md(
+            "These are the compiled plots selected for this experiment. "
+            "The `Math / transform` column tells you which semantic quantity the figure is actually showing."
+        )
+    ]
+    if not retron_plot_rows:
+        retron_plot_blocks.append(mo.md("No plot specs are selected for this experiment."))
+    else:
+        for _retron_stage in retron_stage_order:
+            _retron_rows = retron_stage_rows.get(_retron_stage, [])
+            if not _retron_rows:
+                continue
+            retron_plot_blocks.append(mo.md(f"### {_retron_stage}"))
+            retron_plot_blocks.append(mo.ui.table(_retron_rows, page_size=len(_retron_rows)))
+    retron_plot_portfolio_panel = mo.vstack(retron_plot_blocks)
+    return retron_plot_portfolio_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_export_rows):
+    retron_export_blocks = []
+    if retron_export_rows:
+        retron_export_blocks.append(mo.ui.table(retron_export_rows, page_size=len(retron_export_rows)))
+    else:
+        retron_export_blocks.append(mo.md("No export specs are selected for this experiment."))
+    retron_export_panel = mo.vstack(retron_export_blocks)
+    return retron_export_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_coverage_panel, retron_export_panel, retron_plot_portfolio_panel, retron_transform_panel):
+    retron_reference_panel = mo.vstack(
+        [
+            mo.md(
+                "The direct-ratio guide is here when you need to trace a figure back to the semantic transform ladder "
+                "or pressure-test coverage against the 19-figure screen spec."
+            ),
+            mo.ui.tabs(
+                {
+                    "Transform ladder": retron_transform_panel,
+                    "Figure coverage": retron_coverage_panel,
+                }
+            ),
+        ]
+    )
+    retron_review_surfaces_panel = mo.vstack(
+        [
+            mo.md(
+                "## Review surfaces\n"
+                "Start with the materialization status below. Open the reference guide when you need the math or the full spec mapping."
+            ),
+            mo.ui.tabs(
+                {
+                    "Plot portfolio": retron_plot_portfolio_panel,
+                    "Semantic exports": retron_export_panel,
+                    "Reference guide": retron_reference_panel,
+                }
+            ),
+        ]
+    )
+    return (retron_review_surfaces_panel,)
+
+
+@app.cell(hide_code=True)
+def _(retron_review_surfaces_panel):
+    retron_review_surfaces_panel
+
+
+@app.cell(hide_code=True)
+def _(discover_dataframe_records, retron_outputs_dir):
+    retron_record_info, retron_record_labels, retron_record_note, retron_record_warning = discover_dataframe_records(
+        retron_outputs_dir,
+        allow_scan=__ALLOW_RECORD_SCAN__,
+    )
+    return retron_record_info, retron_record_labels, retron_record_note, retron_record_warning
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_record_info, retron_record_labels, retron_record_note, retron_record_warning):
+    if retron_record_warning:
+        retron_warning_panel = mo.md(retron_record_warning)
+    else:
+        retron_warning_panel = None
+
+    retron_default_label = None
+    for retron_record_id in ("semantic_metrics/summary", "semantic_metrics/trace"):
+        for _retron_label, _retron_info in retron_record_info.items():
+            if _retron_info.get("record_id") == retron_record_id:
+                retron_default_label = _retron_label
+                break
+        if retron_default_label is not None:
+            break
+
+    if retron_default_label is None and retron_record_labels:
+        retron_default_label = retron_record_labels[0]
+
+    if retron_record_labels:
+        retron_record_picker = mo.ui.dropdown(
+            options=retron_record_labels,
+            value=retron_default_label,
+            label="Dataset (semantic dataframe record)",
+            full_width=True,
+        )
+    else:
+        retron_record_picker = None
+
+    retron_dataset_blocks = [mo.md("## Semantic table focus")]
+    if retron_warning_panel is not None:
+        retron_dataset_blocks.append(retron_warning_panel)
+    if retron_record_picker is None:
+        retron_dataset_blocks.append(
+            mo.md(retron_record_note or "No semantic dataframe records found. Run `uv run reader run` first.")
+        )
+    else:
+        retron_dataset_blocks.append(retron_record_picker)
+    retron_dataset_panel = mo.vstack(retron_dataset_blocks)
+    return retron_dataset_panel, retron_record_picker
+
+
+@app.cell(hide_code=True)
+def _(retron_record_info, retron_record_picker):
+    if retron_record_picker is None:
+        retron_selected_label = None
+        retron_selected_path = None
+        retron_selected_record_id = None
+    else:
+        retron_selected_label = retron_record_picker.value
+        retron_selected_info = retron_record_info.get(retron_selected_label, {})
+        retron_selected_path = retron_selected_info.get("path")
+        retron_selected_record_id = retron_selected_info.get("record_id")
+    return retron_selected_label, retron_selected_path, retron_selected_record_id
+
+
+@app.cell(hide_code=True)
+def _(pl, retron_selected_path):
+    retron_df = None
+    retron_df_error = None
+    retron_polars_error = None
+
+    if retron_selected_path is not None:
+        if pl is None:
+            retron_df_error = "Polars is required to read parquet. Install the notebooks group."
+        else:
+            try:
+                retron_df = pl.read_parquet(retron_selected_path)
+            except Exception as exc:
+                retron_polars_error = str(exc)
+        if retron_df is None and retron_df_error is None:
+            retron_suffix = retron_polars_error or "unknown error"
+            retron_df_error = f"Failed to read parquet with polars ({retron_suffix})."
+    return retron_df, retron_df_error
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_df, retron_df_error, retron_selected_label, retron_selected_record_id):
+    if retron_df_error:
+        mo.stop(True, mo.md(f"Failed to load `{retron_selected_label}`: {retron_df_error}"))
+    if retron_df is None:
+        mo.stop(True, mo.md("Select a semantic dataframe record to inspect."))
+
+    retron_shape = getattr(retron_df, "shape", (0, 0))
+    retron_summary_rows = [
+        {"Field": "Selected record", "Value": retron_selected_record_id or "unknown"},
+        {"Field": "Rows", "Value": str(retron_shape[0])},
+        {"Field": "Columns", "Value": str(retron_shape[1])},
+    ]
+    retron_dataset_summary_panel = mo.vstack(
+        [
+            mo.md("## Dataset summary"),
+            mo.ui.table(retron_summary_rows, page_size=len(retron_summary_rows)),
+        ]
+    )
+    return retron_dataset_summary_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, pl, retron_df):
+    retron_filter_specs = [
+        ("Metric", "metric"),
+        ("Sensor", "sensor"),
+        ("Sponge", "sponge"),
+        ("Stress", "stress_condition"),
+    ]
+    retron_filter_widgets = {}
+    retron_filter_blocks = [mo.md("## Semantic filters")]
+    _retron_columns = list(retron_df.columns) if hasattr(retron_df, "columns") else []
+
+    for _retron_label, _retron_column in retron_filter_specs:
+        if _retron_column not in _retron_columns:
+            continue
+        _retron_values = retron_df.select(pl.col(_retron_column).cast(pl.Utf8).drop_nulls().unique()).to_series().to_list()
+        _retron_options = ["All"] + sorted(str(value) for value in _retron_values if value is not None)
+        retron_filter_widgets[_retron_column] = mo.ui.dropdown(
+            options=_retron_options,
+            value="All",
+            label=_retron_label,
+            full_width=True,
+        )
+        retron_filter_blocks.append(retron_filter_widgets[_retron_column])
+
+    if not retron_filter_widgets:
+        retron_filter_blocks.append(mo.md("No semantic filter columns were found in the selected dataset."))
+
+    retron_filter_panel = mo.vstack(retron_filter_blocks)
+    return retron_filter_panel, retron_filter_widgets
+
+
+@app.cell(hide_code=True)
+def _(pl, retron_df, retron_filter_widgets):
+    retron_filtered_df = retron_df
+    for _retron_column, _retron_widget in retron_filter_widgets.items():
+        _retron_value = _retron_widget.value
+        if _retron_value == "All":
+            continue
+        retron_filtered_df = retron_filtered_df.filter(pl.col(_retron_column).cast(pl.Utf8) == _retron_value)
+    return retron_filtered_df
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_filtered_df):
+    retron_filtered_table_panel = mo.vstack(
+        [
+            mo.md("## Filtered semantic table"),
+            mo.ui.table(retron_filtered_df, page_size=20),
+        ]
+    )
+    return retron_filtered_table_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, pl, retron_filtered_df, retron_selected_record_id):
+    _retron_columns = set(retron_filtered_df.columns) if hasattr(retron_filtered_df, "columns") else set()
+    retron_ranking_blocks = [
+        mo.md(
+            "## O_AUC ranking preview\n"
+            "`O_AUC` is the sign-corrected induced-effect AUC. "
+            "Positive values mean stronger activity in the expected biological direction after matched-control normalization."
+        )
+    ]
+
+    if retron_selected_record_id != "semantic_metrics/summary":
+        retron_ranking_blocks.append(
+            mo.md("Select the semantic summary dataset to preview the sign-corrected ranking surface.")
+        )
+    elif {"metric", "value", "sensor", "sponge"} <= _retron_columns:
+        retron_ranking_df = retron_filtered_df.filter(pl.col("metric") == "O_AUC")
+        if "relevant_sensor_pair" in retron_ranking_df.columns:
+            retron_ranking_df = retron_ranking_df.filter(pl.col("relevant_sensor_pair").fill_null(False))
+        if "sponge" in retron_ranking_df.columns:
+            retron_ranking_df = retron_ranking_df.filter(pl.col("sponge") != "tetO")
+        retron_keep = [
+            retron_column
+            for retron_column in ("sensor", "sponge", "stress_condition", "value", "sponge_family_size")
+            if retron_column in retron_ranking_df.columns
+        ]
+        retron_ranking_df = retron_ranking_df.sort("value", descending=True).select(retron_keep).head(12)
+        retron_ranking_blocks.append(mo.ui.table(retron_ranking_df, page_size=12))
+    else:
+        retron_ranking_blocks.append(
+            mo.md("The selected dataset does not expose the metric/value columns needed for O_AUC ranking.")
+        )
+
+    retron_ranking_panel = mo.vstack(retron_ranking_blocks)
+    return retron_ranking_panel
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_dataset_panel,
+    retron_dataset_summary_panel,
+    retron_filter_panel,
+    retron_filtered_table_panel,
+    retron_ranking_panel,
+):
+    retron_semantic_explorer_panel = mo.vstack(
+        [
+            retron_dataset_panel,
+            mo.ui.tabs(
+                {
+                    "Dataset summary": retron_dataset_summary_panel,
+                    "Filtered table": mo.vstack([retron_filter_panel, retron_filtered_table_panel]),
+                    "Metric preview": retron_ranking_panel,
+                }
+            ),
+        ]
+    )
+    return (retron_semantic_explorer_panel,)
+
+
+@app.cell(hide_code=True)
+def _(retron_semantic_explorer_panel):
+    retron_semantic_explorer_panel
+
+
+if __name__ == "__main__":
+    app.run()

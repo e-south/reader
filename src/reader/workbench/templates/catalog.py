@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from reader.errors import ConfigError
-from reader.protocols.model import BoundProtocol
 
 from .builtins import BUILTIN_NOTEBOOK_TEMPLATES
 from .model import NotebookTemplateCatalog, NotebookTemplateDescriptor
+
+if TYPE_CHECKING:
+    from reader.protocols.model import BoundProtocol
 
 _BUILTIN_TEMPLATE_CATALOG = NotebookTemplateCatalog(list(BUILTIN_NOTEBOOK_TEMPLATES))
 

@@ -30,6 +30,8 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     content = nb_path.read_text(encoding="utf-8")
     assert 'label="Dataset (dataframe record)"' in content
     assert "discover_dataframe_records" in content
+    assert "load_notebook_workbench_context" in content
+    assert "load_workbench_decl(cfg_path)" not in content
     assert "df = None" in content
     assert "__PLOT_SPECS__" not in content
     assert "resolve_plot_specs" not in content
@@ -135,3 +137,67 @@ def test_notebook_scaffold_can_enable_record_scan(tmp_path: Path) -> None:
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "allow_scan=True" in content
+
+
+def test_retron_notebook_scaffold_surfaces_plot_portfolio_and_semantic_focus(tmp_path: Path) -> None:
+    cfg_path = write_config(
+        tmp_path,
+        base_reader_config(
+            experiment_id="exp_retron_nb",
+            protocol_id="plate_reader/retron_sponge_screen",
+            protocol_analysis={
+                "semantic_metrics": {
+                    "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
+                    "sensor_target_map": {"sulAp": ["LexA"]},
+                }
+            },
+            protocol_outputs={"plots": {"include": ["baseline_shifted_kinetics"]}},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        ),
+    )
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+    assert "Retron sponge screen review" in content
+    assert "## Review surfaces" in content
+    assert "Reference guide" in content
+    assert "Transform ladder" in content
+    assert "retron_figure_coverage_rows" in content
+    assert "Plot portfolio" in content
+    assert "baseline_shifted_kinetics" in content
+    assert "Math / transform" in content
+    assert "## Semantic table focus" in content
+    assert "semantic_metrics/summary" in content
+
+
+def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "inputs" / "review_manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        "relevant_stress_map: {spyP: '3% EtOH'}\nsensor_target_map: {spyP: [CpxR, BaeR]}\nsources: []\n",
+        encoding="utf-8",
+    )
+    cfg_path = write_config(
+        tmp_path,
+        base_reader_config(
+            experiment_id="exp_retron_review",
+            protocol_id="workbench/generic",
+            protocol_outputs={"notebook": {"template": "notebook/retron_sponge_aggregate"}},
+            resources={"review_manifest": {"kind": "file", "path": "./inputs/review_manifest.yaml"}},
+        ),
+    )
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+    assert "Retron sponge aggregate review" in content
+    assert "## Review surfaces" in content
+    assert "Figure coverage" in content
+    assert "Aggregate figures" in content
+    assert "Specificity matrix" in content
+    assert "Reference guide" in content
+    assert "Expected vs observed" in content
+    assert "review_manifest" in content

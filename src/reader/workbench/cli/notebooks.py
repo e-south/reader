@@ -7,14 +7,7 @@ from rich import box
 from rich.panel import Panel
 
 from reader.errors import ConfigError, RecordError
-from reader.workbench.notebooks import write_experiment_notebook
-from reader.workbench.templates import (
-    builtin_notebook_template_catalog,
-    compatible_notebook_templates,
-    require_notebook_template_for_protocol,
-)
 
-from ..spec_overrides import select_surface_specs
 from . import shared
 from ._lazy import load as _load
 from .helpers import (
@@ -81,28 +74,36 @@ def _scaffold_notebook(
     scan_records: bool,
 ) -> None:
     try:
+        templates = _load("reader.workbench.templates")
         if list_templates:
             runtime = _load("reader.runtime").builtin_runtime()
             bound_protocol = None
             title = "Notebook templates"
-            descriptors = builtin_notebook_template_catalog().all()
+            descriptors = templates.builtin_notebook_template_catalog().all()
+            selected_template = None
             if job is not None:
                 job_path = infer_job_path(job)
                 _, decl = load_job_models(job_path)
                 bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
+                workbench = _load("reader.workbench.graph").resolve_workbench(decl)
+                configured_notebook = workbench.notebooks[0] if workbench.notebooks else None
+                selected_template = bound_protocol.resolve_notebook_template(
+                    explicit_template=template_name,
+                    configured_template=(configured_notebook.template if configured_notebook is not None else None),
+                )
                 title = f"Notebook templates: {bound_protocol.id}"
-                descriptors = compatible_notebook_templates(protocol=bound_protocol)
+                descriptors = templates.compatible_notebook_templates(protocol=bound_protocol)
             listing = table(title)
             listing.add_column("Name", style="accent")
             listing.add_column("Domain")
             listing.add_column("Family")
             if bound_protocol is not None:
-                listing.add_column("Default", justify="center")
+                listing.add_column("Scaffold", justify="center")
             listing.add_column("Description")
             for descriptor in descriptors:
                 row = [descriptor.template, descriptor.domain, descriptor.family]
                 if bound_protocol is not None:
-                    row.append("yes" if descriptor.template == bound_protocol.default_notebook_template else "")
+                    row.append("yes" if descriptor.template == selected_template else "")
                 row.append(descriptor.summary)
                 listing.add_row(*row)
             shared.console.print(Panel(listing, border_style="accent", box=box.ROUNDED))
@@ -127,7 +128,7 @@ def _scaffold_notebook(
             explicit_template=template_name,
             configured_template=(configured_notebook.template if configured_notebook is not None else None),
         )
-        descriptor = require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
+        descriptor = templates.require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
         if (plot_only or plot_exclude) and not descriptor.capabilities.supports_plot_filters:
             raise typer.BadParameter(
                 f"--only/--exclude are not supported with template {descriptor.template}. "
@@ -154,11 +155,11 @@ def _scaffold_notebook(
         existed = target.exists()
         plot_specs_payload = None
         if descriptor.capabilities.inject_plot_specs:
-            selected = select_surface_specs(
+            selected = _load("reader.workbench.spec_overrides").select_surface_specs(
                 plot_specs, only=plot_only or [], exclude=plot_exclude or [], kind="plot spec"
             )
             plot_specs_payload = [spec_to_dict(spec) for spec in selected]
-        target, created = write_experiment_notebook(
+        target, created = _load("reader.workbench.notebooks").write_experiment_notebook(
             target,
             template=selected_template,
             overwrite=overwrite,

@@ -109,14 +109,26 @@ def test_notebook_template_catalog_exposes_domain_semantics() -> None:
     descriptors = {item.template: item for item in builtin_notebook_template_catalog().all()}
     assert descriptors["notebook/eda"].domain == "generic"
     assert descriptors["notebook/microplate"].domain == "plate_reader"
+    assert descriptors["notebook/retron_sponge"].domain == "plate_reader"
+    assert descriptors["notebook/retron_sponge_aggregate"].domain == "generic"
     assert descriptors["notebook/cytometry"].domain == "cytometry"
     assert descriptors["notebook/sfxi_eda"].domain == "logic"
     assert descriptors["notebook/eda"].capabilities.supports_plot_filters is True
     assert descriptors["notebook/eda"].capabilities.inject_plot_specs is True
+    assert descriptors["notebook/retron_sponge"].family == "screen_review"
+    assert descriptors["notebook/retron_sponge"].capabilities.supports_plot_filters is True
+    assert descriptors["notebook/retron_sponge"].capabilities.inject_plot_specs is True
+    assert descriptors["notebook/retron_sponge_aggregate"].family == "screen_review"
 
 
 def test_notebook_template_default_selection_uses_protocol_policy() -> None:
     catalog = builtin_protocol_catalog()
+    assert (
+        select_default_notebook_template(
+            protocol=catalog.bind(ProtocolBinding(id="plate_reader/retron_sponge_screen"))
+        ).template
+        == "notebook/retron_sponge"
+    )
     assert (
         select_default_notebook_template(
             protocol=catalog.bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
@@ -141,6 +153,25 @@ def test_notebook_template_catalog_filters_by_protocol() -> None:
     assert descriptor.template == "notebook/sfxi_eda"
     with pytest.raises(ConfigError, match="does not allow notebook template"):
         require_notebook_template_for_protocol("notebook/cytometry", protocol=protocol)
+
+
+def test_retron_notebook_template_catalog_filters_by_protocol() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="plate_reader/retron_sponge_screen"))
+    templates = [item.template for item in compatible_notebook_templates(protocol=protocol)]
+    assert templates == ["notebook/retron_sponge", "notebook/eda", "notebook/microplate", "notebook/basic"]
+
+
+def test_generic_notebook_template_catalog_includes_retron_aggregate_review() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="workbench/generic"))
+    templates = [item.template for item in compatible_notebook_templates(protocol=protocol)]
+    assert templates == [
+        "notebook/basic",
+        "notebook/retron_sponge_aggregate",
+        "notebook/eda",
+        "notebook/microplate",
+        "notebook/cytometry",
+        "notebook/sfxi_eda",
+    ]
 
 
 def test_notebook_template_catalog_rejects_duplicate_templates() -> None:

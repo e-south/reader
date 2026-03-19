@@ -4,6 +4,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import reader
+import reader.workbench
 from reader.protocols import ProtocolBinding
 from reader.runtime import builtin_runtime
 
@@ -104,9 +106,13 @@ def test_runtime_import_does_not_eager_load_builtin_bootstrap() -> None:
         "reader.workbench.registry",
     )
     saved_modules = {name: sys.modules.get(name) for name in module_names}
+    had_runtime_attr = hasattr(reader, "runtime")
+    saved_runtime_attr = getattr(reader, "runtime", None)
     try:
         for name in module_names:
             sys.modules.pop(name, None)
+        if had_runtime_attr:
+            delattr(reader, "runtime")
 
         importlib.import_module("reader.runtime")
 
@@ -119,3 +125,54 @@ def test_runtime_import_does_not_eager_load_builtin_bootstrap() -> None:
         for name, module in saved_modules.items():
             if module is not None:
                 sys.modules[name] = module
+        if had_runtime_attr:
+            reader.runtime = saved_runtime_attr
+        elif hasattr(reader, "runtime"):
+            delattr(reader, "runtime")
+
+
+def test_cli_import_does_not_eager_load_protocol_or_notebook_bootstrap() -> None:
+    module_names = (
+        "reader.workbench.cli",
+        "reader.protocols.model",
+        "reader.protocols.builtins",
+        "reader.workbench.templates",
+        "reader.workbench.templates.catalog",
+        "reader.workbench.notebooks",
+        "reader.workbench.notebooks.scaffold",
+        "yaml",
+    )
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+    saved_attrs = {
+        "cli": getattr(reader.workbench, "cli", None),
+        "templates": getattr(reader.workbench, "templates", None),
+        "notebooks": getattr(reader.workbench, "notebooks", None),
+    }
+    had_attrs = {name: hasattr(reader.workbench, name) for name in saved_attrs}
+    try:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        for name, present in had_attrs.items():
+            if present:
+                delattr(reader.workbench, name)
+
+        importlib.import_module("reader.workbench.cli")
+
+        assert "reader.protocols.model" not in sys.modules
+        assert "reader.protocols.builtins" not in sys.modules
+        assert "reader.workbench.templates" not in sys.modules
+        assert "reader.workbench.templates.catalog" not in sys.modules
+        assert "reader.workbench.notebooks" not in sys.modules
+        assert "reader.workbench.notebooks.scaffold" not in sys.modules
+        assert "yaml" not in sys.modules
+    finally:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        for name, module in saved_modules.items():
+            if module is not None:
+                sys.modules[name] = module
+        for name, present in had_attrs.items():
+            if present:
+                setattr(reader.workbench, name, saved_attrs[name])
+            elif hasattr(reader.workbench, name):
+                delattr(reader.workbench, name)

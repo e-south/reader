@@ -14,7 +14,6 @@ from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
 from reader.errors import ReaderError
-from reader.protocols.model import ProtocolBindingValueRef
 
 THEME = Theme(
     {
@@ -161,8 +160,14 @@ def normalize_lifecycle_filter(value: str | None) -> str | None:
     return normalized
 
 
+def _is_protocol_binding_value_ref(value: object) -> bool:
+    value_type = type(value)
+    # Keep plain CLI imports off the protocol bootstrap path.
+    return value_type.__module__ == "reader.protocols.model" and value_type.__name__ == "ProtocolBindingValueRef"
+
+
 def json_friendly(value):
-    if isinstance(value, ProtocolBindingValueRef):
+    if _is_protocol_binding_value_ref(value):
         payload = {"binding_value": value.key}
         if value.has_default:
             payload["default"] = json_friendly(value.default)

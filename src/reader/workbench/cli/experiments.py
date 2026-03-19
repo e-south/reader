@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-import yaml
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -93,6 +92,8 @@ def ls(
     root_path = (
         find_nearest_experiments_dir(Path.cwd()) if str(root).strip() == "./experiments" else Path(root).resolve()
     )
+    if not root_path.exists() or not root_path.is_dir():
+        raise typer.BadParameter(f"Experiments root not found: {root_path}")
     jobs = find_jobs(root_path, include_scaffolds=include_scaffolds)
     inspection_common = _load("reader.workbench.inspection.common")
     inspection_inventory = _load("reader.workbench.inspection.inventory")
@@ -451,7 +452,7 @@ def config(
             "exports": materialized["exports"],
             "notebooks": materialized["notebooks"],
         }
-        typer.echo(yaml.safe_dump(payload, sort_keys=False))
+        typer.echo(_load("yaml").safe_dump(payload, sort_keys=False))
         return
     raise typer.BadParameter("format must be 'yaml' or 'json'")
 

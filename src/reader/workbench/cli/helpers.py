@@ -9,7 +9,6 @@ import typer
 from reader.errors import RecordError
 from reader.workbench.commands import reader_command
 from reader.workbench.experiments import discover_experiment_configs
-from reader.workbench.templates import resolve_notebook_template_descriptor
 
 from ._lazy import load as _load
 
@@ -61,7 +60,7 @@ def template_requirements_satisfied(
     *,
     runtime: ReaderRuntime,
 ) -> bool:
-    descriptor = resolve_notebook_template_descriptor(template_name)
+    descriptor = _load("reader.workbench.templates").resolve_notebook_template_descriptor(template_name)
     requirements = descriptor.capabilities.requires_any
     if not requirements:
         return True

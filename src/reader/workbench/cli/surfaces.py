@@ -9,13 +9,6 @@ from rich.panel import Panel
 from reader.errors import ReaderError
 from reader.workbench.commands import reader_command
 
-from ..spec_overrides import (
-    apply_step_overrides,
-    build_surface_command,
-    parse_input_overrides,
-    parse_set_overrides,
-    select_surface_specs,
-)
 from . import shared
 from ._lazy import load as _load
 from .helpers import (
@@ -44,6 +37,10 @@ from .shared import (
     normalize_output_format,
     table,
 )
+
+
+def _spec_overrides():
+    return _load("reader.workbench.spec_overrides")
 
 
 def _render_surface_specs_table(
@@ -103,7 +100,8 @@ def _run_plot_job(
     if not list_only:
         if fmt == "json":
             raise typer.BadParameter("--format json is only supported with --list")
-        require_dataframe_records(decl, job_path, runtime=runtime)
+        if not dry_run:
+            require_dataframe_records(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
     record_producers = inspection_runtime.record_producer_map(workbench.plugin_steps(), runtime=runtime)
     if not plot_specs:
@@ -127,7 +125,9 @@ def _run_plot_job(
             )
             return
         raise typer.BadParameter("No plot specs configured in this experiment. Add plots to the config.")
-    selected = select_surface_specs(plot_specs, only=only or [], exclude=exclude or [], kind="plot spec")
+    selected = _spec_overrides().select_surface_specs(
+        plot_specs, only=only or [], exclude=exclude or [], kind="plot spec"
+    )
     if list_only:
         if fmt == "json":
             emit_json(
@@ -153,9 +153,10 @@ def _run_plot_job(
         return
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    input_overrides = parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
-    set_overrides = parse_set_overrides(sets or [])
-    selected = apply_step_overrides(
+    spec_overrides = _spec_overrides()
+    input_overrides = spec_overrides.parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
+    set_overrides = spec_overrides.parse_set_overrides(sets or [])
+    selected = spec_overrides.apply_step_overrides(
         selected,
         input_overrides=input_overrides,
         set_overrides=set_overrides,
@@ -165,7 +166,7 @@ def _run_plot_job(
     append_journal(
         job_path,
         " ".join(
-            build_surface_command(
+            spec_overrides.build_surface_command(
                 "reader plot",
                 job_path,
                 only=only,
@@ -244,7 +245,9 @@ def _run_export_job(
             )
             return
         raise typer.BadParameter("No export specs configured in this experiment. Add exports to the config.")
-    selected = select_surface_specs(export_specs, only=only or [], exclude=exclude or [], kind="export spec")
+    selected = _spec_overrides().select_surface_specs(
+        export_specs, only=only or [], exclude=exclude or [], kind="export spec"
+    )
     if list_only:
         if fmt == "json":
             emit_json(
@@ -270,12 +273,14 @@ def _run_export_job(
         return
     if fmt == "json":
         raise typer.BadParameter("--format json is only supported with --list")
-    require_dataframe_records(decl, job_path, runtime=runtime)
+    if not dry_run:
+        require_dataframe_records(decl, job_path, runtime=runtime)
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    input_overrides = parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
-    set_overrides = parse_set_overrides(sets or [])
-    selected = apply_step_overrides(
+    spec_overrides = _spec_overrides()
+    input_overrides = spec_overrides.parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
+    set_overrides = spec_overrides.parse_set_overrides(sets or [])
+    selected = spec_overrides.apply_step_overrides(
         selected,
         input_overrides=input_overrides,
         set_overrides=set_overrides,
@@ -285,7 +290,7 @@ def _run_export_job(
     append_journal(
         job_path,
         " ".join(
-            build_surface_command(
+            spec_overrides.build_surface_command(
                 "reader export",
                 job_path,
                 only=only,
@@ -377,7 +382,7 @@ def plot(
         for index, job_path in enumerate(jobs, 1):
             exp_name = job_path.parent.name
             cmd_line = " ".join(
-                build_surface_command(
+                _spec_overrides().build_surface_command(
                     "reader plot",
                     job_path,
                     only=only,

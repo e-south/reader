@@ -1,5 +1,12 @@
-__all__ = [
-    "write_experiment_notebook",
-]
+from __future__ import annotations
 
-from .scaffold import write_experiment_notebook
+import importlib
+
+__all__ = ["write_experiment_notebook"]
+
+
+def __getattr__(name: str):
+    if name == "write_experiment_notebook":
+        module = importlib.import_module("reader.workbench.notebooks.scaffold")
+        return getattr(module, name)
+    raise AttributeError(name)

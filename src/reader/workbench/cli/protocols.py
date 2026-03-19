@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-import yaml
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -265,7 +264,7 @@ def init(
     if title:
         experiment_block["title"] = title
     example_document["experiment"] = experiment_block
-    config_path.write_text(yaml.safe_dump(example_document, sort_keys=False), encoding="utf-8")
+    config_path.write_text(_load("yaml").safe_dump(example_document, sort_keys=False), encoding="utf-8")
 
     summary = Table(box=box.ROUNDED, expand=True, show_header=False)
     summary.add_column("Field", style="accent", no_wrap=True)

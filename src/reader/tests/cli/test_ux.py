@@ -239,6 +239,16 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert "protocol" in by_name["broken_exp"]["error"]
 
 
+def test_ls_rejects_missing_root(tmp_path: Path) -> None:
+    runner = CliRunner()
+    missing_root = tmp_path / "missing"
+
+    result = runner.invoke(cli.app, ["ls", "--root", str(missing_root), "--details", "--format", "json"])
+
+    assert result.exit_code != 0
+    assert "Experiments root not found" in result.output
+
+
 def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     exp_dir = exp_root / "2025" / "legacy_exp"
@@ -651,6 +661,7 @@ def test_notebook_list_templates_command_shows_semantics() -> None:
     assert result.exit_code == 0
     assert "Notebook templates" in result.output
     assert "notebook/cytometry" in result.output
+    assert "notebook/retron_s" in result.output
     assert "cytometry" in result.output
     assert "record_explorer" in result.output
 
@@ -669,6 +680,33 @@ def test_notebook_list_templates_respects_protocol(tmp_path: Path) -> None:
     assert "SFXI vec8" in result.output
     assert "yes" in result.output
     assert "notebook/cytometry" not in result.output
+
+
+def test_notebook_list_templates_marks_resolved_scaffold_template(tmp_path: Path) -> None:
+    cfg = base_reader_config(
+        experiment_id="exp",
+        protocol_id="plate_reader/retron_sponge_screen",
+        protocol_analysis={
+            "semantic_metrics": {
+                "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
+                "sensor_target_map": {"sulAp": ["LexA"]},
+            }
+        },
+        protocol_outputs={"notebook": {"template": "notebook/basic"}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    cfg_path = write_config(tmp_path, cfg)
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["notebook", str(cfg_path), "--list-templates"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0
+    assert "Scaffold" in result.output
+    basic_line = next(line for line in result.output.splitlines() if line.strip().startswith("│ │ notebook/basic"))
+    retron_line = next(
+        line for line in result.output.splitlines() if line.strip().startswith("│ │ notebook/retron_sponge")
+    )
+    assert "yes" in basic_line
+    assert "yes" not in retron_line
 
 
 def test_demo_command_lists_expected_workbench_lifecycle() -> None:
@@ -844,7 +882,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert payload["authoring"]["outputs"]["default_plot_profile"] == "screen_overview"
     assert (
         payload["authoring"]["outputs"]["notebook_policy"]["summary"]
-        == "Retron sponge screens default to the EDA notebook with plot and semantic-table support."
+        == "Retron sponge screens default to the protocol-specific review notebook and keep the generic record explorers available as fallbacks."
     )
     assert figure_ids == {
         "raw_kinetics",

@@ -59,6 +59,12 @@ def test_select_default_notebook_template_uses_protocol_policy() -> None:
     protocols = builtin_protocol_catalog()
     assert (
         select_default_notebook_template(
+            protocol=protocols.bind(ProtocolBinding(id="plate_reader/retron_sponge_screen"))
+        ).template
+        == "notebook/retron_sponge"
+    )
+    assert (
+        select_default_notebook_template(
             protocol=protocols.bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
         ).template
         == "notebook/eda"
@@ -75,7 +81,15 @@ def test_select_default_notebook_template_uses_protocol_policy() -> None:
 
 def test_static_asset_catalog_only_exposes_templates() -> None:
     catalog = static_asset_catalog()
-    assert [item.kind for item in catalog.all()] == ["template", "template", "template", "template", "template"]
+    assert [item.kind for item in catalog.all()] == [
+        "template",
+        "template",
+        "template",
+        "template",
+        "template",
+        "template",
+        "template",
+    ]
 
 
 def test_build_workbench_asset_catalog_requires_explicit_plugin_registry() -> None:

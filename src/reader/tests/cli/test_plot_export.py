@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from reader.tests.support import base_reader_config, default_notebook_name, load_decl, write_config
@@ -79,6 +80,16 @@ def _retron_config() -> dict:
             },
             "exports": {"include": ["semantic_summary_table"]},
         },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+
+
+def _dual_reporter_profile_config(profile: str) -> dict:
+    return base_reader_config(
+        experiment_id=f"exp_{profile}",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_inputs={"fold_change": {"report_times": [14.0]}},
+        protocol_outputs={"plots": {"profile": profile}},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
 
@@ -174,6 +185,43 @@ def test_retron_plot_list_json(tmp_path: Path) -> None:
     assert reads["library_heatmaps"][0]["contract"] == "plate_reader.sponge_summary.v1"
 
 
+@pytest.mark.parametrize(
+    ("profile", "expected_ids", "expected_plugins"),
+    [
+        (
+            "ratio_screen",
+            ["raw_kinetics", "state_summary", "ratio_overview"],
+            {
+                "plot/snapshot_barplot": 1,
+                "plot/time_series": 1,
+                "plot/ts_and_snap": 1,
+            },
+        ),
+        (
+            "heatmap_review",
+            ["ratio_heatmap", "support_heatmap"],
+            {"plot/snapshot_heatmap": 2},
+        ),
+    ],
+)
+def test_dual_reporter_nondefault_plot_profiles_surface_live_cli_specs(
+    tmp_path: Path,
+    profile: str,
+    expected_ids: list[str],
+    expected_plugins: dict[str, int],
+) -> None:
+    cfg = write_config(tmp_path, _dual_reporter_profile_config(profile))
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
+    assert payload["summary"]["plots"] == len(expected_ids)
+    assert payload["summary"]["by_plugin"] == expected_plugins
+    assert [item["id"] for item in payload["plots"]] == expected_ids
+
+
 def test_plot_json_requires_list(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -191,6 +239,16 @@ def test_plot_requires_records(tmp_path: Path) -> None:
     assert "uv run reader run" in result.output
 
 
+def test_plot_dry_run_does_not_require_records(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "DRY RUN" in result.output
+    assert "raw_kinetics" in result.output
+
+
 def test_export_requires_records(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -198,6 +256,16 @@ def test_export_requires_records(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "outputs/manifests/records.json" in result.output
     assert "uv run reader run" in result.output
+
+
+def test_export_dry_run_does_not_require_records(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "DRY RUN" in result.output
+    assert "crosstalk_pairs_table" in result.output
 
 
 def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
@@ -214,6 +282,20 @@ def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert "exp_a" in result.output
     assert "exp_b" in result.output
+
+
+def test_plot_year_json_requires_single_experiment_listing(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    experiments_root = tmp_path / "experiments"
+    year_dir = experiments_root / "2025" / "exp_a"
+    year_dir.mkdir(parents=True)
+    write_config(year_dir, _base_config())
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["plot", "--year", "2025", "--root", str(experiments_root), "--format", "json"])
+
+    assert result.exit_code != 0
+    assert "single-experiment plot" in result.output
 
 
 def test_export_list_filters(tmp_path: Path) -> None:

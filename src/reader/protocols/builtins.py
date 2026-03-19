@@ -96,6 +96,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 default_template="notebook/basic",
                 allowed_templates=(
                     "notebook/basic",
+                    "notebook/retron_sponge_aggregate",
                     "notebook/eda",
                     "notebook/microplate",
                     "notebook/cytometry",
@@ -2029,9 +2030,12 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
     ),
     execution=ProtocolExecutionPlan(
         notebook=ProtocolNotebookPolicy(
-            default_template="notebook/eda",
-            allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
-            summary="Retron sponge screens default to the EDA notebook with plot and semantic-table support.",
+            default_template="notebook/retron_sponge",
+            allowed_templates=("notebook/retron_sponge", "notebook/eda", "notebook/microplate", "notebook/basic"),
+            summary=(
+                "Retron sponge screens default to the protocol-specific review notebook and keep the generic "
+                "record explorers available as fallbacks."
+            ),
         ),
         plugin_defaults=(
             ProtocolPluginDefaultsSpec(
