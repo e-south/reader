@@ -13,8 +13,6 @@ from reader.workbench import resolve_workbench
 from reader.workbench.engine import run_spec
 from reader.workbench.records import RecordStore
 
-pytestmark = pytest.mark.integration
-
 
 def _stage_experiment(tmp_path: Path, rel_dir: str) -> Path:
     source = REPO_ROOT / "experiments" / rel_dir
@@ -47,6 +45,7 @@ def _run(
     )
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("config_path", END_TO_END_RUNNABLE_CONFIGS, ids=repo_rel)
 def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path: Path) -> None:
     rel_dir = str(config_path.parent.relative_to(REPO_ROOT / "experiments"))
@@ -82,6 +81,7 @@ def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path
         assert any(path.is_file() for path in exports_dir.rglob("*"))
 
 
+@pytest.mark.smoke
 def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2025/20250614_sensor_panel_M9_glu")
     decl = load_decl(cfg_path)
@@ -114,6 +114,7 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     assert any(plots_dir.glob("*.pdf"))
 
 
+@pytest.mark.smoke
 def test_sfxi_v3_generates_records_and_export_from_clean_temp_copy(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2025/20250915_sfxi_pSingle_ref")
     decl = load_decl(cfg_path)
@@ -145,6 +146,7 @@ def test_sfxi_v3_generates_records_and_export_from_clean_temp_copy(tmp_path: Pat
     assert (outputs / layout.exports_subdir / "sfxi" / "vec8.xlsx").exists()
 
 
+@pytest.mark.smoke
 def test_sfxi_logic_geometry_experiment_runs_and_plots_from_clean_temp_copy(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2025/20250825_sensors_1-7p_M9_logic_sym")
     decl = load_decl(cfg_path)
@@ -173,3 +175,38 @@ def test_sfxi_logic_geometry_experiment_runs_and_plots_from_clean_temp_copy(tmp_
     assert "sfxi_vec8/vec8" not in latest_ids
     assert "plot:logic_symmetry" in latest_ids
     assert any(plots_dir.glob("*.pdf"))
+
+
+@pytest.mark.smoke
+def test_retron_sponge_experiment_generates_semantic_outputs_from_clean_temp_copy(tmp_path: Path) -> None:
+    cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
+    decl = load_decl(cfg_path)
+    workbench = resolve_workbench(decl)
+    plot_summary = next(plot for plot in workbench.plots if plot.id == "interaction_summary")
+    export_summary = next(export for export in workbench.exports if export.id == "semantic_summary_table")
+
+    _run(decl, include_pipeline=True, include_plots=False, include_exports=False)
+    _run(decl, include_pipeline=False, include_plots=True, include_exports=False, plot_specs=[plot_summary])
+    _run(decl, include_pipeline=False, include_plots=False, include_exports=True, export_specs=[export_summary])
+
+    layout = decl.experiment_semantics.layout
+    outputs = layout.outputs_dir
+    manifests = outputs / "manifests"
+    plots_dir = outputs / layout.plots_subdir
+    store = RecordStore(
+        outputs,
+        contracts=builtin_contract_catalog(),
+        plots_subdir=layout.plots_subdir,
+        exports_subdir=layout.exports_subdir,
+        create=False,
+    )
+
+    latest_ids = {record.record_id for record in store.iter_latest_records()}
+
+    assert (manifests / "records.json").exists()
+    assert "semantic_metrics/trace" in latest_ids
+    assert "semantic_metrics/summary" in latest_ids
+    assert "plot:interaction_summary" in latest_ids
+    assert "export:semantic_summary_table" in latest_ids
+    assert any(plots_dir.glob("*.pdf"))
+    assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()

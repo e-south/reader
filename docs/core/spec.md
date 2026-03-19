@@ -192,7 +192,11 @@ Developer tooling (lint + tests + notebooks):
 uv sync --locked --group dev --group notebooks
 uv run ruff check .
 uv run pytest -q
+uv run pytest -q -m smoke
+uv run pytest -q -m integration
 ```
+
+The default `uv run pytest -q` lane excludes `integration` tests so local feedback stays fast while still keeping a few real temp-copy smoke runs in the default suite.
 
 Add/remove dependencies:
 

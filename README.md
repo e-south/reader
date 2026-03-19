@@ -1,4 +1,7 @@
 [![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
+[![Integration](https://github.com/e-south/reader/actions/workflows/integration.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/integration.yaml)
+[![codecov](https://codecov.io/gh/e-south/reader/graph/badge.svg)](https://codecov.io/gh/e-south/reader)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 
 ![reader banner](assets/reader-banner.svg)
 
@@ -28,6 +31,9 @@ The default UX is human-first: tables for normal use, JSON for automation and ag
 
 ```bash
 uv sync --locked --group dev --group notebooks
+uv run pytest -q
+uv run pytest -q -m smoke
+uv run pytest -q -m integration
 uv run reader ls --root experiments
 uv run reader ls --root experiments --details --format json
 uv run reader ls --root experiments --details --readiness
@@ -53,6 +59,8 @@ uv run reader protocols plate_reader/retron_sponge_screen --format json
 uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
+
+`uv run pytest -q` now keeps the default developer loop fast: it excludes `integration` tests but still runs a few real temp-copy smoke runs. Use `uv run pytest -q -m integration` for the repo-wide config and full experiment matrix, and `uv run pytest -q -m smoke` when you want only the representative runtime smoke slice.
 
 Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels, `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator, and `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor controls, induced sponge effects, burden, leakiness, and cross-sensor ranking.
 

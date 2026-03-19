@@ -48,6 +48,7 @@ namespaces = false
 [dependency-groups]
 dev = [
   "pytest>=8.2",
+  "pytest-cov>=7.0",
   "ruff>=0.4",
   "pre-commit>=3.7",
 ]
@@ -98,14 +99,25 @@ python_functions = ["test_*"]
 addopts = [
   "--strict-config",
   "--strict-markers",
-  "-ra"
+  "-ra",
+  "-m",
+  "not integration",
 ]
 
 markers = [
   "integration: repo-level or multi-surface integration coverage",
+  "smoke: representative real-experiment runtime coverage kept in the default test lane",
 ]
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
   "outputs", "plots", "raw_data", "_scratch"
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["reader"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

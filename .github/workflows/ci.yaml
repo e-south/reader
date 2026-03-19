@@ -6,9 +6,18 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  lint-test-build:
+  quality:
+    name: Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v5
@@ -24,7 +33,10 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --dev
+        run: uv sync --locked --group dev
+
+      - name: Lockfile drift check
+        run: uv lock --check
 
       - name: Lint
         run: uv run ruff check .
@@ -32,8 +44,97 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
-      - name: Tests
-        run: uv run pytest -q
+      - name: Compile source
+        run: uv run python -m compileall src/reader
 
       - name: Build (sdist + wheel)
         run: uv build
+
+  fast-tests:
+    name: Fast Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --group dev
+
+      - name: Run fast suite with coverage
+        run: |
+          mkdir -p .artifacts
+          uv run pytest -q \
+            --cov=reader \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml:.artifacts/coverage.xml \
+            --junitxml=.artifacts/pytest-fast.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-test-artifacts
+          path: .artifacts/
+
+      - name: Upload coverage to Codecov
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: .artifacts/coverage.xml
+          flags: fast
+          name: fast-suite
+          fail_ci_if_error: false
+          verbose: true
+
+  repo-contracts:
+    name: Repo Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --group dev
+
+      - name: Run repo contract checks
+        run: |
+          mkdir -p .artifacts
+          uv run pytest -q -m integration \
+            src/reader/tests/repo/test_config_compactness.py \
+            src/reader/tests/repo/test_experiment_configs.py \
+            src/reader/tests/domains/cytometry/io/test_fcs.py \
+            src/reader/tests/plugins/ingest/test_flow_cytometer.py \
+            --junitxml=.artifacts/pytest-repo-contracts.xml
+
+      - name: Upload repo contract artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo-contract-artifacts
+          path: .artifacts/

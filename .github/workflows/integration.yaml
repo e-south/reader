@@ -1,0 +1,53 @@
+name: Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+  push:
+    branches: [main]
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  repo-integration-matrix:
+    name: Repo Integration Matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --group dev
+
+      - name: Run integration suite
+        run: |
+          mkdir -p .artifacts
+          uv run pytest -q -m integration --durations=25 --junitxml=.artifacts/pytest-integration.xml
+
+      - name: Capture experiment readiness inventory
+        if: always()
+        run: uv run reader ls --root experiments --details --readiness --format json > .artifacts/readiness.json
+
+      - name: Upload integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts
+          path: .artifacts/

@@ -47,3 +47,16 @@ Choose the cheapest verification bundle that still exercises the risk:
 - repo-wide smoke and lint checks
 
 The quality bar for those bundles is defined in [QUALITY.md](../QUALITY.md).
+
+## CI Topology
+
+`reader` uses two GitHub Actions workflows with explicit intent:
+
+- `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): fast maintainer feedback on pull requests and pushes. It runs lockfile drift checks, lint, format, compile, build, the default pytest lane with coverage, and a separate repo-contract job for config and cytometry integration checks.
+- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slow repo-operator validation on `main`, nightly schedule, and manual dispatch. It runs `uv run pytest -q -m integration --durations=25` and uploads the experiment readiness inventory as an artifact.
+
+Local command contract:
+
+- `uv run pytest -q`: fast default lane, excludes `integration`
+- `uv run pytest -q -m smoke`: representative real-experiment smoke tests
+- `uv run pytest -q -m integration`: repo-wide config and end-to-end experiment matrix

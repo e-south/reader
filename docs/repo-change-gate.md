@@ -34,10 +34,12 @@ Before finalizing a change:
 uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q
+uv run pytest -q -m smoke
+uv run pytest -q -m integration
 git diff --check
 ```
 
-Use the smallest subset that matches the risk of the change and explain any omission.
+`uv run pytest -q` is the fast default lane: it excludes `integration` tests but keeps representative real-experiment smoke coverage. Use `uv run pytest -q -m integration` when the change needs repo-wide config checks or the full experiment matrix. Use the smallest subset that matches the risk of the change and explain any omission.
 
 ## Related Docs
 
