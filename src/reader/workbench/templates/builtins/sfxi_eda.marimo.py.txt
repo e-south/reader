@@ -13,47 +13,29 @@ def _():
         import polars as pl
     except Exception:
         pl = None
-    from reader.workbench.decl import load_workbench_decl
+    from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.records import discover_dataframe_records
-    from reader.workbench import resolve_workbench
 
     return (
         Path,
         json,
         mo,
         pl,
-        load_workbench_decl,
+        load_notebook_workbench_context,
         discover_dataframe_records,
-        resolve_workbench,
     )
 
 @app.cell(hide_code=True)
-def _(Path, load_workbench_decl, resolve_workbench):
-    def _find_experiment_root(start: Path) -> Path:
-        for base in [start] + list(start.parents):
-            if (base / "config.yaml").exists():
-                return base
-        raise RuntimeError(
-            "No config.yaml found. Place this notebook under an experiment directory "
-            "or set exp_dir manually."
-        )
-
-    def _load_decl(root: Path):
-        cfg_path = root / "config.yaml"
-        try:
-            return load_workbench_decl(cfg_path)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to read config.yaml: {exc}") from exc
-
-    exp_dir = _find_experiment_root(Path(__file__).resolve())
-    decl = _load_decl(exp_dir)
-    workbench = resolve_workbench(decl)
-    outputs_dir = decl.experiment_semantics.layout.outputs_dir.resolve()
+def _(Path, load_notebook_workbench_context):
+    notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
+    decl = notebook_context.decl
+    exp_dir = notebook_context.experiment_root
+    outputs_dir = notebook_context.outputs_dir
     exp_meta = {
         "id": decl.experiment.id,
         "title": decl.experiment.title or "",
     }
-    pipeline_step_ids = [step.id for step in workbench.pipeline]
+    pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
     return (
         decl,
         exp_dir,
