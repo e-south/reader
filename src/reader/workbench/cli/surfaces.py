@@ -7,21 +7,7 @@ from rich import box
 from rich.panel import Panel
 
 from reader.errors import ReaderError
-from reader.protocols import ProtocolBinding
-from reader.runtime import builtin_runtime
 from reader.workbench.commands import reader_command
-from reader.workbench.engine import run_spec
-from reader.workbench.graph import resolve_workbench
-from reader.workbench.inspection.catalogs import plugin_registry_payload, workbench_surface_specs_payload
-from reader.workbench.inspection.experiments import experiment_identity_payload, experiment_steps_payload
-from reader.workbench.inspection.results import record_catalog_payload
-from reader.workbench.inspection.runtime import (
-    export_output_summaries,
-    plot_output_summaries,
-    record_producer_map,
-    render_read_binding,
-    spec_step_payload,
-)
 
 from ..spec_overrides import (
     apply_step_overrides,
@@ -31,6 +17,7 @@ from ..spec_overrides import (
     select_surface_specs,
 )
 from . import shared
+from ._lazy import load as _load
 from .helpers import (
     append_journal,
     bind_decl_protocol,
@@ -62,6 +49,7 @@ from .shared import (
 def _render_surface_specs_table(
     *, title_text: str, selected, runtime, record_producers, summaries: dict[str, str]
 ) -> None:
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
     listing = table(title_text)
     listing.add_column("#", justify="right", style="muted")
     listing.add_column("id", style="accent", overflow="fold")
@@ -69,10 +57,10 @@ def _render_surface_specs_table(
     listing.add_column("from", overflow="fold")
     listing.add_column("plugin", overflow="fold")
     for index, spec in enumerate(selected, 1):
-        spec_payload = spec_step_payload(
+        spec_payload = inspection_runtime.spec_step_payload(
             spec, summary=summaries.get(spec.id, "—"), runtime=runtime, record_producers=record_producers
         )
-        from_refs = ", ".join(render_read_binding(item) for item in spec_payload["reads"]) or "—"
+        from_refs = ", ".join(inspection_runtime.render_read_binding(item) for item in spec_payload["reads"]) or "—"
         listing.add_row(str(index), spec.id, summaries.get(spec.id, "—"), from_refs, spec.plugin)
     shared.console.print(
         Panel(listing, border_style="accent", box=box.ROUNDED, subtitle=f"[muted]{len(selected)} total[/muted]")
@@ -106,21 +94,23 @@ def _run_plot_job(
     sets: list[str] | None,
 ) -> None:
     _, decl = load_job_models(job_path)
-    runtime = builtin_runtime()
-    workbench = resolve_workbench(decl)
+    runtime = _load("reader.runtime").builtin_runtime()
+    workbench = _load("reader.workbench.graph").resolve_workbench(decl)
     bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
+    inspection_catalogs = _load("reader.workbench.inspection.catalogs")
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
     fmt = normalize_output_format(format)
     if not list_only:
         if fmt == "json":
             raise typer.BadParameter("--format json is only supported with --list")
         require_dataframe_records(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
-    record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
+    record_producers = inspection_runtime.record_producer_map(workbench.plugin_steps(), runtime=runtime)
     if not plot_specs:
         if list_only:
             if fmt == "json":
                 emit_json(
-                    workbench_surface_specs_payload(
+                    inspection_catalogs.workbench_surface_specs_payload(
                         job_path=job_path,
                         decl=decl,
                         runtime=runtime,
@@ -141,7 +131,7 @@ def _run_plot_job(
     if list_only:
         if fmt == "json":
             emit_json(
-                workbench_surface_specs_payload(
+                inspection_catalogs.workbench_surface_specs_payload(
                     job_path=job_path,
                     decl=decl,
                     runtime=runtime,
@@ -158,7 +148,7 @@ def _run_plot_job(
             selected=selected,
             runtime=runtime,
             record_producers=record_producers,
-            summaries=plot_output_summaries(bound_protocol),
+            summaries=inspection_runtime.plot_output_summaries(bound_protocol),
         )
         return
     experiment_root = decl.experiment.root
@@ -188,7 +178,7 @@ def _run_plot_job(
             )
         ),
     )
-    run_spec(
+    _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,
         log_level=log_level,
@@ -226,16 +216,18 @@ def _run_export_job(
 ) -> None:
     _, decl = load_job_models(job_path)
     fmt = normalize_output_format(format)
-    workbench = resolve_workbench(decl)
-    runtime = builtin_runtime()
-    record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
+    workbench = _load("reader.workbench.graph").resolve_workbench(decl)
+    runtime = _load("reader.runtime").builtin_runtime()
+    inspection_catalogs = _load("reader.workbench.inspection.catalogs")
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
+    record_producers = inspection_runtime.record_producer_map(workbench.plugin_steps(), runtime=runtime)
     bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
     export_specs = list(workbench.exports)
     if not export_specs:
         if list_only:
             if fmt == "json":
                 emit_json(
-                    workbench_surface_specs_payload(
+                    inspection_catalogs.workbench_surface_specs_payload(
                         job_path=job_path,
                         decl=decl,
                         runtime=runtime,
@@ -256,7 +248,7 @@ def _run_export_job(
     if list_only:
         if fmt == "json":
             emit_json(
-                workbench_surface_specs_payload(
+                inspection_catalogs.workbench_surface_specs_payload(
                     job_path=job_path,
                     decl=decl,
                     runtime=runtime,
@@ -273,7 +265,7 @@ def _run_export_job(
             selected=selected,
             runtime=runtime,
             record_producers=record_producers,
-            summaries=export_output_summaries(bound_protocol),
+            summaries=inspection_runtime.export_output_summaries(bound_protocol),
         )
         return
     if fmt == "json":
@@ -306,7 +298,7 @@ def _run_export_job(
             )
         ),
     )
-    run_spec(
+    _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,
         log_level=log_level,
@@ -500,11 +492,15 @@ def records(
         job_path = infer_job_path(job)
         _, decl = load_job_models(job_path)
         outputs_dir = decl.experiment_semantics.layout.outputs_dir
-        store = builtin_runtime().record_store(
-            outputs_dir,
-            plots_subdir=decl.experiment_semantics.layout.plots_subdir,
-            exports_subdir=decl.experiment_semantics.layout.exports_subdir,
-            create=False,
+        store = (
+            _load("reader.runtime")
+            .builtin_runtime()
+            .record_store(
+                outputs_dir,
+                plots_subdir=decl.experiment_semantics.layout.plots_subdir,
+                exports_subdir=decl.experiment_semantics.layout.exports_subdir,
+                create=False,
+            )
         )
         if not store.catalog_exists():
             abort(f"No outputs/manifests/records.json found. Run '{reader_command('run')}' first to produce records.")
@@ -514,8 +510,10 @@ def records(
     if fmt == "json":
         try:
             emit_json(
-                record_catalog_payload(
-                    experiment=experiment_identity_payload(job_path=job_path, decl=decl),
+                _load("reader.workbench.inspection.results").record_catalog_payload(
+                    experiment=_load("reader.workbench.inspection.experiments").experiment_identity_payload(
+                        job_path=job_path, decl=decl
+                    ),
                     store=store,
                     outputs_dir=outputs_dir,
                     base=decl.experiment.root,
@@ -542,9 +540,7 @@ def records(
             )
             return
         try:
-            revision_counts = {
-                record.record_id: len(store.record_history(record.record_id)) for record in latest_records
-            }
+            revision_counts = store.revision_counts(record.record_id for record in latest_records)
         except ReaderError as err:
             handle_reader_error(err)
         listing = table("Records • history")
@@ -600,11 +596,13 @@ def steps(
         spec, decl = load_job_models(job_path)
     except ReaderError as err:
         handle_reader_error(err)
-    runtime = builtin_runtime()
+    runtime = _load("reader.runtime").builtin_runtime()
     fmt = normalize_output_format(format)
-    workbench = resolve_workbench(decl)
+    workbench = _load("reader.workbench.graph").resolve_workbench(decl)
     pipeline = list(workbench.pipeline)
-    payload = experiment_steps_payload(job_path=job_path, spec=spec, decl=decl, runtime=runtime)
+    inspection_experiments = _load("reader.workbench.inspection.experiments")
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
+    payload = inspection_experiments.experiment_steps_payload(job_path=job_path, spec=spec, decl=decl, runtime=runtime)
     if fmt == "json":
         emit_json(payload)
         return
@@ -616,7 +614,7 @@ def steps(
     listing.add_column("from", overflow="fold")
     listing.add_column("writes", overflow="fold")
     for index, item in enumerate(payload["implementation"]["compiled"]["pipeline"], 1):
-        from_refs = ", ".join(render_read_binding(entry) for entry in item["reads"]) or "—"
+        from_refs = ", ".join(inspection_runtime.render_read_binding(entry) for entry in item["reads"]) or "—"
         writes = (
             ", ".join(
                 (f"{entry['label']} -> {entry['display']}" if entry.get("kind") == "dataframe" else str(entry["label"]))
@@ -657,10 +655,10 @@ def plugins(
     protocol = protocol if isinstance(protocol, str) else None
     fmt = normalize_output_format(format)
     try:
-        runtime = builtin_runtime()
+        runtime = _load("reader.runtime").builtin_runtime()
         descriptors = runtime.plugins.catalog().filter(category=category, domain=domain, family=family)
         if protocol:
-            bound_protocol = runtime.bind_protocol(ProtocolBinding(id=protocol))
+            bound_protocol = runtime.bind_protocol(_load("reader.protocols").ProtocolBinding(id=protocol))
             plan = bound_protocol.compile()
             allowed_plugins = {step.plugin for step in (*plan.pipeline, *plan.plots, *plan.exports)}
             descriptors = [descriptor for descriptor in descriptors if descriptor.plugin in allowed_plugins]
@@ -668,7 +666,7 @@ def plugins(
         handle_reader_error(err)
     if fmt == "json":
         emit_json(
-            plugin_registry_payload(
+            _load("reader.workbench.inspection.catalogs").plugin_registry_payload(
                 descriptors=descriptors,
                 category=category,
                 domain=domain,

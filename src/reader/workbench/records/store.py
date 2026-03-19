@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,11 @@ def _sha256_bytes(blob: bytes) -> str:
     return "sha256:" + hashlib.sha256(blob).hexdigest()
 
 
+RECORD_CATALOG_SCHEMA_VERSION = 3
+
+
 def _empty_catalog() -> dict[str, Any]:
-    return {"schema_version": 3, "latest": {}, "history": {}}
+    return {"schema_version": RECORD_CATALOG_SCHEMA_VERSION, "latest": {}, "history": {}}
 
 
 class RecordStore:
@@ -78,6 +82,11 @@ class RecordStore:
             raise RecordError(f"records.json is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):
             raise RecordError("records.json must be a JSON object")
+        schema_version = data.get("schema_version")
+        if schema_version != RECORD_CATALOG_SCHEMA_VERSION:
+            raise RecordError(
+                f"records.json schema_version must be {RECORD_CATALOG_SCHEMA_VERSION} (got {schema_version!r})"
+            )
         if "latest" not in data or "history" not in data:
             raise RecordError("records.json must include 'latest' and 'history' objects")
         if not isinstance(data["latest"], dict) or not isinstance(data["history"], dict):
@@ -119,6 +128,21 @@ class RecordStore:
         if not isinstance(history, list):
             raise RecordError(f"records.json history for {record_id!r} must be a list")
         return tuple(self._materialize(record_id, payload) for payload in history)
+
+    def revision_counts(self, record_ids: Iterable[str] | None = None) -> dict[str, int]:
+        catalog = self._read_catalog()
+        requested = None if record_ids is None else {str(record_id) for record_id in record_ids}
+        counts: dict[str, int] = {}
+        for record_id, history in catalog["history"].items():
+            if requested is not None and record_id not in requested:
+                continue
+            if not isinstance(history, list):
+                raise RecordError(f"records.json history for {record_id!r} must be a list")
+            counts[record_id] = len(history)
+        if requested is not None:
+            for record_id in requested:
+                counts.setdefault(record_id, 0)
+        return counts
 
     def latest_dataframe(self, record_id: str) -> DataFrameArtifactRecord | None:
         catalog = self._read_catalog()

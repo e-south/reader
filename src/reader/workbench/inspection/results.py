@@ -34,7 +34,7 @@ def record_entries_payload(
     latest_records = store.iter_latest_records()
     if not include_history:
         return [record_payload(record, outputs_dir=outputs_dir, base=base) for record in latest_records]
-    revision_counts = {record.record_id: len(store.record_history(record.record_id)) for record in latest_records}
+    revision_counts = store.revision_counts(record.record_id for record in latest_records)
     return [
         record_payload(
             record,
@@ -73,11 +73,7 @@ def record_catalog_payload(
     include_history: bool = False,
 ) -> dict[str, object]:
     latest_records = store.iter_latest_records()
-    revision_counts = (
-        {record.record_id: len(store.record_history(record.record_id)) for record in latest_records}
-        if include_history
-        else None
-    )
+    revision_counts = store.revision_counts(record.record_id for record in latest_records) if include_history else None
     return {
         "experiment": deepcopy(experiment),
         "catalog": {

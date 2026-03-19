@@ -42,6 +42,20 @@ def test_records_catalog_missing_keys_raises(tmp_path) -> None:
         store.iter_latest_records()
 
 
+def test_records_catalog_unknown_schema_version_raises(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    manifests = outputs / "manifests"
+    manifests.mkdir()
+    (manifests / "records.json").write_text(
+        json.dumps({"schema_version": 999, "latest": {}, "history": {}}),
+        encoding="utf-8",
+    )
+    store = RecordStore(outputs, contracts=builtin_contract_catalog(), create=False)
+    with pytest.raises(RecordError, match="schema_version must be 3"):
+        store.iter_latest_records()
+
+
 def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
@@ -76,8 +90,39 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     assert bundle.files == (plot_path,)
     assert len(store.record_history("ingest/df")) == 1
     assert len(store.record_history("plot:qc_plot")) == 1
+    assert store.revision_counts(["ingest/df", "plot:qc_plot"]) == {"ingest/df": 1, "plot:qc_plot": 1}
     assert record.producer.source_recipe is not None
     assert record.producer.source_recipe.recipe == "plate_reader/sample_map"
+
+
+def test_record_store_revision_counts_bulk_read(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=df,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:first",
+    )
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=df.assign(value=[2.0]),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:second",
+    )
+
+    counts = store.revision_counts(["ingest/df", "missing/df"])
+
+    assert counts == {"ingest/df": 2, "missing/df": 0}
 
 
 def test_discover_dataframe_records_is_catalog_only_by_default(tmp_path) -> None:

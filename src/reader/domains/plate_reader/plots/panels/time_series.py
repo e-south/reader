@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
 import pandas as pd
-import seaborn as sns
 from matplotlib.lines import Line2D
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
@@ -30,16 +30,70 @@ def _maybe_log(ax, enable: bool) -> None:
             ax.set_ylim(bottom=max(1e-12, ymin))
 
 
-def _lineplot_errorbar_kwargs(*, ci: float, ci_alpha: float, ci_boot: int, ci_seed: int) -> dict[str, object]:
-    if float(ci) <= 0:
-        return {"errorbar": None}
-    return {
-        "errorbar": ("ci", float(ci)),
-        "err_style": "band",
-        "err_kws": {"alpha": float(ci_alpha)},
-        "n_boot": max(1, int(ci_boot)),
-        "seed": int(ci_seed),
+def _bootstrap_interval(
+    values: np.ndarray,
+    *,
+    ci: float,
+    ci_boot: int,
+    rng: np.random.Generator,
+) -> tuple[float, float]:
+    mean = float(values.mean())
+    if float(ci) <= 0 or values.size <= 1:
+        return mean, mean
+    alpha = max(0.0, min(0.5, (100.0 - float(ci)) / 200.0))
+    if alpha == 0.0:
+        return mean, mean
+    samples = rng.integers(0, values.size, size=(max(1, int(ci_boot)), values.size))
+    boot_means = values[samples].mean(axis=1)
+    lower, upper = np.quantile(boot_means, [alpha, 1.0 - alpha])
+    return float(lower), float(upper)
+
+
+def _summarize_time_series_lines(
+    *,
+    data: pd.DataFrame,
+    x_col: str,
+    hue_col: str,
+    hue_levels: Sequence[str],
+    ci: float,
+    ci_boot: int,
+    ci_seed: int,
+) -> dict[str, pd.DataFrame]:
+    if data.empty:
+        return {}
+
+    plot_data = data.loc[:, [x_col, hue_col, "value"]].copy()
+    plot_data[hue_col] = plot_data[hue_col].astype(str)
+    plot_data["value"] = pd.to_numeric(plot_data["value"], errors="coerce")
+    grouped = plot_data.groupby([hue_col, x_col], dropna=False, sort=True)["value"]
+    rng = np.random.default_rng(int(ci_seed))
+
+    summaries: dict[str, dict[str, list[object]]] = {
+        str(hue): {x_col: [], "mean": [], "lower": [], "upper": []} for hue in hue_levels
     }
+    for (hue, x_value), series in grouped:
+        hue_key = str(hue)
+        payload = summaries.get(hue_key)
+        if payload is None:
+            continue
+        values = series.to_numpy(dtype=float, copy=False)
+        values = values[~np.isnan(values)]
+        if values.size == 0:
+            continue
+        mean = float(values.mean())
+        lower, upper = _bootstrap_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
+        payload[x_col].append(x_value)
+        payload["mean"].append(mean)
+        payload["lower"].append(lower)
+        payload["upper"].append(upper)
+
+    out: dict[str, pd.DataFrame] = {}
+    for hue in hue_levels:
+        payload = summaries[str(hue)]
+        if not payload[x_col]:
+            continue
+        out[str(hue)] = pd.DataFrame(payload).sort_values(x_col, kind="stable")
+    return out
 
 
 def draw_time_series_panel(
@@ -89,29 +143,40 @@ def draw_time_series_panel(
                 c=color_map[hue],
             )
 
-    sns.lineplot(
+    summary_by_hue = _summarize_time_series_lines(
         data=data,
-        x=x_col,
-        y="value",
-        hue=hue_col,
-        hue_order=hue_levels,
-        estimator="mean",
-        lw=1.8,
-        alpha=line_alpha,
-        legend=False,
-        ax=ax,
-        palette=[color_map[h] for h in hue_levels],
-        marker=None,
-        zorder=1,
-        **_lineplot_errorbar_kwargs(ci=ci, ci_alpha=ci_alpha, ci_boot=ci_boot, ci_seed=ci_seed),
+        x_col=x_col,
+        hue_col=hue_col,
+        hue_levels=hue_levels,
+        ci=ci,
+        ci_boot=ci_boot,
+        ci_seed=ci_seed,
     )
-
-    means = data.groupby([hue_col, x_col], dropna=False)["value"].mean().reset_index()
     for hue in hue_levels:
-        mm = means[means[hue_col].astype(str) == str(hue)]
+        mm = summary_by_hue.get(str(hue))
+        if mm is None or mm.empty:
+            continue
+        if float(ci) > 0:
+            ax.fill_between(
+                mm[x_col],
+                mm["lower"],
+                mm["upper"],
+                alpha=float(ci_alpha),
+                color=color_map[hue],
+                linewidth=0.0,
+                zorder=1,
+            )
+        ax.plot(
+            mm[x_col],
+            mm["mean"],
+            color=color_map[hue],
+            linewidth=1.8,
+            alpha=line_alpha,
+            zorder=1.5,
+        )
         ax.scatter(
             mm[x_col],
-            mm["value"],
+            mm["mean"],
             s=36,
             zorder=2.5,
             marker=marker_map[hue],
