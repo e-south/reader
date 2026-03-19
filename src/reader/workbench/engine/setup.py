@@ -59,14 +59,22 @@ def resolve_palette_book(*, decl: WorkbenchDecl, steps: list[Any], dry_run: bool
 
     try:
         mod = import_module("reader.plotting.style")
-        palette_book_cls = getattr(mod, "PaletteBook", None)
-        available_palettes = getattr(mod, "available_palettes", None)
-        if palette_book_cls is None or available_palettes is None:
-            raise ImportError("PaletteBook or available_palettes not found in plot_style module")
+    except ModuleNotFoundError as err:
+        missing = str(err.name or "")
+        if missing == "matplotlib" or missing.startswith("matplotlib."):
+            raise ConfigError(
+                "Plot palettes require matplotlib; install plotting dependencies or set plotting.palette: null."
+            ) from err
+        raise ConfigError(f"Failed to import plot palette support: {err}") from err
     except Exception as err:
+        raise ConfigError(f"Failed to initialize plot palette support: {err}") from err
+
+    palette_book_cls = getattr(mod, "PaletteBook", None)
+    available_palettes = getattr(mod, "available_palettes", None)
+    if palette_book_cls is None or available_palettes is None:
         raise ConfigError(
-            "Plot palettes require matplotlib; install plotting dependencies or set plotting.palette: null."
-        ) from err
+            "reader.plotting.style must expose PaletteBook and available_palettes for plotting.palette support."
+        )
 
     if palette not in available_palettes():
         raise ConfigError(

@@ -6,9 +6,7 @@ import typer
 from rich import box
 from rich.panel import Panel
 
-from reader.errors import ConfigError
-from reader.runtime import builtin_runtime
-from reader.workbench.graph import resolve_workbench
+from reader.errors import ConfigError, RecordError
 from reader.workbench.notebooks import write_experiment_notebook
 from reader.workbench.templates import (
     builtin_notebook_template_catalog,
@@ -18,6 +16,7 @@ from reader.workbench.templates import (
 
 from ..spec_overrides import select_surface_specs
 from . import shared
+from ._lazy import load as _load
 from .helpers import (
     bind_decl_protocol,
     default_notebook_name,
@@ -83,7 +82,7 @@ def _scaffold_notebook(
 ) -> None:
     try:
         if list_templates:
-            runtime = builtin_runtime()
+            runtime = _load("reader.runtime").builtin_runtime()
             bound_protocol = None
             title = "Notebook templates"
             descriptors = builtin_notebook_template_catalog().all()
@@ -118,9 +117,9 @@ def _scaffold_notebook(
         job_path = infer_job_path(job)
         exp_dir = job_path.parent
         _, decl = load_job_models(job_path)
-        runtime = builtin_runtime()
+        runtime = _load("reader.runtime").builtin_runtime()
         bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
-        workbench = resolve_workbench(decl)
+        workbench = _load("reader.workbench.graph").resolve_workbench(decl)
         plot_specs = list(workbench.plots)
         notebook_specs = list(workbench.notebooks)
         configured_notebook = notebook_specs[0] if notebook_specs and not template_name else None
@@ -183,7 +182,7 @@ def _scaffold_notebook(
         launch_cmd = f"{shared.sys.executable} -m marimo {mode_value} {target}"
         shared.console.print(Panel.fit(f"Launching: {launch_cmd}", border_style="accent", box=box.ROUNDED))
         _launch_marimo(mode_value, target, has_fcs=has_fcs)
-    except ConfigError as err:
+    except (ConfigError, RecordError) as err:
         raise typer.BadParameter(str(err)) from err
 
 

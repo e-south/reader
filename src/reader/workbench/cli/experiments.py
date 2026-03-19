@@ -9,33 +9,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from reader.errors import ReaderError
-from reader.runtime import builtin_runtime
 from reader.workbench.commands import reader_command
-from reader.workbench.config import ReaderSpec
-from reader.workbench.engine import explain as explain_job
-from reader.workbench.engine import run_job
-from reader.workbench.engine import validate as validate_job
-from reader.workbench.engine import validation_summary as validate_summary_job
-from reader.workbench.graph import materialize_workbench
-from reader.workbench.inspection.common import preview_output_files, resolve_output_subdir, summarize_outputs_dir
-from reader.workbench.inspection.experiments import (
-    experiment_config_json_payload,
-    experiment_explain_payload,
-    experiment_identity_payload,
-    experiment_inspect_payload,
-    experiment_run_dry_run_payload,
-)
-from reader.workbench.inspection.inventory import inventory_summary_payload, inventory_surface_payload
-from reader.workbench.inspection.readiness import (
-    config_error_readiness_payload,
-    experiment_readiness_payload,
-    readiness_summary_text,
-)
-from reader.workbench.inspection.reports import experiment_inspect_renderables
-from reader.workbench.inspection.runtime import generated_summary, selected_plan_payload, selected_plan_summary
-from reader.workbench.inspection.validation import validation_surface_payload
 
 from . import shared
+from ._lazy import load as _load
 from .helpers import (
     append_journal,
     find_jobs,
@@ -117,10 +94,14 @@ def ls(
         find_nearest_experiments_dir(Path.cwd()) if str(root).strip() == "./experiments" else Path(root).resolve()
     )
     jobs = find_jobs(root_path, include_scaffolds=include_scaffolds)
+    inspection_common = _load("reader.workbench.inspection.common")
+    inspection_inventory = _load("reader.workbench.inspection.inventory")
+    inspection_readiness = _load("reader.workbench.inspection.readiness")
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
     if not jobs:
         if fmt == "json":
             emit_json(
-                inventory_surface_payload(
+                inspection_inventory.inventory_surface_payload(
                     root=root_path,
                     include_scaffolds=include_scaffolds,
                     details=details,
@@ -138,7 +119,7 @@ def ls(
         return
 
     entries: list[dict[str, object]] = []
-    runtime = builtin_runtime() if details else None
+    runtime = _load("reader.runtime").builtin_runtime() if details else None
     for idx, config_path in enumerate(jobs, 1):
         entry: dict[str, object] = {
             "index": idx,
@@ -157,13 +138,13 @@ def ls(
         try:
             if details:
                 spec, decl = load_job_models(config_path, runtime=runtime)
-                entry["selected"] = selected_plan_payload(spec=spec, decl=decl, runtime=runtime)
+                entry["selected"] = inspection_runtime.selected_plan_payload(spec=spec, decl=decl, runtime=runtime)
             else:
-                spec = ReaderSpec.load(config_path)
+                spec = _load("reader.workbench.config").ReaderSpec.load(config_path)
             entry["protocol"] = spec.protocol.id
             entry["lifecycle"] = spec.experiment.lifecycle
             outputs_dir = (config_path.parent / spec.paths.outputs).resolve()
-            counts = summarize_outputs_dir(
+            counts = inspection_common.summarize_outputs_dir(
                 outputs_dir,
                 plots_subdir=spec.paths.plots,
                 exports_subdir=spec.paths.exports,
@@ -173,20 +154,23 @@ def ls(
             entry["has_outputs"] = any(counts.values())
             if details:
                 entry["generated_examples"] = {
-                    "records": preview_output_files(outputs_dir / "artifacts", base=config_path.parent),
-                    "plots": preview_output_files(
-                        resolve_output_subdir(outputs_dir, spec.paths.plots), base=config_path.parent
+                    "records": inspection_common.preview_output_files(
+                        outputs_dir / "artifacts", base=config_path.parent
                     ),
-                    "exports": preview_output_files(
-                        resolve_output_subdir(outputs_dir, spec.paths.exports), base=config_path.parent
+                    "plots": inspection_common.preview_output_files(
+                        inspection_common.resolve_output_subdir(outputs_dir, spec.paths.plots), base=config_path.parent
                     ),
-                    "notebooks": preview_output_files(
-                        resolve_output_subdir(outputs_dir, spec.paths.notebooks),
+                    "exports": inspection_common.preview_output_files(
+                        inspection_common.resolve_output_subdir(outputs_dir, spec.paths.exports),
+                        base=config_path.parent,
+                    ),
+                    "notebooks": inspection_common.preview_output_files(
+                        inspection_common.resolve_output_subdir(outputs_dir, spec.paths.notebooks),
                         base=config_path.parent,
                     ),
                 }
                 if readiness:
-                    entry["readiness"] = experiment_readiness_payload(
+                    entry["readiness"] = inspection_readiness.experiment_readiness_payload(
                         job_path=config_path,
                         decl=decl,
                         runtime=runtime,
@@ -195,7 +179,7 @@ def ls(
             entry["status"] = "config_error"
             entry["error"] = str(err)
             if readiness:
-                entry["readiness"] = config_error_readiness_payload(str(err))
+                entry["readiness"] = inspection_readiness.config_error_readiness_payload(str(err))
         if protocol_filter and entry["protocol"] != protocol_filter:
             continue
         if status_filter and entry["status"] != status_filter:
@@ -207,7 +191,7 @@ def ls(
     if not entries:
         if fmt == "json":
             emit_json(
-                inventory_surface_payload(
+                inspection_inventory.inventory_surface_payload(
                     root=root_path,
                     include_scaffolds=include_scaffolds,
                     details=details,
@@ -238,7 +222,7 @@ def ls(
 
     if fmt == "json":
         emit_json(
-            inventory_surface_payload(
+            inspection_inventory.inventory_surface_payload(
                 root=root_path,
                 include_scaffolds=include_scaffolds,
                 details=details,
@@ -251,7 +235,7 @@ def ls(
         )
         return
 
-    inventory_summary = inventory_summary_payload(entries)
+    inventory_summary = inspection_inventory.inventory_summary_payload(entries)
     listing = table("Experiments")
     listing.add_column("#", justify="right", style="muted")
     name_values = [str(entry["name"]) for entry in entries]
@@ -281,9 +265,9 @@ def ls(
                 str(entry["protocol"] or "—"),
                 str(entry["lifecycle"] or "—"),
                 status_value,
-                selected_plan_summary(entry.get("selected") if isinstance(entry, dict) else None),
-                generated_summary(generated),
-                readiness_summary_text(entry.get("readiness") if isinstance(entry, dict) else None)
+                inspection_runtime.selected_plan_summary(entry.get("selected") if isinstance(entry, dict) else None),
+                inspection_runtime.generated_summary(generated),
+                inspection_readiness.readiness_summary_text(entry.get("readiness") if isinstance(entry, dict) else None)
                 if readiness
                 else "",
                 str(entry["error"] or "—"),
@@ -346,12 +330,14 @@ def inspect(
     except ReaderError as err:
         handle_reader_error(err)
     fmt = normalize_output_format(format)
-    runtime = builtin_runtime()
-    payload = experiment_inspect_payload(job_path=job_path, spec=spec, decl=decl, runtime=runtime)
+    runtime = _load("reader.runtime").builtin_runtime()
+    payload = _load("reader.workbench.inspection.experiments").experiment_inspect_payload(
+        job_path=job_path, spec=spec, decl=decl, runtime=runtime
+    )
     if fmt == "json":
         emit_json(payload)
         return
-    for renderable in experiment_inspect_renderables(
+    for renderable in _load("reader.workbench.inspection.reports").experiment_inspect_renderables(
         payload=payload, semantic_program=decl.experiment_semantics.protocol_program
     ):
         shared.console.print(renderable)
@@ -372,12 +358,16 @@ def explain(
         job_path = infer_job_path(job)
         append_journal(job_path, reader_command("explain", job_path))
         spec, decl = load_job_models(job_path)
-        runtime = builtin_runtime()
+        runtime = _load("reader.runtime").builtin_runtime()
         fmt = normalize_output_format(format)
         if fmt == "json":
-            emit_json(experiment_explain_payload(job_path=job_path, spec=spec, decl=decl, runtime=runtime))
+            emit_json(
+                _load("reader.workbench.inspection.experiments").experiment_explain_payload(
+                    job_path=job_path, spec=spec, decl=decl, runtime=runtime
+                )
+            )
             return
-        explain_job(decl, console=shared.console, runtime=runtime)
+        _load("reader.workbench.engine").explain(decl, console=shared.console, runtime=runtime)
     except ReaderError as err:
         handle_reader_error(err)
 
@@ -398,15 +388,17 @@ def validate(
         job_path = infer_job_path(job)
         append_journal(job_path, reader_command("validate", job_path))
         _, decl = load_job_models(job_path)
-        runtime = builtin_runtime()
+        runtime = _load("reader.runtime").builtin_runtime()
         fmt = normalize_output_format(format)
         if fmt == "json":
-            summary = validate_summary_job(
+            summary = _load("reader.workbench.engine").validation_summary(
                 decl, check_files=not no_files, exp_root=decl.experiment.root, runtime=runtime
             )
             emit_json(
-                validation_surface_payload(
-                    experiment=experiment_identity_payload(job_path=job_path, decl=decl),
+                _load("reader.workbench.inspection.validation").validation_surface_payload(
+                    experiment=_load("reader.workbench.inspection.experiments").experiment_identity_payload(
+                        job_path=job_path, decl=decl
+                    ),
                     check_files=not no_files,
                     summary=summary,
                 )
@@ -414,7 +406,7 @@ def validate(
             if summary["status"] != "ok":
                 raise typer.Exit(code=1)
             return
-        summary = validate_job(
+        summary = _load("reader.workbench.engine").validate(
             decl,
             console=shared.console,
             check_files=not no_files,
@@ -443,12 +435,16 @@ def config(
         handle_reader_error(err)
     fmt = str(format).strip().lower()
     if fmt == "json":
-        runtime = builtin_runtime()
-        emit_json(experiment_config_json_payload(job_path=job_path, spec=spec, decl=decl, runtime=runtime))
+        runtime = _load("reader.runtime").builtin_runtime()
+        emit_json(
+            _load("reader.workbench.inspection.experiments").experiment_config_json_payload(
+                job_path=job_path, spec=spec, decl=decl, runtime=runtime
+            )
+        )
         return
     if fmt == "yaml":
         payload = spec.model_dump(by_alias=True)
-        materialized = materialize_workbench(decl)
+        materialized = _load("reader.workbench.graph").materialize_workbench(decl)
         payload["compiled"] = {
             "pipeline": materialized["pipeline"],
             "plots": materialized["plots"],
@@ -520,10 +516,10 @@ def run(
             parts += ["--compact"]
         append_journal(job_path, " ".join(parts))
         try:
-            runtime = builtin_runtime()
+            runtime = _load("reader.runtime").builtin_runtime()
             if dry_run and fmt == "json":
                 emit_json(
-                    experiment_run_dry_run_payload(
+                    _load("reader.workbench.inspection.experiments").experiment_run_dry_run_payload(
                         job_path=job_path,
                         spec=spec,
                         decl=decl,
@@ -534,7 +530,7 @@ def run(
                     )
                 )
                 return
-            run_job(
+            _load("reader.workbench.engine").run_job(
                 job_path,
                 resume_from=only,
                 until=only,
@@ -567,10 +563,10 @@ def run(
         parts += ["--compact"]
     append_journal(job_path, " ".join(parts))
     try:
-        runtime = builtin_runtime()
+        runtime = _load("reader.runtime").builtin_runtime()
         if dry_run and fmt == "json":
             emit_json(
-                experiment_run_dry_run_payload(
+                _load("reader.workbench.inspection.experiments").experiment_run_dry_run_payload(
                     job_path=job_path,
                     spec=spec,
                     decl=decl,
@@ -580,7 +576,7 @@ def run(
                 )
             )
             return
-        run_job(
+        _load("reader.workbench.engine").run_job(
             job_path,
             resume_from=from_step,
             until=until,

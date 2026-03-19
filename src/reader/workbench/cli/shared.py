@@ -13,7 +13,6 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
-import reader.workbench._cli_bootstrap  # noqa: F401
 from reader.errors import ReaderError
 from reader.protocols.model import ProtocolBindingValueRef
 

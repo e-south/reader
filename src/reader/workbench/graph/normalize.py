@@ -16,6 +16,7 @@ from reader.workbench.experiment import ResourceCatalog
 from reader.workbench.graph.nodes import NotebookTemplateCall, PluginStep, Workbench, ensure_unique_workbench_ids
 from reader.workbench.graph.refs import FileRef, InputRef, OutputRef, RecordRef, ResourceRef
 from reader.workbench.ontology import WorkbenchPluginStepKind, get_workbench_surface_semantics
+from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.templates import resolve_notebook_template_descriptor
 
 
@@ -76,8 +77,12 @@ def normalize_input_binding(
     if isinstance(binding, RecordInputDecl):
         return RecordRef(record_id=binding.record_id)
     if isinstance(binding, FileInputDecl):
-        path = Path(binding.path).expanduser()
-        path = (root / path).resolve() if not path.is_absolute() else path.resolve()
+        try:
+            path = resolve_path_within_root(binding.path, root=root)
+        except ValueError as err:
+            raise ConfigError(
+                f"{section} {step_id}: reads '{key}' must stay under the experiment root after resolving symlinks."
+            ) from err
         return FileRef(path=path)
     if isinstance(binding, ResourceInputDecl):
         try:

@@ -13,6 +13,9 @@ import fnmatch
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from reader.errors import ParseError
+from reader.workbench.paths import resolve_path_within_root
+
 DEFAULT_ROOTS = ("./inputs", "./raw", "./raw_data")
 DEFAULT_INCLUDE = ("*.xlsx", "*.xls")
 DEFAULT_EXCLUDE = (
@@ -55,7 +58,12 @@ def discover_files(
     out: list[Path] = []
     seen: set[Path] = set()
     for root in roots:
-        root_path = (base / root).resolve()
+        try:
+            root_path = resolve_path_within_root(root, root=base)
+        except ValueError as err:
+            raise ParseError(
+                f"auto_roots entry {root!r} must stay under the experiment root after resolving symlinks."
+            ) from err
         for path in _iter_candidates(root_path, include, recursive):
             if any(fnmatch.fnmatch(path.name, pat) for pat in exclude):
                 continue

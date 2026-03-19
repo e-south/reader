@@ -2,29 +2,33 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from reader.errors import RecordError
-from reader.protocols import ProtocolBinding
-from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.commands import reader_command
-from reader.workbench.config import ReaderSpec
-from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
-from reader.workbench.engine._shared import pipeline_has_plugin
 from reader.workbench.experiments import discover_experiment_configs
-from reader.workbench.graph import input_ref_to_dict, output_ref_to_dict, resolve_workbench
 from reader.workbench.templates import resolve_notebook_template_descriptor
+
+from ._lazy import load as _load
+
+if TYPE_CHECKING:
+    from reader.runtime import ReaderRuntime
+    from reader.workbench.config import ReaderSpec
+    from reader.workbench.decl import WorkbenchDecl
 
 
 def load_job_models(job_path: Path, *, runtime: ReaderRuntime | None = None) -> tuple[ReaderSpec, WorkbenchDecl]:
-    runtime = runtime or builtin_runtime()
-    spec = ReaderSpec.load(job_path)
-    return spec, build_workbench_decl(spec, source_path=job_path, protocols=runtime.protocols)
+    runtime = runtime or _load("reader.runtime").builtin_runtime()
+    spec = _load("reader.workbench.config").ReaderSpec.load(job_path)
+    return spec, _load("reader.workbench.decl").build_workbench_decl(
+        spec, source_path=job_path, protocols=runtime.protocols
+    )
 
 
 def has_sfxi_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
-    return pipeline_has_plugin(decl, runtime=runtime, tag="sfxi")
+    return _load("reader.workbench.engine._shared").pipeline_has_plugin(decl, runtime=runtime, tag="sfxi")
 
 
 def dataframe_record_contracts(
@@ -38,10 +42,7 @@ def dataframe_record_contracts(
     store = runtime.record_store(outputs_dir, create=False)
     if not store.catalog_exists():
         return []
-    try:
-        records = store.iter_latest_records(kind="dataframe_artifact")
-    except RecordError:
-        return []
+    records = store.iter_latest_records(kind="dataframe_artifact")
     matches: list[str] = []
     for record in records:
         contract = record.contract_id
@@ -66,11 +67,17 @@ def template_requirements_satisfied(
         return True
     record_contracts: list[str] | None = None
     for requirement in requirements:
-        if requirement.plugin and pipeline_has_plugin(decl, runtime=runtime, plugin=requirement.plugin):
+        if requirement.plugin and _load("reader.workbench.engine._shared").pipeline_has_plugin(
+            decl, runtime=runtime, plugin=requirement.plugin
+        ):
             return True
-        if requirement.domain and pipeline_has_plugin(decl, runtime=runtime, domain=requirement.domain):
+        if requirement.domain and _load("reader.workbench.engine._shared").pipeline_has_plugin(
+            decl, runtime=runtime, domain=requirement.domain
+        ):
             return True
-        if requirement.tag and pipeline_has_plugin(decl, runtime=runtime, tag=requirement.tag):
+        if requirement.tag and _load("reader.workbench.engine._shared").pipeline_has_plugin(
+            decl, runtime=runtime, tag=requirement.tag
+        ):
             return True
         if requirement.record_contract or requirement.record_contract_prefix:
             if record_contracts is None:
@@ -96,7 +103,7 @@ def bind_decl_protocol(*, decl: WorkbenchDecl, runtime: ReaderRuntime):
 
 
 def default_protocol_plan(*, descriptor, runtime: ReaderRuntime):
-    bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
+    bound_protocol = runtime.bind_protocol(_load("reader.protocols").ProtocolBinding(id=descriptor.protocol))
     return bound_protocol, bound_protocol.compile()
 
 
@@ -249,7 +256,7 @@ def append_journal(job_path: Path, command_line: str) -> None:
 
 def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str) -> str:
     which_str = str(which).strip()
-    pipeline = list(resolve_workbench(decl).pipeline)
+    pipeline = list(_load("reader.workbench.graph").resolve_workbench(decl).pipeline)
     if any(step.id == which_str for step in pipeline):
         return which_str
     options = ", ".join(step.id for step in pipeline[:12])
@@ -265,7 +272,13 @@ def spec_to_dict(spec_obj) -> dict:
     return {
         "id": spec_obj.id,
         "plugin": spec_obj.plugin,
-        "reads": {key: input_ref_to_dict(value) for key, value in (spec_obj.reads or {}).items()},
+        "reads": {
+            key: _load("reader.workbench.graph").input_ref_to_dict(value)
+            for key, value in (spec_obj.reads or {}).items()
+        },
         "with": dict(spec_obj.with_ or {}),
-        "writes": {key: output_ref_to_dict(value) for key, value in (spec_obj.writes or {}).items()},
+        "writes": {
+            key: _load("reader.workbench.graph").output_ref_to_dict(value)
+            for key, value in (spec_obj.writes or {}).items()
+        },
     }

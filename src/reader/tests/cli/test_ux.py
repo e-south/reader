@@ -554,7 +554,7 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     test_console = Console(width=100, record=True, theme=cli.THEME, force_terminal=True)
     monkeypatch.setattr(cli.shared, "console", test_console)
     monkeypatch.setattr(
-        "reader.workbench.cli.surfaces.builtin_runtime",
+        "reader.runtime.builtin_runtime",
         lambda: ReaderRuntime(
             contracts=builtin_contract_catalog(),
             protocols=builtin_protocol_catalog(),

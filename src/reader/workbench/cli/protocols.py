@@ -9,26 +9,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from reader.errors import ConfigError
-from reader.runtime import builtin_runtime
 from reader.workbench.commands import reader_command
-from reader.workbench.inspection.protocols import (
-    protocol_artifacts_table,
-    protocol_descriptor_payload,
-    protocol_example_config,
-    protocol_example_document,
-    protocol_pipeline_table,
-    protocol_plot_outputs_table,
-    protocol_plot_profiles_table,
-    protocol_surface_impl_table,
-    protocol_surface_rows,
-    protocol_surface_table,
-)
-from reader.workbench.inspection.runtime import binding_display, export_output_summaries, plot_output_summaries
-from reader.workbench.inspection.semantics import (
-    semantic_program_table,
-)
 
 from . import shared
+from ._lazy import load as _load
 from .helpers import default_protocol_plan
 from .shared import app, emit_json, normalize_output_format, table
 
@@ -58,7 +42,10 @@ def protocols(
         help="Output format: table | json (default: table).",
     ),
 ):
-    runtime = builtin_runtime()
+    runtime = _load("reader.runtime").builtin_runtime()
+    inspection_protocols = _load("reader.workbench.inspection.protocols")
+    inspection_runtime = _load("reader.workbench.inspection.runtime")
+    inspection_semantics = _load("reader.workbench.inspection.semantics")
     try:
         fmt = normalize_output_format(format)
         if example_config and not name:
@@ -66,7 +53,7 @@ def protocols(
         if name:
             descriptor = runtime.protocols.resolve(name)
             if fmt == "json":
-                emit_json(protocol_descriptor_payload(descriptor, runtime=runtime))
+                emit_json(inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime))
                 return
             bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
             semantic_program = compiled_plan.semantic_program or descriptor.semantic_program()
@@ -103,16 +90,20 @@ def protocols(
                 summary.add_row("Default plot profile", descriptor.default_plot_profile)
             shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED))
 
-            input_rows = protocol_surface_rows(descriptor.input_fields)
+            input_rows = inspection_protocols.protocol_surface_rows(descriptor.input_fields)
             if input_rows:
                 shared.console.print(
-                    Panel(protocol_surface_table("Inputs Surface", input_rows), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_protocols.protocol_surface_table("Inputs Surface", input_rows),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
-            analysis_rows = protocol_surface_rows(descriptor.analysis_fields)
+            analysis_rows = inspection_protocols.protocol_surface_rows(descriptor.analysis_fields)
             if analysis_rows:
                 shared.console.print(
                     Panel(
-                        protocol_surface_table("Analysis Surface", analysis_rows),
+                        inspection_protocols.protocol_surface_table("Analysis Surface", analysis_rows),
                         border_style="accent",
                         box=box.ROUNDED,
                     )
@@ -124,32 +115,52 @@ def protocols(
                 or semantic_program.ranking
             ):
                 shared.console.print(
-                    Panel(semantic_program_table(semantic_program), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_semantics.semantic_program_table(semantic_program),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
             if descriptor.plot_profiles:
                 shared.console.print(
-                    Panel(protocol_plot_profiles_table(descriptor), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_protocols.protocol_plot_profiles_table(descriptor),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
             if descriptor.figures:
                 shared.console.print(
-                    Panel(protocol_plot_outputs_table(descriptor), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_protocols.protocol_plot_outputs_table(descriptor),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
             if descriptor.artifacts:
                 shared.console.print(
-                    Panel(protocol_artifacts_table(descriptor), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_protocols.protocol_artifacts_table(descriptor),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
             if compiled_plan.pipeline:
                 shared.console.print(
-                    Panel(protocol_pipeline_table(compiled_plan.pipeline), border_style="accent", box=box.ROUNDED)
+                    Panel(
+                        inspection_protocols.protocol_pipeline_table(compiled_plan.pipeline),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
                 )
             if compiled_plan.plots:
                 shared.console.print(
                     Panel(
-                        protocol_surface_impl_table(
+                        inspection_protocols.protocol_surface_impl_table(
                             "Plot Implementations",
                             compiled_plan.plots,
-                            plot_output_summaries(bound_protocol),
-                            binding_display=binding_display,
+                            inspection_runtime.plot_output_summaries(bound_protocol),
+                            binding_display=inspection_runtime.binding_display,
                         ),
                         border_style="accent",
                         box=box.ROUNDED,
@@ -158,11 +169,11 @@ def protocols(
             if compiled_plan.exports:
                 shared.console.print(
                     Panel(
-                        protocol_surface_impl_table(
+                        inspection_protocols.protocol_surface_impl_table(
                             "Export Implementations",
                             compiled_plan.exports,
-                            export_output_summaries(bound_protocol),
-                            binding_display=binding_display,
+                            inspection_runtime.export_output_summaries(bound_protocol),
+                            binding_display=inspection_runtime.binding_display,
                         ),
                         border_style="accent",
                         box=box.ROUNDED,
@@ -171,7 +182,7 @@ def protocols(
             if example_config:
                 shared.console.print(
                     Panel(
-                        protocol_example_config(descriptor),
+                        inspection_protocols.protocol_example_config(descriptor),
                         title="Starter YAML",
                         border_style="accent",
                         box=box.ROUNDED,
@@ -233,7 +244,7 @@ def init(
         help="Overwrite config.yaml when the target directory already contains one.",
     ),
 ):
-    runtime = builtin_runtime()
+    runtime = _load("reader.runtime").builtin_runtime()
     try:
         descriptor = runtime.protocols.resolve(protocol)
     except ConfigError as err:
@@ -248,7 +259,7 @@ def init(
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "inputs").mkdir(exist_ok=True)
     (target_dir / "notebooks").mkdir(exist_ok=True)
-    example_document = protocol_example_document(descriptor)
+    example_document = _load("reader.workbench.inspection.protocols").protocol_example_document(descriptor)
     experiment_block = dict(example_document["experiment"])
     experiment_block["id"] = target_dir.name
     if title:

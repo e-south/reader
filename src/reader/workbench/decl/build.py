@@ -20,6 +20,7 @@ from reader.workbench.experiment import (
     ResourceCatalog,
     ResourceEntry,
 )
+from reader.workbench.paths import resolve_path_within_root
 
 from .model import ExperimentDecl, NotebookDecl, PipelineDecl, SurfaceDecl, WorkbenchDecl
 
@@ -111,8 +112,10 @@ def build_workbench_decl(
 def _resolve_outputs_dir(raw: str, *, root: Path) -> Path:
     if not isinstance(raw, str) or not raw.strip():
         raise ConfigError("paths.outputs must be a non-empty string path")
-    path = Path(raw).expanduser()
-    return (root / path).resolve() if not path.is_absolute() else path.resolve()
+    try:
+        return resolve_path_within_root(raw, root=root)
+    except ValueError as err:
+        raise ConfigError("paths.outputs must stay under the experiment root after resolving symlinks.") from err
 
 
 def _validate_output_subdir(raw: str, *, key: str) -> str:
@@ -132,8 +135,12 @@ def _validate_output_subdir(raw: str, *, key: str) -> str:
 def _bind_resources(resources: dict[str, ResourceSpec], *, root: Path) -> ResourceCatalog:
     bound: dict[str, ResourceEntry] = {}
     for resource_id, resource in resources.items():
-        path = Path(resource.path).expanduser()
-        path = (root / path).resolve() if not path.is_absolute() else path.resolve()
+        try:
+            path = resolve_path_within_root(resource.path, root=root)
+        except ValueError as err:
+            raise ConfigError(
+                f"resources.{resource_id}.path must stay under the experiment root after resolving symlinks."
+            ) from err
         bound[resource_id] = ResourceEntry(kind=resource.kind, path=path)
     return ResourceCatalog(by_id=bound)
 

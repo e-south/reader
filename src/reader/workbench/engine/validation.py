@@ -21,6 +21,7 @@ from reader.workbench.graph import (
     input_ref_display,
     resolve_workbench,
 )
+from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.registry import Plugin, PreflightIssue
 from reader.workbench.templates import require_notebook_template_for_protocol
 
@@ -216,9 +217,12 @@ def _validate_notebook_specs(items: list[Any], *, protocol: Any) -> None:
 
 
 def _resolve_exp_path(path: Path, *, exp_root: Path | None) -> Path:
-    if path.is_absolute() or exp_root is None:
+    if exp_root is None:
         return path
-    return (exp_root / path).resolve()
+    try:
+        return resolve_path_within_root(path, root=exp_root)
+    except ValueError as err:
+        raise ConfigError("Declared paths must stay under the experiment root after resolving symlinks.") from err
 
 
 def _render_rel(path: Path, *, exp_root: Path | None) -> Path:

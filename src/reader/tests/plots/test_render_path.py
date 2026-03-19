@@ -52,15 +52,17 @@ class _DummyPlot(Plugin):
 
     def render(self, ctx, inputs, cfg):
         _DummyPlot.render_called = True
-        return []
+        out = ctx.plots_dir / "dummy_plot.pdf"
+        out.write_text("plot", encoding="utf-8")
+        return [out]
 
     def run(self, ctx, inputs, cfg):
         self.render(ctx, inputs, cfg)
-        return {"artifacts": []}
+        return {"artifacts": self.render(ctx, inputs, cfg)}
 
 
-def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
-    del monkeypatch
+def test_plot_save_calls_render(tmp_path: Path) -> None:
+    _DummyPlot.render_called = False
     outputs = tmp_path / "outputs"
     store = RecordStore(
         outputs,
@@ -133,4 +135,7 @@ def test_plot_save_calls_render(monkeypatch, tmp_path: Path) -> None:
         log_level="ERROR",
         runtime=runtime,
     )
+    latest_ids = {record.record_id for record in store.iter_latest_records()}
     assert _DummyPlot.render_called is True
+    assert "plot:plot_dummy" in latest_ids
+    assert (outputs / "plots" / "dummy_plot.pdf").exists()

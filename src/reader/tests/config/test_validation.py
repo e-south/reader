@@ -9,11 +9,21 @@ from reader.errors import ConfigError
 from reader.tests.support import base_reader_config, load_models, write_config
 from reader.workbench import resolve_workbench
 from reader.workbench.config import ReaderSpec
+from reader.workbench.decl.model import FileInputDecl
 from reader.workbench.engine import validate as validate_job
+from reader.workbench.experiment import ResourceCatalog
+from reader.workbench.graph.normalize import normalize_input_binding
 
 
 def _base_config() -> dict:
     return base_reader_config(experiment_id="exp_001", title="Example")
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError as err:
+        pytest.skip(f"symlinks unavailable: {err}")
 
 
 def test_load_rejects_non_mapping(tmp_path: Path) -> None:
@@ -64,6 +74,48 @@ def test_load_rejects_unknown_experiment_lifecycle(tmp_path: Path) -> None:
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError, match="experiment.lifecycle must be one of"):
         ReaderSpec.load(path)
+
+
+def test_load_rejects_outputs_symlink_escape(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "escaped_outputs"
+    outside.mkdir(parents=True, exist_ok=True)
+    _symlink_or_skip(tmp_path / "outputs_link", outside)
+
+    data = _base_config()
+    data["paths"]["outputs"] = "./outputs_link"
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="paths.outputs must stay under the experiment root"):
+        load_models(path)
+
+
+def test_load_rejects_resource_symlink_escape(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside_resource.xlsx"
+    outside.write_text("x", encoding="utf-8")
+    _symlink_or_skip(tmp_path / "metadata_link.xlsx", outside)
+
+    data = _base_config()
+    data["resources"] = {"sample_map": {"kind": "file", "path": "./metadata_link.xlsx"}}
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="resources.sample_map.path must stay under the experiment root"):
+        load_models(path)
+
+
+def test_normalize_input_binding_rejects_file_symlink_escape(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside.csv"
+    outside.write_text("value\n1\n", encoding="utf-8")
+    _symlink_or_skip(tmp_path / "data_link.csv", outside)
+
+    with pytest.raises(ConfigError, match="must stay under the experiment root"):
+        normalize_input_binding(
+            FileInputDecl(path="./data_link.csv"),
+            root=tmp_path,
+            resources=ResourceCatalog(),
+            section="pipeline",
+            step_id="ingest",
+            key="raw",
+        )
 
 
 def test_load_rejects_legacy_workflow_sections(tmp_path: Path) -> None:
