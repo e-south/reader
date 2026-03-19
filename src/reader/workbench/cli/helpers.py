@@ -167,12 +167,20 @@ def infer_job_path(job: str | None) -> Path:
             jobs = find_jobs(root_path)
             if not jobs:
                 raise typer.BadParameter(f"No experiments found under {root_path}. Use '{reader_command('ls')}' first.")
-            if idx < 1 or idx > len(jobs):
-                raise typer.BadParameter(
-                    f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path}). "
-                    f"Use '{reader_command('ls')}' to see the index numbers."
+            if 1 <= idx <= len(jobs):
+                return jobs[idx - 1]
+            jobs_with_scaffolds = find_jobs(root_path, include_scaffolds=True)
+            if 1 <= idx <= len(jobs_with_scaffolds):
+                return jobs_with_scaffolds[idx - 1]
+            scaffold_hint = ""
+            if len(jobs_with_scaffolds) > len(jobs):
+                scaffold_hint = (
+                    f" Default inventory valid: 1..{len(jobs)}; with '--all': 1..{len(jobs_with_scaffolds)}."
                 )
-            return jobs[idx - 1]
+            raise typer.BadParameter(
+                f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path})."
+                f"{scaffold_hint} Use '{reader_command('ls')}' to see the index numbers."
+            )
         raise typer.BadParameter(
             f"CONFIG not found: {job!r}. Pass a path to a config.yaml, an experiment directory, "
             f"or a numeric experiment index from '{reader_command('ls')}'."

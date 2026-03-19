@@ -69,7 +69,7 @@ def ls(
     include_scaffolds: bool = typer.Option(
         False,
         "--all",
-        help="Include scaffold/template directories alongside runnable experiments.",
+        help="Include scaffold/template directories alongside the default experiment inventory.",
     ),
     protocol: str | None = typer.Option(
         None, "--protocol", metavar="ID", help="Only show experiments bound to the given protocol id."
@@ -329,7 +329,7 @@ def ls(
         shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED, title="Inventory summary"))
 
 
-@app.command(help="Inspect one experiment: inputs, pipeline chain, plots, artifacts, and generated outputs.")
+@app.command(help="Inspect one experiment: readiness, inputs, pipeline chain, plots, artifacts, and generated outputs.")
 def inspect(
     job: str | None = typer.Argument(
         None,

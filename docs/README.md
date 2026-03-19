@@ -78,6 +78,7 @@
   - `uv run reader protocols <protocol-id>`
   - `uv run reader protocols <protocol-id> --example-config`
   - `uv run reader plugins --protocol <protocol-id> --category transform`
+  - `uv run reader protocols plate_reader/single_reporter_screen` for single-reporter plate-reader panels
   - `uv run reader protocols plate_reader/retron_sponge_screen` for matched-control sponge screens
   - `uv run reader protocols plate_reader/dual_reporter_screen` for general dual-reporter sensor panels
 - I need to scaffold a new experiment from an assay:

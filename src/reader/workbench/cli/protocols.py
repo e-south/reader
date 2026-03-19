@@ -38,7 +38,11 @@ def protocols(
     name: str | None = typer.Argument(
         None,
         metavar="[NAME]",
-        help="Optional protocol id to describe (e.g., plate_reader/dual_reporter_screen).",
+        help=(
+            "Optional protocol id to describe "
+            "(e.g., plate_reader/dual_reporter_screen, plate_reader/single_reporter_screen, "
+            "or plate_reader/retron_sponge_screen)."
+        ),
     ),
     domain: str | None = typer.Option(None, "--domain", metavar="NAME", help="Filter protocols by semantic domain."),
     family: str | None = typer.Option(None, "--family", metavar="NAME", help="Filter protocols by semantic family."),
@@ -217,7 +221,10 @@ def init(
         "--protocol",
         "-p",
         metavar="ID",
-        help="Protocol id to bind, for example: plate_reader/dual_reporter_screen.",
+        help=(
+            "Protocol id to bind, for example: plate_reader/dual_reporter_screen, "
+            "plate_reader/single_reporter_screen, or plate_reader/retron_sponge_screen."
+        ),
     ),
     title: str | None = typer.Option(None, "--title", metavar="TEXT", help="Optional human-readable experiment title."),
     force: bool = typer.Option(

@@ -17,14 +17,14 @@ uv run reader <command> CONFIG|DIR|INDEX [options]
 
 If `CONFIG|DIR|INDEX` is omitted, `uv run reader` searches upward from the current working directory for
 `config.yaml`. If a numeric index is provided, it is resolved against the nearest `experiments/`
-directory (or `./experiments` if none is found) using the same runnable-experiment listing as
-`uv run reader ls`.
+directory (or `./experiments` if none is found) using the same default experiment inventory as
+`uv run reader ls`; indices shown by `uv run reader ls --all` are accepted too.
 
 ---
 
 ## Discovery
 
-List runnable experiments:
+List experiments:
 
 ```bash
 uv run reader ls --root experiments
@@ -62,6 +62,7 @@ Filter the inventory down to one assay family, one lifecycle, or just broken con
 
 ```bash
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+uv run reader ls --root experiments --details --protocol plate_reader/single_reporter_screen
 uv run reader ls --root experiments --details --protocol plate_reader/retron_sponge_screen
 uv run reader ls --root experiments --details --lifecycle draft
 uv run reader ls --root experiments --details --status config_error
@@ -81,11 +82,15 @@ Inspect plugins, protocols, and notebook templates:
 uv run reader plugins
 uv run reader plugins --category plot
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform
+uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot
+uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform
 uv run reader protocols
 uv run reader protocols plate_reader/dual_reporter_screen
+uv run reader protocols plate_reader/single_reporter_screen
 uv run reader protocols plate_reader/retron_sponge_screen
 uv run reader protocols <protocol-id> --example-config
 uv run reader protocols --family screen_analysis
+uv run reader protocols --family matched_control_screen
 uv run reader notebook --list-templates
 ```
 
@@ -95,7 +100,7 @@ Scaffold a new experiment from a protocol:
 uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 ```
 
-Use `plate_reader/dual_reporter_screen` for general plate-reader sensor panels. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
+Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels. Use `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
 
 Inspect one experiment end to end:
 
@@ -145,8 +150,11 @@ machine-readable contract:
 ```bash
 uv run reader ls --root experiments --details --status config_error --format json
 uv run reader protocols plate_reader/dual_reporter_screen --format json
+uv run reader protocols plate_reader/single_reporter_screen --format json
 uv run reader protocols plate_reader/retron_sponge_screen --format json
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
+uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot --format json
+uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform --format json
 uv run reader records CONFIG|DIR|INDEX --format json
 ```
 

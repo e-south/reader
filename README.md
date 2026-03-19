@@ -33,8 +33,11 @@ uv run reader ls --root experiments --details --readiness
 uv run reader ls --root experiments --details --readiness --format json
 uv run reader ls --root experiments --details --lifecycle draft
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+uv run reader ls --root experiments --details --protocol plate_reader/single_reporter_screen
 uv run reader ls --root experiments --details --protocol plate_reader/retron_sponge_screen
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
+uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot --format json
+uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform --format json
 uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 uv run reader inspect experiments/template/config.yaml
 uv run reader inspect experiments/template/config.yaml --format json
@@ -50,7 +53,7 @@ uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
 
-Use `plate_reader/dual_reporter_screen` for general plate-reader sensor panels and `plate_reader/retron_sponge_screen` when the assay logic depends on matched same-sensor tetO normalization, induced sponge effects, burden, leakiness, and cross-sensor ranking.
+Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels, `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator, and `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO normalization, induced sponge effects, burden, leakiness, and cross-sensor ranking.
 
 Use `experiment.lifecycle: draft` or `experiment.lifecycle: template` for intentionally non-runnable configs. Active experiments should omit `experiment.lifecycle` entirely.
 

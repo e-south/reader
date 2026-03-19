@@ -103,6 +103,19 @@ def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) ->
     assert cli._infer_job_path("1") == (year_dir / "config.yaml").resolve()
 
 
+def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    template_dir = exp_root / "template"
+    year_dir = exp_root / "2025" / "real_exp"
+    template_dir.mkdir(parents=True)
+    year_dir.mkdir(parents=True)
+    write_config(template_dir / "config.yaml", _base_config())
+    write_config(year_dir / "config.yaml", _base_config())
+
+    monkeypatch.chdir(tmp_path)
+    assert cli._infer_job_path("2") == (template_dir / "config.yaml").resolve()
+
+
 def test_ls_all_includes_template_dirs(monkeypatch, tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     year_dir = exp_root / "2025" / "real_exp"
@@ -574,7 +587,7 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert result.exit_code == 0
     assert "Protocol:" in result.output
     assert "plate_reader/dual_reporter_screen" in result.output
-    assert "General plate-reader panel protocol" in result.output
+    assert "Dual-reporter plate-reader panel protocol" in result.output
     assert "notebook/eda" in result.output
     assert "Inputs Surface" in result.output
     assert "ingest.mode" in result.output
@@ -599,6 +612,24 @@ def test_protocols_command_can_render_example_config() -> None:
     assert "schema: reader/v7" in result.output
     assert "id: plate_reader/dual_reporter_screen" in result.output
     assert "profile: screen_overview" in result.output
+    assert "channels:" not in result.output
+    assert "target:" not in result.output
+
+
+def test_single_reporter_protocol_example_config_surfaces_semantic_channels() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["protocols", "plate_reader/single_reporter_screen", "--example-config"],
+        terminal_width=160,
+    )
+
+    assert result.exit_code == 0
+    assert "id: plate_reader/single_reporter_screen" in result.output
+    assert "reporter_channel: RFP" in result.output
+    assert "normalizer_channel: OD600" in result.output
+    assert "channels:" not in result.output
+    assert "target:" not in result.output
 
 
 def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
@@ -765,11 +796,11 @@ def test_protocols_command_can_emit_json() -> None:
     metrics = {item["id"]: item for item in payload["semantics"]["program"]["metrics"]}
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
     assert metrics["OD"]["execution"]["status"] == "compiled"
-    assert metrics["R"]["formula"] == "YFP / CFP"
-    assert metrics["R"]["value_space"] == "linear_ratio"
-    assert metrics["R"]["unit"] == "ratio"
-    assert metrics["R"]["comparable_group"] == "primary_ratio_linear"
-    assert metrics["R"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
+    assert metrics["Ratio"]["formula"] == "YFP / CFP"
+    assert metrics["Ratio"]["value_space"] == "linear_ratio"
+    assert metrics["Ratio"]["unit"] == "ratio"
+    assert metrics["Ratio"]["comparable_group"] == "primary_ratio_linear"
+    assert metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_fold_change"
     assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["controls"] == []
@@ -807,7 +838,24 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     payload = json.loads(result.output)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    figure_ids = {item["id"] for item in payload["authoring"]["outputs"]["figures"]}
+    plot_profile_ids = {item["id"] for item in payload["authoring"]["outputs"]["plot_profiles"]}
     assert payload["protocol"] == "plate_reader/retron_sponge_screen"
+    assert payload["authoring"]["outputs"]["default_plot_profile"] == "screen_overview"
+    assert (
+        payload["authoring"]["outputs"]["notebook_policy"]["summary"]
+        == "Retron sponge screens default to the EDA notebook with plot support."
+    )
+    assert figure_ids == {
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "intensity_overview",
+        "value_distributions",
+    }
+    assert plot_profile_ids == {"screen_overview", "kinetics_qc"}
+    assert "ratio_heatmap" not in figure_ids
+    assert "support_heatmap" not in figure_ids
     assert program["active_profile"] == "yfp_cfp"
     assert metrics["R"]["formula"] == "log2(YFP / CFP)"
     assert metrics["R"]["value_space"] == "log2_ratio"
@@ -829,9 +877,13 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
         tmp_path / "config.yaml",
         base_reader_config(
             experiment_id="exp_rfp",
-            protocol_id="plate_reader/dual_reporter_screen",
+            protocol_id="plate_reader/single_reporter_screen",
             protocol_inputs={"fold_change": {"report_times": [14.0]}},
-            protocol_analysis={"measurement": "rfp_od600", "include_fold_change": False},
+            protocol_analysis={
+                "reporter_channel": "mCherry",
+                "normalizer_channel": "OD700",
+                "include_fold_change": False,
+            },
             protocol_outputs={"plots": {"profile": "none", "include": ["raw_kinetics"]}},
             resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         ),
@@ -842,30 +894,28 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
     payload = json.loads(result.output)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
-    assert program["active_profile"] == "rfp_od600_raw"
+    assert program["active_profile"] == "single_reporter_raw"
     assert {item["id"] for item in program["profiles"]} == {
-        "yfp_cfp_raw",
-        "yfp_cfp_fold_change",
-        "yfp_cfp_crosstalk",
-        "rfp_od600_raw",
-        "rfp_od600_fold_change",
+        "single_reporter_raw",
+        "single_reporter_fold_change",
     }
-    assert set(metrics) == {"OD", "RFP", "RFP_OD", "R"}
-    assert metrics["RFP"]["execution"]["status"] == "compiled"
-    assert metrics["R"]["formula"] == "RFP / OD600"
-    assert metrics["RFP_OD"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
-    assert metrics["R"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
+    assert set(metrics) == {"Normalizer", "Reporter", "Reporter_Normalizer"}
+    assert metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert metrics["Normalizer"]["formula"] == "configured_normalizer_channel"
+    assert metrics["Normalizer"]["execution"]["note"] == "Raw OD700 values are materialized on the ingest dataframe."
+    assert metrics["Reporter_Normalizer"]["formula"] == "configured_reporter_channel / configured_normalizer_channel"
+    assert metrics["Reporter_Normalizer"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
     assert program["controls"] == []
     assert program["windows"] == []
     assert program["ranking"] is None
     assert program["summary"] == {
-        "total": 4,
-        "compiled": 4,
+        "total": 3,
+        "compiled": 3,
         "descriptive_only": 0,
         "by_kind": {
             "control_rule": {"total": 0, "compiled": 0, "descriptive_only": 0},
             "window": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "metric": {"total": 4, "compiled": 4, "descriptive_only": 0},
+            "metric": {"total": 3, "compiled": 3, "descriptive_only": 0},
             "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
         },
     }
@@ -878,7 +928,9 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
             experiment_id="exp_rfp_sponge",
             protocol_id="plate_reader/retron_sponge_screen",
             protocol_analysis={
-                "measurement": "rfp_od600",
+                "measurement": "single_reporter",
+                "reporter_channel": "mCherry",
+                "growth_channel": "OD700",
                 "include_fold_change": False,
                 "semantic_metrics": {
                     "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
@@ -896,34 +948,79 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
 
-    assert program["active_profile"] == "rfp_od600"
-    assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "rfp_od600"}
-    assert {"OD", "RFP", "R", "RFP_OD", "R_pre", "B", "C", "D", "M", "O", "S_AUC"} <= set(metrics)
+    assert program["active_profile"] == "single_reporter"
+    assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "single_reporter"}
+    assert {"OD", "Reporter", "R", "Reporter_OD", "R_pre", "B", "C", "D", "M", "O", "S_AUC"} <= set(metrics)
     assert "YFP" not in metrics
     assert "CFP" not in metrics
-    assert metrics["R"]["formula"] == "log2(RFP / OD600)"
+    assert metrics["OD"]["formula"] == "configured_growth_channel"
+    assert metrics["OD"]["summary"] == "Raw configured growth-proxy trace."
+    assert metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert metrics["R"]["formula"] == "log2(configured_reporter_channel / configured_growth_channel)"
     assert metrics["R"]["value_space"] == "log2_ratio"
     assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
-    assert metrics["RFP_OD"]["execution"]["step_ids"] == ["ratio_rfp_od600"]
+    assert metrics["Reporter_OD"]["formula"] == "configured_reporter_channel / configured_growth_channel"
+    assert metrics["Reporter_OD"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
+    assert (
+        metrics["Reporter_OD"]["execution"]["note"]
+        == "The mCherry/OD700 support channel is materialized as a ratio step output."
+    )
     assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_AUC"
     assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
 
 
-def test_plate_reader_rfp_profile_uses_profile_aware_plugin_defaults() -> None:
+def test_plate_reader_single_reporter_compiler_derives_channels_from_analysis() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/dual_reporter_screen",
+            id="plate_reader/single_reporter_screen",
             inputs={"fold_change": {"report_times": [14.0]}},
-            analysis={"measurement": "rfp_od600"},
+            analysis={"reporter_channel": "mCherry", "normalizer_channel": "OD700"},
         )
     )
 
-    ingest = protocol.effective_plugin_config(plugin_id="ingest/synergy_h1")
-    fold_change = protocol.effective_plugin_config(plugin_id="transform/fold_change")
+    plan = protocol.compile()
+    ingest = next(step for step in plan.pipeline if step.id == "ingest")
+    fold_change = next(step for step in plan.pipeline if step.id == "fold_change__single_reporter")
 
-    assert ingest["channels"] == ["OD600", "RFP"]
-    assert fold_change["target"] == "RFP/OD600"
+    assert ingest.with_["channels"] == ["OD700", "mCherry"]
+    assert fold_change.with_["target"] == "mCherry/OD700"
+
+
+def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channels() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="plate_reader/retron_sponge_screen"))
+
+    plan = protocol.compile()
+    ingest = next(step for step in plan.pipeline if step.id == "ingest")
+    semantic_metrics = next(step for step in plan.pipeline if step.id == "semantic_metrics")
+
+    assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
+    assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
+
+
+def test_retron_sponge_protocol_rejects_dual_reporter_only_plot_selection(tmp_path: Path) -> None:
+    cfg = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="retron_plot_guard",
+            protocol_id="plate_reader/retron_sponge_screen",
+            protocol_analysis={
+                "semantic_metrics": {
+                    "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
+                    "sensor_target_map": {"sulAp": ["LexA"]},
+                }
+            },
+            protocol_outputs={"plots": {"include": ["ratio_heatmap"]}},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        ),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["explain", str(cfg)])
+
+    assert result.exit_code != 0
+    assert "ratio_heatmap" in result.output
+    assert "protocol.outputs.plots.include contains unknown deliverable" in result.output
 
 
 def test_dual_reporter_ranking_references_declared_metrics() -> None:
