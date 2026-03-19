@@ -28,7 +28,7 @@ class RetronSpongeMetricsCfg(PluginConfig):
     design_column: str = "design_id_alias"
     state_column: str = "treatment_alias"
     raw_treatment_column: str = "treatment"
-    plate_column: str | None = "sheet_name"
+    plate_column: str | None = None
     replicate_column: str = "position"
     sensor_column: str | None = None
     sponge_column: str | None = None

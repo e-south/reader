@@ -242,7 +242,7 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
             allowed=_plate_reader_retron_plot_output_ids(),
         )
         plots = [
-            _plate_reader_plot_output(
+            _plate_reader_retron_plot_output(
                 protocol,
                 output_id=deliverable_id,
                 measurement=measurement,
@@ -254,9 +254,10 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
             allowed=_plate_reader_retron_plot_output_ids(),
         )
         plots = [
-            _plate_reader_single_reporter_plot_output(
+            _plate_reader_retron_plot_output(
                 protocol,
                 output_id=deliverable_id,
+                measurement=measurement,
                 reporter_channel=reporter_channel,
                 normalizer_channel=growth_channel,
             )
@@ -1248,6 +1249,94 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
+
+
+def _plate_reader_retron_plot_output(
+    protocol: Any,
+    *,
+    output_id: str,
+    measurement: str,
+    reporter_channel: str | None = None,
+    normalizer_channel: str | None = None,
+) -> PluginStepDecl:
+    if measurement == "single_reporter":
+        if reporter_channel is None or normalizer_channel is None:
+            raise ConfigError("single-reporter retron plots require reporter_channel and normalizer_channel")
+        return _plate_reader_single_reporter_plot_output(
+            protocol,
+            output_id=output_id,
+            reporter_channel=reporter_channel,
+            normalizer_channel=normalizer_channel,
+        )
+    if measurement != "yfp_cfp":
+        raise ConfigError(f"Unsupported retron plot measurement {measurement!r}")
+
+    settings = protocol.plot_view_config(figure_id=output_id)
+    plot_reads = _plate_reader_plot_reads(measurement=measurement)
+    if output_id == "raw_kinetics":
+        defaults = {
+            "partition": {"by": "design_id"},
+            "hue": "treatment",
+            "y": ["OD600", "CFP", "YFP", "YFP/CFP"],
+            "add_sheet_line": True,
+        }
+        return _step(
+            id="raw_kinetics",
+            plugin="plot/time_series",
+            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_condition":
+        defaults = {
+            "x": "treatment",
+            "y": ["OD600", "YFP/CFP"],
+            "partition": {"by": "design_id"},
+            "time": 14.0,
+        }
+        return _step(
+            id="endpoint_by_condition",
+            plugin="plot/snapshot_barplot",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_design":
+        defaults = {
+            "x": "design_id",
+            "y": "YFP/CFP",
+            "hue": "treatment",
+            "time": 14.0,
+        }
+        return _step(
+            id="endpoint_by_design",
+            plugin="plot/snapshot_barplot",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "intensity_overview":
+        defaults = {
+            "partition": {"by": "design_id"},
+            "ts_channel": "YFP/CFP",
+            "ts_hue": "treatment",
+            "ts_add_sheet_line": True,
+            "ts_mark_snap_time": True,
+            "snap_channel": "YFP/CFP",
+            "snap_time": 14.0,
+        }
+        return _step(
+            id="intensity_overview",
+            plugin="plot/ts_and_snap",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "value_distributions":
+        defaults = {"channels": ["YFP/CFP"], "partition": {"by": "design_id"}}
+        return _step(
+            id="value_distributions",
+            plugin="plot/distributions",
+            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    raise ConfigError(f"Unknown retron plot output {output_id!r}")
 
 
 def _plate_reader_single_reporter_plot_output(

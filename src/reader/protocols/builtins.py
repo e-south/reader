@@ -1757,6 +1757,12 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Approximate growth-rate trace from the slope of log(OD600).",
             formula="d(log(OD600)) / dt",
             depends_on=("OD",),
+            profile_overrides={
+                "single_reporter": ProtocolSemanticProfileOverride(
+                    summary="Approximate growth-rate trace from the slope of log(configured growth channel).",
+                    formula="d(log(configured_growth_channel)) / dt",
+                )
+            },
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(

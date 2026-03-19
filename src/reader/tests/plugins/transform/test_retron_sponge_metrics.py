@@ -249,6 +249,14 @@ def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
     assert m_auc > 0
 
 
+def test_retron_sponge_metrics_cfg_defaults_match_protocol_surface() -> None:
+    cfg = RetronSpongeMetricsCfg()
+
+    assert cfg.plate_column is None
+    assert cfg.stress_time_zero_policy == "largest_gap_midpoint"
+    assert cfg.stress_time_zero_h is None
+
+
 def test_retron_sponge_metrics_masks_invalid_post_stress_rows_without_crashing():
     plugin = RetronSpongeMetrics()
     cfg = RetronSpongeMetricsCfg(

@@ -957,6 +957,7 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     assert metrics["OD"]["summary"] == "Raw configured growth-proxy trace."
     assert metrics["Reporter"]["execution"]["status"] == "compiled"
     assert metrics["R"]["formula"] == "log2(configured_reporter_channel / configured_growth_channel)"
+    assert metrics["mu"]["formula"] == "d(log(configured_growth_channel)) / dt"
     assert metrics["R"]["value_space"] == "log2_ratio"
     assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
     assert metrics["Reporter_OD"]["formula"] == "configured_reporter_channel / configured_growth_channel"
@@ -993,9 +994,16 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     plan = protocol.compile()
     ingest = next(step for step in plan.pipeline if step.id == "ingest")
     semantic_metrics = next(step for step in plan.pipeline if step.id == "semantic_metrics")
+    endpoint_by_condition = next(step for step in plan.plots if step.id == "endpoint_by_condition")
+    endpoint_by_design = next(step for step in plan.plots if step.id == "endpoint_by_design")
+    intensity_overview = next(step for step in plan.plots if step.id == "intensity_overview")
 
     assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
     assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
+    assert endpoint_by_condition.with_["y"] == ["OD600", "YFP/CFP"]
+    assert endpoint_by_design.with_["y"] == "YFP/CFP"
+    assert intensity_overview.with_["ts_channel"] == "YFP/CFP"
+    assert intensity_overview.with_["snap_channel"] == "YFP/CFP"
 
 
 def test_retron_sponge_protocol_rejects_dual_reporter_only_plot_selection(tmp_path: Path) -> None:
