@@ -6,7 +6,6 @@ from reader.errors import ConfigError
 from reader.workbench.decl import PluginStepDecl, RecipeSourceDecl
 from reader.workbench.ontology import WorkbenchRecipeSemantics
 from reader.workbench.recipes.plate_reader import PLATE_READER_RECIPES
-from reader.workbench.recipes.plots import PLOT_RECIPES
 from reader.workbench.recipes.sfxi import SFXI_RECIPES
 
 RecipeInfo = dict[str, Any]
@@ -37,7 +36,6 @@ def _build_recipe_catalog(*sources: tuple[str, dict[str, dict[str, Any]]]) -> Re
 RECIPES = _build_recipe_catalog(
     ("plate_reader", PLATE_READER_RECIPES),
     ("sfxi", SFXI_RECIPES),
-    ("plots", PLOT_RECIPES),
 )
 
 

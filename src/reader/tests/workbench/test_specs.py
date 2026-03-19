@@ -75,6 +75,31 @@ def test_resolve_workbench_preserves_typed_recipe_provenance(tmp_path: Path) -> 
     assert workbench.pipeline[0].source_recipe.recipe == "plate_reader/synergy_h1"
 
 
+def test_single_reporter_workbench_preserves_base_recipe_provenance(tmp_path: Path) -> None:
+    cfg = base_reader_config(
+        experiment_id="exp_single_recipe",
+        protocol_id="plate_reader/single_reporter_screen",
+        protocol_analysis={
+            "reporter_channel": "mCherry",
+            "normalizer_channel": "OD700",
+            "include_fold_change": False,
+        },
+        protocol_outputs={"plots": {"profile": "none"}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    decl = load_decl(write_config(tmp_path, cfg))
+
+    workbench = resolve_workbench(decl)
+    ratio_step = next(step for step in workbench.pipeline if step.id == "ratio_reporter_normalizer")
+
+    assert ratio_step.source_recipe is not None
+    assert ratio_step.source_recipe.recipe == "plate_reader/single_reporter_screen_base"
+    assert ratio_step.source_recipe.with_ == {
+        "reporter_channel": "mCherry",
+        "normalizer_channel": "OD700",
+    }
+
+
 def test_resolve_workbench_normalizes_compiled_bindings_to_typed_refs(tmp_path: Path) -> None:
     decl = load_decl(write_config(tmp_path, _base_config()))
     workbench = resolve_workbench(decl)

@@ -8,10 +8,6 @@ protocol:
   inputs:
     ingest:
       mode: mixed
-      channels:
-      - OD600
-      - CFP
-      - YFP
       add_sheet: true
     response:
       logic_channel: YFP/CFP

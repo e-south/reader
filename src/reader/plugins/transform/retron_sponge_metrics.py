@@ -24,11 +24,11 @@ class PlateauCfg(PluginConfig):
 
 class RetronSpongeMetricsCfg(PluginConfig):
     measurement_channel: str = "YFP/CFP"
-    od_channel: str = "OD600"
+    growth_channel: str = "OD600"
     design_column: str = "design_id_alias"
     state_column: str = "treatment_alias"
     raw_treatment_column: str = "treatment"
-    plate_column: str = "sheet_name"
+    plate_column: str | None = "sheet_name"
     replicate_column: str = "position"
     sensor_column: str | None = None
     sponge_column: str | None = None
@@ -42,7 +42,8 @@ class RetronSpongeMetricsCfg(PluginConfig):
     design_separator: str = "/"
     control_name: str = "tetO"
     no_stress_label: str = "H2O"
-    stress_time_zero_h: float = 0.0
+    stress_time_zero_policy: Literal["explicit", "largest_gap_midpoint"] = "largest_gap_midpoint"
+    stress_time_zero_h: float | None = None
     pre_reads: int = 3
     endpoint_reads: int = 3
     states: SpongeStatesCfg = Field(default_factory=SpongeStatesCfg)
@@ -57,7 +58,7 @@ class RetronSpongeMetrics(Plugin):
 
     @classmethod
     def input_ports(cls):
-        return {"df": dataframe_input("df", "plate_reader.annotated.v1")}
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
     def output_ports(cls):

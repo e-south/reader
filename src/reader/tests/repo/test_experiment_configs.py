@@ -22,8 +22,8 @@ RETRON_SPONGE_CONFIGS = (
     "experiments/2026/20260313_mono_functional_sponges/config.yaml",
     "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml",
     "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml",
-    "experiments/2026/202603XX_tri_functional_sponges/config.yaml",
-    "experiments/2026/202603XX_tetra_functional_sponges/config.yaml",
+    "experiments/2026/20260316_tri_functional_sponges/config.yaml",
+    "experiments/2026/20260317_tetra_functional_sponges/config.yaml",
 )
 
 
@@ -56,11 +56,7 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
 
 def test_repo_non_active_configs_declare_explicit_lifecycle() -> None:
     assert NON_ACTIVE_LIFECYCLE_CONFIGS == {
-        "experiments/2026/20260313_mono_functional_sponges/config.yaml": "draft",
-        "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml": "draft",
-        "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml": "draft",
-        "experiments/2026/202603XX_tetra_functional_sponges/config.yaml": "draft",
-        "experiments/2026/202603XX_tri_functional_sponges/config.yaml": "draft",
+        "experiments/2026/20260317_tetra_functional_sponges/config.yaml": "draft",
         "experiments/template/config.yaml": "template",
     }
 

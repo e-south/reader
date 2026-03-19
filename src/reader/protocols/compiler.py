@@ -22,20 +22,6 @@ from reader.workbench.recipes.registry import resolve_recipe_steps
 
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
-_RETRON_SPONGE_DEFAULTS = {
-    "semantic_metrics": {
-        "relevant_stress_map": {
-            "spyP": "3% EtOH",
-            "sulAp": "100 nM ciprofloxacin",
-            "soxSp": "15 µM PMS",
-        },
-        "sensor_target_map": {
-            "spyP": ["CpxR", "BaeR"],
-            "sulAp": ["LexA"],
-            "soxSp": ["SoxR", "SoxS"],
-        },
-    }
-}
 
 
 def compile_generic_protocol(protocol: Any):
@@ -51,12 +37,6 @@ def compile_generic_protocol(protocol: Any):
 
 def compile_plate_reader_dual_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    measurement = _analysis_choice(
-        analysis,
-        key="measurement",
-        default="yfp_cfp",
-        allowed={"yfp_cfp", "rfp_od600"},
-    )
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
     strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
@@ -65,13 +45,18 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
     crosstalk_cfg = _analysis_mapping(analysis, key="crosstalk_pairs")
     include_crosstalk_pairs = _cfg_bool(crosstalk_cfg, key="enabled", default=False)
     include_crosstalk_export = _cfg_bool(crosstalk_cfg, key="export", default=include_crosstalk_pairs)
-
-    if measurement == "rfp_od600" and include_crosstalk_pairs:
-        raise ConfigError("plate_reader/dual_reporter_screen does not support crosstalk_pairs with rfp_od600.")
-
-    pipeline = list(_plate_reader_base_steps(measurement=measurement, blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
+    ingest_channels = _configured_ingest_channels(protocol, required=("OD600", "CFP", "YFP"))
+    pipeline = list(
+        _plate_reader_base_steps(
+            measurement="yfp_cfp",
+            ingest_channels=ingest_channels,
+            blank_cfg=blank_cfg,
+            overflow_cfg=overflow_cfg,
+        )
+    )
     if include_fold_change:
-        pipeline.append(_plate_reader_fold_change_step(measurement=measurement))
+        _configured_fold_change_target(protocol, expected="YFP/CFP")
+        pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     if include_crosstalk_pairs:
         if not include_fold_change:
             raise ConfigError(
@@ -80,13 +65,13 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
         pipeline.append(_plate_reader_crosstalk_pairs_step(config=crosstalk_cfg))
 
     selected_plots = protocol.select_plot_outputs(
-        allowed=_plate_reader_plot_output_ids(measurement=measurement),
+        allowed=_plate_reader_plot_output_ids(measurement="yfp_cfp"),
     )
     plots = [
         _plate_reader_plot_output(
             protocol,
             output_id=deliverable_id,
-            measurement=measurement,
+            measurement="yfp_cfp",
         )
         for deliverable_id in selected_plots
     ]
@@ -107,8 +92,75 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
         notebooks=(default_notebook_call(template),),
         semantic_program=_plate_reader_semantic_program(
             protocol,
-            measurement=measurement,
             include_crosstalk_pairs=include_crosstalk_pairs,
+            include_fold_change=include_fold_change,
+        ),
+    )
+
+
+def compile_plate_reader_single_reporter_screen(protocol: Any):
+    analysis = _analysis_options(protocol)
+    reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
+    normalizer_channel = _analysis_channel(analysis, key="normalizer_channel", default="OD600")
+    if reporter_channel == normalizer_channel:
+        raise ConfigError(
+            "plate_reader/single_reporter_screen requires distinct reporter_channel and normalizer_channel."
+        )
+    include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
+    strict = _analysis_bool(analysis, key="strict", default=True)
+    preprocessing = _analysis_mapping(analysis, key="preprocessing")
+    blank_cfg = _analysis_mapping(preprocessing, key="blank")
+    overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
+    ingest_channels = _configured_ingest_channels(protocol, required=(normalizer_channel, reporter_channel))
+    ratio_label = _single_reporter_ratio_label(
+        reporter_channel=reporter_channel,
+        normalizer_channel=normalizer_channel,
+    )
+
+    pipeline = list(
+        _plate_reader_single_reporter_base_steps(
+            ingest_channels=ingest_channels,
+            reporter_channel=reporter_channel,
+            normalizer_channel=normalizer_channel,
+            blank_cfg=blank_cfg,
+            overflow_cfg=overflow_cfg,
+        )
+    )
+    if include_fold_change:
+        _configured_fold_change_target(protocol, expected=ratio_label)
+        pipeline.append(
+            _plate_reader_single_reporter_fold_change_step(
+                reporter_channel=reporter_channel,
+                normalizer_channel=normalizer_channel,
+            )
+        )
+
+    selected_plots = protocol.select_plot_outputs(allowed=_plate_reader_single_reporter_plot_output_ids())
+    plots = [
+        _plate_reader_single_reporter_plot_output(
+            protocol,
+            output_id=deliverable_id,
+            reporter_channel=reporter_channel,
+            normalizer_channel=normalizer_channel,
+        )
+        for deliverable_id in selected_plots
+    ]
+
+    selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
+    if selected_exports:
+        raise ConfigError("plate_reader/single_reporter_screen does not currently compile export artifacts.")
+
+    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
+    return CompiledProtocolPlan(
+        runtime={"strict": strict},
+        pipeline=tuple(pipeline),
+        plots=tuple(plots),
+        exports=(),
+        notebooks=(default_notebook_call(template),),
+        semantic_program=_plate_reader_single_reporter_semantic_program(
+            protocol,
+            reporter_channel=reporter_channel,
+            normalizer_channel=normalizer_channel,
             include_fold_change=include_fold_change,
         ),
     )
@@ -120,33 +172,96 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
         analysis,
         key="measurement",
         default="yfp_cfp",
-        allowed={"yfp_cfp", "rfp_od600"},
+        allowed={"yfp_cfp", "single_reporter"},
     )
+    reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
+    growth_channel = _analysis_channel(analysis, key="growth_channel", default="OD600")
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=False)
     strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
-    semantic_cfg = _deep_merge(
-        _RETRON_SPONGE_DEFAULTS["semantic_metrics"], _analysis_mapping(analysis, key="semantic_metrics")
-    )
+    semantic_cfg = _analysis_mapping(analysis, key="semantic_metrics")
 
-    pipeline = list(_plate_reader_base_steps(measurement=measurement, blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
-    pipeline.append(_plate_reader_semantic_metrics_step(measurement=measurement, config=semantic_cfg))
-    if include_fold_change:
-        pipeline.append(_plate_reader_fold_change_step(measurement=measurement))
-
-    selected_plots = protocol.select_plot_outputs(
-        allowed=_plate_reader_plot_output_ids(measurement=measurement),
-    )
-    plots = [
-        _plate_reader_plot_output(
-            protocol,
-            output_id=deliverable_id,
-            measurement=measurement,
+    if measurement == "yfp_cfp":
+        ingest_channels = _configured_ingest_channels(protocol, required=("OD600", "CFP", "YFP"))
+        pipeline = list(
+            _plate_reader_base_steps(
+                measurement=measurement,
+                ingest_channels=ingest_channels,
+                blank_cfg=blank_cfg,
+                overflow_cfg=overflow_cfg,
+            )
         )
-        for deliverable_id in selected_plots
-    ]
+        semantic_step = _plate_reader_semantic_metrics_step(
+            measurement_channel="YFP/CFP",
+            record_id="ratio_yfp_od600/df",
+            config=semantic_cfg,
+        )
+    else:
+        ingest_channels = _configured_ingest_channels(protocol, required=(growth_channel, reporter_channel))
+        pipeline = list(
+            _plate_reader_single_reporter_base_steps(
+                ingest_channels=ingest_channels,
+                reporter_channel=reporter_channel,
+                normalizer_channel=growth_channel,
+                blank_cfg=blank_cfg,
+                overflow_cfg=overflow_cfg,
+            )
+        )
+        semantic_step = _plate_reader_semantic_metrics_step(
+            measurement_channel=_single_reporter_ratio_label(
+                reporter_channel=reporter_channel,
+                normalizer_channel=growth_channel,
+            ),
+            record_id="ratio_reporter_normalizer/df",
+            config=_deep_merge({"growth_channel": growth_channel}, semantic_cfg),
+        )
+    pipeline.append(semantic_step)
+    if include_fold_change:
+        if measurement == "yfp_cfp":
+            _configured_fold_change_target(protocol, expected="YFP/CFP")
+            pipeline.append(_plate_reader_fold_change_step(measurement=measurement))
+        else:
+            _configured_fold_change_target(
+                protocol,
+                expected=_single_reporter_ratio_label(
+                    reporter_channel=reporter_channel,
+                    normalizer_channel=growth_channel,
+                ),
+            )
+            pipeline.append(
+                _plate_reader_single_reporter_fold_change_step(
+                    reporter_channel=reporter_channel,
+                    normalizer_channel=growth_channel,
+                )
+            )
+
+    if measurement == "yfp_cfp":
+        selected_plots = protocol.select_plot_outputs(
+            allowed=_plate_reader_retron_plot_output_ids(),
+        )
+        plots = [
+            _plate_reader_plot_output(
+                protocol,
+                output_id=deliverable_id,
+                measurement=measurement,
+            )
+            for deliverable_id in selected_plots
+        ]
+    else:
+        selected_plots = protocol.select_plot_outputs(
+            allowed=_plate_reader_retron_plot_output_ids(),
+        )
+        plots = [
+            _plate_reader_single_reporter_plot_output(
+                protocol,
+                output_id=deliverable_id,
+                reporter_channel=reporter_channel,
+                normalizer_channel=growth_channel,
+            )
+            for deliverable_id in selected_plots
+        ]
 
     selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
     if selected_exports:
@@ -159,7 +274,12 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
         plots=tuple(plots),
         exports=(),
         notebooks=(default_notebook_call(template),),
-        semantic_program=_plate_reader_retron_sponge_semantic_program(protocol, measurement=measurement),
+        semantic_program=_plate_reader_retron_sponge_semantic_program(
+            protocol,
+            measurement=measurement,
+            reporter_channel=reporter_channel,
+            growth_channel=growth_channel,
+        ),
     )
 
 
@@ -172,7 +292,15 @@ def compile_logic_sfxi_screen(protocol: Any):
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
 
-    pipeline = list(_plate_reader_base_steps(measurement="yfp_cfp", blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
+    ingest_channels = _configured_ingest_channels(protocol, required=("OD600", "CFP", "YFP"))
+    pipeline = list(
+        _plate_reader_base_steps(
+            measurement="yfp_cfp",
+            ingest_channels=ingest_channels,
+            blank_cfg=blank_cfg,
+            overflow_cfg=overflow_cfg,
+        )
+    )
     if include_fold_change:
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     selected_plot_ids = protocol.select_plot_outputs(
@@ -346,12 +474,10 @@ def _semantic_program(
 def _plate_reader_semantic_program(
     protocol: Any,
     *,
-    measurement: str,
     include_crosstalk_pairs: bool,
     include_fold_change: bool,
 ) -> ProtocolSemanticProgram:
     active_profile = _dual_reporter_semantic_profile(
-        measurement=measurement,
         include_fold_change=include_fold_change,
         include_crosstalk_pairs=include_crosstalk_pairs,
     )
@@ -364,82 +490,49 @@ def _plate_reader_semantic_program(
             note="Raw OD600 values are materialized on the ingest dataframe.",
         ),
     }
-    if measurement == "yfp_cfp":
-        overrides.update(
-            {
-                "CFP": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note="Raw CFP values are materialized on the ingest dataframe.",
-                ),
-                "YFP": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note="Raw YFP values are materialized on the ingest dataframe.",
-                ),
-                "CFP_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_cfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_cfp_od600/df",),
-                    note="The CFP/OD600 support channel is materialized as a ratio step output.",
-                ),
-                "YFP_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_yfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_yfp_od600/df",),
-                    note="The YFP/OD600 support channel is materialized as a ratio step output.",
-                ),
-                "R": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_yfp_cfp",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_yfp_cfp/df",),
-                    note="The primary YFP/CFP ratio is materialized as a ratio step output.",
-                ),
-            }
-        )
-    else:
-        overrides.update(
-            {
-                "RFP": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note="Raw RFP values are materialized on the ingest dataframe.",
-                ),
-                "R": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_rfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_rfp_od600/df",),
-                    note="The primary RFP/OD600 ratio is materialized as a ratio step output.",
-                ),
-                "RFP_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_rfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_rfp_od600/df",),
-                    note="The RFP/OD600 support channel is materialized as a ratio step output.",
-                ),
-            }
-        )
+    overrides.update(
+        {
+            "CFP": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ingest",),
+                plugin_ids=("ingest/synergy_h1",),
+                record_ids=("ingest/df",),
+                note="Raw CFP values are materialized on the ingest dataframe.",
+            ),
+            "YFP": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ingest",),
+                plugin_ids=("ingest/synergy_h1",),
+                record_ids=("ingest/df",),
+                note="Raw YFP values are materialized on the ingest dataframe.",
+            ),
+            "CFP_OD": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ratio_cfp_od600",),
+                plugin_ids=("transform/ratio",),
+                record_ids=("ratio_cfp_od600/df",),
+                note="The CFP/OD600 support channel is materialized as a ratio step output.",
+            ),
+            "YFP_OD": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ratio_yfp_od600",),
+                plugin_ids=("transform/ratio",),
+                record_ids=("ratio_yfp_od600/df",),
+                note="The YFP/OD600 support channel is materialized as a ratio step output.",
+            ),
+            "Ratio": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ratio_yfp_cfp",),
+                plugin_ids=("transform/ratio",),
+                record_ids=("ratio_yfp_cfp/df",),
+                note="The primary YFP/CFP ratio is materialized as a ratio step output.",
+            ),
+        }
+    )
     if include_fold_change:
-        fold_change_step_id = "fold_change__yfp_over_cfp" if measurement == "yfp_cfp" else "fold_change__rfp_od600"
-        fold_change_record_id = (
-            "fold_change__yfp_over_cfp/table" if measurement == "yfp_cfp" else "fold_change__rfp_od600/table"
-        )
-        fold_change_note = (
-            "Nearest-time fold-change summaries are materialized from the primary ratio channel."
-            if measurement == "yfp_cfp"
-            else "Nearest-time fold-change summaries are materialized from the primary RFP/OD600 ratio channel."
-        )
+        fold_change_step_id = "fold_change__yfp_over_cfp"
+        fold_change_record_id = "fold_change__yfp_over_cfp/table"
+        fold_change_note = "Nearest-time fold-change summaries are materialized from the primary ratio channel."
         overrides.update(
             {
                 "FC": ProtocolSemanticExecution(
@@ -470,10 +563,72 @@ def _plate_reader_semantic_program(
     return _semantic_program(protocol, overrides=overrides, active_profile=active_profile)
 
 
+def _plate_reader_single_reporter_semantic_program(
+    protocol: Any,
+    *,
+    reporter_channel: str,
+    normalizer_channel: str,
+    include_fold_change: bool,
+) -> ProtocolSemanticProgram:
+    ratio_label = _single_reporter_ratio_label(
+        reporter_channel=reporter_channel,
+        normalizer_channel=normalizer_channel,
+    )
+    ratio_note = f"The primary {ratio_label} ratio is materialized as a ratio step output."
+    fold_change_note = f"Nearest-time fold-change summaries are materialized from the primary {ratio_label} channel."
+    overrides: dict[str, ProtocolSemanticExecution] = {
+        "Normalizer": ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("ingest",),
+            plugin_ids=("ingest/synergy_h1",),
+            record_ids=("ingest/df",),
+            note=f"Raw {normalizer_channel} values are materialized on the ingest dataframe.",
+        ),
+        "Reporter": ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("ingest",),
+            plugin_ids=("ingest/synergy_h1",),
+            record_ids=("ingest/df",),
+            note=f"Raw {reporter_channel} values are materialized on the ingest dataframe.",
+        ),
+        "Reporter_Normalizer": ProtocolSemanticExecution(
+            status="compiled",
+            step_ids=("ratio_reporter_normalizer",),
+            plugin_ids=("transform/ratio",),
+            record_ids=("ratio_reporter_normalizer/df",),
+            note=ratio_note,
+        ),
+    }
+    if include_fold_change:
+        overrides.update(
+            {
+                "FC": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("fold_change__single_reporter",),
+                    plugin_ids=("transform/fold_change",),
+                    record_ids=("fold_change__single_reporter/table",),
+                    note=fold_change_note,
+                ),
+                "log2FC": ProtocolSemanticExecution(
+                    status="compiled",
+                    step_ids=("fold_change__single_reporter",),
+                    plugin_ids=("transform/fold_change",),
+                    record_ids=("fold_change__single_reporter/table",),
+                    note=fold_change_note,
+                ),
+            }
+        )
+    return _semantic_program(
+        protocol, overrides=overrides, active_profile=_single_reporter_semantic_profile(include_fold_change)
+    )
+
+
 def _plate_reader_retron_sponge_semantic_program(
     protocol: Any,
     *,
     measurement: str,
+    reporter_channel: str,
+    growth_channel: str,
 ) -> ProtocolSemanticProgram:
     trace_binding = ProtocolSemanticExecution(
         status="compiled",
@@ -501,7 +656,7 @@ def _plate_reader_retron_sponge_semantic_program(
             step_ids=("ingest",),
             plugin_ids=("ingest/synergy_h1",),
             record_ids=("ingest/df",),
-            note="Raw OD600 values are materialized on the ingest dataframe.",
+            note=f"Raw {growth_channel} values are materialized on the ingest dataframe.",
         ),
         "R": trace_binding,
         "R_pre": summary_binding,
@@ -563,19 +718,22 @@ def _plate_reader_retron_sponge_semantic_program(
     else:
         overrides.update(
             {
-                "RFP": ProtocolSemanticExecution(
+                "Reporter": ProtocolSemanticExecution(
                     status="compiled",
                     step_ids=("ingest",),
                     plugin_ids=("ingest/synergy_h1",),
                     record_ids=("ingest/df",),
-                    note="Raw RFP values are materialized on the ingest dataframe.",
+                    note=f"Raw {reporter_channel} values are materialized on the ingest dataframe.",
                 ),
-                "RFP_OD": ProtocolSemanticExecution(
+                "Reporter_OD": ProtocolSemanticExecution(
                     status="compiled",
-                    step_ids=("ratio_rfp_od600",),
+                    step_ids=("ratio_reporter_normalizer",),
                     plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_rfp_od600/df",),
-                    note="The RFP/OD600 support channel is materialized as a ratio step output.",
+                    record_ids=("ratio_reporter_normalizer/df",),
+                    note=(
+                        "The "
+                        f"{reporter_channel}/{growth_channel} support channel is materialized as a ratio step output."
+                    ),
                 ),
             }
         )
@@ -655,25 +813,68 @@ def _analysis_choice(raw: dict[str, Any], *, key: str, default: str, allowed: se
     return value
 
 
-def _dual_reporter_semantic_profile(
-    *,
-    measurement: str,
-    include_fold_change: bool,
-    include_crosstalk_pairs: bool,
-) -> str:
-    if measurement == "yfp_cfp":
-        if include_crosstalk_pairs:
-            return "yfp_cfp_crosstalk"
-        if include_fold_change:
-            return "yfp_cfp_fold_change"
-        return "yfp_cfp_raw"
-    if measurement == "rfp_od600":
-        if include_crosstalk_pairs:
-            raise ConfigError("plate_reader/dual_reporter_screen does not support crosstalk_pairs with rfp_od600.")
-        if include_fold_change:
-            return "rfp_od600_fold_change"
-        return "rfp_od600_raw"
-    raise ConfigError(f"Unsupported plate-reader measurement family {measurement!r}")
+def _analysis_channel(raw: dict[str, Any], *, key: str, default: str) -> str:
+    value = raw.get(key, default)
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"protocol.analysis.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _input_mapping(protocol: Any, *, key: str) -> dict[str, Any]:
+    raw = getattr(protocol, "inputs", {}) or {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"protocol.inputs for {protocol.id!r} must be a mapping")
+    value = raw.get(key, {})
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"protocol.inputs.{key} for {protocol.id!r} must be a mapping")
+    return dict(value)
+
+
+def _configured_ingest_channels(protocol: Any, *, required: tuple[str, ...]) -> list[str]:
+    ingest = _input_mapping(protocol, key="ingest")
+    configured = ingest.get("channels")
+    if configured in (None, ()):
+        return list(required)
+    if not isinstance(configured, list) or any(not isinstance(item, str) or not item.strip() for item in configured):
+        raise ConfigError(f"protocol.inputs.ingest.channels for {protocol.id!r} must be a list of non-empty strings")
+    channels = [item.strip() for item in configured]
+    missing = [channel for channel in required if channel not in channels]
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ConfigError(
+            f"protocol.inputs.ingest.channels for {protocol.id!r} must include required channel(s): {missing_text}"
+        )
+    return channels
+
+
+def _configured_fold_change_target(protocol: Any, *, expected: str) -> str:
+    fold_change = _input_mapping(protocol, key="fold_change")
+    configured = fold_change.get("target")
+    if configured is None:
+        return expected
+    if not isinstance(configured, str) or not configured.strip():
+        raise ConfigError(f"protocol.inputs.fold_change.target for {protocol.id!r} must be a non-empty string")
+    target = configured.strip()
+    if target != expected:
+        raise ConfigError(
+            f"protocol.inputs.fold_change.target for {protocol.id!r} must match the compiled assay ratio "
+            f"{expected!r}, not {target!r}"
+        )
+    return target
+
+
+def _dual_reporter_semantic_profile(*, include_fold_change: bool, include_crosstalk_pairs: bool) -> str:
+    if include_crosstalk_pairs:
+        return "yfp_cfp_crosstalk"
+    if include_fold_change:
+        return "yfp_cfp_fold_change"
+    return "yfp_cfp_raw"
+
+
+def _single_reporter_semantic_profile(include_fold_change: bool) -> str:
+    return "single_reporter_fold_change" if include_fold_change else "single_reporter_raw"
 
 
 def _cfg_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:
@@ -684,91 +885,128 @@ def _cfg_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:
 
 
 def _plate_reader_plot_output_ids(*, measurement: str) -> set[str]:
-    if measurement == "yfp_cfp":
-        return {
-            "raw_kinetics",
-            "endpoint_by_condition",
-            "endpoint_by_design",
-            "state_summary",
-            "intensity_overview",
-            "ratio_overview",
-            "value_distributions",
-            "ratio_heatmap",
-            "support_heatmap",
-        }
-    if measurement == "rfp_od600":
-        return {
-            "raw_kinetics",
-            "endpoint_by_condition",
-            "endpoint_by_design",
-            "intensity_overview",
-            "value_distributions",
-        }
-    raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    if measurement != "yfp_cfp":
+        raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    return {
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "state_summary",
+        "intensity_overview",
+        "ratio_overview",
+        "value_distributions",
+        "ratio_heatmap",
+        "support_heatmap",
+    }
+
+
+def _plate_reader_single_reporter_plot_output_ids() -> set[str]:
+    return {
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "intensity_overview",
+        "value_distributions",
+    }
+
+
+def _plate_reader_retron_plot_output_ids() -> set[str]:
+    return {
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "intensity_overview",
+        "value_distributions",
+    }
 
 
 def _plate_reader_base_steps(
     *,
     measurement: str,
+    ingest_channels: list[str],
     blank_cfg: dict[str, Any],
     overflow_cfg: dict[str, Any],
 ) -> tuple[PluginStepDecl, ...]:
-    if measurement == "yfp_cfp":
-        steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
-            resolve_recipe_steps("plate_reader/dual_reporter_screen_base")
+    if measurement != "yfp_cfp":
+        raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
+        resolve_recipe_steps("plate_reader/dual_reporter_screen_base")
+    )
+    return tuple(
+        _with_pipeline_overrides(
+            steps,
+            ingest_channels=ingest_channels,
+            blank_cfg=blank_cfg,
+            overflow_cfg=overflow_cfg,
         )
-        return tuple(_with_pipeline_overrides(steps, blank_cfg=blank_cfg, overflow_cfg=overflow_cfg))
-    if measurement == "rfp_od600":
-        return (
-            _step(id="ingest", plugin="ingest/synergy_h1"),
-            _step(
-                id="merge_map",
-                plugin="transform/sample_map",
-                reads={
-                    "df": RecordInputDecl(record_id="ingest/df"),
-                    "sample_map": ResourceInputDecl(resource_id="sample_map"),
-                },
-            ),
-            _step(
-                id="labels",
-                plugin="transform/assay_labels",
-                reads={"df": RecordInputDecl(record_id="merge_map/df")},
-            ),
-            _step(
-                id="blank",
-                plugin="transform/blank_correction",
-                reads={"df": RecordInputDecl(record_id="labels/df")},
-                with_=blank_cfg,
-            ),
-            _step(
-                id="overflow",
-                plugin="transform/overflow_handling",
-                reads={"df": RecordInputDecl(record_id="blank/df")},
-                with_=overflow_cfg,
-            ),
-            _step(
-                id="ratio_rfp_od600",
-                plugin="transform/ratio",
-                reads={"df": RecordInputDecl(record_id="overflow/df")},
-                with_={"name": "RFP/OD600", "numerator": "RFP", "denominator": "OD600"},
-            ),
+    )
+
+
+def _plate_reader_single_reporter_base_steps(
+    *,
+    ingest_channels: list[str],
+    reporter_channel: str,
+    normalizer_channel: str,
+    blank_cfg: dict[str, Any],
+    overflow_cfg: dict[str, Any],
+) -> tuple[PluginStepDecl, ...]:
+    ratio_label = _single_reporter_ratio_label(
+        reporter_channel=reporter_channel,
+        normalizer_channel=normalizer_channel,
+    )
+    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
+        resolve_recipe_steps(
+            "plate_reader/single_reporter_screen_base",
+            with_args={
+                "reporter_channel": reporter_channel,
+                "normalizer_channel": normalizer_channel,
+            },
         )
-    raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    )
+    return tuple(
+        _with_pipeline_overrides(
+            steps,
+            ingest_channels=ingest_channels,
+            blank_cfg=blank_cfg,
+            overflow_cfg=overflow_cfg,
+            ratio_name=ratio_label,
+            ratio_numerator=reporter_channel,
+            ratio_denominator=normalizer_channel,
+        )
+    )
 
 
 def _with_pipeline_overrides(
     steps: list[PluginStepDecl],
     *,
+    ingest_channels: list[str] | None = None,
     blank_cfg: dict[str, Any],
     overflow_cfg: dict[str, Any],
+    ratio_name: str | None = None,
+    ratio_numerator: str | None = None,
+    ratio_denominator: str | None = None,
 ) -> list[PluginStepDecl]:
     normalized: list[PluginStepDecl] = []
     for step in steps:
         with_block = dict(step.with_ or {})
+        if step.id == "ingest" and ingest_channels is not None:
+            with_block = _deep_merge(with_block, {"channels": ingest_channels})
         if step.id == "blank" and blank_cfg:
             with_block = _deep_merge(with_block, blank_cfg)
         if step.id == "overflow" and overflow_cfg:
             with_block = _deep_merge(with_block, overflow_cfg)
+        if step.id == "ratio_reporter_normalizer":
+            ratio_overrides = {
+                key: value
+                for key, value in {
+                    "name": ratio_name,
+                    "numerator": ratio_numerator,
+                    "denominator": ratio_denominator,
+                }.items()
+                if value is not None
+            }
+            if ratio_overrides:
+                with_block = _deep_merge(with_block, ratio_overrides)
         normalized.append(
             PluginStepDecl(
                 id=step.id,
@@ -783,27 +1021,41 @@ def _with_pipeline_overrides(
 
 
 def _plate_reader_fold_change_step(*, measurement: str) -> PluginStepDecl:
-    if measurement == "yfp_cfp":
-        return _step(
-            id="fold_change__yfp_over_cfp",
-            plugin="transform/fold_change",
-            reads={"df": RecordInputDecl(record_id="ratio_yfp_cfp/df")},
-            writes={"table": RecordOutputDecl(record_id="fold_change__yfp_over_cfp/table")},
-        )
-    if measurement == "rfp_od600":
-        return _step(
-            id="fold_change__rfp_od600",
-            plugin="transform/fold_change",
-            reads={"df": RecordInputDecl(record_id="ratio_rfp_od600/df")},
-            with_={"target": "RFP/OD600"},
-            writes={"table": RecordOutputDecl(record_id="fold_change__rfp_od600/table")},
-        )
-    raise ConfigError(f"Unsupported fold-change measurement {measurement!r}")
+    if measurement != "yfp_cfp":
+        raise ConfigError(f"Unsupported fold-change measurement {measurement!r}")
+    return _step(
+        id="fold_change__yfp_over_cfp",
+        plugin="transform/fold_change",
+        reads={"df": RecordInputDecl(record_id="ratio_yfp_cfp/df")},
+        writes={"table": RecordOutputDecl(record_id="fold_change__yfp_over_cfp/table")},
+    )
 
 
-def _plate_reader_semantic_metrics_step(*, measurement: str, config: dict[str, Any]) -> PluginStepDecl:
-    defaults = {"measurement_channel": ("YFP/CFP" if measurement == "yfp_cfp" else "RFP/OD600")}
-    record_id = "ratio_yfp_od600/df" if measurement == "yfp_cfp" else "ratio_rfp_od600/df"
+def _plate_reader_single_reporter_fold_change_step(
+    *,
+    reporter_channel: str,
+    normalizer_channel: str,
+) -> PluginStepDecl:
+    return _step(
+        id="fold_change__single_reporter",
+        plugin="transform/fold_change",
+        reads={"df": RecordInputDecl(record_id="ratio_reporter_normalizer/df")},
+        with_={
+            "target": _single_reporter_ratio_label(
+                reporter_channel=reporter_channel, normalizer_channel=normalizer_channel
+            )
+        },
+        writes={"table": RecordOutputDecl(record_id="fold_change__single_reporter/table")},
+    )
+
+
+def _plate_reader_semantic_metrics_step(
+    *,
+    measurement_channel: str,
+    record_id: str,
+    config: dict[str, Any],
+) -> PluginStepDecl:
+    defaults = {"measurement_channel": measurement_channel}
     return _step(
         id="semantic_metrics",
         plugin="transform/retron_sponge_metrics",
@@ -834,6 +1086,10 @@ def _plate_reader_crosstalk_pairs_step(*, config: dict[str, Any]) -> PluginStepD
     with_block = _deep_merge(
         defaults, {key: value for key, value in config.items() if key not in {"enabled", "export"}}
     )
+    if with_block["target"] != "YFP/CFP":
+        raise ConfigError(
+            "protocol.analysis.crosstalk_pairs.target must remain 'YFP/CFP' for plate_reader/dual_reporter_screen"
+        )
     return _step(
         id="crosstalk_pairs",
         plugin="transform/crosstalk_pairs",
@@ -868,9 +1124,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
         defaults = {
             "partition": {"by": "design_id"},
             "hue": "treatment",
-            "y": (
-                ["OD600", "YFP", "YFP/CFP", "YFP/OD600"] if measurement == "yfp_cfp" else ["OD600", "RFP", "RFP/OD600"]
-            ),
+            "y": ["OD600", "YFP", "YFP/CFP", "YFP/OD600"],
             "add_sheet_line": True,
         }
         return _step(
@@ -882,7 +1136,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
     if output_id == "endpoint_by_condition":
         defaults = {
             "x": "treatment",
-            "y": (["OD600", "YFP/OD600"] if measurement == "yfp_cfp" else ["OD600", "RFP/OD600"]),
+            "y": ["OD600", "YFP/OD600"],
             "partition": {"by": "design_id"},
             "time": 14.0,
         }
@@ -895,7 +1149,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
     if output_id == "endpoint_by_design":
         defaults = {
             "x": "design_id",
-            "y": ("YFP/OD600" if measurement == "yfp_cfp" else "RFP/OD600"),
+            "y": "YFP/OD600",
             "hue": "treatment",
             "time": 14.0,
         }
@@ -919,30 +1173,17 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "intensity_overview":
-        if measurement == "yfp_cfp":
-            defaults = {
-                "partition": {"by": "design_id"},
-                "ts_channel": "YFP/OD600",
-                "ts_hue": "treatment",
-                "ts_add_sheet_line": True,
-                "ts_mark_snap_time": True,
-                "snap_channel": "YFP/OD600",
-                "snap_time": 14.0,
-            }
-            step_id = "intensity_overview"
-        else:
-            defaults = {
-                "partition": {"by": "design_id"},
-                "ts_channel": "RFP/OD600",
-                "ts_hue": "treatment",
-                "ts_add_sheet_line": True,
-                "ts_mark_snap_time": True,
-                "snap_channel": "RFP/OD600",
-                "snap_time": 14.0,
-            }
-            step_id = "intensity_overview"
+        defaults = {
+            "partition": {"by": "design_id"},
+            "ts_channel": "YFP/OD600",
+            "ts_hue": "treatment",
+            "ts_add_sheet_line": True,
+            "ts_mark_snap_time": True,
+            "snap_channel": "YFP/OD600",
+            "snap_time": 14.0,
+        }
         return _step(
-            id=step_id,
+            id="intensity_overview",
             plugin="plot/ts_and_snap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
@@ -966,8 +1207,6 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
         )
     if output_id == "value_distributions":
         defaults = {"channels": ["YFP/CFP"], "partition": {"by": "design_id"}}
-        if measurement == "rfp_od600":
-            defaults["channels"] = ["RFP/OD600"]
         return _step(
             id="value_distributions",
             plugin="plot/distributions",
@@ -1011,6 +1250,85 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
 
 
+def _plate_reader_single_reporter_plot_output(
+    protocol: Any,
+    *,
+    output_id: str,
+    reporter_channel: str,
+    normalizer_channel: str,
+) -> PluginStepDecl:
+    settings = protocol.plot_view_config(figure_id=output_id)
+    plot_reads = _plate_reader_single_reporter_plot_reads()
+    ratio_label = _single_reporter_ratio_label(
+        reporter_channel=reporter_channel,
+        normalizer_channel=normalizer_channel,
+    )
+    if output_id == "raw_kinetics":
+        defaults = {
+            "partition": {"by": "design_id"},
+            "hue": "treatment",
+            "y": [normalizer_channel, reporter_channel, ratio_label],
+            "add_sheet_line": True,
+        }
+        return _step(
+            id="raw_kinetics",
+            plugin="plot/time_series",
+            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_condition":
+        defaults = {
+            "x": "treatment",
+            "y": [normalizer_channel, ratio_label],
+            "partition": {"by": "design_id"},
+            "time": 14.0,
+        }
+        return _step(
+            id="endpoint_by_condition",
+            plugin="plot/snapshot_barplot",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_design":
+        defaults = {
+            "x": "design_id",
+            "y": ratio_label,
+            "hue": "treatment",
+            "time": 14.0,
+        }
+        return _step(
+            id="endpoint_by_design",
+            plugin="plot/snapshot_barplot",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "intensity_overview":
+        defaults = {
+            "partition": {"by": "design_id"},
+            "ts_channel": ratio_label,
+            "ts_hue": "treatment",
+            "ts_add_sheet_line": True,
+            "ts_mark_snap_time": True,
+            "snap_channel": ratio_label,
+            "snap_time": 14.0,
+        }
+        return _step(
+            id="intensity_overview",
+            plugin="plot/ts_and_snap",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "value_distributions":
+        defaults = {"channels": [ratio_label], "partition": {"by": "design_id"}}
+        return _step(
+            id="value_distributions",
+            plugin="plot/distributions",
+            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    raise ConfigError(f"Unknown single-reporter plot output {output_id!r}")
+
+
 def _plate_reader_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
     if output_id == "crosstalk_pairs_table":
         defaults = {"path": "crosstalk_pairs.csv"}
@@ -1048,17 +1366,23 @@ def _deep_merge(*mappings: dict[str, Any]) -> dict[str, Any]:
 
 
 def _plate_reader_plot_reads(*, measurement: str) -> dict[str, RecordInputDecl]:
-    if measurement == "yfp_cfp":
-        return {
-            "df": RecordInputDecl(record_id="ratio_yfp_od600/df"),
-            "blanks": RecordInputDecl(record_id="blank/blanks"),
-        }
-    if measurement == "rfp_od600":
-        return {
-            "df": RecordInputDecl(record_id="ratio_rfp_od600/df"),
-            "blanks": RecordInputDecl(record_id="blank/blanks"),
-        }
-    raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    if measurement != "yfp_cfp":
+        raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
+    return {
+        "df": RecordInputDecl(record_id="ratio_yfp_od600/df"),
+        "blanks": RecordInputDecl(record_id="blank/blanks"),
+    }
+
+
+def _plate_reader_single_reporter_plot_reads() -> dict[str, RecordInputDecl]:
+    return {
+        "df": RecordInputDecl(record_id="ratio_reporter_normalizer/df"),
+        "blanks": RecordInputDecl(record_id="blank/blanks"),
+    }
+
+
+def _single_reporter_ratio_label(*, reporter_channel: str, normalizer_channel: str) -> str:
+    return f"{reporter_channel}/{normalizer_channel}"
 
 
 def _step(

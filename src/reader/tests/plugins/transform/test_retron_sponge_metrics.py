@@ -249,6 +249,33 @@ def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
     assert m_auc > 0
 
 
+def test_retron_sponge_metrics_masks_invalid_post_stress_rows_without_crashing():
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+    df = _input_df()
+    mask = (df["position"] == "B4") & (df["channel"] == "YFP/CFP") & (df["time"] >= 2.5)
+    df.loc[mask, "value"] = 0.0
+
+    outputs = plugin.run(_ctx(), {"df": df}, cfg)
+    trace = outputs["trace"]
+    summary = outputs["summary"]
+
+    invalid_r = trace[(trace["metric"] == "R") & (trace["replicate_id"] == "B4") & (trace["time"] >= 2.5)]
+    d_end = summary[
+        (summary["metric"] == "D_END")
+        & (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+    ]["value"].iloc[0]
+
+    assert invalid_r["value"].isna().any()
+    assert pd.notna(d_end)
+
+
 def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
     plugin = RetronSpongeMetrics()
     cfg = RetronSpongeMetricsCfg(

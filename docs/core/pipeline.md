@@ -23,7 +23,6 @@ protocol:
   inputs:
     ingest:
       mode: auto
-      channels: [OD600, CFP, YFP]
     fold_change:
       report_times: [8.0, 14.0]
 
@@ -100,7 +99,6 @@ protocol:
   inputs:
     ingest:
       mode: auto
-      channels: [OD600, CFP, YFP]
       sheet_names: ["Plate 1 - Sheet1", "Plate 2 - Sheet1"]
     fold_change:
       report_times: [8.0, 14.0]
@@ -134,7 +132,6 @@ protocol:
   inputs:
     ingest:
       mode: mixed
-      channels: [OD600, CFP, YFP]
     response:
       logic_channel: YFP/CFP
       intensity_channel: YFP/OD600
@@ -176,17 +173,32 @@ Use the CLI to inspect the semantic surface:
 uv run reader ls --details
 uv run reader ls --details --format json
 uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
+uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/single_reporter_screen
+uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/retron_sponge_screen
 uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --format json
 uv run reader protocols plate_reader/dual_reporter_screen
+uv run reader protocols plate_reader/single_reporter_screen
+uv run reader protocols plate_reader/retron_sponge_screen
 uv run reader protocols plate_reader/dual_reporter_screen --format json
+uv run reader protocols plate_reader/single_reporter_screen --format json
+uv run reader protocols plate_reader/retron_sponge_screen --format json
 uv run reader protocols plate_reader/dual_reporter_screen --example-config
+uv run reader protocols plate_reader/retron_sponge_screen --example-config
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform
 uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
+uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot --format json
+uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform --format json
 uv run reader explain experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
 uv run reader plot experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
 uv run reader export experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
 ```
+
+For plate-reader assays, the protocol boundary matters:
+
+- `plate_reader/dual_reporter_screen` owns CFP/YFP-style dual-reporter panels.
+- `plate_reader/single_reporter_screen` owns single-reporter panels such as RFP/OD600 screens.
+- `plate_reader/retron_sponge_screen` owns matched-control sponge assays with explicit control/window/comparison/ranking semantics.
 
 These commands show:
 

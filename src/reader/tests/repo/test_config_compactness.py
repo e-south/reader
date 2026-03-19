@@ -44,3 +44,36 @@ def test_repo_experiment_configs_omit_redundant_defaults(config_path: Path) -> N
     assert isinstance(protocol, dict), f"{config_path}: protocol block is required"
     protocol_id = protocol.get("id")
     assert isinstance(protocol_id, str) and protocol_id.strip(), f"{config_path}: protocol.id must be explicit"
+
+    inputs = protocol.get("inputs") or {}
+    assert isinstance(inputs, dict), f"{config_path}: protocol.inputs must be a mapping when present"
+    ingest = inputs.get("ingest") or {}
+    fold_change = inputs.get("fold_change") or {}
+
+    if protocol_id in {
+        "plate_reader/dual_reporter_screen",
+        "plate_reader/single_reporter_screen",
+        "plate_reader/retron_sponge_screen",
+        "logic/sfxi_screen",
+    }:
+        assert "channels" not in ingest, f"{config_path}: omit protocol.inputs.ingest.channels; the protocol owns them"
+
+    if protocol_id in {
+        "plate_reader/dual_reporter_screen",
+        "plate_reader/single_reporter_screen",
+        "plate_reader/retron_sponge_screen",
+        "logic/sfxi_screen",
+    }:
+        assert "target" not in fold_change, (
+            f"{config_path}: omit protocol.inputs.fold_change.target; the compiled assay ratio owns it"
+        )
+
+    if protocol_id == "plate_reader/dual_reporter_screen":
+        analysis = protocol.get("analysis") or {}
+        if isinstance(analysis, dict):
+            crosstalk = analysis.get("crosstalk_pairs") or {}
+            if isinstance(crosstalk, dict):
+                assert "target" not in crosstalk, (
+                    f"{config_path}: omit protocol.analysis.crosstalk_pairs.target; dual-reporter crosstalk is fixed "
+                    "to YFP/CFP"
+                )

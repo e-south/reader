@@ -21,7 +21,9 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     - missing pre-stress reads or matched tetO controls are hard errors
     """
 
-    required = {"position", "time", "channel", "value", cfg.state_column, cfg.plate_column, cfg.replicate_column}
+    required = {"position", "time", "channel", "value", cfg.state_column, cfg.replicate_column}
+    if cfg.plate_column:
+        required.add(cfg.plate_column)
     if cfg.sensor_column and cfg.sponge_column:
         required.update({cfg.sensor_column, cfg.sponge_column})
         if cfg.genotype_column:
@@ -51,7 +53,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     }
 
     expected_sign_map = _expected_sign_map(ctx, cfg)
-    channels = {cfg.measurement_channel, cfg.od_channel}
+    channels = {cfg.measurement_channel, cfg.growth_channel}
     if df[df["channel"].isin(channels)].empty:
         available = sorted(df["channel"].dropna().astype(str).unique().tolist())
         raise ValueError(
@@ -74,20 +76,25 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     )
 
     primary_raw = pd.to_numeric(wide[cfg.measurement_channel], errors="coerce")
-    bad_primary = int(((~np.isfinite(primary_raw)) | (primary_raw <= 0)).sum())
+    valid_primary = np.isfinite(primary_raw) & (primary_raw > 0)
+    bad_primary = int((~valid_primary).sum())
     if bad_primary:
-        raise ValueError(
-            "retron_sponge_metrics: primary measurement contains non-positive or non-numeric values; "
-            f"cannot compute log2 ratio for {bad_primary} row(s)"
+        ctx.logger.warning(
+            "retron_sponge_metrics: masking %d non-positive or non-numeric %s row(s) before log2 conversion",
+            bad_primary,
+            cfg.measurement_channel,
         )
-    wide["R"] = np.log2(primary_raw.astype(float))
+    wide["primary_measurement_valid"] = valid_primary
+    wide["R"] = np.nan
+    wide.loc[valid_primary, "R"] = np.log2(primary_raw.loc[valid_primary].astype(float))
     wide["R_pre"] = np.nan
     wide["mu"] = np.nan
     wide["in_pre_window"] = False
     wide["in_primary_post_stress"] = False
     wide["in_endpoint_window"] = False
 
-    time_zero = float(cfg.stress_time_zero_h)
+    time_zero_by_plate = _stress_time_zero_by_plate(ctx, wide=wide, cfg=cfg)
+    wide["stress_time_zero_h"] = wide["plate_id"].map(time_zero_by_plate).astype(float)
     pre_reads = int(cfg.pre_reads)
     endpoint_reads = int(cfg.endpoint_reads)
     if pre_reads <= 0:
@@ -98,6 +105,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     well_group = ["plate_id", "replicate_id"]
     for _, group in wide.groupby(well_group, dropna=False, sort=False):
         ordered = group.sort_values("time").copy()
+        time_zero = float(ordered["stress_time_zero_h"].iloc[0])
         pre = ordered[ordered["time"] < time_zero]
         if len(pre) < pre_reads:
             rep = ordered.iloc[0]
@@ -107,11 +115,20 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
                 f"need {pre_reads}, found {len(pre)}"
             )
         pre_idx = pre.tail(pre_reads).index
+        pre_r = pd.to_numeric(wide.loc[pre_idx, "R"], errors="coerce")
+        valid_pre = pre_r[np.isfinite(pre_r)]
+        if len(valid_pre) < pre_reads:
+            rep = ordered.iloc[0]
+            raise ValueError(
+                "retron_sponge_metrics: insufficient valid primary measurements in the pre-stress window for "
+                f"plate={rep['plate_id']!r} replicate={rep['replicate_id']!r}; "
+                f"need {pre_reads}, found {len(valid_pre)}"
+            )
         wide.loc[pre_idx, "in_pre_window"] = True
-        wide.loc[ordered.index, "R_pre"] = float(wide.loc[pre_idx, "R"].mean())
+        wide.loc[ordered.index, "R_pre"] = float(valid_pre.mean())
         wide.loc[ordered.index, "mu"] = _growth_rate_trace(
             times=ordered["time"].to_numpy(dtype=float),
-            od_values=pd.to_numeric(ordered[cfg.od_channel], errors="coerce").to_numpy(dtype=float),
+            od_values=pd.to_numeric(ordered[cfg.growth_channel], errors="coerce").to_numpy(dtype=float),
         )
 
     control_mask = wide["sponge"].astype(str) == str(cfg.control_name)
@@ -121,9 +138,15 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
             "matched-control normalization cannot proceed"
         )
 
-    cutoff_map = _primary_window_cutoffs(wide, cfg=cfg, control_mask=control_mask)
+    cutoff_map = _primary_window_cutoffs(
+        wide,
+        cfg=cfg,
+        control_mask=control_mask,
+        time_zero_by_plate=time_zero_by_plate,
+    )
     for scope, cutoff in cutoff_map.items():
         plate_id, sensor, stress_condition = scope
+        time_zero = float(time_zero_by_plate[plate_id])
         scope_mask = (
             (wide["plate_id"] == plate_id) & (wide["sensor"] == sensor) & (wide["stress_condition"] == stress_condition)
         )
@@ -144,7 +167,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
         endpoint_mask = post_mask & wide["time"].isin(endpoint_times)
         wide.loc[endpoint_mask, "in_endpoint_window"] = True
 
-    wide["time_from_stress"] = wide["time"].astype(float) - time_zero
+    wide["time_from_stress"] = wide["time"].astype(float) - wide["stress_time_zero_h"].astype(float)
     wide["B"] = wide["R"] - wide["R_pre"]
 
     control_means = (
@@ -173,7 +196,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     c_means = _state_metric_means(wide, metric="C")
     b_means = _state_metric_means(wide, metric="B")
     mu_means = _state_metric_means(wide, metric="mu")
-    od_means = _state_metric_means(wide, metric=cfg.od_channel)
+    od_means = _state_metric_means(wide, metric=cfg.growth_channel)
 
     d_trace = _difference_by_state(
         c_means,
@@ -248,7 +271,12 @@ def _derive_metadata(
     expected_sign_map: Mapping[str, int],
 ) -> pd.DataFrame:
     out = wide.copy()
-    out["plate_id"] = out[cfg.plate_column].astype(str)
+    if cfg.plate_column:
+        out["plate_id"] = out[cfg.plate_column].astype(str)
+    elif "source_file" in out.columns:
+        out["plate_id"] = out["source_file"].astype(str)
+    else:
+        out["plate_id"] = "plate"
     out["replicate_id"] = out[cfg.replicate_column].astype(str)
     if cfg.sensor_column and cfg.sponge_column:
         if cfg.sensor_column not in out.columns or cfg.sponge_column not in out.columns:
@@ -498,14 +526,67 @@ def _growth_rate_trace(*, times: np.ndarray, od_values: np.ndarray) -> np.ndarra
     return mu
 
 
-def _primary_window_cutoffs(wide: pd.DataFrame, *, cfg, control_mask: pd.Series) -> dict[tuple[str, str, str], float]:
+def _stress_time_zero_by_plate(ctx, *, wide: pd.DataFrame, cfg) -> dict[str, float]:
+    policy = str(cfg.stress_time_zero_policy)
+    if cfg.stress_time_zero_h is not None and policy == "largest_gap_midpoint":
+        policy = "explicit"
+    plate_ids = tuple(pd.unique(wide["plate_id"].astype(str)))
+    if policy == "explicit":
+        if cfg.stress_time_zero_h is None:
+            raise ValueError(
+                "retron_sponge_metrics: stress_time_zero_h is required when stress_time_zero_policy='explicit'"
+            )
+        value = float(cfg.stress_time_zero_h)
+        return dict.fromkeys(plate_ids, value)
+    if policy != "largest_gap_midpoint":
+        raise ValueError(f"retron_sponge_metrics: unsupported stress_time_zero_policy={policy!r}")
+
+    resolved: dict[str, float] = {}
+    for plate_id, group in wide.groupby("plate_id", dropna=False, sort=False):
+        times = np.sort(pd.unique(pd.to_numeric(group["time"], errors="coerce").dropna()))
+        if len(times) < 2:
+            raise ValueError(
+                "retron_sponge_metrics: cannot infer stress_time_zero_h from fewer than two timepoints for "
+                f"plate={plate_id!r}; set stress_time_zero_policy='explicit'"
+            )
+        gaps = np.diff(times)
+        if not len(gaps):
+            raise ValueError(
+                "retron_sponge_metrics: cannot infer stress_time_zero_h for "
+                f"plate={plate_id!r}; set stress_time_zero_policy='explicit'"
+            )
+        max_index = int(np.argmax(gaps))
+        max_gap = float(gaps[max_index])
+        typical_gap = float(np.median(gaps))
+        if max_gap <= 0 or max_gap < max(typical_gap * 1.5, typical_gap + 1e-9):
+            raise ValueError(
+                "retron_sponge_metrics: could not infer a distinct stress-time boundary for "
+                f"plate={plate_id!r}; set semantic_metrics.stress_time_zero_policy='explicit' "
+                "and provide stress_time_zero_h"
+            )
+        resolved[str(plate_id)] = float((times[max_index] + times[max_index + 1]) / 2.0)
+    ctx.logger.debug(
+        "retron_sponge_metrics: resolved stress_time_zero_h by largest gap midpoint: %s",
+        ", ".join(f"{plate_id}={value:.6g}" for plate_id, value in resolved.items()),
+    )
+    return resolved
+
+
+def _primary_window_cutoffs(
+    wide: pd.DataFrame,
+    *,
+    cfg,
+    control_mask: pd.Series,
+    time_zero_by_plate: Mapping[str, float],
+) -> dict[tuple[str, str, str], float]:
     cutoffs: dict[tuple[str, str, str], float] = {}
-    time_zero = float(cfg.stress_time_zero_h)
     control = wide.loc[control_mask]
     for scope, group in control.groupby(["plate_id", "sensor", "stress_condition"], dropna=False):
+        plate_id = str(scope[0])
+        time_zero = float(time_zero_by_plate[plate_id])
         post = (
             group[group["time"] > time_zero]
-            .groupby("time", dropna=False)[cfg.od_channel]
+            .groupby("time", dropna=False)[cfg.growth_channel]
             .mean()
             .reset_index()
             .sort_values("time")
@@ -517,7 +598,7 @@ def _primary_window_cutoffs(wide: pd.DataFrame, *, cfg, control_mask: pd.Series)
             )
         cutoffs[scope] = _post_window_cutoff(
             times=post["time"].to_numpy(dtype=float),
-            od_values=pd.to_numeric(post[cfg.od_channel], errors="coerce").to_numpy(dtype=float),
+            od_values=pd.to_numeric(post[cfg.growth_channel], errors="coerce").to_numpy(dtype=float),
             mode=str(cfg.plateau.mode),
             slope_tolerance=float(cfg.plateau.slope_tolerance),
             min_intervals=int(cfg.plateau.min_intervals),
@@ -692,7 +773,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                     "time": float(row["time"]),
                     "time_from_stress": float(row["time_from_stress"]),
                     "metric": metric,
-                    "value": float(row[metric]),
+                    "value": _numeric_or_nan(row[metric]),
                     "expected_decoy_sign": row["expected_decoy_sign"],
                     "is_relevant_stress": row["is_relevant_stress"],
                     "relevant_sensor_pair": row["relevant_sensor_pair"],
@@ -716,7 +797,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                 "time": float(row["time"]),
                 "time_from_stress": float(row["time_from_stress"]),
                 "metric": "M",
-                "value": float(row["M"]),
+                "value": _numeric_or_nan(row["M"]),
                 "expected_decoy_sign": row["expected_decoy_sign"],
                 "is_relevant_stress": row["is_relevant_stress"],
                 "relevant_sensor_pair": row["relevant_sensor_pair"],
@@ -1004,3 +1085,8 @@ def _auc(times: np.ndarray, values: np.ndarray) -> float:
     if valid.sum() < 2:
         return np.nan
     return float(np.trapezoid(values[valid], times[valid]))
+
+
+def _numeric_or_nan(value: Any) -> float:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    return np.nan if not np.isfinite(numeric) else float(numeric)

@@ -10,6 +10,7 @@ from .compiler import (
     compile_logic_sfxi_screen,
     compile_plate_reader_dual_reporter_screen,
     compile_plate_reader_retron_sponge_screen,
+    compile_plate_reader_single_reporter_screen,
 )
 from .model import (
     ProtocolArtifactSpec,
@@ -29,7 +30,6 @@ from .model import (
     ProtocolSemanticProfileOverride,
     ProtocolSemanticProfileSpec,
     ProtocolWindowSpec,
-    analysis_choice,
     binding_value,
 )
 
@@ -111,10 +111,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         domain="plate_reader",
         family="screen_analysis",
         summary=(
-            "General plate-reader panel protocol with dual-reporter and single-reporter measurement families, "
-            "compiled ratio/fold-change summaries, and optional crosstalk pair selection."
+            "Dual-reporter plate-reader panel protocol with compiled ratio/fold-change summaries and "
+            "optional crosstalk pair selection."
         ),
-        tags=("plate_reader", "dual_reporter", "single_reporter", "screen", "ratio", "fold_change"),
+        tags=("plate_reader", "dual_reporter", "screen", "ratio", "fold_change"),
         input_fields=(
             _field(
                 "ingest",
@@ -127,7 +127,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         choices=("auto", "snapshot_only", "kinetic_only", "mixed"),
                         default="auto",
                     ),
-                    _field("channels", "Ordered channel names to keep from the workbook.", kind="string_list"),
                     _field(
                         "channel_map",
                         "Optional channel rename mapping.",
@@ -192,7 +191,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "fold_change",
                 "Fold-change summary inputs for screen-style comparisons.",
                 children=(
-                    _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
                     _field("report_times", "Report times in hours for fold-change snapshots.", kind="number_list"),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
                     _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
@@ -227,13 +225,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
         ),
         analysis_fields=(
-            _field(
-                "measurement",
-                "Primary analysis measurement family.",
-                kind="string",
-                choices=("yfp_cfp", "rfp_od600"),
-                default="yfp_cfp",
-            ),
             _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
             _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
             _field(
@@ -309,7 +300,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     _field("export", "Export the crosstalk pairs table when present.", kind="bool", default=False),
                     _field("value_column", "Value column to score.", kind="string", default="log2FC"),
                     _field("value_scale", "Scale of the value column.", kind="string", default="log2"),
-                    _field("target", "Measurement family to score.", kind="string", default="YFP/CFP"),
                     _field("time_mode", "Time-selection mode.", kind="string", default="all"),
                     _field("design_column", "Design/grouping column.", kind="string", default="design_id"),
                     _field("treatment_column", "Treatment-state column.", kind="string", default="treatment"),
@@ -345,7 +335,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 id="yfp_cfp_raw",
                 family="dual_reporter_panel",
                 summary="Generic dual-reporter panel semantics over raw/support ratio traces.",
-                primary_metric="R",
+                primary_metric="Ratio",
                 primary_readout="YFP / CFP",
                 tags=("dual_reporter", "ratio", "panel"),
             ),
@@ -365,22 +355,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 primary_readout="YFP / CFP",
                 tags=("dual_reporter", "ratio", "crosstalk"),
             ),
-            ProtocolSemanticProfileSpec(
-                id="rfp_od600_raw",
-                family="single_reporter_panel",
-                summary="Generic single-reporter panel semantics over raw/support ratio traces.",
-                primary_metric="R",
-                primary_readout="RFP / OD600",
-                tags=("single_reporter", "ratio", "panel"),
-            ),
-            ProtocolSemanticProfileSpec(
-                id="rfp_od600_fold_change",
-                family="single_reporter_panel",
-                summary="Single-reporter panel semantics with compiled fold-change summaries.",
-                primary_metric="log2FC",
-                primary_readout="RFP / OD600",
-                tags=("single_reporter", "ratio", "panel", "fold_change"),
-            ),
         ),
         control_rules=(),
         windows=(),
@@ -394,8 +368,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "yfp_cfp_raw",
                     "yfp_cfp_fold_change",
                     "yfp_cfp_crosstalk",
-                    "rfp_od600_raw",
-                    "rfp_od600_fold_change",
                 ),
             ),
             ProtocolMetricSpec(
@@ -411,13 +383,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Raw YFP trace.",
                 formula="YFP",
                 profiles=("yfp_cfp_raw", "yfp_cfp_fold_change", "yfp_cfp_crosstalk"),
-            ),
-            ProtocolMetricSpec(
-                id="RFP",
-                stage="raw",
-                summary="Raw RFP trace.",
-                formula="RFP",
-                profiles=("rfp_od600_raw", "rfp_od600_fold_change"),
             ),
             ProtocolMetricSpec(
                 id="YFP_OD",
@@ -442,18 +407,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 profiles=("yfp_cfp_raw", "yfp_cfp_fold_change", "yfp_cfp_crosstalk"),
             ),
             ProtocolMetricSpec(
-                id="RFP_OD",
-                stage="support",
-                summary="Supporting RFP per biomass proxy.",
-                formula="RFP / OD600",
-                depends_on=("RFP", "OD"),
-                value_space="linear_ratio",
-                unit="ratio",
-                comparable_group="support_ratio_linear",
-                profiles=("rfp_od600_raw", "rfp_od600_fold_change"),
-            ),
-            ProtocolMetricSpec(
-                id="R",
+                id="Ratio",
                 stage="derived",
                 summary="Primary within-well assay ratio.",
                 formula="YFP / CFP",
@@ -461,42 +415,18 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 value_space="linear_ratio",
                 unit="ratio",
                 comparable_group="primary_ratio_linear",
-                profile_overrides={
-                    "rfp_od600_raw": ProtocolSemanticProfileOverride(
-                        summary="Primary within-well single-reporter ratio.",
-                        formula="RFP / OD600",
-                        depends_on=("RFP", "OD"),
-                        value_space="linear_ratio",
-                        unit="ratio",
-                        comparable_group="primary_ratio_linear",
-                    ),
-                    "rfp_od600_fold_change": ProtocolSemanticProfileOverride(
-                        summary="Primary within-well single-reporter ratio.",
-                        formula="RFP / OD600",
-                        depends_on=("RFP", "OD"),
-                        value_space="linear_ratio",
-                        unit="ratio",
-                        comparable_group="primary_ratio_linear",
-                    ),
-                },
-                profiles=(
-                    "yfp_cfp_raw",
-                    "yfp_cfp_fold_change",
-                    "yfp_cfp_crosstalk",
-                    "rfp_od600_raw",
-                    "rfp_od600_fold_change",
-                ),
+                profiles=("yfp_cfp_raw", "yfp_cfp_fold_change", "yfp_cfp_crosstalk"),
             ),
             ProtocolMetricSpec(
                 id="FC",
                 stage="summary",
                 summary="Nearest-time fold-change relative to the configured baseline treatment.",
-                formula="R(t*) / baseline(R)",
-                depends_on=("R",),
+                formula="Ratio(t*) / baseline(Ratio)",
+                depends_on=("Ratio",),
                 value_space="fold_change_ratio",
                 unit="ratio",
                 comparable_group="fold_change_linear",
-                profiles=("yfp_cfp_fold_change", "yfp_cfp_crosstalk", "rfp_od600_fold_change"),
+                profiles=("yfp_cfp_fold_change", "yfp_cfp_crosstalk"),
             ),
             ProtocolMetricSpec(
                 id="log2FC",
@@ -507,7 +437,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 value_space="log2_fold_change",
                 unit="log2_ratio",
                 comparable_group="fold_change_log2",
-                profiles=("yfp_cfp_fold_change", "yfp_cfp_crosstalk", "rfp_od600_fold_change"),
+                profiles=("yfp_cfp_fold_change", "yfp_cfp_crosstalk"),
             ),
         ),
         effect_signs=(),
@@ -614,14 +544,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     summary="Dual-reporter screens default to CFP/YFP/OD600 ingest in auto mode.",
                     with_={
                         "mode": binding_value("ingest.mode", "auto"),
-                        "channels": binding_value(
-                            "ingest.channels",
-                            analysis_choice(
-                                "measurement",
-                                cases={"rfp_od600": ["OD600", "RFP"]},
-                                default=["OD600", "CFP", "YFP"],
-                            ),
-                        ),
+                        "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
                         "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "add_sheet": binding_value("ingest.add_sheet", False),
@@ -641,14 +564,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     plugin="transform/fold_change",
                     summary="Shared fold-change defaults keep plate-reader comparisons and naming consistent.",
                     with_={
-                        "target": binding_value(
-                            "fold_change.target",
-                            analysis_choice(
-                                "measurement",
-                                cases={"rfp_od600": "RFP/OD600"},
-                                default="YFP/CFP",
-                            ),
-                        ),
+                        "target": binding_value("fold_change.target", "YFP/CFP"),
                         "report_times": binding_value("fold_change.report_times"),
                         "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
                         "agg": binding_value("fold_change.agg", "median"),
@@ -1233,10 +1149,257 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
 _DUAL_REPORTER_PROTOCOL = next(
     item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/dual_reporter_screen"
 )
-_DUAL_MEASUREMENT_FIELD = next(item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "measurement")
 _DUAL_STRICT_FIELD = next(item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "strict")
 _DUAL_PREPROCESSING_FIELD = next(
     item for item in _DUAL_REPORTER_PROTOCOL.analysis_fields if item.key == "preprocessing"
+)
+_PLATE_READER_MEASUREMENT_FIELD = _field(
+    "measurement",
+    "Primary matched-control measurement family.",
+    kind="string",
+    choices=("yfp_cfp", "single_reporter"),
+    default="yfp_cfp",
+)
+
+_RETRON_SPONGE_FIGURES = (
+    ProtocolFigureSpec(
+        id="raw_kinetics",
+        kind="qc",
+        summary="Raw kinetics view over the configured growth and reporter/readout channels.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="endpoint_by_condition",
+        kind="summary",
+        summary="Endpoint comparison grouped by induction/stress condition.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="endpoint_by_design",
+        kind="summary",
+        summary="Endpoint comparison grouped by genotype or sponge design.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="intensity_overview",
+        kind="kinetics",
+        summary="Combined time-series and endpoint view of the compiled primary assay readout.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="value_distributions",
+        kind="qc",
+        summary="Distribution view of the compiled primary assay readout.",
+    ),
+)
+
+_RETRON_SPONGE_PLOT_PROFILES = (
+    ProtocolPlotProfileSpec(
+        id="screen_overview",
+        summary="Balanced core plot set shared by dual-reporter and single-reporter sponge screens.",
+        figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+    ),
+    ProtocolPlotProfileSpec(
+        id="kinetics_qc",
+        summary="Kinetics-first QC view over raw traces and primary-readout distributions.",
+        figures=("raw_kinetics", "value_distributions"),
+    ),
+)
+
+_PLATE_READER_SINGLE_REPORTER_PROTOCOL = ProtocolDescriptor(
+    protocol="plate_reader/single_reporter_screen",
+    domain="plate_reader",
+    family="screen_analysis",
+    summary=(
+        "Single-reporter plate-reader panel protocol with configurable reporter/normalizer channels and "
+        "compiled fold-change summaries."
+    ),
+    tags=("plate_reader", "single_reporter", "screen", "ratio", "fold_change"),
+    input_fields=_DUAL_REPORTER_PROTOCOL.input_fields,
+    analysis_fields=(
+        _field(
+            "reporter_channel",
+            "Primary reporter channel to normalize against the configured normalizer.",
+            kind="string",
+            default="RFP",
+        ),
+        _field(
+            "normalizer_channel",
+            "Denominator channel used to normalize the reporter signal.",
+            kind="string",
+            default="OD600",
+        ),
+        _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+        _DUAL_STRICT_FIELD,
+        _DUAL_PREPROCESSING_FIELD,
+    ),
+    factors=_DUAL_REPORTER_PROTOCOL.factors,
+    semantic_profiles=(
+        ProtocolSemanticProfileSpec(
+            id="single_reporter_raw",
+            family="single_reporter_panel",
+            summary="Single-reporter panel semantics over a configured reporter/normalizer ratio.",
+            primary_metric="Reporter_Normalizer",
+            primary_readout="reporter / normalizer",
+            tags=("single_reporter", "ratio", "panel"),
+        ),
+        ProtocolSemanticProfileSpec(
+            id="single_reporter_fold_change",
+            family="single_reporter_panel",
+            summary="Single-reporter panel semantics with compiled fold-change summaries.",
+            primary_metric="log2FC",
+            primary_readout="reporter / normalizer",
+            tags=("single_reporter", "ratio", "panel", "fold_change"),
+        ),
+    ),
+    control_rules=(),
+    windows=(),
+    metrics=(
+        ProtocolMetricSpec(
+            id="Normalizer",
+            stage="raw",
+            summary="Raw configured normalizer trace.",
+            formula="configured_normalizer_channel",
+            profiles=("single_reporter_raw", "single_reporter_fold_change"),
+        ),
+        ProtocolMetricSpec(
+            id="Reporter",
+            stage="raw",
+            summary="Raw configured reporter trace.",
+            formula="configured_reporter_channel",
+            profiles=("single_reporter_raw", "single_reporter_fold_change"),
+        ),
+        ProtocolMetricSpec(
+            id="Reporter_Normalizer",
+            stage="support",
+            summary="Configured reporter normalized by the configured denominator channel.",
+            formula="configured_reporter_channel / configured_normalizer_channel",
+            depends_on=("Reporter", "Normalizer"),
+            value_space="linear_ratio",
+            unit="ratio",
+            comparable_group="primary_ratio_linear",
+            profiles=("single_reporter_raw", "single_reporter_fold_change"),
+        ),
+        ProtocolMetricSpec(
+            id="FC",
+            stage="summary",
+            summary="Nearest-time fold-change relative to the configured baseline treatment.",
+            formula="Reporter_Normalizer(t*) / baseline(Reporter_Normalizer)",
+            depends_on=("Reporter_Normalizer",),
+            value_space="fold_change_ratio",
+            unit="ratio",
+            comparable_group="fold_change_linear",
+            profiles=("single_reporter_fold_change",),
+        ),
+        ProtocolMetricSpec(
+            id="log2FC",
+            stage="summary",
+            summary="Log2 fold-change relative to the configured baseline treatment.",
+            formula="log2(FC)",
+            depends_on=("FC",),
+            value_space="log2_fold_change",
+            unit="log2_ratio",
+            comparable_group="fold_change_log2",
+            profiles=("single_reporter_fold_change",),
+        ),
+    ),
+    effect_signs=(),
+    figures=(
+        ProtocolFigureSpec(
+            id="raw_kinetics",
+            kind="qc",
+            summary="Raw kinetics view over the configured normalizer, reporter, and reporter ratio channels.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="endpoint_by_condition",
+            kind="summary",
+            summary="Endpoint comparison grouped by treatment/condition.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="endpoint_by_design",
+            kind="summary",
+            summary="Endpoint comparison grouped by construct/design.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="intensity_overview",
+            kind="kinetics",
+            summary="Combined time-series and endpoint view of the primary single-reporter ratio.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="value_distributions",
+            kind="qc",
+            summary="Distribution view of the primary single-reporter ratio.",
+        ),
+    ),
+    plot_profiles=(
+        ProtocolPlotProfileSpec(
+            id="screen_overview",
+            summary="Balanced default set for single-reporter plate-reader experiments.",
+            figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+        ),
+        ProtocolPlotProfileSpec(
+            id="kinetics_qc",
+            summary="Kinetics-first QC view with raw traces and distributions.",
+            figures=("raw_kinetics", "value_distributions"),
+        ),
+    ),
+    default_plot_profile="screen_overview",
+    execution=ProtocolExecutionPlan(
+        notebook=ProtocolNotebookPolicy(
+            default_template="notebook/eda",
+            allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
+            summary="Single-reporter plate-reader screens default to the EDA notebook with plot support.",
+        ),
+        plugin_defaults=(
+            ProtocolPluginDefaultsSpec(
+                plugin="ingest/synergy_h1",
+                summary=(
+                    "Single-reporter screens inherit generic ingest settings here; "
+                    "the compiler derives the required reporter/normalizer channels."
+                ),
+                with_={
+                    "mode": binding_value("ingest.mode", "auto"),
+                    "channel_map": binding_value("ingest.channel_map", None),
+                    "sheet_names": binding_value("ingest.sheet_names", None),
+                    "add_sheet": binding_value("ingest.add_sheet", False),
+                    "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                    "time_step_h": binding_value("ingest.time_step_h", None),
+                    "auto_roots": binding_value("ingest.auto_roots", None),
+                    "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                    "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                    "auto_pick": binding_value("ingest.auto_pick", "single"),
+                    "auto_recursive": binding_value("ingest.auto_recursive", False),
+                    "add_source_column": binding_value("ingest.add_source_column", False),
+                    "source_col": binding_value("ingest.source_col", "source_file"),
+                    "print_summary": binding_value("ingest.print_summary", True),
+                },
+            ),
+            ProtocolPluginDefaultsSpec(
+                plugin="transform/fold_change",
+                summary=(
+                    "Single-reporter fold-change inherits generic comparison settings here; "
+                    "the compiler sets the target to the configured reporter/normalizer ratio."
+                ),
+                with_={
+                    "report_times": binding_value("fold_change.report_times"),
+                    "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
+                    "agg": binding_value("fold_change.agg", "median"),
+                    "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
+                    "group_by": binding_value("fold_change.group_by", ["design_id"]),
+                    "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
+                    "global_baseline_value": binding_value("fold_change.global_baseline_value", None),
+                    "overrides": binding_value("fold_change.overrides", []),
+                    "fc_column": binding_value("fold_change.fc_column", "FC"),
+                    "log2fc_column": binding_value("fold_change.log2fc_column", "log2FC"),
+                },
+            ),
+        ),
+        compiler=compile_plate_reader_single_reporter_screen,
+    ),
 )
 
 _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
@@ -1250,7 +1413,19 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
     tags=("plate_reader", "retron", "sponge", "matched_control", "screen", "ratio"),
     input_fields=_DUAL_REPORTER_PROTOCOL.input_fields,
     analysis_fields=(
-        _DUAL_MEASUREMENT_FIELD,
+        _PLATE_READER_MEASUREMENT_FIELD,
+        _field(
+            "reporter_channel",
+            "Reporter channel used when measurement=single_reporter.",
+            kind="string",
+            default="RFP",
+        ),
+        _field(
+            "growth_channel",
+            "Growth / biomass proxy channel used when measurement=single_reporter.",
+            kind="string",
+            default="OD600",
+        ),
         _field("include_fold_change", "Optionally build the fold-change comparison table.", kind="bool", default=False),
         _DUAL_STRICT_FIELD,
         _DUAL_PREPROCESSING_FIELD,
@@ -1271,7 +1446,13 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
                     kind="string",
                     default="treatment",
                 ),
-                _field("plate_column", "Plate-normalization boundary column.", kind="string", default="sheet_name"),
+                _field(
+                    "plate_column",
+                    "Plate-normalization boundary column. Set to null when workbook sheets are acquisition segments of one plate; set it explicitly when sheets encode distinct biological plates.",
+                    kind="string",
+                    allow_none=True,
+                    default=None,
+                ),
                 _field("replicate_column", "Replicate-well identifier column.", kind="string", default="position"),
                 _field("sensor_column", "Optional explicit sensor column.", kind="string", allow_none=True),
                 _field("sponge_column", "Optional explicit sponge column.", kind="string", allow_none=True),
@@ -1325,10 +1506,18 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
                     "no_stress_label", "Canonical no-stress label for summary outputs.", kind="string", default="H2O"
                 ),
                 _field(
+                    "stress_time_zero_policy",
+                    "How to resolve the stress-addition boundary on the assay clock.",
+                    kind="string",
+                    choices=("explicit", "largest_gap_midpoint"),
+                    default="largest_gap_midpoint",
+                ),
+                _field(
                     "stress_time_zero_h",
-                    "Stress-addition time in hours on the assay clock.",
+                    "Explicit stress-addition time in hours on the assay clock when policy=explicit.",
                     kind="number",
-                    default=0.0,
+                    allow_none=True,
+                    default=None,
                 ),
                 _field(
                     "pre_reads", "Number of pre-stress reads used for the baseline window.", kind="integer", default=3
@@ -1430,11 +1619,11 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             tags=("dual_reporter", "matched_control", "sponge"),
         ),
         ProtocolSemanticProfileSpec(
-            id="rfp_od600",
+            id="single_reporter",
             family="matched_control_single_reporter",
-            summary="Single-reporter sponge-screen semantics on the log2(RFP/OD600) axis.",
+            summary="Single-reporter sponge-screen semantics on the log2(configured reporter / configured growth channel) axis.",
             primary_metric="O_AUC",
-            primary_readout="log2(RFP / OD600)",
+            primary_readout="log2(configured_reporter_channel / configured_growth_channel)",
             tags=("single_reporter", "matched_control", "sponge"),
         ),
     ),
@@ -1447,7 +1636,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             ),
             match_on=("sensor", "plate_id", "stress_condition", "IPTG", "time"),
             control_selector="matched_tetO_group",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
     ),
     windows=(
@@ -1457,7 +1646,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             anchor="stress_time_zero",
             selector="last_n_before",
             params={"n": 3},
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolWindowSpec(
             id="primary_post_stress",
@@ -1465,7 +1654,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             anchor="stress_time_zero",
             selector="configured_post_stress_window",
             params={"policy": "semantic_metrics.plateau"},
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolWindowSpec(
             id="endpoint_last_n",
@@ -1473,14 +1662,31 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             anchor="primary_post_stress",
             selector="last_n_within",
             params={"n": 3},
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
     ),
     metrics=(
-        ProtocolMetricSpec(id="OD", stage="raw", summary="Raw OD600 trace.", formula="OD600"),
+        ProtocolMetricSpec(
+            id="OD",
+            stage="raw",
+            summary="Raw OD600 trace.",
+            formula="OD600",
+            profile_overrides={
+                "single_reporter": ProtocolSemanticProfileOverride(
+                    summary="Raw configured growth-proxy trace.",
+                    formula="configured_growth_channel",
+                )
+            },
+        ),
         ProtocolMetricSpec(id="CFP", stage="raw", summary="Raw CFP trace.", formula="CFP", profiles=("yfp_cfp",)),
         ProtocolMetricSpec(id="YFP", stage="raw", summary="Raw YFP trace.", formula="YFP", profiles=("yfp_cfp",)),
-        ProtocolMetricSpec(id="RFP", stage="raw", summary="Raw RFP trace.", formula="RFP", profiles=("rfp_od600",)),
+        ProtocolMetricSpec(
+            id="Reporter",
+            stage="raw",
+            summary="Raw configured reporter trace.",
+            formula="configured_reporter_channel",
+            profiles=("single_reporter",),
+        ),
         ProtocolMetricSpec(
             id="YFP_OD",
             stage="support",
@@ -1504,15 +1710,15 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             profiles=("yfp_cfp",),
         ),
         ProtocolMetricSpec(
-            id="RFP_OD",
+            id="Reporter_OD",
             stage="support",
-            summary="Supporting RFP per biomass proxy.",
-            formula="RFP / OD600",
-            depends_on=("RFP", "OD"),
+            summary="Supporting configured reporter per biomass proxy.",
+            formula="configured_reporter_channel / configured_growth_channel",
+            depends_on=("Reporter", "OD"),
             value_space="linear_ratio",
             unit="ratio",
             comparable_group="support_ratio_linear",
-            profiles=("rfp_od600",),
+            profiles=("single_reporter",),
         ),
         ProtocolMetricSpec(
             id="R",
@@ -1524,10 +1730,10 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             unit="log2_ratio",
             comparable_group="primary_ratio_log2",
             profile_overrides={
-                "rfp_od600": ProtocolSemanticProfileOverride(
+                "single_reporter": ProtocolSemanticProfileOverride(
                     summary="Primary within-well single-reporter log2 ratio.",
-                    formula="log2(RFP / OD600)",
-                    depends_on=("RFP", "OD", "RFP_OD"),
+                    formula="log2(configured_reporter_channel / configured_growth_channel)",
+                    depends_on=("Reporter", "OD", "Reporter_OD"),
                     value_space="log2_ratio",
                     unit="log2_ratio",
                     comparable_group="primary_ratio_log2",
@@ -1543,7 +1749,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="log2_ratio",
             unit="log2_ratio",
             comparable_group="primary_ratio_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="mu",
@@ -1551,7 +1757,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Approximate growth-rate trace from the slope of log(OD600).",
             formula="d(log(OD600)) / dt",
             depends_on=("OD",),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="B",
@@ -1562,7 +1768,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="delta_log2_ratio",
             unit="log2_ratio_delta",
             comparable_group="response_delta_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="C",
@@ -1573,7 +1779,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="delta_log2_ratio",
             unit="log2_ratio_delta",
             comparable_group="response_delta_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="C_AUC",
@@ -1581,7 +1787,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="AUC of the matched-control-normalized trace over the primary post-stress window.",
             formula="AUC(C over primary_post_stress)",
             depends_on=("C", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="C_END",
@@ -1589,7 +1795,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Endpoint mean of the matched-control-normalized trace.",
             formula="mean(C over endpoint_last_n)",
             depends_on=("C", "endpoint_last_n"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="D",
@@ -1600,7 +1806,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="delta_log2_ratio",
             unit="log2_ratio_delta",
             comparable_group="response_delta_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="D_AUC",
@@ -1608,7 +1814,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="AUC of the induced sponge effect.",
             formula="AUC(D over primary_post_stress)",
             depends_on=("D", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="D_END",
@@ -1616,7 +1822,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Endpoint mean of the induced sponge effect.",
             formula="mean(D over endpoint_last_n)",
             depends_on=("D", "endpoint_last_n"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="M",
@@ -1627,7 +1833,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="delta_log2_ratio",
             unit="log2_ratio_delta",
             comparable_group="response_delta_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="M_AUC",
@@ -1635,7 +1841,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="AUC of stress modulation over the post-stress window.",
             formula="AUC(M over primary_post_stress)",
             depends_on=("M", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="M_END",
@@ -1643,7 +1849,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Endpoint mean of the stress modulation trace.",
             formula="mean(M over endpoint_last_n)",
             depends_on=("M", "endpoint_last_n"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="O",
@@ -1654,7 +1860,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="delta_log2_ratio",
             unit="log2_ratio_delta",
             comparable_group="response_delta_log2",
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="O_AUC",
@@ -1662,7 +1868,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="AUC of the sign-corrected induced sponge effect.",
             formula="AUC(O over primary_post_stress)",
             depends_on=("O", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="G_sensor",
@@ -1670,7 +1876,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Native tetO sensor response used for cross-sensor scaling.",
             formula="AUC(mean(B tetO,-IPTG,relevant stress) - mean(B tetO,-IPTG,H2O))",
             depends_on=("B", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="S_AUC",
@@ -1678,7 +1884,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Cross-sensor scaled effect size relative to the native sensor response.",
             formula="O_AUC / abs(G_sensor)",
             depends_on=("O_AUC", "G_sensor"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="L_pre",
@@ -1686,7 +1892,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Pre-stress leakiness relative to the matched control.",
             formula="R_pre(real,-IPTG) - mean(R_pre tetO,-IPTG)",
             depends_on=("R_pre", "matched_same_sensor_control"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="L_post_AUC",
@@ -1694,7 +1900,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Uninduced post-stress leakiness over the primary window.",
             formula="AUC(mean(C -IPTG))",
             depends_on=("C", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="T_ratio_AUC",
@@ -1702,7 +1908,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="tetO ratio burden under induction.",
             formula="AUC(mean(B tetO,+IPTG) - mean(B tetO,-IPTG))",
             depends_on=("B", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="T_growth_AUC",
@@ -1710,7 +1916,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="tetO growth burden under induction.",
             formula="AUC(mean(mu tetO,+IPTG) - mean(mu tetO,-IPTG))",
             depends_on=("mu", "primary_post_stress"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="T_finalOD",
@@ -1718,7 +1924,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Endpoint OD burden for the tetO control.",
             formula="mean(OD tetO,+IPTG,end) - mean(OD tetO,-IPTG,end)",
             depends_on=("OD", "endpoint_last_n"),
-            profiles=("yfp_cfp", "rfp_od600"),
+            profiles=("yfp_cfp", "single_reporter"),
         ),
     ),
     effect_signs=(
@@ -1738,20 +1944,67 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Effective SoxR/SoxS decoys reduce the soxSp ratio after sign correction.",
         ),
     ),
-    figures=_DUAL_REPORTER_PROTOCOL.figures,
-    plot_profiles=_DUAL_REPORTER_PROTOCOL.plot_profiles,
-    default_plot_profile="heatmap_review",
+    figures=_RETRON_SPONGE_FIGURES,
+    plot_profiles=_RETRON_SPONGE_PLOT_PROFILES,
+    default_plot_profile="screen_overview",
     ranking=ProtocolRankingSpec(
         primary_metric="O_AUC",
         direction="higher_is_better",
         penalties=("T_ratio_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
         supporting_metrics=("S_AUC", "M_AUC", "D_END"),
         summary="Rank hits by sign-corrected AUC, then penalize burden and leakiness.",
-        profiles=("yfp_cfp", "rfp_od600"),
+        profiles=("yfp_cfp", "single_reporter"),
     ),
     execution=ProtocolExecutionPlan(
-        notebook=_DUAL_REPORTER_PROTOCOL.execution.notebook,
-        plugin_defaults=_DUAL_REPORTER_PROTOCOL.execution.plugin_defaults,
+        notebook=ProtocolNotebookPolicy(
+            default_template="notebook/eda",
+            allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
+            summary="Retron sponge screens default to the EDA notebook with plot support.",
+        ),
+        plugin_defaults=(
+            ProtocolPluginDefaultsSpec(
+                plugin="ingest/synergy_h1",
+                summary=(
+                    "Retron sponge screens inherit generic ingest settings here; "
+                    "the compiler derives the required measurement-family channels."
+                ),
+                with_={
+                    "mode": binding_value("ingest.mode", "auto"),
+                    "channel_map": binding_value("ingest.channel_map", None),
+                    "sheet_names": binding_value("ingest.sheet_names", None),
+                    "add_sheet": binding_value("ingest.add_sheet", False),
+                    "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                    "time_step_h": binding_value("ingest.time_step_h", None),
+                    "auto_roots": binding_value("ingest.auto_roots", None),
+                    "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                    "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                    "auto_pick": binding_value("ingest.auto_pick", "single"),
+                    "auto_recursive": binding_value("ingest.auto_recursive", False),
+                    "add_source_column": binding_value("ingest.add_source_column", False),
+                    "source_col": binding_value("ingest.source_col", "source_file"),
+                    "print_summary": binding_value("ingest.print_summary", True),
+                },
+            ),
+            ProtocolPluginDefaultsSpec(
+                plugin="transform/fold_change",
+                summary=(
+                    "Retron sponge fold-change inherits generic comparison settings here; "
+                    "the compiler sets the target to the compiled primary ratio."
+                ),
+                with_={
+                    "report_times": binding_value("fold_change.report_times"),
+                    "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
+                    "agg": binding_value("fold_change.agg", "median"),
+                    "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
+                    "group_by": binding_value("fold_change.group_by", ["design_id"]),
+                    "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
+                    "global_baseline_value": binding_value("fold_change.global_baseline_value", None),
+                    "overrides": binding_value("fold_change.overrides", []),
+                    "fc_column": binding_value("fold_change.fc_column", "FC"),
+                    "log2fc_column": binding_value("fold_change.log2fc_column", "log2FC"),
+                },
+            ),
+        ),
         compiler=compile_plate_reader_retron_sponge_screen,
     ),
 )
@@ -1759,6 +2012,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
 BUILTIN_PROTOCOLS = (
     BUILTIN_PROTOCOLS[0],
     _DUAL_REPORTER_PROTOCOL,
+    _PLATE_READER_SINGLE_REPORTER_PROTOCOL,
     _PLATE_READER_RETRON_SPONGE_PROTOCOL,
     *BUILTIN_PROTOCOLS[2:],
 )
