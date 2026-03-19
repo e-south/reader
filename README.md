@@ -33,6 +33,8 @@ The default UX is human-first: tables for normal use, JSON for automation and ag
 uv sync --locked --group dev --group notebooks
 uv run pytest -q
 uv run pytest -q -m smoke
+uv run pytest -q -m repo_matrix
+uv run pytest -q -m fleet
 uv run pytest -q -m integration
 uv run reader ls --root experiments
 uv run reader ls --root experiments --details --format json
@@ -60,7 +62,7 @@ uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
 
-`uv run pytest -q` now keeps the default developer loop fast: it excludes `integration` tests but still runs a few real temp-copy smoke runs. Use `uv run pytest -q -m integration` for the repo-wide config and full experiment matrix, and `uv run pytest -q -m smoke` when you want only the representative runtime smoke slice.
+`uv run pytest -q` now keeps the default developer loop fast by excluding only the full data-backed `fleet` matrix. The default lane still runs the ordinary integration checks and the repo-wide config/metadata sweep. Use `uv run pytest -q -m repo_matrix` for the repo-wide config surface alone, `uv run pytest -q -m fleet` for the full active-experiment end-to-end matrix, `uv run pytest -q -m integration` when you intentionally want the whole integration surface, and `uv run pytest -q -m smoke` for only the representative runtime smoke slice.
 
 Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels, `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator, and `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor controls, induced sponge effects, burden, leakiness, and cross-sensor ranking.
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
+from reader.runtime import builtin_runtime
 from reader.tests.repo.experiment_matrix import (
     EXPERIMENT_CONFIGS,
     NON_ACTIVE_LIFECYCLE_CONFIGS,
@@ -16,7 +17,13 @@ from reader.workbench import resolve_workbench
 from reader.workbench.engine import validate as validate_job
 from reader.workbench.engine.validation import validation_summary
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.repo_matrix]
+
+
+@pytest.fixture(scope="module")
+def runtime():
+    return builtin_runtime()
+
 
 RETRON_SPONGE_CONFIGS = (
     "experiments/2026/20260313_mono_functional_sponges/config.yaml",
@@ -28,18 +35,18 @@ RETRON_SPONGE_CONFIGS = (
 
 
 @pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
-def test_repo_experiment_configs_load_and_validate(config_path: Path) -> None:
+def test_repo_experiment_configs_load_and_validate(config_path: Path, runtime) -> None:
     decl = load_decl(config_path)
     workbench = resolve_workbench(decl)
 
     assert workbench.pipeline is not None
-    validate_job(decl, console=Console(), check_files=False)
+    validate_job(decl, console=Console(), check_files=False, runtime=runtime)
 
 
 @pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
-def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_path: Path) -> None:
+def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_path: Path, runtime) -> None:
     decl = load_decl(config_path)
-    summary = validation_summary(decl, check_files=True, exp_root=decl.experiment.root)
+    summary = validation_summary(decl, check_files=True, exp_root=decl.experiment.root, runtime=runtime)
     rel = repo_rel(config_path)
 
     if rel in NON_ACTIVE_LIFECYCLE_CONFIGS:

@@ -26,8 +26,7 @@ def _ctx(exp_dir: Path):
 
 def test_flow_cytometer_ingest_basic():
     fcs_path = Path("experiments/2026/20260101_cytometer_retron/inputs/retron-26-neg_Data Source - 1.fcs")
-    if not fcs_path.exists():
-        pytest.skip("Cytometer fixture file missing")
+    assert fcs_path.exists(), "Cytometer fixture file missing from the repo"
     plugin = FlowCytometerIngest()
     cfg = FlowCytometerCfg(print_summary=False)
     outputs = plugin.run(_ctx(fcs_path.parent.parent), {"raw": fcs_path}, cfg)

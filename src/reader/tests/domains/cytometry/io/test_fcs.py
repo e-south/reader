@@ -11,8 +11,7 @@ pytestmark = pytest.mark.integration
 
 def test_parse_fcs_file_returns_tidy_events_and_channel_metadata() -> None:
     fcs_path = Path("experiments/2026/20260101_cytometer_retron/inputs/retron-26-neg_Data Source - 1.fcs")
-    if not fcs_path.exists():
-        pytest.skip("Cytometer fixture file missing")
+    assert fcs_path.exists(), "Cytometer fixture file missing from the repo"
 
     df, channels = parse_fcs_file(fcs_path, channel_name_field="pns")
 

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-import yaml
 
-from reader.tests.support import REPO_ROOT
+from reader.tests.repo.config_inventory import RepoConfigEntry, repo_config_inventory
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.repo_matrix]
 
-EXPERIMENT_CONFIGS = sorted(REPO_ROOT.glob("experiments/**/config.yaml"))
+REPO_CONFIGS = repo_config_inventory()
 
 DEFAULT_PATHS = {
     "outputs": "./outputs",
@@ -19,9 +16,10 @@ DEFAULT_PATHS = {
 }
 
 
-@pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
-def test_repo_experiment_configs_omit_redundant_defaults(config_path: Path) -> None:
-    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+@pytest.mark.parametrize("entry", REPO_CONFIGS, ids=lambda entry: entry.rel)
+def test_repo_experiment_configs_omit_redundant_defaults(entry: RepoConfigEntry) -> None:
+    config_path = entry.path
+    data = entry.data
 
     assert "semantics" not in data, (
         f"{config_path}: use annotations.collections / annotations.orders / annotations.logic_maps, not semantics"

@@ -35,11 +35,13 @@ uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q
 uv run pytest -q -m smoke
+uv run pytest -q -m repo_matrix
+uv run pytest -q -m fleet
 uv run pytest -q -m integration
 git diff --check
 ```
 
-`uv run pytest -q` is the fast default lane: it excludes `integration` tests but keeps representative real-experiment smoke coverage. Use `uv run pytest -q -m integration` when the change needs repo-wide config checks or the full experiment matrix. Use the smallest subset that matches the risk of the change and explain any omission.
+`uv run pytest -q` is the fast default lane: it excludes only the full data-backed `fleet` matrix while still running ordinary integration coverage and the repo-wide config sweep. Use `uv run pytest -q -m repo_matrix` when the change mainly touches repo config invariants, `uv run pytest -q -m fleet` for the full active-experiment end-to-end matrix, and `uv run pytest -q -m integration` when you intentionally want the full integration surface. Use the smallest subset that matches the risk of the change and explain any omission.
 
 ## Related Docs
 
