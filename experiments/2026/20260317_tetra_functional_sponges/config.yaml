@@ -1,0 +1,73 @@
+schema: reader/v7
+experiment:
+  id: 20260317_tetra_functional_sponges
+protocol:
+  id: plate_reader/retron_sponge_screen
+  inputs:
+    ingest:
+      mode: auto
+      add_sheet: true
+  analysis:
+    measurement: yfp_cfp
+    semantic_metrics:
+      plate_column: null
+      relevant_stress_map:
+        spyP: 3% EtOH
+        sulAp: 100 nM ciprofloxacin
+        soxSp: 15 µM PMS
+      sensor_target_map:
+        spyP:
+        - CpxR
+        - BaeR
+        sulAp:
+        - LexA
+        soxSp:
+        - SoxR
+        - SoxS
+  outputs:
+    plots:
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.xlsx
+annotations:
+  labels:
+    design_id:
+      source: design_id
+      output: design_id_alias
+      values:
+        pES-retron-26; pDual-10-spyp: spyP/tetO
+        pES-retron-26; pDual-10-sulAp: sulAp/tetO
+        pES-retron-26; pDual-10-soxSp: soxSp/tetO
+        pES-retron-169-msd[BaeR-LexA-SoxR-SoxS]; pDual-10-spyp: spyP/BaeR-LexA-SoxR-SoxS
+        pES-retron-169-msd[BaeR-LexA-SoxR-SoxS]; pDual-10-sulAp: sulAp/BaeR-LexA-SoxR-SoxS
+        pES-retron-169-msd[BaeR-LexA-SoxR-SoxS]; pDual-10-soxSp: soxSp/BaeR-LexA-SoxR-SoxS
+    treatment:
+      source: treatment
+      output: treatment_alias
+      values:
+        0 uM IPTG: -IPTG/-stress
+        500 uM IPTG: +IPTG/-stress
+        3% EtOH: -IPTG/+stress
+        500 uM IPTG, 3% EtOH: +IPTG/+stress
+        100 nM ciprofloxacin: -IPTG/+stress
+        500 uM IPTG, 100 nM ciprofloxacin: +IPTG/+stress
+        15 µM PMS: -IPTG/+stress
+        500 uM IPTG, 15 µM PMS: +IPTG/+stress
+  orders:
+    states_2x2:
+      column: treatment_alias
+      values:
+      - -IPTG/-stress
+      - +IPTG/-stress
+      - -IPTG/+stress
+      - +IPTG/+stress
+    heatmap_rows:
+      column: design_id_alias
+      values:
+      - spyP/tetO
+      - sulAp/tetO
+      - soxSp/tetO
+      - spyP/BaeR-LexA-SoxR-SoxS
+      - sulAp/BaeR-LexA-SoxR-SoxS
+      - soxSp/BaeR-LexA-SoxR-SoxS

@@ -20,6 +20,7 @@ The default UX is human-first: tables for normal use, JSON for automation and ag
 - [Security](SECURITY.md): trust boundaries, safe defaults, and extension-surface guidance.
 - [CLI reference](docs/core/cli.md): discovery, inspection, validation, run, plot, export, notebook, and record commands.
 - [Configuring reader/v7](docs/core/pipeline.md): the public YAML authoring surface and how protocols expose semantic inputs, analysis knobs, plot outputs, and export artifacts.
+- [Retron sponge screen guide](docs/guides/retron_sponge_screen.md): matched-control sponge workflow, compiled metrics, default plot suite, and semantic-table exports.
 - [Plugin development](docs/core/plugins.md): maintainer-facing guide for adding ingest, transform, plot, export, and validator plugins without leaking mechanics into user config.
 - [Spec / architecture](docs/core/spec.md): deeper architecture notes and package layout.
 
@@ -53,7 +54,7 @@ uv run reader plot experiments/template/config.yaml --list --format json
 uv run reader export experiments/template/config.yaml --list --format json
 ```
 
-Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels, `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator, and `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO normalization, induced sponge effects, burden, leakiness, and cross-sensor ranking.
+Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels, `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator, and `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor controls, induced sponge effects, burden, leakiness, and cross-sensor ranking.
 
 Use `experiment.lifecycle: draft` or `experiment.lifecycle: template` for intentionally non-runnable configs. Active experiments should omit `experiment.lifecycle` entirely.
 

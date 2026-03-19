@@ -1165,44 +1165,98 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="raw_kinetics",
         kind="qc",
-        summary="Raw kinetics view over the configured growth and reporter/readout channels.",
+        summary="Raw growth and reporter kinetics for early QC before matched-control normalization.",
         primary=True,
     ),
     ProtocolFigureSpec(
-        id="endpoint_by_condition",
-        kind="summary",
-        summary="Endpoint comparison grouped by induction/stress condition.",
-        primary=True,
-    ),
-    ProtocolFigureSpec(
-        id="endpoint_by_design",
-        kind="summary",
-        summary="Endpoint comparison grouped by genotype or sponge design.",
-        primary=True,
-    ),
-    ProtocolFigureSpec(
-        id="intensity_overview",
-        kind="kinetics",
-        summary="Combined time-series and endpoint view of the compiled primary assay readout.",
-        primary=True,
-    ),
-    ProtocolFigureSpec(
-        id="value_distributions",
+        id="support_kinetics",
         kind="qc",
-        summary="Distribution view of the compiled primary assay readout.",
+        summary="Growth-normalized support ratios that contextualize broad physiology vs reporter-specific effects.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="control_burden_panel",
+        kind="qc",
+        summary="Matched-control burden panel over the primary readout and growth-rate traces.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="baseline_shifted_kinetics",
+        kind="kinetics",
+        summary="Baseline-shifted kinetics that isolate post-stress movement from pre-stress offsets.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="matched_control_kinetics",
+        kind="kinetics",
+        summary="Matched-control-normalized kinetics that show sponge-specific deviation from same-sensor tetO controls.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="induced_effect_kinetics",
+        kind="kinetics",
+        summary="Induced sponge-effect trajectories after matched-control normalization.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="interaction_summary",
+        kind="summary",
+        summary="2x2 state summary over the matched-control-normalized endpoint or AUC surface.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="library_heatmaps",
+        kind="summary",
+        summary="Library-wide heatmaps over induced, modulation, and scaled on-target summary metrics.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="stress_modulation_scores",
+        kind="summary",
+        summary="Stress-modulation score review across on-target sponge/sensor pairs.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="pareto_ranking",
+        kind="summary",
+        summary="Pareto-style ranking of on-target effect against burden and leakiness.",
+        primary=True,
     ),
 )
 
 _RETRON_SPONGE_PLOT_PROFILES = (
     ProtocolPlotProfileSpec(
         id="screen_overview",
-        summary="Balanced core plot set shared by dual-reporter and single-reporter sponge screens.",
-        figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+        summary="Didactic default set for matched-control sponge screens from raw QC through ranking.",
+        figures=(
+            "raw_kinetics",
+            "support_kinetics",
+            "control_burden_panel",
+            "matched_control_kinetics",
+            "induced_effect_kinetics",
+            "interaction_summary",
+            "library_heatmaps",
+            "stress_modulation_scores",
+            "pareto_ranking",
+        ),
     ),
     ProtocolPlotProfileSpec(
         id="kinetics_qc",
-        summary="Kinetics-first QC view over raw traces and primary-readout distributions.",
-        figures=("raw_kinetics", "value_distributions"),
+        summary="QC-first review over raw, support, and tetO burden traces.",
+        figures=("raw_kinetics", "support_kinetics", "control_burden_panel"),
+    ),
+    ProtocolPlotProfileSpec(
+        id="analysis_review",
+        summary="Semantic matched-control review over compiled sponge metrics and rankings.",
+        figures=(
+            "baseline_shifted_kinetics",
+            "matched_control_kinetics",
+            "induced_effect_kinetics",
+            "interaction_summary",
+            "library_heatmaps",
+            "stress_modulation_scores",
+            "pareto_ranking",
+        ),
     ),
 )
 
@@ -1953,6 +2007,18 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
     figures=_RETRON_SPONGE_FIGURES,
     plot_profiles=_RETRON_SPONGE_PLOT_PROFILES,
     default_plot_profile="screen_overview",
+    artifacts=(
+        ProtocolArtifactSpec(
+            id="semantic_trace_table",
+            summary="CSV export of the matched-control sponge trace table.",
+            default=True,
+        ),
+        ProtocolArtifactSpec(
+            id="semantic_summary_table",
+            summary="CSV export of the matched-control sponge summary table.",
+            default=True,
+        ),
+    ),
     ranking=ProtocolRankingSpec(
         primary_metric="O_AUC",
         direction="higher_is_better",
@@ -1965,7 +2031,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         notebook=ProtocolNotebookPolicy(
             default_template="notebook/eda",
             allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
-            summary="Retron sponge screens default to the EDA notebook with plot support.",
+            summary="Retron sponge screens default to the EDA notebook with plot and semantic-table support.",
         ),
         plugin_defaults=(
             ProtocolPluginDefaultsSpec(

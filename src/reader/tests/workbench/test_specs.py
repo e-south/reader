@@ -100,6 +100,36 @@ def test_single_reporter_workbench_preserves_base_recipe_provenance(tmp_path: Pa
     }
 
 
+def test_retron_single_reporter_workbench_preserves_base_recipe_provenance(tmp_path: Path) -> None:
+    cfg = base_reader_config(
+        experiment_id="exp_retron_recipe",
+        protocol_id="plate_reader/retron_sponge_screen",
+        protocol_analysis={
+            "measurement": "single_reporter",
+            "reporter_channel": "mCherry",
+            "growth_channel": "OD700",
+            "include_fold_change": False,
+            "semantic_metrics": {
+                "relevant_stress_map": {"sulAp": "100 nM ciprofloxacin"},
+                "sensor_target_map": {"sulAp": ["LexA"]},
+            },
+        },
+        protocol_outputs={"plots": {"profile": "none"}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    decl = load_decl(write_config(tmp_path, cfg))
+
+    workbench = resolve_workbench(decl)
+    ratio_step = next(step for step in workbench.pipeline if step.id == "ratio_reporter_normalizer")
+
+    assert ratio_step.source_recipe is not None
+    assert ratio_step.source_recipe.recipe == "plate_reader/retron_sponge_single_reporter_base"
+    assert ratio_step.source_recipe.with_ == {
+        "reporter_channel": "mCherry",
+        "normalizer_channel": "OD700",
+    }
+
+
 def test_resolve_workbench_normalizes_compiled_bindings_to_typed_refs(tmp_path: Path) -> None:
     decl = load_decl(write_config(tmp_path, _base_config()))
     workbench = resolve_workbench(decl)

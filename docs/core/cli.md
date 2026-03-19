@@ -102,6 +102,8 @@ uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 
 Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels. Use `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
 
+For the matched-control sponge workflow itself, use the [Retron sponge screen guide](../guides/retron_sponge_screen.md). That guide maps the direct-ratio analysis sequence, the compiled semantic tables, and the retron-specific plot/export surface.
+
 Inspect one experiment end to end:
 
 ```bash

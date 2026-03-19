@@ -54,6 +54,35 @@ def _logic_plot_config() -> dict:
     )
 
 
+def _retron_config() -> dict:
+    return base_reader_config(
+        experiment_id="exp_retron",
+        protocol_id="plate_reader/retron_sponge_screen",
+        protocol_analysis={
+            "semantic_metrics": {
+                "relevant_stress_map": {
+                    "spyP": "3% EtOH",
+                    "sulAp": "100 nM ciprofloxacin",
+                    "soxSp": "15 uM PMS",
+                },
+                "sensor_target_map": {
+                    "spyP": ["CpxR", "BaeR"],
+                    "sulAp": ["LexA"],
+                    "soxSp": ["SoxR", "SoxS"],
+                },
+            }
+        },
+        protocol_outputs={
+            "plots": {
+                "profile": "none",
+                "include": ["matched_control_kinetics", "library_heatmaps"],
+            },
+            "exports": {"include": ["semantic_summary_table"]},
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+
+
 def test_plot_list_filters(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -128,6 +157,21 @@ def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> Non
     assert read["source"]["producer"]["id"] == "promote_to_tidy_plus_map"
     assert read["source"]["surface"]["runtime_mode"] == "fixed"
     assert read["source"]["surface"]["rendered"] == "plate_reader.annotated.v1"
+
+
+def test_retron_plot_list_json(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _retron_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    plot_ids = [item["id"] for item in payload["plots"]]
+    assert payload["experiment"]["protocol"] == "plate_reader/retron_sponge_screen"
+    assert plot_ids == ["matched_control_kinetics", "library_heatmaps"]
+    assert payload["summary"]["by_family"] == {"matched_control_kinetics": 1, "matched_control_summary": 1}
+    reads = {item["id"]: item["reads"] for item in payload["plots"]}
+    assert reads["matched_control_kinetics"][0]["contract"] == "plate_reader.sponge_trace.v1"
+    assert reads["library_heatmaps"][0]["contract"] == "plate_reader.sponge_summary.v1"
 
 
 def test_plot_json_requires_list(tmp_path: Path) -> None:
@@ -228,6 +272,20 @@ def test_export_list_json_empty(tmp_path: Path) -> None:
     assert payload["summary"]["exports"] == 0
     assert payload["summary"]["by_family"] == {}
     assert payload["exports"] == []
+
+
+def test_retron_export_list_json(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _retron_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--list", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["experiment"]["protocol"] == "plate_reader/retron_sponge_screen"
+    exports = {item["id"]: item for item in payload["exports"]}
+    assert set(exports) == {"semantic_summary_table", "semantic_trace_table"}
+    assert exports["semantic_summary_table"]["reads"][0]["source"]["contract"] == "plate_reader.sponge_summary.v1"
+    assert exports["semantic_summary_table"]["reads"][0]["source"]["producer"]["id"] == "semantic_metrics"
+    assert exports["semantic_trace_table"]["reads"][0]["source"]["contract"] == "plate_reader.sponge_trace.v1"
 
 
 def test_export_json_requires_list(tmp_path: Path) -> None:

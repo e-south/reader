@@ -56,7 +56,6 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
 
 def test_repo_non_active_configs_declare_explicit_lifecycle() -> None:
     assert NON_ACTIVE_LIFECYCLE_CONFIGS == {
-        "experiments/2026/20260317_tetra_functional_sponges/config.yaml": "draft",
         "experiments/template/config.yaml": "template",
     }
 

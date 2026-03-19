@@ -844,18 +844,27 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert payload["authoring"]["outputs"]["default_plot_profile"] == "screen_overview"
     assert (
         payload["authoring"]["outputs"]["notebook_policy"]["summary"]
-        == "Retron sponge screens default to the EDA notebook with plot support."
+        == "Retron sponge screens default to the EDA notebook with plot and semantic-table support."
     )
     assert figure_ids == {
         "raw_kinetics",
-        "endpoint_by_condition",
-        "endpoint_by_design",
-        "intensity_overview",
-        "value_distributions",
+        "support_kinetics",
+        "control_burden_panel",
+        "baseline_shifted_kinetics",
+        "matched_control_kinetics",
+        "induced_effect_kinetics",
+        "interaction_summary",
+        "library_heatmaps",
+        "stress_modulation_scores",
+        "pareto_ranking",
     }
-    assert plot_profile_ids == {"screen_overview", "kinetics_qc"}
+    assert plot_profile_ids == {"screen_overview", "kinetics_qc", "analysis_review"}
     assert "ratio_heatmap" not in figure_ids
     assert "support_heatmap" not in figure_ids
+    assert {item["id"] for item in payload["authoring"]["outputs"]["artifacts"]} == {
+        "semantic_trace_table",
+        "semantic_summary_table",
+    }
     assert program["active_profile"] == "yfp_cfp"
     assert metrics["R"]["formula"] == "log2(YFP / CFP)"
     assert metrics["R"]["value_space"] == "log2_ratio"
@@ -994,16 +1003,23 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     plan = protocol.compile()
     ingest = next(step for step in plan.pipeline if step.id == "ingest")
     semantic_metrics = next(step for step in plan.pipeline if step.id == "semantic_metrics")
-    endpoint_by_condition = next(step for step in plan.plots if step.id == "endpoint_by_condition")
-    endpoint_by_design = next(step for step in plan.plots if step.id == "endpoint_by_design")
-    intensity_overview = next(step for step in plan.plots if step.id == "intensity_overview")
+    support_kinetics = next(step for step in plan.plots if step.id == "support_kinetics")
+    control_burden = next(step for step in plan.plots if step.id == "control_burden_panel")
+    interaction_summary = next(step for step in plan.plots if step.id == "interaction_summary")
+    summary_export = next(step for step in plan.exports if step.id == "semantic_summary_table")
+    trace_export = next(step for step in plan.exports if step.id == "semantic_trace_table")
 
     assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
     assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
-    assert endpoint_by_condition.with_["y"] == ["OD600", "YFP/CFP"]
-    assert endpoint_by_design.with_["y"] == "YFP/CFP"
-    assert intensity_overview.with_["ts_channel"] == "YFP/CFP"
-    assert intensity_overview.with_["snap_channel"] == "YFP/CFP"
+    assert support_kinetics.with_["y"] == ["YFP/OD600", "CFP/OD600"]
+    assert control_burden.with_["metrics"] == ["R", "mu"]
+    assert control_burden.reads["trace"].record_id == "semantic_metrics/trace"
+    assert interaction_summary.with_["metric"] == "C_AUC"
+    assert interaction_summary.reads["summary"].record_id == "semantic_metrics/summary"
+    assert summary_export.reads["df"].record_id == "semantic_metrics/summary"
+    assert summary_export.with_["path"] == "retron/semantic_summary.csv"
+    assert trace_export.reads["df"].record_id == "semantic_metrics/trace"
+    assert trace_export.with_["path"] == "retron/semantic_trace.csv"
 
 
 def test_retron_sponge_protocol_rejects_dual_reporter_only_plot_selection(tmp_path: Path) -> None:

@@ -191,6 +191,7 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
                 ingest_channels=ingest_channels,
                 blank_cfg=blank_cfg,
                 overflow_cfg=overflow_cfg,
+                base_recipe="plate_reader/retron_sponge_screen_base",
             )
         )
         semantic_step = _plate_reader_semantic_metrics_step(
@@ -207,6 +208,7 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
                 normalizer_channel=growth_channel,
                 blank_cfg=blank_cfg,
                 overflow_cfg=overflow_cfg,
+                base_recipe="plate_reader/retron_sponge_single_reporter_base",
             )
         )
         semantic_step = _plate_reader_semantic_metrics_step(
@@ -264,16 +266,20 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
             for deliverable_id in selected_plots
         ]
 
-    selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
-    if selected_exports:
-        raise ConfigError("plate_reader/retron_sponge_screen does not currently compile export artifacts.")
+    selected_exports = protocol.select_export_outputs(
+        defaults=("semantic_summary_table", "semantic_trace_table"),
+        allowed=_plate_reader_retron_export_output_ids(),
+    )
+    exports = [
+        _plate_reader_retron_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports
+    ]
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
-        exports=(),
+        exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
         semantic_program=_plate_reader_retron_sponge_semantic_program(
             protocol,
@@ -914,11 +920,20 @@ def _plate_reader_single_reporter_plot_output_ids() -> set[str]:
 def _plate_reader_retron_plot_output_ids() -> set[str]:
     return {
         "raw_kinetics",
-        "endpoint_by_condition",
-        "endpoint_by_design",
-        "intensity_overview",
-        "value_distributions",
+        "support_kinetics",
+        "control_burden_panel",
+        "baseline_shifted_kinetics",
+        "matched_control_kinetics",
+        "induced_effect_kinetics",
+        "interaction_summary",
+        "library_heatmaps",
+        "stress_modulation_scores",
+        "pareto_ranking",
     }
+
+
+def _plate_reader_retron_export_output_ids() -> set[str]:
+    return {"semantic_trace_table", "semantic_summary_table"}
 
 
 def _plate_reader_base_steps(
@@ -927,12 +942,11 @@ def _plate_reader_base_steps(
     ingest_channels: list[str],
     blank_cfg: dict[str, Any],
     overflow_cfg: dict[str, Any],
+    base_recipe: str = "plate_reader/dual_reporter_screen_base",
 ) -> tuple[PluginStepDecl, ...]:
     if measurement != "yfp_cfp":
         raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
-    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
-        resolve_recipe_steps("plate_reader/dual_reporter_screen_base")
-    )
+    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(resolve_recipe_steps(base_recipe))
     return tuple(
         _with_pipeline_overrides(
             steps,
@@ -950,6 +964,7 @@ def _plate_reader_single_reporter_base_steps(
     normalizer_channel: str,
     blank_cfg: dict[str, Any],
     overflow_cfg: dict[str, Any],
+    base_recipe: str = "plate_reader/single_reporter_screen_base",
 ) -> tuple[PluginStepDecl, ...]:
     ratio_label = _single_reporter_ratio_label(
         reporter_channel=reporter_channel,
@@ -957,7 +972,7 @@ def _plate_reader_single_reporter_base_steps(
     )
     steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
         resolve_recipe_steps(
-            "plate_reader/single_reporter_screen_base",
+            base_recipe,
             with_args={
                 "reporter_channel": reporter_channel,
                 "normalizer_channel": normalizer_channel,
@@ -1262,22 +1277,35 @@ def _plate_reader_retron_plot_output(
     if measurement == "single_reporter":
         if reporter_channel is None or normalizer_channel is None:
             raise ConfigError("single-reporter retron plots require reporter_channel and normalizer_channel")
-        return _plate_reader_single_reporter_plot_output(
-            protocol,
-            output_id=output_id,
-            reporter_channel=reporter_channel,
-            normalizer_channel=normalizer_channel,
-        )
-    if measurement != "yfp_cfp":
+        raw_channels = [normalizer_channel, reporter_channel]
+        support_channels = [
+            _single_reporter_ratio_label(
+                reporter_channel=reporter_channel,
+                normalizer_channel=normalizer_channel,
+            )
+        ]
+    elif measurement == "yfp_cfp":
+        raw_channels = ["OD600", "CFP", "YFP"]
+        support_channels = ["YFP/OD600", "CFP/OD600"]
+    else:
         raise ConfigError(f"Unsupported retron plot measurement {measurement!r}")
 
     settings = protocol.plot_view_config(figure_id=output_id)
-    plot_reads = _plate_reader_plot_reads(measurement=measurement)
+    plot_reads = _plate_reader_retron_plot_reads(
+        measurement=measurement,
+        reporter_channel=reporter_channel,
+        normalizer_channel=normalizer_channel,
+    )
+    control_name = _plate_reader_retron_control_name(protocol)
+    no_stress_label = _plate_reader_retron_no_stress_label(protocol)
+    stress_order = _plate_reader_retron_stress_order(protocol)
+    state_order = _plate_reader_retron_state_order(protocol)
+
     if output_id == "raw_kinetics":
         defaults = {
             "partition": {"by": "design_id"},
             "hue": "treatment",
-            "y": ["OD600", "CFP", "YFP", "YFP/CFP"],
+            "y": raw_channels,
             "add_sheet_line": True,
         }
         return _step(
@@ -1286,54 +1314,142 @@ def _plate_reader_retron_plot_output(
             reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
             with_=_deep_merge(defaults, settings),
         )
-    if output_id == "endpoint_by_condition":
+    if output_id == "support_kinetics":
         defaults = {
-            "x": "treatment",
-            "y": ["OD600", "YFP/CFP"],
             "partition": {"by": "design_id"},
-            "time": 14.0,
-        }
-        return _step(
-            id="endpoint_by_condition",
-            plugin="plot/snapshot_barplot",
-            reads={"df": plot_reads["df"]},
-            with_=_deep_merge(defaults, settings),
-        )
-    if output_id == "endpoint_by_design":
-        defaults = {
-            "x": "design_id",
-            "y": "YFP/CFP",
             "hue": "treatment",
-            "time": 14.0,
+            "y": support_channels,
+            "add_sheet_line": True,
+            "filename": "support_kinetics",
         }
         return _step(
-            id="endpoint_by_design",
-            plugin="plot/snapshot_barplot",
-            reads={"df": plot_reads["df"]},
-            with_=_deep_merge(defaults, settings),
-        )
-    if output_id == "intensity_overview":
-        defaults = {
-            "partition": {"by": "design_id"},
-            "ts_channel": "YFP/CFP",
-            "ts_hue": "treatment",
-            "ts_add_sheet_line": True,
-            "ts_mark_snap_time": True,
-            "snap_channel": "YFP/CFP",
-            "snap_time": 14.0,
-        }
-        return _step(
-            id="intensity_overview",
-            plugin="plot/ts_and_snap",
-            reads={"df": plot_reads["df"]},
-            with_=_deep_merge(defaults, settings),
-        )
-    if output_id == "value_distributions":
-        defaults = {"channels": ["YFP/CFP"], "partition": {"by": "design_id"}}
-        return _step(
-            id="value_distributions",
-            plugin="plot/distributions",
+            id="support_kinetics",
+            plugin="plot/time_series",
             reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "control_burden_panel":
+        defaults = {
+            "metrics": ["R", "mu"],
+            "title": "Control burden panel",
+            "filename": "control_burden_panel",
+            "control_name": control_name,
+            "include_control": True,
+            "only_control": True,
+            "stress_order": stress_order,
+        }
+        return _step(
+            id="control_burden_panel",
+            plugin="plot/retron_trace",
+            reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "baseline_shifted_kinetics":
+        defaults = {
+            "metrics": ["B"],
+            "title": "Baseline-shifted kinetics",
+            "filename": "baseline_shifted_kinetics",
+            "control_name": control_name,
+            "include_control": True,
+            "stress_order": stress_order,
+        }
+        return _step(
+            id="baseline_shifted_kinetics",
+            plugin="plot/retron_trace",
+            reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "matched_control_kinetics":
+        defaults = {
+            "metrics": ["C"],
+            "title": "Matched-control-normalized kinetics",
+            "filename": "matched_control_kinetics",
+            "control_name": control_name,
+            "relevant_only": True,
+            "stress_order": stress_order,
+        }
+        return _step(
+            id="matched_control_kinetics",
+            plugin="plot/retron_trace",
+            reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "induced_effect_kinetics":
+        defaults = {
+            "metrics": ["D"],
+            "title": "Induced sponge effect kinetics",
+            "filename": "induced_effect_kinetics",
+            "control_name": control_name,
+            "relevant_only": True,
+            "stress_order": stress_order,
+        }
+        return _step(
+            id="induced_effect_kinetics",
+            plugin="plot/retron_trace",
+            reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "interaction_summary":
+        defaults = {
+            "view": "interaction",
+            "metric": "C_AUC",
+            "title": "2x2 interaction summary",
+            "filename": "interaction_summary",
+            "control_name": control_name,
+            "no_stress_label": no_stress_label,
+            "relevant_only": True,
+            "state_order": state_order,
+        }
+        return _step(
+            id="interaction_summary",
+            plugin="plot/retron_summary",
+            reads={"summary": plot_reads["summary"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "library_heatmaps":
+        defaults = {
+            "view": "heatmap",
+            "title": "Library heatmaps",
+            "filename": "library_heatmaps",
+            "control_name": control_name,
+            "no_stress_label": no_stress_label,
+            "relevant_only": True,
+        }
+        return _step(
+            id="library_heatmaps",
+            plugin="plot/retron_summary",
+            reads={"summary": plot_reads["summary"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "stress_modulation_scores":
+        defaults = {
+            "view": "stress_modulation",
+            "metric": "M_AUC",
+            "title": "Stress modulation scores",
+            "filename": "stress_modulation_scores",
+            "control_name": control_name,
+            "no_stress_label": no_stress_label,
+            "relevant_only": True,
+        }
+        return _step(
+            id="stress_modulation_scores",
+            plugin="plot/retron_summary",
+            reads={"summary": plot_reads["summary"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "pareto_ranking":
+        defaults = {
+            "view": "pareto",
+            "title": "Pareto ranking",
+            "filename": "pareto_ranking",
+            "control_name": control_name,
+            "no_stress_label": no_stress_label,
+            "burden_metric": "T_growth_AUC",
+        }
+        return _step(
+            id="pareto_ranking",
+            plugin="plot/retron_summary",
+            reads={"summary": plot_reads["summary"]},
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown retron plot output {output_id!r}")
@@ -1431,6 +1547,27 @@ def _plate_reader_export_output(protocol: Any, *, output_id: str) -> PluginStepD
     raise ConfigError(f"Unknown plate-reader export output {output_id!r}")
 
 
+def _plate_reader_retron_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
+    settings = protocol.export_artifact_config(artifact_id=output_id)
+    if output_id == "semantic_trace_table":
+        defaults = {"path": "retron/semantic_trace.csv"}
+        return _step(
+            id="semantic_trace_table",
+            plugin="export/csv",
+            reads={"df": RecordInputDecl(record_id="semantic_metrics/trace")},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "semantic_summary_table":
+        defaults = {"path": "retron/semantic_summary.csv"}
+        return _step(
+            id="semantic_summary_table",
+            plugin="export/csv",
+            reads={"df": RecordInputDecl(record_id="semantic_metrics/summary")},
+            with_=_deep_merge(defaults, settings),
+        )
+    raise ConfigError(f"Unknown retron export output {output_id!r}")
+
+
 def _logic_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
     if output_id == "logic_summary_workbook":
         settings = protocol.export_artifact_config(artifact_id=output_id)
@@ -1468,6 +1605,63 @@ def _plate_reader_single_reporter_plot_reads() -> dict[str, RecordInputDecl]:
         "df": RecordInputDecl(record_id="ratio_reporter_normalizer/df"),
         "blanks": RecordInputDecl(record_id="blank/blanks"),
     }
+
+
+def _plate_reader_retron_plot_reads(
+    *,
+    measurement: str,
+    reporter_channel: str | None,
+    normalizer_channel: str | None,
+) -> dict[str, RecordInputDecl]:
+    if measurement == "yfp_cfp":
+        base_reads = _plate_reader_plot_reads(measurement="yfp_cfp")
+    elif measurement == "single_reporter":
+        if reporter_channel is None or normalizer_channel is None:
+            raise ConfigError("single-reporter retron plots require reporter_channel and normalizer_channel")
+        base_reads = _plate_reader_single_reporter_plot_reads()
+    else:
+        raise ConfigError(f"Unsupported retron plot measurement {measurement!r}")
+    return {
+        **base_reads,
+        "trace": RecordInputDecl(record_id="semantic_metrics/trace"),
+        "summary": RecordInputDecl(record_id="semantic_metrics/summary"),
+    }
+
+
+def _plate_reader_retron_control_name(protocol: Any) -> str:
+    semantic_cfg = _analysis_mapping(_analysis_options(protocol), key="semantic_metrics")
+    return str(semantic_cfg.get("control_name", "tetO"))
+
+
+def _plate_reader_retron_no_stress_label(protocol: Any) -> str:
+    semantic_cfg = _analysis_mapping(_analysis_options(protocol), key="semantic_metrics")
+    return str(semantic_cfg.get("no_stress_label", "H2O"))
+
+
+def _plate_reader_retron_stress_order(protocol: Any) -> tuple[str, ...]:
+    semantic_cfg = _analysis_mapping(_analysis_options(protocol), key="semantic_metrics")
+    no_stress_label = _plate_reader_retron_no_stress_label(protocol)
+    relevant_stress_map = semantic_cfg.get("relevant_stress_map", {}) or {}
+    if not isinstance(relevant_stress_map, dict):
+        raise ConfigError("protocol.analysis.semantic_metrics.relevant_stress_map must be a mapping when provided")
+    ordered: list[str] = [no_stress_label]
+    for value in relevant_stress_map.values():
+        label = str(value).strip()
+        if label and label not in ordered:
+            ordered.append(label)
+    return tuple(ordered)
+
+
+def _plate_reader_retron_state_order(protocol: Any) -> tuple[str, ...]:
+    semantic_cfg = _analysis_mapping(_analysis_options(protocol), key="semantic_metrics")
+    states = _analysis_mapping(semantic_cfg, key="states")
+    defaults = (
+        str(states.get("uninduced_unstressed", "-IPTG/-stress")),
+        str(states.get("induced_unstressed", "+IPTG/-stress")),
+        str(states.get("uninduced_stressed", "-IPTG/+stress")),
+        str(states.get("induced_stressed", "+IPTG/+stress")),
+    )
+    return tuple(defaults)
 
 
 def _single_reporter_ratio_label(*, reporter_channel: str, normalizer_channel: str) -> str:

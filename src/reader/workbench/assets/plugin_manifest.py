@@ -6,6 +6,8 @@ from reader.plugins.ingest.flow_cytometer import FlowCytometerIngest
 from reader.plugins.ingest.synergy_h1 import SynergyH1
 from reader.plugins.plot.distributions import DistributionsPlot
 from reader.plugins.plot.logic_symmetry import LogicSymmetryPlot
+from reader.plugins.plot.retron_summary import RetronSummaryPlot
+from reader.plugins.plot.retron_trace import RetronTracePlot
 from reader.plugins.plot.snapshot_barplot import SnapshotBarplot
 from reader.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
 from reader.plugins.plot.time_series import TimeSeriesPlot
@@ -98,6 +100,26 @@ _BUILTIN_PLUGIN_CATALOG = AssetCatalog(
                 tags=("logic", "geometry"),
             ),
             plugin_cls=LogicSymmetryPlot,
+        ),
+        build_plugin_asset(
+            plugin_id="plot/retron_trace",
+            semantics=PluginSemantics(
+                domain="plate_reader",
+                family="matched_control_kinetics",
+                summary="Render retron sponge trace metrics such as burden, baseline shifts, matched-control traces, and induced effects.",
+                tags=("retron", "sponge", "kinetics", "matched_control"),
+            ),
+            plugin_cls=RetronTracePlot,
+        ),
+        build_plugin_asset(
+            plugin_id="plot/retron_summary",
+            semantics=PluginSemantics(
+                domain="plate_reader",
+                family="matched_control_summary",
+                summary="Render retron sponge interaction, heatmap, stress-modulation, and Pareto summary figures.",
+                tags=("retron", "sponge", "summary", "ranking"),
+            ),
+            plugin_cls=RetronSummaryPlot,
         ),
         build_plugin_asset(
             plugin_id="transform/crosstalk_pairs",

@@ -200,6 +200,8 @@ For plate-reader assays, the protocol boundary matters:
 - `plate_reader/single_reporter_screen` owns single-reporter panels such as RFP/OD600 screens.
 - `plate_reader/retron_sponge_screen` owns matched-control sponge assays with explicit control/window/comparison/ranking semantics.
 
+For the direct-ratio retron workflow, including the compiled `R -> B -> C -> D -> M -> O` program and semantic-table exports, see the [Retron sponge screen guide](../guides/retron_sponge_screen.md).
+
 These commands show:
 
 - what experiments exist, which protocol each one binds, and how many outputs already exist

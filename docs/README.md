@@ -12,6 +12,7 @@
 
 - [CLI reference](./core/cli.md)
 - [Configuring reader/v7](./core/pipeline.md)
+- [Retron sponge screen guide](./guides/retron_sponge_screen.md)
 - [Notebooks](./guides/notebooks.md)
 - [Marimo reference](./guides/marimo_reference.md)
 
@@ -31,6 +32,7 @@
 ## Demos and library notes
 
 - [End-to-end demo](./guides/demo.md)
+- [Retron sponge screen guide](./guides/retron_sponge_screen.md)
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
 - [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md)
 
