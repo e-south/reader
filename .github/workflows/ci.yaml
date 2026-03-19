@@ -50,8 +50,8 @@ jobs:
       - name: Build (sdist + wheel)
         run: uv build
 
-  fast-tests:
-    name: Fast Tests
+  main-tests:
+    name: Main Tests
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -74,20 +74,22 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --locked --group dev
 
-      - name: Run fast suite with coverage
+      - name: Run main test batch with coverage
         run: |
           mkdir -p .artifacts
           uv run pytest -q \
+            -o addopts='--strict-config --strict-markers -ra' \
+            -m 'not fleet and not repo_matrix' \
             --cov=reader \
             --cov-report=term-missing:skip-covered \
             --cov-report=xml:.artifacts/coverage.xml \
-            --junitxml=.artifacts/pytest-fast.xml
+            --junitxml=.artifacts/pytest-main.xml
 
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fast-test-artifacts
+          name: main-test-artifacts
           path: .artifacts/
 
       - name: Upload coverage to Codecov
@@ -96,13 +98,13 @@ jobs:
         with:
           use_oidc: true
           files: .artifacts/coverage.xml
-          flags: fast
-          name: fast-suite
+          flags: main
+          name: main-suite
           fail_ci_if_error: false
           verbose: true
 
-  repo-contracts:
-    name: Repo Contracts
+  repo-matrix:
+    name: Repo Matrix
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -122,19 +124,17 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --locked --group dev
 
-      - name: Run repo contract checks
+      - name: Run repo matrix batch
         run: |
           mkdir -p .artifacts
-          uv run pytest -q -m integration \
-            src/reader/tests/repo/test_config_compactness.py \
-            src/reader/tests/repo/test_experiment_configs.py \
-            src/reader/tests/domains/cytometry/io/test_fcs.py \
-            src/reader/tests/plugins/ingest/test_flow_cytometer.py \
-            --junitxml=.artifacts/pytest-repo-contracts.xml
+          uv run pytest -q \
+            -o addopts='--strict-config --strict-markers -ra' \
+            -m repo_matrix \
+            --junitxml=.artifacts/pytest-repo-matrix.xml
 
-      - name: Upload repo contract artifacts
+      - name: Upload repo matrix artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: repo-contract-artifacts
+          name: repo-matrix-artifacts
           path: .artifacts/

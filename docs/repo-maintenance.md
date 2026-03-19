@@ -52,11 +52,13 @@ The quality bar for those bundles is defined in [QUALITY.md](../QUALITY.md).
 
 `reader` uses two GitHub Actions workflows with explicit intent:
 
-- `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): fast maintainer feedback on pull requests and pushes. It runs lockfile drift checks, lint, format, compile, build, the default pytest lane with coverage, and a separate repo-contract job for config and cytometry integration checks.
-- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slow repo-operator validation on `main`, nightly schedule, and manual dispatch. It runs `uv run pytest -q -m integration --durations=25` and uploads the experiment readiness inventory as an artifact.
+- `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): fast maintainer feedback on pull requests and pushes. It runs lockfile drift checks, lint, format, compile, build, a `main-tests` batch for `not fleet and not repo_matrix` with coverage, and a separate `repo-matrix` batch for the repo-wide config and metadata sweep.
+- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slow repo-operator validation on `main`, nightly schedule, and manual dispatch. It runs an explicit `integration` marker batch with `--durations=25` and uploads the experiment readiness inventory as an artifact.
 
 Local command contract:
 
-- `uv run pytest -q`: fast default lane, excludes `integration`
+- `uv run pytest -q`: fast default lane, excludes only `fleet`
 - `uv run pytest -q -m smoke`: representative real-experiment smoke tests
-- `uv run pytest -q -m integration`: repo-wide config and end-to-end experiment matrix
+- `uv run pytest -q -m repo_matrix`: repo-wide config and metadata sweeps
+- `uv run pytest -q -m fleet`: full active-experiment end-to-end matrix
+- `uv run pytest -q -m integration`: full integration surface, including `fleet`

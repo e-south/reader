@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from reader.contracts import ContractCatalog
-from reader.protocols.model import BoundProtocol, ProtocolBinding, ProtocolCatalog
-from reader.workbench.assets.types import AssetCatalog
-from reader.workbench.records.store import RecordStore
-from reader.workbench.registry import Registry
+if TYPE_CHECKING:
+    from reader.contracts import ContractCatalog
+    from reader.protocols.model import BoundProtocol, ProtocolBinding, ProtocolCatalog
+    from reader.workbench.assets.types import AssetCatalog
+    from reader.workbench.records.store import RecordStore
+    from reader.workbench.registry import Registry
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,7 @@ class ReaderRuntime:
         exports_subdir: str | None = "exports",
         create: bool = True,
     ) -> RecordStore:
-        return RecordStore(
+        return import_module("reader.workbench.records.store").RecordStore(
             outputs_dir,
             contracts=self.contracts,
             plots_subdir=plots_subdir,

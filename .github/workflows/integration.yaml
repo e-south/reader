@@ -39,7 +39,11 @@ jobs:
       - name: Run integration suite
         run: |
           mkdir -p .artifacts
-          uv run pytest -q -m integration --durations=25 --junitxml=.artifacts/pytest-integration.xml
+          uv run pytest -q \
+            -o addopts='--strict-config --strict-markers -ra' \
+            -m integration \
+            --durations=25 \
+            --junitxml=.artifacts/pytest-integration.xml
 
       - name: Capture experiment readiness inventory
         if: always()

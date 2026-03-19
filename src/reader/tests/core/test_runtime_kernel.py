@@ -94,3 +94,28 @@ def test_plotting_mpl_import_does_not_eager_load_plotting_style_module() -> None
     importlib.import_module("reader.plotting.mpl")
 
     assert "reader.plotting.style" not in sys.modules
+
+
+def test_runtime_import_does_not_eager_load_builtin_bootstrap() -> None:
+    module_names = (
+        "reader.runtime",
+        "reader.runtime.builtin",
+        "reader.workbench.records.store",
+        "reader.workbench.registry",
+    )
+    saved_modules = {name: sys.modules.get(name) for name in module_names}
+    try:
+        for name in module_names:
+            sys.modules.pop(name, None)
+
+        importlib.import_module("reader.runtime")
+
+        assert "reader.runtime.builtin" not in sys.modules
+        assert "reader.workbench.records.store" not in sys.modules
+        assert "reader.workbench.registry" not in sys.modules
+    finally:
+        for name in module_names:
+            sys.modules.pop(name, None)
+        for name, module in saved_modules.items():
+            if module is not None:
+                sys.modules[name] = module
