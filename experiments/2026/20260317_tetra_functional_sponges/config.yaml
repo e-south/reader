@@ -26,6 +26,8 @@ protocol:
         - SoxS
   outputs:
     plots:
+      include:
+      - baseline_shifted_kinetics
 resources:
   sample_map:
     kind: file

@@ -1307,6 +1307,7 @@ def _plate_reader_retron_plot_output(
             "hue": "treatment",
             "y": raw_channels,
             "add_sheet_line": True,
+            "filename": "raw_kinetics",
         }
         return _step(
             id="raw_kinetics",

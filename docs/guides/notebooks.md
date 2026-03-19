@@ -82,6 +82,10 @@ What the scaffolded notebook includes:
 
 The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` templates are intentionally minimal record explorers.
 They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
+`plate_reader/retron_sponge_screen` instead defaults to `notebook/retron_sponge`, which adds an
+experiment-scoped plot-portfolio review, transform ladder, and semantic-table walkthrough on top of the record explorer.
+For cross-run retron library review, `notebook/retron_sponge_aggregate` is available as an explicit opt-in template
+for generic review experiments that aggregate exported semantic tables from multiple source screens.
 
 The dataset dropdown drives the canonical `df_active` variable.
 
@@ -97,7 +101,7 @@ Notes:
 * `uv run reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
 * Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
-* Common templates include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
+* Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
 * Template behavior is capability-driven:
   - plot filtering is only available for templates that declare plot-filter support
   - auto-pick chooses a template from declared default rules instead of hardcoded CLI branching

@@ -75,6 +75,7 @@ uv run reader plot experiments/2026/20260317_tetra_functional_sponges/config.yam
 uv run reader export experiments/2026/20260317_tetra_functional_sponges/config.yaml --list
 uv run reader export experiments/2026/20260317_tetra_functional_sponges/config.yaml
 uv run reader records experiments/2026/20260317_tetra_functional_sponges/config.yaml --format json
+uv run reader notebook experiments/2026/20260317_tetra_functional_sponges/config.yaml --mode none
 ```
 
 ## Compiled plot surface
@@ -98,7 +99,29 @@ Additional profiles:
 - `analysis_review`
   - baseline-shifted, matched-control, induced, summary, and ranking review
 
+To materialize the full 10-figure retron portfolio without dropping QC plots, keep
+`profile: screen_overview` and add `baseline_shifted_kinetics` under
+`protocol.outputs.plots.include`. The March 2026 mono/bi/tri/tetra sponge-screen
+configs use that pattern so the newer screens exercise the complete registered
+retron plot surface.
+
+## Notebook surface
+
+`reader notebook` defaults retron sponge screens to `notebook/retron_sponge`.
+That scaffold is experiment-scoped and progressive:
+
+- it inventories the selected plot portfolio by review phase
+- it adds a direct-ratio transform ladder so each figure is tied back to the math that produced it
+- it shows whether each selected plot/export has already been rendered
+- it prefers the semantic summary/trace records when present
+- it keeps the semantic table review decoupled from bespoke assay plotting code
+
 The guide figures from the full analysis template that are not first-class compiled plot ids should be built from the exported semantic tables rather than by adding assay-specific one-off plot plugins prematurely.
+For cross-run library review, scaffold a small manifest-backed `workbench/generic`
+experiment that selects `notebook/retron_sponge_aggregate`. That notebook combines
+semantic exports from the March 2026 screen families into cross-run figures such as
+specificity matrices, architecture plots, expected-versus-observed multifunction
+comparisons, and sponge fingerprints.
 
 ## Export surface
 

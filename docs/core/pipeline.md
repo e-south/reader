@@ -112,10 +112,11 @@ protocol:
     notebook:
       template: notebook/eda
     plots:
-      profile: screen_overview
-      include: [ratio_heatmap]
+      profile: heatmap_review
       views:
         ratio_heatmap:
+          time: 12.0
+        support_heatmap:
           time: 12.0
     exports:
       include: [crosstalk_pairs_table]
