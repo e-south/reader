@@ -28,9 +28,7 @@ NON_ACTIVE_LIFECYCLE_CONFIGS = {
     rel: lifecycle for rel, lifecycle in EXPERIMENT_LIFECYCLES.items() if lifecycle != "active"
 }
 
-OPTIONAL_DEPENDENCY_BLOCKERS = {
-    "experiments/2026/20260101_cytometer_retron/config.yaml": "flowio is required",
-}
+OPTIONAL_DEPENDENCY_BLOCKERS = {}
 
 END_TO_END_RUNNABLE_CONFIGS = [
     config_path

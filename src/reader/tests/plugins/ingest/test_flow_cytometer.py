@@ -17,7 +17,7 @@ import pytest
 
 from reader.plugins.ingest.flow_cytometer import FlowCytometerCfg, FlowCytometerIngest
 
-pytestmark = [pytest.mark.integration, pytest.mark.optional_dependency]
+pytestmark = pytest.mark.integration
 
 
 def _ctx(exp_dir: Path):
@@ -25,7 +25,6 @@ def _ctx(exp_dir: Path):
 
 
 def test_flow_cytometer_ingest_basic():
-    pytest.importorskip("flowio")
     fcs_path = Path("experiments/2026/20260101_cytometer_retron/inputs/retron-26-neg_Data Source - 1.fcs")
     if not fcs_path.exists():
         pytest.skip("Cytometer fixture file missing")

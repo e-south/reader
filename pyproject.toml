@@ -23,6 +23,7 @@ dependencies = [
   "pillow>=10.0",
   "polars>=1.36.1",
   "openai>=2.14.0",
+  "flowio>=1.4.0",
 ]
 
 [project.optional-dependencies]
@@ -45,9 +46,6 @@ namespaces = false
 "reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
 
 [dependency-groups]
-cytometry = [
-    "flowio>=1.4.0",
-]
 dev = [
   "pytest>=8.2",
   "ruff>=0.4",
@@ -105,7 +103,6 @@ addopts = [
 
 markers = [
   "integration: repo-level or multi-surface integration coverage",
-  "optional_dependency: requires an optional dependency group",
 ]
 
 norecursedirs = [

@@ -214,7 +214,8 @@ stores it as `plate_reader.annotated.v1` instead of plain `tidy.v1`.
 `reader explain` shows this as a minimum contract with a possible runtime
 promotion; execution decides the actual stored contract from the emitted data.
 
-**Note:** install cytometry extras with `uv sync --locked --group cytometry`.
+**Note:** `flowio` is now a core dependency. If cytometry parsing fails because
+the package is missing, re-sync the environment with `uv sync --locked`.
 
 ---
 

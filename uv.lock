@@ -1714,6 +1714,7 @@ name = "reader"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "flowio" },
     { name = "openai" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -1733,9 +1734,6 @@ dnadesign = [
 ]
 
 [package.dev-dependencies]
-cytometry = [
-    { name = "flowio" },
-]
 dev = [
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1750,6 +1748,7 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "dnadesign", marker = "extra == 'dnadesign'", git = "https://github.com/e-south/dnadesign?branch=main" },
+    { name = "flowio", specifier = ">=1.4.0" },
     { name = "openai", specifier = ">=2.14.0" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=2.1" },
@@ -1765,7 +1764,6 @@ requires-dist = [
 provides-extras = ["dnadesign"]
 
 [package.metadata.requires-dev]
-cytometry = [{ name = "flowio", specifier = ">=1.4.0" }]
 dev = [
     { name = "pre-commit", specifier = ">=3.7" },
     { name = "pytest", specifier = ">=8.2" },

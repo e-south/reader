@@ -6,11 +6,10 @@ import pytest
 
 from reader.domains.cytometry.io.fcs import parse_fcs_file
 
-pytestmark = [pytest.mark.integration, pytest.mark.optional_dependency]
+pytestmark = pytest.mark.integration
 
 
 def test_parse_fcs_file_returns_tidy_events_and_channel_metadata() -> None:
-    pytest.importorskip("flowio")
     fcs_path = Path("experiments/2026/20260101_cytometer_retron/inputs/retron-26-neg_Data Source - 1.fcs")
     if not fcs_path.exists():
         pytest.skip("Cytometer fixture file missing")

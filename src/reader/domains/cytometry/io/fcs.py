@@ -76,9 +76,7 @@ def parse_fcs_file(
     try:
         from flowio import FlowData  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - environment-specific
-        raise ParseError(
-            "flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry"
-        ) from exc
+        raise ParseError("flowio is required for ingest/flow_cytometer. Re-sync the core reader environment.") from exc
 
     field = str(channel_name_field).lower().strip()
     mapped_names = {str(k): str(v) for k, v in (channel_map or {}).items()}

@@ -38,8 +38,6 @@ from .shared import (
 
 def render_marimo_help(target: Path, *, mode: str, has_fcs: bool) -> None:
     sync_cmd = "uv sync --locked --group notebooks"
-    if has_fcs:
-        sync_cmd = f"{sync_cmd} --group cytometry"
     marimo_cmd = f"{shared.sys.executable} -m marimo {mode} {target}"
     uvx_cmd = f"uvx marimo {mode} --sandbox {target}"
     shared.console.print(

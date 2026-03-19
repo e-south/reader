@@ -72,7 +72,7 @@ class FlowCytometerIngest(Plugin):
             issues.append(
                 PreflightIssue(
                     kind="dependency",
-                    message="flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry",
+                    message="flowio is required for ingest/flow_cytometer. Re-sync the core reader environment.",
                 )
             )
         if "raw" not in reads:
