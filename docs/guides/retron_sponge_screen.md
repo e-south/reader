@@ -5,7 +5,7 @@ Use it when the experiment depends on:
 
 - same-sensor matched controls such as `tetO`
 - a fixed 2x2 induction/stress design
-- compiled matched-control semantics such as `B`, `C`, `D`, `M`, `O`, burden, leakiness, and ranking
+- compiled matched-control metrics such as `B`, `C`, `D`, `M`, `O`, burden, leakiness, and ranking
 
 This workflow uses the direct-ratio path only. It does not apply residual correction or background subtraction.
 
@@ -22,7 +22,7 @@ Lock these assumptions before analysis:
 - matched controls stay same-sensor, same-plate, same-stress, same-IPTG, same-timepoint
 - all core calculations happen at the well level before aggregation
 
-The transform `transform/retron_sponge_metrics` materializes two typed records:
+The transform `transform/retron_sponge_metrics` materializes two typed assay records:
 
 - `semantic_metrics/trace`
   - contract: `plate_reader.sponge_trace.v1`
@@ -31,9 +31,11 @@ The transform `transform/retron_sponge_metrics` materializes two typed records:
   - contract: `plate_reader.sponge_summary.v1`
   - carries `R_pre`, `C_AUC`, `C_END`, `D_AUC`, `D_END`, `M_AUC`, `M_END`, `O_AUC`, `S_AUC`, `L_pre`, `L_post_AUC`, `T_ratio_AUC`, `T_growth_AUC`, and `T_finalOD`
 
+The internal config key is still `protocol.analysis.semantic_metrics` for compatibility. In the user-facing docs and notebooks, treat those outputs as derived assay metrics rather than a separate semantic layer.
+
 ## Metric flow
 
-The compiled semantic sequence is:
+The compiled analysis sequence is:
 
 1. inspect raw channels such as `OD600`, `CFP`, `YFP`
 2. keep growth-normalized support channels such as `YFP/OD600` and `CFP/OD600`
@@ -113,24 +115,24 @@ That scaffold is experiment-scoped and progressive:
 - it inventories the selected plot portfolio by review phase
 - it adds a direct-ratio transform ladder so each figure is tied back to the math that produced it
 - it shows whether each selected plot/export has already been rendered
-- it prefers the semantic summary/trace records when present
-- it keeps the semantic table review decoupled from bespoke assay plotting code
+- it prefers the derived trace and summary records when present
+- it keeps the assay table review decoupled from bespoke assay plotting code
 
-The guide figures from the full analysis template that are not first-class compiled plot ids should be built from the exported semantic tables rather than by adding assay-specific one-off plot plugins prematurely.
+The guide figures from the full analysis template that are not first-class compiled plot ids should be built from the exported assay tables rather than by adding assay-specific one-off plot plugins prematurely.
 For cross-run library review, scaffold a small manifest-backed `workbench/generic`
 experiment that selects `notebook/retron_sponge_aggregate`. That notebook combines
-semantic exports from the March 2026 screen families into cross-run figures such as
+derived assay exports from the March 2026 screen families into cross-run figures such as
 specificity matrices, architecture plots, expected-versus-observed multifunction
 comparisons, and sponge fingerprints.
 
 ## Export surface
 
-The retron assay exports the semantic tables directly:
+The retron assay exports the derived assay tables directly:
 
 - `semantic_trace_table` -> `outputs/exports/retron/semantic_trace.csv`
 - `semantic_summary_table` -> `outputs/exports/retron/semantic_summary.csv`
 
-Those exports are the didactic and extensible bridge between the compiled assay program and downstream bespoke figures such as architecture comparisons, constituent-vs-multifunction expected/observed plots, sponge fingerprints, or plate-position diagnostics.
+Those exports are the didactic and extensible bridge between the compiled assay program and downstream figures such as architecture comparisons, constituent-vs-multifunction expected/observed plots, sponge fingerprints, or plate-position diagnostics.
 
 ## Config guidance
 
@@ -154,7 +156,7 @@ Before trusting a new retron sponge experiment:
 - `reader inspect` shows `plate_reader/retron_sponge_screen`
 - `reader explain --format json` shows `semantics.program.summary.descriptive_only == 0`
 - `reader plot --list` shows the retron-specific outputs above, not generic dual-reporter-only outputs
-- `reader export --list` shows both semantic table exports
+- `reader export --list` shows both assay table exports
 - `reader records --format json` shows `semantic_metrics/trace` and `semantic_metrics/summary`
 
 If one of those fails, fix the protocol/config boundary instead of patching generated outputs.
