@@ -2,20 +2,36 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 import yaml
 
+from reader.contracts import builtin_contract_catalog
+from reader.domains.plate_reader.plots.common import annotate_points_smart
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.notebooks.retron_review import (
+    RetronReviewSource,
     build_architecture_frame,
     build_expected_vs_observed_frame,
+    build_label_value_options,
     build_specificity_matrix,
+    contextualize_retron_plot_copy,
+    filter_supporting_table_for_figure,
+    load_cached_parquet_frame,
     load_notebook_workbench_context,
     load_retron_review_bundle,
+    load_retron_source_surface,
+    render_retron_aggregate_plot,
+    render_retron_aggregate_plot_cached,
+    render_retron_experiment_plot,
+    render_retron_experiment_plot_cached,
     retron_figure_coverage_rows,
     retron_plot_rendered_files,
+    retron_source_surface_overview_rows,
+    retron_table_kwargs,
 )
+from reader.workbench.records import RecordStore
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -176,7 +192,7 @@ def test_retron_review_bundle_loads_manifest_and_builds_cross_run_frames(tmp_pat
 
     assert {item.label for item in bundle.sources} == {"mono", "multi"}
     assert set(bundle.summary_df["source_experiment_id"]) == {"mono_family", "multi_family"}
-    assert float(specificity.loc["BaeR-LexA-SoxR-SoxS", "soxSp"]) == pytest.approx(0.48)
+    assert float(specificity.loc["soxSp", "BaeR-LexA-SoxR-SoxS"]) == pytest.approx(0.48)
     quad_spy = architecture[
         (architecture["sensor"] == "spyP") & (architecture["sponge"] == "BaeR-LexA-SoxR-SoxS")
     ].iloc[0]
@@ -292,6 +308,107 @@ def test_load_notebook_workbench_context_uses_builtin_protocol_catalog(tmp_path:
     assert context.workbench.plots
 
 
+def test_load_retron_source_surface_reads_scoped_plot_catalog_and_record_paths(tmp_path: Path) -> None:
+    (tmp_path / "inputs").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "inputs" / "metadata.xlsx").write_text("stub", encoding="utf-8")
+    cfg_path = write_config(
+        tmp_path,
+        base_reader_config(
+            experiment_id="exp_retron_source_surface",
+            title="Source surface test",
+            protocol_id="plate_reader/retron_sponge_screen",
+            protocol_analysis={
+                "semantic_metrics": {
+                    "relevant_stress_map": {"spyP": "3% EtOH"},
+                    "sensor_target_map": {"spyP": ["CpxR", "BaeR"]},
+                }
+            },
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        ),
+    )
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    tidy = pd.DataFrame(
+        [
+            {
+                "position": "A1",
+                "time": 0.0,
+                "channel": "OD600",
+                "value": 0.1,
+            }
+        ]
+    )
+    trace = pd.DataFrame(
+        [
+            {
+                "position": "A1",
+                "time": 0.0,
+                "channel": "trace",
+                "value": -0.4,
+            }
+        ]
+    )
+    summary = pd.DataFrame(
+        [
+            {
+                "position": "A1",
+                "time": 0.0,
+                "channel": "summary",
+                "value": 0.4,
+            }
+        ]
+    )
+    store.persist_dataframe(
+        producer_id="ratio_yfp_od600",
+        producer_plugin="transform/ratio_yfp_od600",
+        out_name="df",
+        record_id="ratio_yfp_od600/df",
+        df=tidy,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:ratio",
+    )
+    store.persist_dataframe(
+        producer_id="semantic_metrics",
+        producer_plugin="transform/semantic_metrics",
+        out_name="trace",
+        record_id="semantic_metrics/trace",
+        df=trace,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:trace",
+    )
+    store.persist_dataframe(
+        producer_id="semantic_metrics",
+        producer_plugin="transform/semantic_metrics",
+        out_name="summary",
+        record_id="semantic_metrics/summary",
+        df=summary,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:summary",
+    )
+
+    source = RetronReviewSource(
+        label="mono",
+        experiment_id="exp_retron_source_surface",
+        experiment_root=tmp_path,
+        config_path=cfg_path,
+        summary_path=cfg_path,
+        trace_path=cfg_path,
+    )
+
+    surface = load_retron_source_surface(source)
+    overview_rows = retron_source_surface_overview_rows(source, surface)
+
+    assert surface.experiment_title == "Source surface test"
+    assert surface.protocol_id == "plate_reader/retron_sponge_screen"
+    assert any(row["Plot id"] == "raw_kinetics" for row in surface.plot_catalog_rows)
+    assert any(record_id == "semantic_metrics/trace" for record_id, _ in surface.record_paths)
+    assert any(record_id == "ratio_yfp_od600/df" for record_id, _ in surface.record_paths)
+    assert overview_rows[0] == {"Field": "Source label", "Value": "mono"}
+    assert overview_rows[3]["Field"] == "Compiled plots"
+
+
 def test_retron_plot_rendered_files_accepts_legacy_raw_kinetics_prefix(tmp_path: Path) -> None:
     plots_dir = tmp_path / "plots"
     plots_dir.mkdir()
@@ -300,3 +417,401 @@ def test_retron_plot_rendered_files_accepts_legacy_raw_kinetics_prefix(tmp_path:
     matches = retron_plot_rendered_files(plots_dir, plot_id="raw_kinetics", plugin="plot/time_series")
 
     assert matches == ["ts_spyP_tetO.pdf"]
+
+
+def test_render_retron_experiment_plot_reuses_canonical_trace_renderer() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "H2O",
+                "time_from_stress": 0.0,
+                "metric": "C",
+                "value": 0.0,
+                "IPTG": "-IPTG",
+                "relevant_sensor_pair": True,
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "H2O",
+                "time_from_stress": 1.0,
+                "metric": "C",
+                "value": 0.0,
+                "IPTG": "+IPTG",
+                "relevant_sensor_pair": True,
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "stress_condition": "H2O",
+                "time_from_stress": 0.0,
+                "metric": "C",
+                "value": -0.2,
+                "IPTG": "-IPTG",
+                "relevant_sensor_pair": True,
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "stress_condition": "H2O",
+                "time_from_stress": 1.0,
+                "metric": "C",
+                "value": -0.6,
+                "IPTG": "+IPTG",
+                "relevant_sensor_pair": True,
+            },
+        ]
+    )
+    plot_spec = {
+        "id": "matched_control_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {"trace": {"record": "semantic_metrics/trace"}},
+        "with": {
+            "metrics": ["C"],
+            "title": "Matched-control-normalized kinetics",
+            "filename": "matched_control_kinetics",
+            "control_name": "tetO",
+            "relevant_only": True,
+            "stress_order": ["H2O"],
+        },
+    }
+
+    result = render_retron_experiment_plot(plot_spec, datasets={"semantic_metrics/trace": trace})
+
+    assert result.plot_id == "matched_control_kinetics"
+    assert result.stage == "2. Assay kinetics"
+    assert "same-sensor tetO subtraction" in result.question
+    assert result.source_record == "semantic_metrics/trace"
+    assert len(result.figures) == 1
+    assert result.figures[0].filename == "matched_control_kinetics__sensor=spyp"
+    assert result.figures[0].fig.get_facecolor()[:3] == pytest.approx((1.0, 1.0, 1.0))
+    assert set(result.supporting_table["metric"]) == {"C"}
+    plt.close(result.figures[0].fig)
+
+
+def test_contextualize_retron_plot_copy_replaces_generic_relevant_stress_text() -> None:
+    supporting_table = pd.DataFrame(
+        [
+            {"sensor": "spyP", "stress_condition": "3% EtOH"},
+            {"sensor": "spyP", "stress_condition": "3% EtOH"},
+        ]
+    )
+
+    contextual = contextualize_retron_plot_copy(
+        question="How does the sponge behave under relevant stress?",
+        math="M_AUC=AUC(D(relevant stress)-D(H2O)).",
+        meaning="Compares relevant stress against H2O for the selected sensor.",
+        supporting_table=supporting_table,
+        relevant_stress_map={"spyP": "3% EtOH"},
+    )
+
+    assert contextual["question"] == "How does the sponge behave under 3% EtOH?"
+    assert contextual["math"] == "M_AUC=AUC(D(3% EtOH)-D(H2O))."
+    assert contextual["meaning"] == "Compares 3% EtOH against H2O for the selected sensor."
+
+
+def test_render_retron_experiment_plot_uses_descriptive_time_series_axis_labels() -> None:
+    tidy = pd.DataFrame(
+        [
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "channel": "OD600",
+                "value": 0.1,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "channel": "OD600",
+                "value": 0.2,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "channel": "CFP",
+                "value": 8000,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "channel": "CFP",
+                "value": 9000,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "channel": "YFP",
+                "value": 1200,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "channel": "YFP",
+                "value": 1800,
+            },
+        ]
+    )
+    plot_spec = {
+        "id": "raw_kinetics",
+        "plugin": "plot/time_series",
+        "reads": {"df": {"record": "ratio_yfp_od600/df"}},
+        "with": {
+            "partition": {"by": "design_id"},
+            "hue": "treatment",
+            "xlabel": "Time from stress addition (h)",
+            "y": ["OD600", "CFP", "YFP"],
+            "ylabel_map": {
+                "OD600": "Biomass proxy (OD600)",
+                "CFP": "Reference fluorescence (CFP)",
+                "YFP": "Reporter fluorescence (YFP)",
+            },
+            "show_replicates": True,
+            "filename": "raw_kinetics",
+        },
+    }
+
+    result = render_retron_experiment_plot(plot_spec, datasets={"ratio_yfp_od600/df": tidy})
+
+    assert result.title == "Raw kinetics QC"
+    assert len(result.figures) == 1
+    axis_labels = [axis.get_ylabel() for axis in result.figures[0].fig.axes[:3]]
+    assert axis_labels == [
+        "Biomass proxy (OD600)",
+        "Reference fluorescence (CFP)",
+        "Reporter fluorescence (YFP)",
+    ]
+    assert result.figures[0].fig.axes[0].get_xlabel() == "Time from stress addition (h)"
+    plt.close(result.figures[0].fig)
+
+
+def test_render_retron_experiment_plot_cached_reuses_same_result_for_same_inputs() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "H2O",
+                "time_from_stress": 0.0,
+                "metric": "C",
+                "value": 0.0,
+                "IPTG": "-IPTG",
+                "relevant_sensor_pair": True,
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "stress_condition": "H2O",
+                "time_from_stress": 1.0,
+                "metric": "C",
+                "value": -0.6,
+                "IPTG": "+IPTG",
+                "relevant_sensor_pair": True,
+            },
+        ]
+    )
+    plot_spec = {
+        "id": "matched_control_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {"trace": {"record": "semantic_metrics/trace"}},
+        "with": {"metrics": ["C"], "filename": "matched_control_kinetics"},
+    }
+
+    first = render_retron_experiment_plot_cached(plot_spec, datasets={"semantic_metrics/trace": trace})
+    second = render_retron_experiment_plot_cached(plot_spec, datasets={"semantic_metrics/trace": trace})
+
+    assert second is first
+    plt.close(first.figures[0].fig)
+
+
+def test_render_retron_aggregate_plot_returns_specificity_matrix_bundle() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_AUC",
+                "value": 0.40,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "metric": "S_AUC",
+                "value": 0.55,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "specificity_matrix",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR"), "sulAp": ("LexA",)},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert result.title == "Specificity matrix"
+    assert result.figure is not None
+    assert "activity distributed across the sensors" in result.question
+    assert result.figure.get_facecolor()[:3] == pytest.approx((1.0, 1.0, 1.0))
+    assert result.figure.axes[0].get_xlabel() == "Sponge design"
+    assert result.figure.axes[0].get_ylabel() == ""
+    assert not result.supporting_table.empty
+    plt.close(result.figure)
+
+
+def test_render_retron_aggregate_plot_cached_reuses_same_result_for_same_inputs() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_AUC",
+                "value": 0.40,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            }
+        ]
+    )
+
+    first = render_retron_aggregate_plot_cached(
+        "specificity_matrix",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+    second = render_retron_aggregate_plot_cached(
+        "specificity_matrix",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert second is first
+    assert first.figure is not None
+    plt.close(first.figure)
+
+
+def test_load_cached_parquet_frame_reuses_frame_when_file_is_unchanged(tmp_path: Path) -> None:
+    path = tmp_path / "frame.parquet"
+    pd.DataFrame([{"value": 1}, {"value": 2}]).to_parquet(path, index=False)
+
+    first = load_cached_parquet_frame(path)
+    second = load_cached_parquet_frame(path)
+
+    assert second is first
+
+
+def test_filter_supporting_table_for_figure_uses_sensor_or_design_scope() -> None:
+    summary_table = pd.DataFrame(
+        [
+            {"sensor": "spyP", "metric": "C_AUC", "value": 1.0},
+            {"sensor": "sulAp", "metric": "C_AUC", "value": 2.0},
+        ]
+    )
+    scoped_summary = filter_supporting_table_for_figure(
+        summary_table,
+        filename="matched_control_kinetics__sensor=spyp",
+    )
+    assert scoped_summary["sensor"].tolist() == ["spyP"]
+
+    tidy_table = pd.DataFrame(
+        [
+            {"design_id_alias": "spyP/CpxR", "channel": "YFP", "value": 1.0},
+            {"design_id_alias": "sulAp/LexA", "channel": "YFP", "value": 2.0},
+        ]
+    )
+    scoped_tidy = filter_supporting_table_for_figure(
+        tidy_table,
+        filename="raw_kinetics__design_id_alias=spyP/CpxR",
+    )
+    assert scoped_tidy["design_id_alias"].tolist() == ["spyP/CpxR"]
+
+
+def test_build_label_value_options_disambiguates_duplicate_labels() -> None:
+    options = build_label_value_options(
+        [
+            {"Label": "Same label", "Value": "first"},
+            {"Label": "Same label", "Value": "second"},
+        ],
+        label_key="Label",
+        value_key="Value",
+    )
+
+    assert options == {
+        "Same label [first]": "first",
+        "Same label [second]": "second",
+    }
+
+
+def test_retron_table_kwargs_builds_compact_read_only_tables() -> None:
+    kwargs = retron_table_kwargs(
+        page_size=6,
+        pagination=False,
+        wrapped_columns=["Meaning"],
+        max_height=320,
+    )
+
+    assert kwargs["selection"] is None
+    assert kwargs["show_column_summaries"] is False
+    assert kwargs["show_data_types"] is False
+    assert kwargs["show_download"] is False
+    assert kwargs["page_size"] == 6
+    assert kwargs["pagination"] is False
+    assert kwargs["wrapped_columns"] == ["Meaning"]
+    assert kwargs["max_height"] == 320
+
+
+def test_annotate_points_smart_spreads_labels_for_overlapping_points() -> None:
+    figure, axis = plt.subplots()
+    axis.scatter([1.0, 1.0, 1.0], [1.0, 1.0, 1.0], s=30)
+
+    annotations = annotate_points_smart(
+        ax=axis,
+        points=[(1.0, 1.0), (1.0, 1.0), (1.0, 1.0)],
+        labels=["A", "B", "C"],
+    )
+
+    positions = [tuple(map(float, annotation.get_position())) for annotation in annotations]
+    assert len(set(positions)) == len(positions)
+    plt.close(figure)

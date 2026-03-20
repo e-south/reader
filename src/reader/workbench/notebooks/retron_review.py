@@ -1,90 +1,187 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import io
+import math
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 import yaml
 
+from reader.domains.plate_reader.plots.common import annotate_points_smart
+from reader.domains.plate_reader.plots.retron_sponge import (
+    plot_retron_sponge_summary,
+    plot_retron_sponge_trace,
+)
+from reader.domains.plate_reader.plots.time_series import plot_time_series
 from reader.workbench.notebooks import context as notebook_context
+from reader.workbench.records import discover_dataframe_records
 
 _TRUE_VALUES = {"1", "true", "t", "yes", "y", "relevant", "on"}
 _FALSE_VALUES = {"0", "false", "f", "no", "n", "irrelevant", "off"}
-_PLOT_STAGE_ORDER = ("1. QC", "2. Semantic kinetics", "3. Ranking and overview")
+_PLOT_STAGE_ORDER = ("1. QC", "2. Assay kinetics", "3. Ranking and overview")
 _FAMILY_ORDER = {"mono": 0, "bi": 1, "tri": 2, "quad": 3, "control": 4}
+_FAMILY_COLOR_MAP = {
+    "mono": "#0072B2",
+    "bi": "#E69F00",
+    "tri": "#009E73",
+    "quad": "#CC79A7",
+    "control": "#6f6f6f",
+    "other": "#56B4E9",
+}
 
 load_notebook_workbench_context = notebook_context.load_notebook_workbench_context
 
+_RETRON_EXPERIMENT_PLOT_CACHE: dict[
+    tuple[str, tuple[tuple[str, int], ...]],
+    RetronNotebookPlotResult,
+] = {}
+_RETRON_AGGREGATE_PLOT_CACHE: dict[
+    tuple[str, int, tuple[tuple[str, tuple[str, ...]], ...], str, str, str, str | None],
+    RetronAggregatePlotResult,
+] = {}
+
 _RETRON_PLOT_GUIDE = {
     "raw_kinetics": {
+        "title": "Raw kinetics QC",
         "stage": "1. QC",
+        "question": "Do any wells fail basic assay sanity checks before normalization?",
         "math": "Raw OD600(t), CFP(t), and YFP(t) after ingest plus blank/overflow preprocessing only.",
         "record": "ratio_yfp_od600/df",
         "meaning": "Find failed wells, saturation, mixing artifacts, or growth collapse before normalization.",
     },
     "support_kinetics": {
+        "title": "Support ratios per OD",
         "stage": "1. QC",
+        "question": "Do both fluorescence channels move together with biomass, or is the reporter ratio doing something specific?",
         "math": "Support ratios YFP/OD600 and CFP/OD600 from the tidy dataframe.",
         "record": "ratio_yfp_od600/df",
         "meaning": "Separate broad physiology shifts from reporter-specific movement; support only, not the primary score.",
     },
     "control_burden_panel": {
+        "title": "tetO burden panel",
         "stage": "1. QC",
+        "question": "How much of the response comes from IPTG plus retron burden rather than a real sponge site?",
         "math": "tetO-only traces over R(t)=log2(YFP/CFP) and mu(t)=d ln(OD600) / dt.",
         "record": "semantic_metrics/trace",
         "meaning": "Measures IPTG and retron burden without a cognate sponge site.",
     },
     "baseline_shifted_kinetics": {
-        "stage": "2. Semantic kinetics",
+        "title": "Baseline-shifted kinetics",
+        "stage": "2. Assay kinetics",
+        "question": "Once each well is centered on its own pre-stress state, how do the post-stress trajectories compare?",
         "math": "B(t)=R(t)-R_pre, where R_pre is the mean of the last three pre-stress reads.",
         "record": "semantic_metrics/trace",
         "meaning": "Removes pre-stress offsets so post-stress motion is comparable well to well.",
     },
     "matched_control_kinetics": {
-        "stage": "2. Semantic kinetics",
+        "title": "Matched-control-normalized kinetics",
+        "stage": "2. Assay kinetics",
+        "question": "After same-sensor tetO subtraction, which trajectories still look sponge-specific?",
         "math": "C(t)=B(t)-mean(B matched tetO at same sensor, plate, stress, IPTG, and time).",
         "record": "semantic_metrics/trace",
         "meaning": "Shows sponge-specific deviation after same-sensor tetO control subtraction.",
     },
     "induced_effect_kinetics": {
-        "stage": "2. Semantic kinetics",
+        "title": "Induced sponge effect kinetics",
+        "stage": "2. Assay kinetics",
+        "question": "What does turning on the sponge change after matched-control normalization?",
         "math": "D(t)=mean(C +IPTG)-mean(C -IPTG) within each sensor and stress state.",
         "record": "semantic_metrics/trace",
         "meaning": "Isolates induction-dependent sponge activity after matched-control normalization.",
     },
     "interaction_summary": {
+        "title": "2x2 interaction summary",
         "stage": "3. Ranking and overview",
+        "question": "Does the phenotype appear only when the sponge is induced, only under stress, or both?",
         "math": "C_AUC or C_END across the four 2x2 states: H2O/-IPTG, H2O/+IPTG, stress/-IPTG, stress/+IPTG.",
         "record": "semantic_metrics/summary",
         "meaning": "Shows whether activity is inducible, stress-gated, leaky, or burden-dominated.",
     },
     "library_heatmaps": {
+        "title": "Library heatmaps",
         "stage": "3. Ranking and overview",
+        "question": "Across the library, which sponge-sensor pairs are on-target, stress-gated, or strong after cross-sensor scaling?",
         "math": "Heatmaps over D_AUC(H2O), D_AUC(relevant stress), M_AUC, and S_AUC.",
         "record": "semantic_metrics/summary",
         "meaning": "Summarizes library-wide on-target, stress-gated, and cross-sensor scaled effects.",
     },
     "stress_modulation_scores": {
+        "title": "Stress modulation scores",
         "stage": "3. Ranking and overview",
+        "question": "Which on-target effects become materially stronger once the relevant pathway is stressed?",
         "math": "M_AUC=AUC(D(relevant stress)-D(H2O)).",
         "record": "semantic_metrics/summary",
         "meaning": "Ranks how strongly stress unmasks a sponge effect.",
     },
     "pareto_ranking": {
+        "title": "Pareto ranking",
         "stage": "3. Ranking and overview",
+        "question": "Which candidates balance on-target effect with low burden and low leakiness?",
         "math": "On-target score S_AUC versus burden (T_growth_AUC by default), with |L_pre| encoded as point size.",
         "record": "semantic_metrics/summary",
         "meaning": "Balances efficacy against burden and leakiness for candidate selection.",
     },
 }
 
+_RETRON_AGGREGATE_PLOT_GUIDE = {
+    "specificity_matrix": {
+        "title": "Specificity matrix",
+        "question": "How is activity distributed across the sensors each sponge is meant to affect?",
+        "math": "Relevant-stress on-target pivot over S_AUC or O_AUC across sponge x sensor.",
+        "meaning": "Shows whether mono, bi, tri, and quad sponges distribute activity across the sensors they are meant to affect.",
+    },
+    "architecture_plot": {
+        "title": "Architecture plot",
+        "question": "Does adding extra motifs preserve, dilute, or redistribute the intended sponge effect?",
+        "math": "Relevant-stress S_AUC or O_AUC versus motif_count or irrelevant_motif_count, faceted by sensor.",
+        "meaning": "Tests whether extra motifs preserve, dilute, or redistribute the relevant sponge arm.",
+    },
+    "expected_vs_observed": {
+        "title": "Expected vs observed multifunction performance",
+        "question": "Do multifunctional designs behave additively, better than additive, or worse than additive?",
+        "math": "Observed multifunction score versus the mono-derived expected_sum or expected_best_single baseline.",
+        "meaning": "Separates additive multifunction behavior from dilution or synergy.",
+    },
+    "sponge_fingerprint": {
+        "title": "Sponge fingerprint",
+        "question": "For one multi-functional sponge, which intended sensor arms are strong and which are weak?",
+        "math": "Selected multifunction sponge plotted across relevant sensors over S_AUC or O_AUC.",
+        "meaning": "Shows whether a multi-functional sponge is balanced across its intended sensor arms.",
+    },
+}
+
+_RETRON_ASSAY_CONTEXT = (
+    {
+        "Topic": "Design unit",
+        "Details": "Each genotype is one sensor plasmid plus one sponge plasmid measured in a 2x2 H2O or stress by -IPTG or +IPTG design.",
+    },
+    {
+        "Topic": "Matched control",
+        "Details": "Every real sponge row is normalized to the same-sensor tetO control on the same plate, stress state, IPTG state, and timepoint.",
+    },
+    {
+        "Topic": "Primary score",
+        "Details": "The direct-ratio core is R(t)=log2(YFP/CFP), then B(t), C(t), D(t), M(t), O(t), and S_AUC for cross-sensor ranking.",
+    },
+    {
+        "Topic": "Decision logic",
+        "Details": "Strong candidates combine positive on-target effect with low burden and low leakiness instead of relying on one summary value alone.",
+    },
+)
+
 _RETRON_TRANSFORM_LADDER = (
     {
         "Step": "Raw channels",
         "Formula": "OD600(t), CFP(t), YFP(t)",
         "Output": "raw QC only",
-        "Meaning": "Check growth, saturation, drift, and failed wells before semantic scoring.",
+        "Meaning": "Check growth, saturation, drift, and failed wells before assay scoring.",
     },
     {
         "Step": "Support channels",
@@ -196,16 +293,16 @@ _RETRON_FIGURE_COVERAGE = (
     {
         "Figure": "Figure 4 — Pre-stress baseline plot",
         "Scope": "Per experiment",
-        "Surface": "semantic summary review",
-        "Coverage": "Derived from semantic tables",
-        "Math": "R_pre and L_pre from semantic_metrics/summary.",
+        "Surface": "assay summary review",
+        "Coverage": "Derived from assay tables",
+        "Math": "R_pre and L_pre from the derived assay summary table.",
     },
     {
         "Figure": "Figure 5 — Raw ratio kinetics by sensor",
         "Scope": "Per experiment",
-        "Surface": "semantic trace review",
-        "Coverage": "Derived from semantic tables",
-        "Math": "R(t)=log2(YFP/CFP) from semantic_metrics/trace.",
+        "Surface": "assay trace review",
+        "Coverage": "Derived from assay tables",
+        "Math": "R(t)=log2(YFP/CFP) from the derived assay trace table.",
     },
     {
         "Figure": "Figure 6 — Baseline-shifted kinetics",
@@ -252,9 +349,9 @@ _RETRON_FIGURE_COVERAGE = (
     {
         "Figure": "Figure 12 — Leakiness panel",
         "Scope": "Per experiment",
-        "Surface": "semantic summary review",
-        "Coverage": "Derived from semantic tables",
-        "Math": "L_pre and L_post_AUC from semantic_metrics/summary.",
+        "Surface": "assay summary review",
+        "Coverage": "Derived from assay tables",
+        "Math": "L_pre and L_post_AUC from the derived assay summary table.",
     },
     {
         "Figure": "Figure 13 — Specificity matrix",
@@ -294,8 +391,8 @@ _RETRON_FIGURE_COVERAGE = (
     {
         "Figure": "Figure 18 — Growth impact summary",
         "Scope": "Per experiment",
-        "Surface": "control_burden_panel plus semantic summary review",
-        "Coverage": "Derived from semantic tables",
+        "Surface": "control_burden_panel plus assay summary review",
+        "Coverage": "Derived from assay tables",
         "Math": "mu(t), T_growth_AUC, and T_finalOD burden summaries.",
     },
     {
@@ -328,12 +425,113 @@ class RetronReviewBundle:
     sensor_target_map: dict[str, tuple[str, ...]]
 
 
+@dataclass(frozen=True)
+class RetronReviewSourceSurface:
+    experiment_title: str
+    protocol_id: str
+    plot_specs: tuple[dict[str, Any], ...]
+    plot_selector_rows: tuple[dict[str, str], ...]
+    plot_catalog_rows: tuple[dict[str, str], ...]
+    record_paths: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class RetronNotebookPlotResult:
+    plot_id: str
+    title: str
+    stage: str
+    question: str
+    math: str
+    meaning: str
+    source_record: str
+    figures: tuple[Any, ...]
+    supporting_table: pd.DataFrame
+    supporting_table_title: str
+
+
+@dataclass(frozen=True)
+class RetronAggregatePlotResult:
+    plot_id: str
+    title: str
+    question: str
+    math: str
+    meaning: str
+    figure: Any | None
+    supporting_table: pd.DataFrame
+    supporting_table_title: str
+
+
 def retron_transform_ladder_rows() -> list[dict[str, str]]:
     return [dict(row) for row in _RETRON_TRANSFORM_LADDER]
 
 
 def retron_aggregate_figure_rows() -> list[dict[str, str]]:
     return [dict(row) for row in _RETRON_AGGREGATE_FIGURES]
+
+
+def retron_aggregate_plot_rows(plot_ids: list[str] | None = None) -> list[dict[str, str]]:
+    selected = list(plot_ids or _RETRON_AGGREGATE_PLOT_GUIDE)
+    rows: list[dict[str, str]] = []
+    for plot_id in selected:
+        guide = _RETRON_AGGREGATE_PLOT_GUIDE.get(str(plot_id))
+        rows.append(
+            {
+                "Plot id": str(plot_id),
+                "Figure": (guide or {}).get("title", str(plot_id)),
+                "Math / transform": (guide or {}).get("math", "Notebook-local aggregate view."),
+                "How to read": (guide or {}).get(
+                    "meaning", "Interpret against the direct-ratio matched-control workflow."
+                ),
+            }
+        )
+    return rows
+
+
+def build_label_value_options(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    label_key: str,
+    value_key: str,
+    disambiguator_key: str | None = None,
+) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        label = str(row.get(label_key, "")).strip()
+        counts[label] = counts.get(label, 0) + 1
+    options: dict[str, Any] = {}
+    for row in rows:
+        label = str(row.get(label_key, "")).strip()
+        if counts.get(label, 0) > 1:
+            disambiguator = str(row.get(disambiguator_key or value_key, "")).strip()
+            label = f"{label} [{disambiguator}]"
+        if label in options:
+            raise ValueError(f"retron_review: duplicate selector label {label!r}")
+        options[label] = row.get(value_key)
+    return options
+
+
+def retron_table_kwargs(
+    *,
+    page_size: int | None = None,
+    pagination: bool | None = None,
+    wrapped_columns: Sequence[str] | None = None,
+    max_height: int | None = None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "selection": None,
+        "show_column_summaries": False,
+        "show_data_types": False,
+        "show_download": False,
+    }
+    if page_size is not None:
+        kwargs["page_size"] = page_size
+    if pagination is not None:
+        kwargs["pagination"] = pagination
+    if wrapped_columns:
+        kwargs["wrapped_columns"] = list(wrapped_columns)
+    if max_height is not None:
+        kwargs["max_height"] = max_height
+    return kwargs
 
 
 def retron_figure_coverage_rows() -> list[dict[str, str]]:
@@ -347,6 +545,7 @@ def retron_plot_guide_rows(plot_ids: list[str]) -> list[dict[str, str]]:
         rows.append(
             {
                 "Stage": (guide or {}).get("stage", _PLOT_STAGE_ORDER[-1]),
+                "Plot": (guide or {}).get("title", str(plot_id).replace("_", " ")),
                 "Plot id": str(plot_id),
                 "Math / transform": (guide or {}).get("math", "Protocol-specific transform guide not registered."),
                 "Source record": (guide or {}).get("record", "see compiled plot spec"),
@@ -355,7 +554,7 @@ def retron_plot_guide_rows(plot_ids: list[str]) -> list[dict[str, str]]:
                 ),
             }
         )
-    rows.sort(key=lambda row: (_plot_stage_rank(row["Stage"]), row["Plot id"]))
+    rows.sort(key=lambda row: (_plot_stage_rank(row["Stage"]), row["Plot"]))
     return rows
 
 
@@ -368,6 +567,129 @@ def retron_plot_rendered_files(plots_dir: Path, *, plot_id: str, plugin: str) ->
     for pattern in patterns:
         matches.extend(path.name for path in plots_dir.glob(pattern))
     return sorted(set(matches))
+
+
+def retron_assay_context_rows() -> list[dict[str, str]]:
+    return [dict(row) for row in _RETRON_ASSAY_CONTEXT]
+
+
+def load_retron_semantic_maps_from_config(
+    config_path: Path,
+) -> tuple[dict[str, str], dict[str, tuple[str, ...]]]:
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    analysis = ((payload.get("protocol") or {}).get("analysis") or {}).get("semantic_metrics") or {}
+    if not isinstance(analysis, dict):
+        raise ValueError("retron_review: protocol.analysis.semantic_metrics must be a mapping")
+    return (
+        _normalize_relevant_stress_map(analysis.get("relevant_stress_map") or {}),
+        _normalize_sensor_target_map(analysis.get("sensor_target_map") or {}),
+    )
+
+
+def load_cached_parquet_frame(path: str | Path) -> pd.DataFrame:
+    resolved = Path(path).expanduser().resolve()
+    stat = resolved.stat()
+    return _load_cached_parquet_frame(str(resolved), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=64)
+def _load_cached_parquet_frame(path: str, mtime_ns: int, size_bytes: int) -> pd.DataFrame:
+    del mtime_ns, size_bytes
+    return pd.read_parquet(path)
+
+
+def retron_sensor_context_rows(
+    relevant_stress_map: Mapping[str, str],
+    sensor_target_map: Mapping[str, tuple[str, ...]],
+) -> list[dict[str, str]]:
+    sensors = sorted({str(key) for key in relevant_stress_map} | {str(key) for key in sensor_target_map})
+    rows: list[dict[str, str]] = []
+    for sensor in sensors:
+        motifs = sensor_target_map.get(sensor, ())
+        rows.append(
+            {
+                "Sensor": sensor,
+                "Relevant stress": str(relevant_stress_map.get(sensor, "not declared")),
+                "Relevant motifs": ", ".join(motifs) if motifs else "not declared",
+            }
+        )
+    return rows
+
+
+def load_retron_source_surface(source: RetronReviewSource) -> RetronReviewSourceSurface:
+    if source.config_path is None:
+        raise ValueError(f"retron_review: source {source.label!r} has no config path for scoped review")
+    config_path = source.config_path.expanduser().resolve()
+    if not config_path.exists():
+        raise FileNotFoundError(f"retron_review: source config not found for scoped review: {config_path}")
+    stat = config_path.stat()
+    return _load_retron_source_surface_cached(str(config_path), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=32)
+def _load_retron_source_surface_cached(path: str, mtime_ns: int, size_bytes: int) -> RetronReviewSourceSurface:
+    del mtime_ns, size_bytes
+    source_context = load_notebook_workbench_context(Path(path))
+    plot_specs = tuple(spec.to_dict() for spec in source_context.workbench.plots)
+    plot_guides = {row["Plot id"]: row for row in retron_plot_guide_rows([spec.get("id", "") for spec in plot_specs])}
+    plot_selector_rows: list[dict[str, str]] = []
+    plot_catalog_rows: list[dict[str, str]] = []
+    for plot_spec in plot_specs:
+        plot_id = str(plot_spec.get("id", ""))
+        guide = plot_guides.get(plot_id, {})
+        stage = str(guide.get("Stage", "3. Ranking and overview"))
+        title = str(
+            guide.get(
+                "Plot",
+                (plot_spec.get("with") or {}).get("title", plot_id),
+            )
+        )
+        plot_selector_rows.append(
+            {
+                "Selector label": f"{stage} • {title}",
+                "Stage": stage,
+                "Plot": title,
+                "Plot id": plot_id,
+            }
+        )
+        rendered_files = retron_plot_rendered_files(
+            source_context.plots_dir,
+            plot_id=plot_id,
+            plugin=str(plot_spec.get("plugin", "")),
+        )
+        plot_catalog_rows.append(
+            {
+                "Stage": stage,
+                "Plot": title,
+                "Plot id": plot_id,
+                "Rendered": "yes" if rendered_files else "no",
+                "Math / transform": str(
+                    guide.get("Math / transform", "Interpret against the direct-ratio matched-control workflow.")
+                ),
+                "How to read": str(guide.get("How to read", "See the transform ladder for the exact semantics.")),
+            }
+        )
+    plot_selector_rows.sort(key=lambda item: (item["Stage"], item["Plot"]))
+    plot_catalog_rows.sort(key=lambda row: (row["Stage"], row["Plot"]))
+    record_info, _, _, _ = discover_dataframe_records(source_context.outputs_dir, allow_scan=False)
+    record_paths = tuple(
+        sorted(
+            (
+                str(info.get("record_id")),
+                str(Path(info["path"]).expanduser().resolve()),
+            )
+            for info in record_info.values()
+            if info.get("record_id") and info.get("path")
+        )
+    )
+    return RetronReviewSourceSurface(
+        experiment_title=source_context.decl.experiment.title or source_context.decl.experiment.id,
+        protocol_id=source_context.decl.experiment_semantics.protocol.id,
+        plot_specs=plot_specs,
+        plot_selector_rows=tuple(plot_selector_rows),
+        plot_catalog_rows=tuple(plot_catalog_rows),
+        record_paths=record_paths,
+    )
 
 
 def load_retron_review_bundle(
@@ -387,8 +709,8 @@ def load_retron_review_bundle(
     summary_frames = []
     trace_frames = []
     for source in sources:
-        summary_frame = _read_semantic_csv(source.summary_path, kind="summary")
-        trace_frame = _read_semantic_csv(source.trace_path, kind="trace")
+        summary_frame = _read_semantic_table(source.summary_path, kind="summary")
+        trace_frame = _read_semantic_table(source.trace_path, kind="trace")
         summary_frames.append(_annotate_source(summary_frame, source=source))
         trace_frames.append(_annotate_source(trace_frame, source=source))
     return RetronReviewBundle(
@@ -414,6 +736,399 @@ def source_rows(bundle: RetronReviewBundle) -> list[dict[str, str]]:
     ]
 
 
+def retron_source_surface_overview_rows(
+    source: RetronReviewSource,
+    surface: RetronReviewSourceSurface,
+) -> list[dict[str, str]]:
+    return [
+        {"Field": "Source label", "Value": source.label},
+        {"Field": "Experiment", "Value": surface.experiment_title or source.experiment_id},
+        {"Field": "Protocol", "Value": surface.protocol_id},
+        {"Field": "Compiled plots", "Value": str(len(surface.plot_catalog_rows))},
+        {"Field": "Dataframe records", "Value": str(len(surface.record_paths))},
+    ]
+
+
+def retron_figure_option_rows(figures: list[Any] | tuple[Any, ...]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for figure in figures:
+        filename = str(getattr(figure, "filename", ""))
+        rows.append(
+            {
+                "Filename": filename,
+                "Label": retron_figure_label(filename),
+            }
+        )
+    return rows
+
+
+def retron_figure_label(filename: str) -> str:
+    value = str(filename or "").strip()
+    if "__sensor=" in value:
+        return value.split("__sensor=", 1)[1].replace("_", " ")
+    if "__design_id_alias=" in value:
+        return value.split("__design_id_alias=", 1)[1].replace("_", " ")
+    if "__design_id=" in value:
+        return value.split("__design_id=", 1)[1].replace("_", " ")
+    return value.replace("_", " ")
+
+
+def filter_supporting_table_for_figure(table: pd.DataFrame, *, filename: str | None) -> pd.DataFrame:
+    if table.empty or not filename:
+        return table
+    frame = table.copy()
+    scope_tokens = {
+        "sensor": _scope_token(filename, key="sensor"),
+        "design_id_alias": _scope_token(filename, key="design_id_alias"),
+        "design_id": _scope_token(filename, key="design_id"),
+    }
+    for column, token in scope_tokens.items():
+        if token is None or column not in frame.columns:
+            continue
+        mask = frame[column].astype(str).map(_slug) == _slug(token)
+        if not mask.any():
+            mask = frame[column].astype(str) == token
+        if mask.any():
+            frame = frame.loc[mask].copy()
+    return frame.reset_index(drop=True)
+
+
+def contextualize_retron_plot_copy(
+    *,
+    question: str,
+    math: str,
+    meaning: str,
+    supporting_table: pd.DataFrame | None,
+    relevant_stress_map: Mapping[str, str] | None = None,
+    no_stress_label: str = "H2O",
+) -> dict[str, str]:
+    stress_phrase = _infer_relevant_stress_phrase(
+        supporting_table=supporting_table,
+        relevant_stress_map=relevant_stress_map,
+        no_stress_label=no_stress_label,
+    )
+    if stress_phrase is None:
+        return {"question": question, "math": math, "meaning": meaning}
+    return {
+        "question": _replace_relevant_stress_text(question, stress_phrase),
+        "math": _replace_relevant_stress_text(math, stress_phrase),
+        "meaning": _replace_relevant_stress_text(meaning, stress_phrase),
+    }
+
+
+def _infer_relevant_stress_phrase(
+    *,
+    supporting_table: pd.DataFrame | None,
+    relevant_stress_map: Mapping[str, str] | None,
+    no_stress_label: str,
+) -> str | None:
+    sensor_stress_pairs: dict[str, str] = {}
+    if supporting_table is not None and not supporting_table.empty:
+        frame = supporting_table.copy()
+        if "stress_condition" in frame.columns:
+            stress_rows = frame[frame["stress_condition"].notna()].copy()
+            stress_rows["stress_condition"] = stress_rows["stress_condition"].astype(str)
+            stress_rows = stress_rows[
+                stress_rows["stress_condition"].str.strip().ne("")
+                & stress_rows["stress_condition"].str.strip().ne(str(no_stress_label))
+            ]
+            if "sensor" in stress_rows.columns:
+                for sensor, values in stress_rows.groupby(stress_rows["sensor"].astype(str), sort=True)[
+                    "stress_condition"
+                ]:
+                    unique_values = sorted(
+                        {value for value in values.astype(str) if value and value != str(no_stress_label)}
+                    )
+                    if len(unique_values) == 1:
+                        sensor_stress_pairs[str(sensor)] = unique_values[0]
+            unique_stresses = sorted({value for value in stress_rows["stress_condition"].astype(str) if value})
+            if len(unique_stresses) == 1:
+                return unique_stresses[0]
+        if not sensor_stress_pairs and {"treatment", "treatment_alias"}.issubset(frame.columns):
+            stress_rows = frame[
+                frame["treatment_alias"].astype(str).str.contains(r"\+stress", regex=True, na=False)
+            ].copy()
+            stress_rows["__stress_label"] = stress_rows["treatment"].map(_extract_stress_from_treatment)
+            stress_rows = stress_rows[stress_rows["__stress_label"].notna()].copy()
+            if "sensor" in stress_rows.columns:
+                for sensor, values in stress_rows.groupby(stress_rows["sensor"].astype(str), sort=True)[
+                    "__stress_label"
+                ]:
+                    unique_values = sorted({str(value) for value in values if pd.notna(value)})
+                    if len(unique_values) == 1:
+                        sensor_stress_pairs[str(sensor)] = unique_values[0]
+            unique_stresses = sorted({str(value) for value in stress_rows["__stress_label"] if pd.notna(value)})
+            if len(unique_stresses) == 1:
+                return unique_stresses[0]
+    if not sensor_stress_pairs and relevant_stress_map:
+        sensor_stress_pairs = {
+            str(sensor): str(stress) for sensor, stress in relevant_stress_map.items() if str(stress).strip()
+        }
+    if not sensor_stress_pairs:
+        return None
+    unique_stresses = sorted(set(sensor_stress_pairs.values()))
+    if len(unique_stresses) == 1:
+        return unique_stresses[0]
+    ordered_pairs = "; ".join(f"{sensor}: {sensor_stress_pairs[sensor]}" for sensor in sorted(sensor_stress_pairs))
+    return f"sensor-matched stress ({ordered_pairs})"
+
+
+def _extract_stress_from_treatment(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parts = [part.strip() for part in text.split(",")]
+    stress_parts = [part for part in parts if "IPTG" not in part]
+    if not stress_parts:
+        return None
+    stress = ", ".join(part for part in stress_parts if part and part != "H2O").strip()
+    return stress or None
+
+
+def _replace_relevant_stress_text(text: str, stress_phrase: str) -> str:
+    updated = str(text)
+    replacements = (
+        ("Relevant-stress", stress_phrase),
+        ("relevant-stress", stress_phrase),
+        ("Relevant stress", stress_phrase),
+        ("relevant stress", stress_phrase),
+    )
+    for source, target in replacements:
+        updated = updated.replace(source, target)
+    return updated
+
+
+def figure_to_download_bytes(figure: Any, *, fmt: str) -> bytes:
+    buffer = io.BytesIO()
+    export_format = str(fmt).lower()
+    figure.savefig(
+        buffer,
+        format=export_format,
+        bbox_inches="tight",
+        facecolor="white",
+        edgecolor="white",
+        transparent=False,
+        dpi=240 if export_format == "png" else None,
+    )
+    return buffer.getvalue()
+
+
+def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def download_safe_stem(value: str) -> str:
+    stem = str(value or "").strip()
+    if not stem:
+        return "retron_review"
+    return _slug(stem).replace("/", "_") or "retron_review"
+
+
+def render_retron_experiment_plot(
+    plot_spec: Mapping[str, Any],
+    *,
+    datasets: Mapping[str, pd.DataFrame],
+) -> RetronNotebookPlotResult:
+    plot_id = str(plot_spec.get("id") or "").strip()
+    if not plot_id:
+        raise ValueError("retron_review: plot spec is missing an id")
+    plugin = str(plot_spec.get("plugin") or "").strip()
+    metadata = _plot_guide_metadata(plot_id)
+    with_cfg = dict(plot_spec.get("with") or {})
+
+    if plugin == "plot/time_series":
+        figures = _render_time_series_plot_spec(plot_spec=plot_spec, datasets=datasets)
+        supporting_table = _time_series_supporting_table(
+            _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="df"),
+            channels=_normalize_optional_str_list(with_cfg.get("y"))
+            or _normalize_optional_str_list(with_cfg.get("channels")),
+        )
+        supporting_table_title = "Underlying tidy rows for the selected raw or support channels"
+    elif plugin == "plot/retron_trace":
+        figures = _render_retron_trace_plot_spec(plot_spec=plot_spec, datasets=datasets)
+        supporting_table = _trace_supporting_table(
+            _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="trace"),
+            metrics=_normalize_optional_str_list(with_cfg.get("metrics")) or [],
+        )
+        supporting_table_title = "Underlying assay trace rows for the selected kinetic transform"
+    elif plugin == "plot/retron_summary":
+        figures = _render_retron_summary_plot_spec(plot_spec=plot_spec, datasets=datasets)
+        supporting_table = _summary_supporting_table(
+            _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="summary"),
+            view=str(with_cfg.get("view") or ""),
+            metric=str(with_cfg.get("metric") or ""),
+            burden_metric=str(with_cfg.get("burden_metric") or "T_growth_AUC"),
+        )
+        supporting_table_title = "Underlying assay summary rows for the selected ranking view"
+    else:
+        raise ValueError(f"retron_review: unsupported notebook plot plugin {plugin!r}")
+
+    styled_figures = tuple(_prepare_notebook_plot_figure(item) for item in figures)
+    return RetronNotebookPlotResult(
+        plot_id=plot_id,
+        title=str(with_cfg.get("title") or metadata["title"]),
+        stage=metadata["stage"],
+        question=metadata["question"],
+        math=metadata["math"],
+        meaning=metadata["meaning"],
+        source_record=metadata["record"],
+        figures=styled_figures,
+        supporting_table=supporting_table.reset_index(drop=True),
+        supporting_table_title=supporting_table_title,
+    )
+
+
+def render_retron_experiment_plot_cached(
+    plot_spec: Mapping[str, Any],
+    *,
+    datasets: Mapping[str, pd.DataFrame],
+) -> RetronNotebookPlotResult:
+    plot_id = str(plot_spec.get("id") or "").strip()
+    cache_key = (
+        plot_id,
+        tuple(sorted((str(record_id), id(frame)) for record_id, frame in datasets.items())),
+    )
+    cached = _RETRON_EXPERIMENT_PLOT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    result = render_retron_experiment_plot(plot_spec, datasets=datasets)
+    _RETRON_EXPERIMENT_PLOT_CACHE[cache_key] = result
+    return result
+
+
+def render_retron_source_plot_cached(
+    source: RetronReviewSource,
+    *,
+    plot_id: str,
+) -> RetronNotebookPlotResult:
+    surface = load_retron_source_surface(source)
+    plot_id_value = str(plot_id).strip()
+    plot_spec = next((spec for spec in surface.plot_specs if str(spec.get("id", "")) == plot_id_value), None)
+    if plot_spec is None:
+        raise ValueError(f"retron_review: unknown scoped plot id {plot_id_value!r} for source {source.label!r}")
+    record_paths = dict(surface.record_paths)
+    datasets: dict[str, pd.DataFrame] = {}
+    errors: list[str] = []
+    for read_ref in dict(plot_spec.get("reads") or {}).values():
+        record_id = str((read_ref or {}).get("record", "")).strip()
+        if not record_id or record_id in datasets:
+            continue
+        record_path = record_paths.get(record_id)
+        if record_path is None:
+            errors.append(f"Missing dataframe record `{record_id}` for the selected source plot.")
+            continue
+        try:
+            datasets[record_id] = load_cached_parquet_frame(record_path)
+        except Exception as exc:
+            errors.append(f"Failed to load `{record_id}`: {exc}")
+    if errors:
+        raise ValueError(" ".join(errors))
+    return render_retron_experiment_plot_cached(plot_spec, datasets=datasets)
+
+
+def render_retron_aggregate_plot(
+    plot_id: str,
+    *,
+    summary_df: pd.DataFrame,
+    sensor_target_map: Mapping[str, tuple[str, ...]],
+    score_metric: str,
+    architecture_x: str,
+    expected_mode: str,
+    fingerprint_sponge: str | None,
+) -> RetronAggregatePlotResult:
+    selected_plot_id = str(plot_id)
+    guide = _aggregate_plot_guide_metadata(selected_plot_id)
+    if selected_plot_id == "specificity_matrix":
+        matrix = build_specificity_matrix(summary_df, score_metric=score_metric)
+        figure = _build_specificity_matrix_figure(matrix=matrix, score_metric=score_metric)
+        supporting_table = matrix.reset_index().rename(columns={"index": "sponge"})
+        supporting_table_title = "Relevant-stress on-target matrix behind the heatmap"
+    elif selected_plot_id == "architecture_plot":
+        supporting_table = build_architecture_frame(
+            summary_df,
+            sensor_target_map=dict(sensor_target_map),
+            score_metric=score_metric,
+        )
+        figure = _build_architecture_figure(
+            architecture_df=supporting_table,
+            score_metric=score_metric,
+            architecture_x=architecture_x,
+        )
+        supporting_table_title = "Architecture score table behind the sensor-faceted scatter plots"
+    elif selected_plot_id == "expected_vs_observed":
+        supporting_table = build_expected_vs_observed_frame(
+            summary_df,
+            sensor_target_map=dict(sensor_target_map),
+            score_metric=score_metric,
+        )
+        figure = _build_expected_vs_observed_figure(
+            expected_vs_observed_df=supporting_table,
+            score_metric=score_metric,
+            expected_mode=expected_mode,
+        )
+        supporting_table_title = "Observed and mono-derived expected scores for multifunctional sponges"
+    elif selected_plot_id == "sponge_fingerprint":
+        supporting_table = build_fingerprint_frame(
+            summary_df,
+            score_metric=score_metric,
+        )
+        figure = _build_fingerprint_figure(
+            fingerprint_df=supporting_table,
+            score_metric=score_metric,
+        )
+        supporting_table_title = "Relevant-sensor score table for multifunctional sponge fingerprints"
+    else:
+        raise ValueError(f"retron_review: unknown aggregate plot id {selected_plot_id!r}")
+
+    return RetronAggregatePlotResult(
+        plot_id=selected_plot_id,
+        title=guide["title"],
+        question=guide["question"],
+        math=guide["math"],
+        meaning=guide["meaning"],
+        figure=_style_notebook_figure(figure) if figure is not None else None,
+        supporting_table=supporting_table.reset_index(drop=True),
+        supporting_table_title=supporting_table_title,
+    )
+
+
+def render_retron_aggregate_plot_cached(
+    plot_id: str,
+    *,
+    summary_df: pd.DataFrame,
+    sensor_target_map: Mapping[str, tuple[str, ...]],
+    score_metric: str,
+    architecture_x: str,
+    expected_mode: str,
+    fingerprint_sponge: str | None,
+) -> RetronAggregatePlotResult:
+    cache_key = (
+        str(plot_id),
+        id(summary_df),
+        tuple(
+            sorted((str(sensor), tuple(str(item) for item in targets)) for sensor, targets in sensor_target_map.items())
+        ),
+        str(score_metric),
+        str(architecture_x),
+        str(expected_mode),
+        fingerprint_sponge,
+    )
+    cached = _RETRON_AGGREGATE_PLOT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    result = render_retron_aggregate_plot(
+        plot_id,
+        summary_df=summary_df,
+        sensor_target_map=sensor_target_map,
+        score_metric=score_metric,
+        architecture_x=architecture_x,
+        expected_mode=expected_mode,
+        fingerprint_sponge=fingerprint_sponge,
+    )
+    _RETRON_AGGREGATE_PLOT_CACHE[cache_key] = result
+    return result
+
+
 def build_specificity_matrix(
     summary_df: pd.DataFrame,
     *,
@@ -422,11 +1137,11 @@ def build_specificity_matrix(
     scores = aggregate_on_target_scores(summary_df, score_metric=score_metric)
     if scores.empty:
         return pd.DataFrame()
-    pivot = scores.pivot_table(index="sponge", columns="sensor", values="value", aggfunc="mean")
+    pivot = scores.pivot_table(index="sensor", columns="sponge", values="value", aggfunc="mean")
     if pivot.empty:
         return pivot
-    row_order = sorted(pivot.index.tolist(), key=_sponge_sort_key)
-    col_order = sorted(pivot.columns.tolist())
+    row_order = sorted(pivot.index.tolist())
+    col_order = sorted(pivot.columns.tolist(), key=_sponge_sort_key)
     return pivot.reindex(index=row_order, columns=col_order)
 
 
@@ -488,14 +1203,13 @@ def build_expected_vs_observed_frame(
 def build_fingerprint_frame(
     summary_df: pd.DataFrame,
     *,
-    sponge: str,
     score_metric: str = "S_AUC",
 ) -> pd.DataFrame:
     scores = aggregate_on_target_scores(summary_df, score_metric=score_metric)
     if scores.empty:
         return pd.DataFrame()
-    frame = scores[scores["sponge"].astype(str) == str(sponge)].copy()
-    return frame.sort_values("sensor", kind="stable").reset_index(drop=True)
+    frame = scores[scores["sponge_family_size"].astype(str).isin({"bi", "tri", "quad"})].copy()
+    return frame.sort_values(["sponge", "sensor"], kind="stable").reset_index(drop=True)
 
 
 def available_multifunctional_sponges(summary_df: pd.DataFrame) -> list[str]:
@@ -547,6 +1261,578 @@ def aggregate_on_target_scores(summary_df: pd.DataFrame, *, score_metric: str) -
     if "n_experiments" not in grouped.columns:
         grouped["n_experiments"] = 1
     return grouped.sort_values(["sensor", "sponge"], kind="stable").reset_index(drop=True)
+
+
+def _plot_guide_metadata(plot_id: str) -> dict[str, str]:
+    guide = _RETRON_PLOT_GUIDE.get(str(plot_id), {})
+    return {
+        "title": str(guide.get("title", plot_id.replace("_", " ").title())),
+        "stage": str(guide.get("stage", _PLOT_STAGE_ORDER[-1])),
+        "question": str(guide.get("question", "What does this plot contribute to the retron sponge decision path?")),
+        "math": str(guide.get("math", "Protocol-specific transform guide not registered.")),
+        "record": str(guide.get("record", "see compiled plot spec")),
+        "meaning": str(guide.get("meaning", "Interpret in the context of the compiled assay semantics.")),
+    }
+
+
+def _aggregate_plot_guide_metadata(plot_id: str) -> dict[str, str]:
+    guide = _RETRON_AGGREGATE_PLOT_GUIDE.get(str(plot_id), {})
+    return {
+        "title": str(guide.get("title", plot_id.replace("_", " ").title())),
+        "question": str(guide.get("question", "What cross-run question does this aggregate plot answer?")),
+        "math": str(guide.get("math", "Notebook-local aggregate figure.")),
+        "meaning": str(guide.get("meaning", "Interpret against the direct-ratio matched-control workflow.")),
+    }
+
+
+def _prepare_notebook_plot_figure(item: Any) -> Any:
+    fig = getattr(item, "fig", None)
+    if fig is None:
+        return item
+    return replace(item, fig=_style_notebook_figure(fig))
+
+
+def _style_notebook_figure(fig: Any) -> Any:
+    fig.patch.set_facecolor("white")
+    fig.patch.set_alpha(1.0)
+    with suppress(Exception):
+        fig.set_dpi(max(160, int(fig.get_dpi())))
+    for axis in getattr(fig, "axes", ()):
+        if hasattr(axis, "set_facecolor"):
+            axis.set_facecolor("white")
+        if hasattr(axis, "tick_params"):
+            axis.tick_params(colors="#111111")
+        for spine in getattr(axis, "spines", {}).values():
+            spine.set_color("#111111")
+        if hasattr(axis, "xaxis") and hasattr(axis.xaxis, "label"):
+            axis.xaxis.label.set_color("#111111")
+        if hasattr(axis, "yaxis") and hasattr(axis.yaxis, "label"):
+            axis.yaxis.label.set_color("#111111")
+        if hasattr(axis, "title"):
+            axis.title.set_color("#111111")
+        for text in getattr(axis, "texts", ()):
+            text.set_color("#111111")
+        if hasattr(axis, "legend"):
+            legend = axis.legend_
+            if legend is not None:
+                _style_notebook_legend(legend)
+    for legend in getattr(fig, "legends", ()):
+        _style_notebook_legend(legend)
+    for text in getattr(fig, "texts", ()):
+        text.set_color("#111111")
+    return fig
+
+
+def _style_notebook_legend(legend: Any) -> None:
+    frame = legend.get_frame()
+    frame.set_facecolor("white")
+    frame.set_alpha(1.0)
+    frame.set_edgecolor("#d0d0d0")
+    for text in legend.get_texts():
+        text.set_color("#111111")
+        with suppress(Exception):
+            text.set_fontsize(8)
+    legend.get_title().set_color("#111111")
+    with suppress(Exception):
+        legend.get_title().set_fontsize(8)
+
+
+def _render_time_series_plot_spec(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+) -> list[Any]:
+    with_cfg = dict(plot_spec.get("with") or {})
+    partition = dict(with_cfg.get("partition") or {})
+    df = _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="df")
+    blanks = _optional_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="blanks")
+    return plot_time_series(
+        df=df,
+        blanks=blanks if blanks is not None else df.iloc[0:0].copy(),
+        output_dir=None,
+        x=str(with_cfg.get("x") or "time"),
+        xlabel=_normalize_optional_str(with_cfg.get("xlabel")),
+        y=_normalize_optional_str_list(with_cfg.get("y")),
+        ylabel_map=dict(with_cfg.get("ylabel_map") or {}),
+        hue_label_map=dict(with_cfg.get("hue_label_map") or {}),
+        hue=str(with_cfg.get("hue") or "treatment"),
+        channels=_normalize_optional_str_list(with_cfg.get("channels")),
+        subplots=None,
+        group_on=_normalize_optional_str(partition.get("by")),
+        pool_sets=partition.get("collection_items"),
+        pool_match=str(partition.get("match") or "exact"),
+        fig_kwargs=dict(with_cfg.get("fig") or {}),
+        add_sheet_line=bool(with_cfg.get("add_sheet_line", False)),
+        sheet_line_kwargs=dict(with_cfg.get("sheet_line_kwargs") or {}),
+        log_transform=with_cfg.get("log_transform", False),
+        time_window=_normalize_optional_float_list(with_cfg.get("time_window")),
+        palette_book=None,
+        ci=float(with_cfg.get("ci", 95.0)),
+        ci_alpha=float(with_cfg.get("ci_alpha", 0.15)),
+        ci_boot=int(with_cfg.get("ci_boot", 100)),
+        ci_seed=int(with_cfg.get("ci_seed", 0)),
+        legend_loc=str(with_cfg.get("legend_loc") or "upper left"),
+        show_replicates=bool(with_cfg.get("show_replicates", False)),
+        shared_legend=bool(with_cfg.get("shared_legend", False)),
+        filename=_normalize_optional_str(with_cfg.get("filename")),
+    )
+
+
+def _render_retron_trace_plot_spec(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+) -> list[Any]:
+    with_cfg = dict(plot_spec.get("with") or {})
+    return plot_retron_sponge_trace(
+        trace=_require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="trace"),
+        output_dir=None,
+        metrics=_normalize_optional_str_list(with_cfg.get("metrics")) or [],
+        title=str(with_cfg.get("title") or "Retron sponge trace"),
+        filename=_normalize_optional_str(with_cfg.get("filename")),
+        palette_book=None,
+        control_name=str(with_cfg.get("control_name") or "tetO"),
+        include_control=bool(with_cfg.get("include_control", False)),
+        only_control=bool(with_cfg.get("only_control", False)),
+        relevant_only=bool(with_cfg.get("relevant_only", False)),
+        stress_order=_normalize_optional_str_list(with_cfg.get("stress_order")),
+        metric_label_map=dict(with_cfg.get("metric_label_map") or {}),
+        fig_kwargs=dict(with_cfg.get("fig") or {}),
+    )
+
+
+def _render_retron_summary_plot_spec(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+) -> list[Any]:
+    with_cfg = dict(plot_spec.get("with") or {})
+    return plot_retron_sponge_summary(
+        summary=_require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="summary"),
+        output_dir=None,
+        view=str(with_cfg.get("view") or "heatmap"),
+        title=str(with_cfg.get("title") or "Retron sponge summary"),
+        filename=_normalize_optional_str(with_cfg.get("filename")),
+        palette_book=None,
+        control_name=str(with_cfg.get("control_name") or "tetO"),
+        no_stress_label=str(with_cfg.get("no_stress_label") or "H2O"),
+        relevant_only=bool(with_cfg.get("relevant_only", True)),
+        metric=_normalize_optional_str(with_cfg.get("metric")),
+        state_order=_normalize_optional_str_list(with_cfg.get("state_order")),
+        burden_metric=str(with_cfg.get("burden_metric") or "T_growth_AUC"),
+        fig_kwargs=dict(with_cfg.get("fig") or {}),
+    )
+
+
+def _require_plot_dataset(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+    label: str,
+) -> pd.DataFrame:
+    record_id = _read_record_id(plot_spec=plot_spec, label=label)
+    try:
+        return datasets[record_id]
+    except KeyError as exc:
+        raise ValueError(
+            f"retron_review: plot {plot_spec.get('id')!r} requires record {record_id!r} for input {label!r}"
+        ) from exc
+
+
+def _optional_plot_dataset(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+    label: str,
+) -> pd.DataFrame | None:
+    record_id = _read_record_id(plot_spec=plot_spec, label=label, optional=True)
+    if record_id is None:
+        return None
+    return datasets.get(record_id)
+
+
+def _read_record_id(
+    *,
+    plot_spec: Mapping[str, Any],
+    label: str,
+    optional: bool = False,
+) -> str | None:
+    reads = dict(plot_spec.get("reads") or {})
+    ref = dict(reads.get(label) or {})
+    record_id = _normalize_optional_str(ref.get("record"))
+    if record_id is None:
+        if optional:
+            return None
+        raise ValueError(f"retron_review: plot {plot_spec.get('id')!r} is missing a record binding for {label!r}")
+    return record_id
+
+
+def _time_series_supporting_table(df: pd.DataFrame, *, channels: list[str] | None) -> pd.DataFrame:
+    frame = df.copy()
+    if channels and "channel" in frame.columns:
+        frame = frame[frame["channel"].astype(str).isin(channels)].copy()
+    keep = [
+        column
+        for column in (
+            "design_id_alias",
+            "design_id",
+            "treatment_alias",
+            "treatment",
+            "time",
+            "sheet_index",
+            "channel",
+            "value",
+        )
+        if column in frame.columns
+    ]
+    out = frame[keep]
+    order = [column for column in ("design_id_alias", "design_id", "time", "channel") if column in keep]
+    if order:
+        out = out.sort_values(order, kind="stable")
+    return out
+
+
+def _trace_supporting_table(trace_df: pd.DataFrame, *, metrics: list[str]) -> pd.DataFrame:
+    frame = trace_df.copy()
+    if metrics:
+        frame = frame[frame["metric"].astype(str).isin(metrics)].copy()
+    keep = [
+        column
+        for column in (
+            "sensor",
+            "sponge",
+            "stress_condition",
+            "IPTG",
+            "time_from_stress",
+            "metric",
+            "value",
+            "relevant_sensor_pair",
+            "is_relevant_stress",
+            "sponge_family_size",
+        )
+        if column in frame.columns
+    ]
+    order = [
+        column
+        for column in ("sensor", "sponge", "stress_condition", "IPTG", "time_from_stress", "metric")
+        if column in keep
+    ]
+    out = frame[keep]
+    if order:
+        out = out.sort_values(order, kind="stable")
+    return out
+
+
+def _summary_supporting_table(
+    summary_df: pd.DataFrame,
+    *,
+    view: str,
+    metric: str,
+    burden_metric: str,
+) -> pd.DataFrame:
+    frame = summary_df.copy()
+    view_id = str(view)
+    if view_id == "interaction":
+        metric_names = [metric or "C_AUC"]
+    elif view_id == "stress_modulation":
+        metric_names = [metric or "M_AUC"]
+    elif view_id == "pareto":
+        metric_names = ["S_AUC", burden_metric or "T_growth_AUC", "L_pre"]
+    elif view_id == "heatmap":
+        metric_names = ["D_AUC", "M_AUC", "S_AUC"]
+    else:
+        metric_names = [metric] if metric else []
+    if metric_names:
+        frame = frame[frame["metric"].astype(str).isin(metric_names)].copy()
+    keep = [
+        column
+        for column in (
+            "sensor",
+            "sponge",
+            "stress_condition",
+            "IPTG",
+            "metric",
+            "value",
+            "relevant_sensor_pair",
+            "is_relevant_stress",
+            "sponge_family_size",
+        )
+        if column in frame.columns
+    ]
+    order = [column for column in ("sensor", "sponge", "stress_condition", "IPTG", "metric") if column in keep]
+    out = frame[keep]
+    if order:
+        out = out.sort_values(order, kind="stable")
+    return out
+
+
+def _build_specificity_matrix_figure(*, matrix: pd.DataFrame, score_metric: str) -> Any | None:
+    if matrix.empty:
+        return None
+
+    n_rows = max(1, len(matrix.index))
+    n_cols = max(1, len(matrix.columns))
+    figure, axis = plt.subplots(
+        figsize=(max(7.4, 2.2 + 0.72 * n_cols), max(3.2, 1.6 + 0.72 * n_rows)),
+        constrained_layout=True,
+    )
+    sns.heatmap(
+        matrix,
+        ax=axis,
+        cmap="vlag",
+        center=0.0,
+        annot=True,
+        fmt=".2f",
+        cbar=True,
+        square=True,
+        linewidths=0.3,
+        linecolor="#f0f0f0",
+        cbar_kws={"label": _metric_axis_label(score_metric), "shrink": 0.80},
+    )
+    axis.set_title("Relevant-stress specificity matrix", pad=12)
+    axis.set_xlabel("Sponge design")
+    axis.set_ylabel("")
+    axis.tick_params(axis="x", labelrotation=45)
+    axis.tick_params(axis="y", labelrotation=0)
+    for label in axis.get_xticklabels():
+        label.set_ha("right")
+    return figure
+
+
+def _build_architecture_figure(
+    *,
+    architecture_df: pd.DataFrame,
+    score_metric: str,
+    architecture_x: str,
+) -> Any | None:
+    if architecture_df.empty:
+        return None
+
+    sensors = sorted(architecture_df["sensor"].dropna().astype(str).unique())
+    family_levels = _ordered_text(architecture_df["sponge_family_size"].fillna("other").astype(str).tolist())
+    palette = {level: _FAMILY_COLOR_MAP.get(level, _FAMILY_COLOR_MAP["other"]) for level in family_levels}
+    figure, axes = plt.subplots(
+        1,
+        len(sensors),
+        figsize=(5.3 * len(sensors), 4.9),
+        constrained_layout=False,
+        squeeze=False,
+        sharey=True,
+    )
+    for axis, sensor in zip(axes[0], sensors, strict=True):
+        sensor_df = architecture_df[architecture_df["sensor"].astype(str) == sensor].copy()
+        sns.scatterplot(
+            data=sensor_df,
+            x=architecture_x,
+            y="value",
+            hue="sponge_family_size",
+            palette=palette,
+            s=88,
+            edgecolor="black",
+            linewidth=0.45,
+            ax=axis,
+        )
+        annotate_points_smart(
+            ax=axis,
+            points=[(float(row[architecture_x]), float(row["value"])) for _, row in sensor_df.iterrows()],
+            labels=[str(row["sponge"]) for _, row in sensor_df.iterrows()],
+            text_kwargs={"fontsize": 8},
+        )
+        axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
+        axis.set_title(str(sensor), pad=8)
+        axis.set_xlabel("")
+        axis.set_ylabel("")
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    if handles:
+        figure.legend(
+            handles,
+            labels,
+            frameon=False,
+            loc="center left",
+            bbox_to_anchor=(0.98, 0.5),
+            ncol=1,
+            title=None,
+        )
+    for axis in axes[0]:
+        legend = axis.get_legend()
+        if legend is not None:
+            legend.remove()
+        with suppress(Exception):
+            axis.set_box_aspect(1.0)
+    figure.supxlabel(_architecture_axis_label(architecture_x), y=0.09)
+    figure.supylabel(_metric_axis_label(score_metric), x=0.02)
+    figure.subplots_adjust(bottom=0.18, left=0.10, right=0.84, top=0.88, wspace=0.24)
+    return figure
+
+
+def _build_expected_vs_observed_figure(
+    *,
+    expected_vs_observed_df: pd.DataFrame,
+    score_metric: str,
+    expected_mode: str,
+) -> Any | None:
+    if expected_vs_observed_df.empty:
+        return None
+
+    sensors = sorted(expected_vs_observed_df["sensor"].dropna().astype(str).unique())
+    family_levels = _ordered_text(expected_vs_observed_df["sponge_family_size"].fillna("other").astype(str).tolist())
+    palette = {level: _FAMILY_COLOR_MAP.get(level, _FAMILY_COLOR_MAP["other"]) for level in family_levels}
+    figure, axes = plt.subplots(
+        1,
+        len(sensors),
+        figsize=(5.3 * len(sensors), 5.1),
+        constrained_layout=False,
+        squeeze=False,
+        sharex=False,
+        sharey=False,
+    )
+    for axis, sensor in zip(axes[0], sensors, strict=True):
+        sensor_df = expected_vs_observed_df[expected_vs_observed_df["sensor"].astype(str) == sensor].copy()
+        sns.scatterplot(
+            data=sensor_df,
+            x=expected_mode,
+            y="observed",
+            hue="sponge_family_size",
+            palette=palette,
+            s=92,
+            edgecolor="black",
+            linewidth=0.45,
+            ax=axis,
+        )
+        min_value = min(float(sensor_df[expected_mode].min()), float(sensor_df["observed"].min()))
+        max_value = max(float(sensor_df[expected_mode].max()), float(sensor_df["observed"].max()))
+        axis.plot([min_value, max_value], [min_value, max_value], color="#777777", linestyle=":", linewidth=1.0)
+        annotate_points_smart(
+            ax=axis,
+            points=[(float(row[expected_mode]), float(row["observed"])) for _, row in sensor_df.iterrows()],
+            labels=[str(row["sponge"]) for _, row in sensor_df.iterrows()],
+            text_kwargs={"fontsize": 8},
+        )
+        axis.set_aspect("equal", adjustable="box")
+        axis.margins(0.08)
+        axis.set_title(str(sensor), pad=8)
+        axis.set_xlabel("")
+        axis.set_ylabel("")
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    if handles:
+        figure.legend(
+            handles,
+            labels,
+            frameon=False,
+            loc="center left",
+            bbox_to_anchor=(0.98, 0.5),
+            ncol=1,
+            title=None,
+        )
+    for axis in axes[0]:
+        legend = axis.get_legend()
+        if legend is not None:
+            legend.remove()
+        with suppress(Exception):
+            axis.set_box_aspect(1.0)
+    figure.supxlabel(_expected_axis_label(expected_mode, score_metric=score_metric), y=0.09)
+    figure.supylabel(f"Observed multifunction score ({score_metric})", x=0.02)
+    figure.subplots_adjust(bottom=0.18, left=0.10, right=0.84, top=0.88, wspace=0.24)
+    return figure
+
+
+def _build_fingerprint_figure(
+    *,
+    fingerprint_df: pd.DataFrame,
+    score_metric: str,
+) -> Any | None:
+    if fingerprint_df.empty:
+        return None
+
+    sponges = sorted(fingerprint_df["sponge"].dropna().astype(str).unique().tolist(), key=_sponge_sort_key)
+    cols = min(3, max(1, len(sponges)))
+    rows = max(1, math.ceil(len(sponges) / cols))
+    sensor_levels = sorted(fingerprint_df["sensor"].dropna().astype(str).unique().tolist())
+    sensor_palette = sns.color_palette("colorblind", n_colors=max(1, len(sensor_levels)))
+    sensor_color_map = {sensor: sensor_palette[idx % len(sensor_palette)] for idx, sensor in enumerate(sensor_levels)}
+    figure, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(4.1 * cols, 3.7 * rows),
+        constrained_layout=False,
+        squeeze=False,
+        sharey=True,
+    )
+    axes_flat = axes.ravel()
+    for axis, sponge in zip(axes_flat, sponges, strict=False):
+        sponge_df = fingerprint_df[fingerprint_df["sponge"].astype(str) == sponge].copy()
+        sns.barplot(
+            data=sponge_df,
+            x="sensor",
+            y="value",
+            order=sensor_levels,
+            palette=[sensor_color_map[sensor] for sensor in sensor_levels],
+            ax=axis,
+        )
+        axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
+        axis.set_title(str(sponge), pad=8)
+        axis.set_xlabel("")
+        axis.set_ylabel("")
+        axis.tick_params(axis="x", labelrotation=30)
+        for label in axis.get_xticklabels():
+            label.set_ha("right")
+        with suppress(Exception):
+            axis.set_box_aspect(1.0)
+    for axis in axes_flat[len(sponges) :]:
+        axis.set_visible(False)
+    figure.supylabel(_metric_axis_label(score_metric), x=0.02)
+    figure.subplots_adjust(bottom=0.16, left=0.10, top=0.90, wspace=0.28, hspace=0.34)
+    return figure
+
+
+def _metric_axis_label(metric: str) -> str:
+    labels = {
+        "S_AUC": "Scaled on-target effect (S_AUC)",
+        "O_AUC": "Sign-corrected effect (O_AUC)",
+        "C": "Matched-control-normalized ratio response (C)",
+        "D": "Induced sponge effect (D)",
+        "M": "Stress modulation (M)",
+    }
+    return labels.get(str(metric), f"Retron sponge score ({metric})")
+
+
+def _architecture_axis_label(architecture_x: str) -> str:
+    if str(architecture_x) == "irrelevant_motif_count":
+        return "Extra non-cognate motifs (irrelevant_motif_count)"
+    return "Total motifs in the sponge design (motif_count)"
+
+
+def _expected_axis_label(expected_mode: str, *, score_metric: str) -> str:
+    if str(expected_mode) == "expected_best_single":
+        return f"Best mono baseline ({score_metric})"
+    return f"Sum of mono baselines ({score_metric})"
+
+
+def _normalize_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_optional_str_list(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _normalize_optional_float_list(value: Any) -> list[float] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+    return [float(value)]
+
+
+def _ordered_text(values: list[str]) -> list[str]:
+    return sorted({str(value) for value in values})
 
 
 def _load_manifest_payload(manifest_path: Path) -> dict[str, Any]:
@@ -602,7 +1888,11 @@ def _resolve_sources(
                 raise ValueError(
                     "retron_review: each source must declare either 'experiment' or explicit 'summary'/'trace' paths"
                 )
-            summary_path = experiment_root / "outputs" / "exports" / "retron" / "semantic_summary.csv"
+            summary_path = _resolve_default_semantic_table(
+                experiment_root,
+                record_id="semantic_metrics/summary",
+                export_name="semantic_summary.csv",
+            )
         if trace_raw is not None:
             trace_path = _resolve_manifest_path(manifest_path, str(trace_raw))
         else:
@@ -610,7 +1900,11 @@ def _resolve_sources(
                 raise ValueError(
                     "retron_review: each source must declare either 'experiment' or explicit 'summary'/'trace' paths"
                 )
-            trace_path = experiment_root / "outputs" / "exports" / "retron" / "semantic_trace.csv"
+            trace_path = _resolve_default_semantic_table(
+                experiment_root,
+                record_id="semantic_metrics/trace",
+                export_name="semantic_trace.csv",
+            )
 
         if not summary_path.exists() or not trace_path.exists():
             command = ""
@@ -714,8 +2008,25 @@ def _resolve_manifest_path(
     return path
 
 
-def _read_semantic_csv(path: Path, *, kind: str) -> pd.DataFrame:
-    frame = pd.read_csv(path)
+def _resolve_default_semantic_table(experiment_root: Path, *, record_id: str, export_name: str) -> Path:
+    export_path = experiment_root / "outputs" / "exports" / "retron" / export_name
+    if export_path.exists():
+        return export_path
+    record_info, _, _, _ = discover_dataframe_records(experiment_root / "outputs", allow_scan=False)
+    for info in record_info.values():
+        if str(info.get("record_id")) == str(record_id):
+            return Path(info["path"]).resolve()
+    return export_path
+
+
+def _read_semantic_table(path: Path, *, kind: str) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        frame = pd.read_csv(path)
+    elif suffix == ".parquet":
+        frame = pd.read_parquet(path)
+    else:
+        raise ValueError(f"retron_review: unsupported semantic table format for {path}")
     if "metric" in frame.columns:
         frame["metric"] = frame["metric"].astype(str)
     if "value" in frame.columns:
@@ -804,3 +2115,16 @@ def _family_label(sponge: str) -> str:
     if motif_count == 4:
         return "quad"
     return f"{motif_count}-site"
+
+
+def _scope_token(filename: str, *, key: str) -> str | None:
+    marker = f"__{key}="
+    value = str(filename or "")
+    if marker not in value:
+        return None
+    token = value.split(marker, 1)[1]
+    return token.strip() or None
+
+
+def _slug(value: str) -> str:
+    return "".join(character if character.isalnum() else "_" for character in str(value)).strip("_").lower()

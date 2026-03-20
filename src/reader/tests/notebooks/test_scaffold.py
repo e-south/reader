@@ -161,15 +161,19 @@ def test_retron_notebook_scaffold_surfaces_plot_portfolio_and_semantic_focus(tmp
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "Retron sponge screen review" in content
-    assert "## Review surfaces" in content
-    assert "Reference guide" in content
-    assert "Transform ladder" in content
+    assert 'app = marimo.App(width="medium")' in content
+    assert "What this notebook contains" in content
+    assert "Assay contract" in content
+    assert "Plot map" in content
+    assert "Transforms" in content
     assert "retron_figure_coverage_rows" in content
-    assert "Plot portfolio" in content
+    assert "Compiled plot views and exports" in content
+    assert '"Analysis exports"' in content
+    assert 'label="Plot view"' in content
     assert "baseline_shifted_kinetics" in content
     assert "Math / transform" in content
-    assert "## Semantic table focus" in content
-    assert "semantic_metrics/summary" in content
+    assert "mo.ui.data_explorer" not in content
+    assert "## Semantic table focus" not in content
 
 
 def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(tmp_path: Path) -> None:
@@ -194,10 +198,18 @@ def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(t
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
     assert "Retron sponge aggregate review" in content
-    assert "## Review surfaces" in content
-    assert "Figure coverage" in content
-    assert "Aggregate figures" in content
-    assert "Specificity matrix" in content
-    assert "Reference guide" in content
-    assert "Expected vs observed" in content
+    assert 'app = marimo.App(width="medium")' in content
+    assert "What this notebook contains" in content
+    assert "Source experiments" in content
+    assert "Workflow map" in content
+    assert "Aggregate views" in content
+    assert "Source experiment" in content
+    assert "Source plot" in content
+    assert "load_retron_source_surface" in content
+    assert "retron_figure_coverage_rows" in content
+    assert "retron_aggregate_figure_rows" in content
+    assert "retron_aggregate_plot_rows" in content
+    assert "expected_vs_observed" in content
     assert "review_manifest" in content
+    assert "mo.ui.data_explorer" not in content
+    assert "## Inspect one aggregate plot at a time" not in content

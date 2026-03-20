@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.19.1"
-app = marimo.App(width="full")
+app = marimo.App(width="medium")
 
 
 @app.cell(hide_code=True)
@@ -9,517 +9,881 @@ def _():
     from pathlib import Path
 
     import marimo as mo
-    import matplotlib.pyplot as plt
-    import seaborn as sns
 
     from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.notebooks.retron_review import (
-        aggregate_on_target_scores,
-        available_multifunctional_sponges,
-        build_architecture_frame,
-        build_expected_vs_observed_frame,
-        build_fingerprint_frame,
-        build_specificity_matrix,
+        build_label_value_options,
+        contextualize_retron_plot_copy,
+        dataframe_to_csv_bytes,
+        download_safe_stem,
+        filter_supporting_table_for_figure,
+        figure_to_download_bytes,
         load_retron_review_bundle,
+        load_retron_source_surface,
+        render_retron_aggregate_plot_cached,
+        render_retron_source_plot_cached,
         retron_aggregate_figure_rows,
+        retron_aggregate_plot_rows,
+        retron_assay_context_rows,
         retron_figure_coverage_rows,
+        retron_figure_option_rows,
+        retron_sensor_context_rows,
+        retron_source_surface_overview_rows,
+        retron_table_kwargs,
         retron_transform_ladder_rows,
         source_rows,
     )
 
     return (
         Path,
-        aggregate_on_target_scores,
-        available_multifunctional_sponges,
-        build_architecture_frame,
-        build_expected_vs_observed_frame,
-        build_fingerprint_frame,
-        build_specificity_matrix,
-        load_retron_review_bundle,
+        build_label_value_options,
+        contextualize_retron_plot_copy,
+        dataframe_to_csv_bytes,
+        download_safe_stem,
+        filter_supporting_table_for_figure,
+        figure_to_download_bytes,
         load_notebook_workbench_context,
+        load_retron_review_bundle,
+        load_retron_source_surface,
         mo,
-        plt,
+        render_retron_aggregate_plot_cached,
+        render_retron_source_plot_cached,
         retron_aggregate_figure_rows,
+        retron_aggregate_plot_rows,
+        retron_assay_context_rows,
         retron_figure_coverage_rows,
+        retron_figure_option_rows,
+        retron_sensor_context_rows,
+        retron_source_surface_overview_rows,
+        retron_table_kwargs,
         retron_transform_ladder_rows,
-        sns,
         source_rows,
     )
 
 
 @app.cell(hide_code=True)
-def _(Path, load_notebook_workbench_context):
-    retron_review_context = load_notebook_workbench_context(Path(__file__).resolve())
-    retron_review_exp_dir = retron_review_context.experiment_root
-    retron_review_decl = retron_review_context.decl
-    retron_review_resources = retron_review_decl.experiment_semantics.resources
-    retron_review_manifest_resource = retron_review_resources.get("review_manifest")
-    retron_review_manifest_path = (
-        retron_review_manifest_resource.path
-        if retron_review_manifest_resource is not None
-        else retron_review_exp_dir / "inputs" / "review_manifest.yaml"
+def _(mo):
+    retron_aggregate_style = mo.Html(
+        "<style>\n"
+        "#App h1 {\n"
+        "  margin-bottom: 0.25rem !important;\n"
+        "  font-weight: 600 !important;\n"
+        "}\n"
+        "#App h2, #App h3, #App h4 {\n"
+        "  margin-bottom: 0.22rem !important;\n"
+        "  font-weight: 500 !important;\n"
+        "}\n"
+        "#App p {\n"
+        "  margin-top: 0.08rem !important;\n"
+        "  margin-bottom: 0.32rem !important;\n"
+        "}\n"
+        "#App h2 + p, #App h3 + p, #App h4 + p {\n"
+        "  margin-top: 0.08rem !important;\n"
+        "}\n"
+        "#App .mo-callout p {\n"
+        "  margin-top: 0.0rem !important;\n"
+        "  margin-bottom: 0.20rem !important;\n"
+        "}\n"
+        "</style>"
     )
-    retron_review_exp_id = retron_review_decl.experiment.id
-    retron_review_exp_title = retron_review_decl.experiment.title or retron_review_exp_id
+    return (retron_aggregate_style,)
+
+
+@app.cell(hide_code=True)
+def _(retron_aggregate_style):
+    retron_aggregate_style
+
+
+@app.cell(hide_code=True)
+def _(Path, load_notebook_workbench_context):
+    retron_aggregate_context = load_notebook_workbench_context(Path(__file__).resolve())
+    retron_aggregate_exp_dir = retron_aggregate_context.experiment_root
+    retron_aggregate_decl = retron_aggregate_context.decl
+    retron_aggregate_resources = retron_aggregate_decl.experiment_semantics.resources
+    retron_aggregate_manifest_resource = retron_aggregate_resources.get("review_manifest")
+    retron_aggregate_manifest_path = (
+        retron_aggregate_manifest_resource.path
+        if retron_aggregate_manifest_resource is not None
+        else retron_aggregate_exp_dir / "inputs" / "review_manifest.yaml"
+    )
+    retron_aggregate_exp_id = retron_aggregate_decl.experiment.id
+    retron_aggregate_exp_title = retron_aggregate_decl.experiment.title or retron_aggregate_exp_id
     return (
-        retron_review_decl,
-        retron_review_exp_dir,
-        retron_review_exp_id,
-        retron_review_exp_title,
-        retron_review_manifest_path,
+        retron_aggregate_exp_id,
+        retron_aggregate_exp_title,
+        retron_aggregate_manifest_path,
     )
 
 
 @app.cell(hide_code=True)
-def _(load_retron_review_bundle, mo, retron_review_manifest_path):
-    retron_review_bundle = None
-    retron_review_bundle_error = None
+def _(load_retron_review_bundle, mo, retron_aggregate_manifest_path):
+    retron_aggregate_bundle = None
+    retron_aggregate_bundle_error = None
     try:
-        retron_review_bundle = load_retron_review_bundle(
-            retron_review_manifest_path,
-            source_root=retron_review_manifest_path.parent.parent,
+        retron_aggregate_bundle = load_retron_review_bundle(
+            retron_aggregate_manifest_path,
+            source_root=retron_aggregate_manifest_path.parent.parent,
         )
-    except Exception as exc:
-        retron_review_bundle_error = str(exc)
-    if retron_review_bundle_error:
+    except Exception as retron_aggregate_exc:
+        retron_aggregate_bundle_error = str(retron_aggregate_exc)
+    if retron_aggregate_bundle_error:
         mo.stop(
             True,
             mo.md(
                 "## Aggregate review manifest error\n"
-                f"`{retron_review_manifest_path}` could not be resolved.\n\n"
-                f"{retron_review_bundle_error}"
+                f"`{retron_aggregate_manifest_path}` could not be resolved.\n\n"
+                f"{retron_aggregate_bundle_error}"
             ),
         )
-    return (retron_review_bundle,)
+    return (retron_aggregate_bundle,)
 
 
 @app.cell(hide_code=True)
 def _(
     mo,
-    retron_review_bundle,
-    retron_review_exp_id,
-    retron_review_exp_title,
-    retron_review_manifest_path,
+    build_label_value_options,
+    retron_aggregate_bundle,
+    retron_aggregate_exp_id,
+    retron_aggregate_exp_title,
+    retron_aggregate_manifest_path,
+    retron_aggregate_figure_rows,
+    retron_aggregate_plot_rows,
+    retron_assay_context_rows,
+    retron_figure_coverage_rows,
+    retron_sensor_context_rows,
+    retron_table_kwargs,
+    retron_transform_ladder_rows,
     source_rows,
 ):
-    retron_review_overview_rows = [
-        {"Field": "Experiment id", "Value": retron_review_exp_id},
-        {"Field": "Manifest", "Value": str(retron_review_manifest_path)},
-        {"Field": "Source experiments", "Value": str(len(retron_review_bundle.sources))},
-        {"Field": "Summary rows", "Value": str(len(retron_review_bundle.summary_df))},
-        {"Field": "Trace rows", "Value": str(len(retron_review_bundle.trace_df))},
+    retron_aggregate_overview_rows = [
+        {"Field": "Experiment id", "Value": retron_aggregate_exp_id},
+        {"Field": "Manifest", "Value": str(retron_aggregate_manifest_path)},
+        {"Field": "Source experiments", "Value": str(len(retron_aggregate_bundle.sources))},
+        {"Field": "Summary rows", "Value": str(len(retron_aggregate_bundle.summary_df))},
+        {"Field": "Trace rows", "Value": str(len(retron_aggregate_bundle.trace_df))},
     ]
-    retron_review_overview_panel = mo.vstack(
+    retron_aggregate_plot_catalog_rows = retron_aggregate_plot_rows()
+    retron_aggregate_plot_selector_options = build_label_value_options(
+        retron_aggregate_plot_catalog_rows,
+        label_key="Figure",
+        value_key="Plot id",
+    )
+    retron_aggregate_overview_panel = mo.vstack(
         [
             mo.md(
                 f"# Retron sponge aggregate review\n"
-                f"**Experiment:** `{retron_review_exp_title}`\n\n"
-                "This notebook is the cross-run layer for retron sponge screens. "
-                "It does not replace the per-experiment compiled plots. "
-                "Instead it aggregates exported semantic tables from multiple source experiments "
-                "to build library-spanning figures that require more than one plate family."
+                f"Experiment: `{retron_aggregate_exp_title}`\n\n"
+                "This notebook keeps cross-run aggregate views and source-scoped experiment views "
+                "in one place for retron sponge screens that share the same direct-ratio "
+                "matched-control contract. Read the gist first, then move into either the "
+                "aggregate or source review surface."
             ),
-            mo.ui.table(retron_review_overview_rows, page_size=len(retron_review_overview_rows)),
-            mo.md("## Source experiments"),
-            mo.ui.table(source_rows(retron_review_bundle), page_size=len(retron_review_bundle.sources)),
-        ]
-    )
-    return (retron_review_overview_panel,)
-
-
-@app.cell(hide_code=True)
-def _(retron_review_overview_panel):
-    retron_review_overview_panel
-
-
-@app.cell(hide_code=True)
-def _(mo, retron_aggregate_figure_rows, retron_figure_coverage_rows, retron_transform_ladder_rows):
-    retron_review_guide_tabs = mo.ui.tabs(
-        {
-            "Transform ladder": mo.ui.table(retron_transform_ladder_rows(), page_size=12),
-            "Figure coverage": mo.ui.table(retron_figure_coverage_rows(), page_size=19),
-            "Aggregate figures": mo.ui.table(retron_aggregate_figure_rows(), page_size=8),
-        }
-    )
-    retron_review_guides_panel = mo.vstack(
-        [
-            mo.md(
-                "## Review guide\n"
-                "The direct-ratio core stays the same across every source experiment. "
-                "These aggregate figures operate on exported semantic tables, not on re-derived ad hoc transforms. "
-                "The coverage tab also calls out the one remaining explicit gap: plate-position heatmaps are still a follow-on notebook view, not a compiled plot id."
+            mo.ui.tabs(
+                {
+                    "Gist": mo.vstack(
+                        [
+                            mo.md(
+                                "### What this notebook contains\n"
+                                "A master review surface for both cross-run comparisons and "
+                                "experiment-scoped plots across the included retron sponge "
+                                "screens."
+                            ),
+                            mo.ui.table(
+                                retron_aggregate_overview_rows,
+                                **retron_table_kwargs(
+                                    page_size=len(retron_aggregate_overview_rows),
+                                    pagination=False,
+                                ),
+                            ),
+                        ]
+                    ),
+                    "Source experiments": mo.ui.table(
+                        source_rows(retron_aggregate_bundle),
+                        **retron_table_kwargs(
+                            page_size=max(1, min(6, len(retron_aggregate_bundle.sources))),
+                            wrapped_columns=["Config", "Summary export", "Trace export"],
+                            max_height=320,
+                        ),
+                    ),
+                    "Assay contract": mo.vstack(
+                        [
+                            mo.md(
+                                "### Fixed assay rules\n"
+                                "The aggregate layer reuses the same same-sensor tetO matching "
+                                "rule and direct-ratio transforms as the experiment-scoped review."
+                            ),
+                            mo.ui.table(
+                                retron_assay_context_rows(),
+                                **retron_table_kwargs(
+                                    page_size=4,
+                                    pagination=False,
+                                    wrapped_columns=["Details"],
+                                ),
+                            ),
+                            mo.md("### Sensor-to-stress and motif map"),
+                            mo.ui.table(
+                                retron_sensor_context_rows(
+                                    retron_aggregate_bundle.relevant_stress_map,
+                                    retron_aggregate_bundle.sensor_target_map,
+                                ),
+                                **retron_table_kwargs(
+                                    page_size=max(
+                                        1,
+                                        len(retron_aggregate_bundle.relevant_stress_map),
+                                    ),
+                                    pagination=False,
+                                    wrapped_columns=["Relevant stress", "Relevant motifs"],
+                                ),
+                            ),
+                        ]
+                    ),
+                    "Workflow map": mo.vstack(
+                        [
+                            mo.md(
+                                "### Ingest and aggregate transform path\n"
+                                "Use this tab when you need to trace a cross-run score back to the "
+                                "underlying per-experiment derived assay metrics."
+                            ),
+                            mo.ui.tabs(
+                                {
+                                    "Transform ladder": mo.ui.table(
+                                        retron_transform_ladder_rows(),
+                                        **retron_table_kwargs(
+                                            page_size=12,
+                                            wrapped_columns=["Formula", "Meaning"],
+                                            max_height=360,
+                                        ),
+                                    ),
+                                    "Aggregate plots": mo.ui.table(
+                                        retron_aggregate_plot_catalog_rows,
+                                        **retron_table_kwargs(
+                                            page_size=4,
+                                            pagination=False,
+                                            wrapped_columns=["Math / transform", "How to read"],
+                                        ),
+                                    ),
+                                    "Coverage map": mo.ui.table(
+                                        retron_figure_coverage_rows(),
+                                        **retron_table_kwargs(
+                                            page_size=10,
+                                            wrapped_columns=["Figure", "Coverage", "Math"],
+                                            max_height=360,
+                                        ),
+                                    ),
+                                    "Aggregate figures": mo.ui.table(
+                                        retron_aggregate_figure_rows(),
+                                        **retron_table_kwargs(
+                                            page_size=4,
+                                            pagination=False,
+                                            wrapped_columns=["Math", "Why"],
+                                        ),
+                                    ),
+                                }
+                            ),
+                        ]
+                    ),
+                }
             ),
-            retron_review_guide_tabs,
-        ]
+        ],
+        gap=0.5,
     )
-    return (retron_review_guides_panel,)
+    return retron_aggregate_overview_panel, retron_aggregate_plot_selector_options
 
 
 @app.cell(hide_code=True)
-def _(available_multifunctional_sponges, mo, retron_review_bundle):
-    retron_review_score_metric = mo.ui.dropdown(
+def _(retron_aggregate_overview_panel):
+    retron_aggregate_overview_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_aggregate_plot_selector_options):
+    retron_aggregate_plot_selector = mo.ui.dropdown(
+        options=retron_aggregate_plot_selector_options,
+        value=next(iter(retron_aggregate_plot_selector_options), None),
+        label="Aggregate view",
+        full_width=True,
+    )
+    retron_aggregate_score_selector = mo.ui.dropdown(
         options=["S_AUC", "O_AUC"],
         value="S_AUC",
         label="Cross-sensor score",
         full_width=True,
     )
-    retron_review_architecture_x = mo.ui.dropdown(
+    retron_aggregate_architecture_selector = mo.ui.dropdown(
         options=["irrelevant_motif_count", "motif_count"],
         value="irrelevant_motif_count",
         label="Architecture x-axis",
         full_width=True,
     )
-    retron_review_expected_mode = mo.ui.dropdown(
+    retron_aggregate_expected_selector = mo.ui.dropdown(
         options=["expected_sum", "expected_best_single"],
         value="expected_sum",
         label="Expected multi-site baseline",
         full_width=True,
     )
-    retron_review_sponge_options = available_multifunctional_sponges(retron_review_bundle.summary_df)
-    retron_review_fingerprint_selector = (
-        mo.ui.dropdown(
-            options=retron_review_sponge_options,
-            value=retron_review_sponge_options[0],
-            label="Fingerprint sponge",
-            full_width=True,
-        )
-        if retron_review_sponge_options
-        else None
-    )
-    retron_review_controls = mo.vstack(
-        [
-            mo.md(
-                "## Aggregate controls\n"
-                "`S_AUC` is the default for cross-sensor comparison because it scales each effect by the native tetO sensor response. "
-                "Switch to `O_AUC` if you want the sign-corrected effect without scaling."
-            ),
-            retron_review_score_metric,
-            retron_review_architecture_x,
-            retron_review_expected_mode,
-            retron_review_fingerprint_selector or mo.md("No multi-functional sponges are available in the aggregate table."),
-        ]
-    )
     return (
-        retron_review_architecture_x,
-        retron_review_controls,
-        retron_review_expected_mode,
-        retron_review_fingerprint_selector,
-        retron_review_score_metric,
+        retron_aggregate_architecture_selector,
+        retron_aggregate_expected_selector,
+        retron_aggregate_plot_selector,
+        retron_aggregate_score_selector,
     )
 
 
 @app.cell(hide_code=True)
-def _(build_specificity_matrix, retron_review_bundle, retron_review_score_metric):
-    retron_review_specificity_matrix = build_specificity_matrix(
-        retron_review_bundle.summary_df,
-        score_metric=retron_review_score_metric.value,
-    )
-    return (retron_review_specificity_matrix,)
-
-
-@app.cell(hide_code=True)
-def _(mo, plt, retron_review_score_metric, retron_review_specificity_matrix, sns):
-    retron_review_specificity_output = None
-    if retron_review_specificity_matrix.empty:
-        retron_review_specificity_output = mo.md("No specificity-matrix data are available.")
-    else:
-        _retron_review_fig, _retron_review_ax = plt.subplots(
-            figsize=(8.5, max(4.0, 0.45 * len(retron_review_specificity_matrix.index))),
-            constrained_layout=True,
-        )
-        sns.heatmap(
-            retron_review_specificity_matrix,
-            ax=_retron_review_ax,
-            cmap="vlag",
-            center=0.0,
-            annot=True,
-            fmt=".2f",
-            cbar=True,
-        )
-        _retron_review_ax.set_title(f"Specificity matrix • {retron_review_score_metric.value}")
-        _retron_review_ax.set_xlabel("sensor")
-        _retron_review_ax.set_ylabel("sponge")
-        retron_review_specificity_output = _retron_review_fig
-    return (retron_review_specificity_output,)
-
-
-@app.cell(hide_code=True)
-def _(build_architecture_frame, retron_review_bundle, retron_review_score_metric):
-    retron_review_architecture_df = build_architecture_frame(
-        retron_review_bundle.summary_df,
-        sensor_target_map=retron_review_bundle.sensor_target_map,
-        score_metric=retron_review_score_metric.value,
-    )
-    return (retron_review_architecture_df,)
-
-
-@app.cell(hide_code=True)
-def _(mo, plt, retron_review_architecture_df, retron_review_architecture_x, retron_review_score_metric):
-    retron_review_architecture_output = None
-    if retron_review_architecture_df.empty:
-        retron_review_architecture_output = mo.md("No architecture-plot data are available.")
-    else:
-        _retron_review_architecture_sensors = sorted(
-            retron_review_architecture_df["sensor"].dropna().astype(str).unique()
-        )
-        _retron_review_fig, _retron_review_axes = plt.subplots(
-            1,
-            len(_retron_review_architecture_sensors),
-            figsize=(5.0 * len(_retron_review_architecture_sensors), 4.5),
-            constrained_layout=True,
-            squeeze=False,
-        )
-        for _retron_review_axis, _retron_review_sensor in zip(
-            _retron_review_axes[0], _retron_review_architecture_sensors, strict=True
-        ):
-            _retron_review_sensor_df = retron_review_architecture_df[
-                retron_review_architecture_df["sensor"].astype(str) == _retron_review_sensor
-            ].copy()
-            _retron_review_axis.scatter(
-                _retron_review_sensor_df[retron_review_architecture_x.value],
-                _retron_review_sensor_df["value"],
-                s=70,
-                alpha=0.85,
-                edgecolors="black",
-                linewidths=0.5,
-            )
-            for _, _retron_review_row in _retron_review_sensor_df.iterrows():
-                _retron_review_axis.annotate(
-                    str(_retron_review_row["sponge"]),
-                    (
-                        float(_retron_review_row[retron_review_architecture_x.value]),
-                        float(_retron_review_row["value"]),
-                    ),
-                    xytext=(4, 4),
-                    textcoords="offset points",
-                )
-            _retron_review_axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
-            _retron_review_axis.set_title(str(_retron_review_sensor))
-            _retron_review_axis.set_xlabel(retron_review_architecture_x.value)
-            _retron_review_axis.set_ylabel(retron_review_score_metric.value)
-        retron_review_architecture_output = _retron_review_fig
-    return (retron_review_architecture_output,)
-
-
-@app.cell(hide_code=True)
-def _(build_expected_vs_observed_frame, retron_review_bundle, retron_review_score_metric):
-    retron_review_expected_vs_observed_df = build_expected_vs_observed_frame(
-        retron_review_bundle.summary_df,
-        sensor_target_map=retron_review_bundle.sensor_target_map,
-        score_metric=retron_review_score_metric.value,
-    )
-    return (retron_review_expected_vs_observed_df,)
-
-
-@app.cell(hide_code=True)
-def _(mo, plt, retron_review_expected_mode, retron_review_expected_vs_observed_df, retron_review_score_metric):
-    retron_review_expected_vs_observed_output = None
-    if retron_review_expected_vs_observed_df.empty:
-        retron_review_expected_vs_observed_output = mo.md("No expected-vs-observed rows are available.")
-    else:
-        _retron_review_sensors = sorted(retron_review_expected_vs_observed_df["sensor"].dropna().astype(str).unique())
-        _retron_review_fig, _retron_review_axes = plt.subplots(
-            1,
-            len(_retron_review_sensors),
-            figsize=(5.0 * len(_retron_review_sensors), 4.5),
-            constrained_layout=True,
-            squeeze=False,
-        )
-        for _retron_review_axis, _retron_review_sensor in zip(
-            _retron_review_axes[0], _retron_review_sensors, strict=True
-        ):
-            _retron_review_sensor_df = retron_review_expected_vs_observed_df[
-                retron_review_expected_vs_observed_df["sensor"].astype(str) == _retron_review_sensor
-            ].copy()
-            _retron_review_x = _retron_review_sensor_df[retron_review_expected_mode.value]
-            _retron_review_y = _retron_review_sensor_df["observed"]
-            _retron_review_axis.scatter(
-                _retron_review_x,
-                _retron_review_y,
-                s=80,
-                alpha=0.85,
-                edgecolors="black",
-                linewidths=0.5,
-            )
-            _retron_review_min = min(float(_retron_review_x.min()), float(_retron_review_y.min()))
-            _retron_review_max = max(float(_retron_review_x.max()), float(_retron_review_y.max()))
-            _retron_review_axis.plot(
-                [_retron_review_min, _retron_review_max],
-                [_retron_review_min, _retron_review_max],
-                linestyle=":",
-                color="#777777",
-                linewidth=1.0,
-            )
-            for _, _retron_review_row in _retron_review_sensor_df.iterrows():
-                _retron_review_axis.annotate(
-                    str(_retron_review_row["sponge"]),
-                    (
-                        float(_retron_review_row[retron_review_expected_mode.value]),
-                        float(_retron_review_row["observed"]),
-                    ),
-                    xytext=(4, 4),
-                    textcoords="offset points",
-                )
-            _retron_review_axis.set_title(str(_retron_review_sensor))
-            _retron_review_axis.set_xlabel(retron_review_expected_mode.value)
-            _retron_review_axis.set_ylabel(f"observed {retron_review_score_metric.value}")
-        retron_review_expected_vs_observed_output = _retron_review_fig
-    return (retron_review_expected_vs_observed_output,)
-
-
-@app.cell(hide_code=True)
-def _(build_fingerprint_frame, retron_review_bundle, retron_review_fingerprint_selector, retron_review_score_metric):
-    retron_review_fingerprint_df = (
-        build_fingerprint_frame(
-            retron_review_bundle.summary_df,
-            sponge=retron_review_fingerprint_selector.value,
-            score_metric=retron_review_score_metric.value,
-        )
-        if retron_review_fingerprint_selector is not None
-        else None
-    )
-    return (retron_review_fingerprint_df,)
-
-
-@app.cell(hide_code=True)
-def _(mo, plt, retron_review_fingerprint_df, retron_review_fingerprint_selector, retron_review_score_metric):
-    retron_review_fingerprint_output = None
-    if retron_review_fingerprint_selector is None or retron_review_fingerprint_df is None or retron_review_fingerprint_df.empty:
-        retron_review_fingerprint_output = mo.md("No fingerprint plot is available.")
-    else:
-        _retron_review_fig, _retron_review_ax = plt.subplots(figsize=(6.5, 4.5), constrained_layout=True)
-        _retron_review_ax.bar(
-            retron_review_fingerprint_df["sensor"].astype(str),
-            retron_review_fingerprint_df["value"],
-            color="#4c72b0",
-        )
-        _retron_review_ax.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
-        _retron_review_ax.set_xlabel("sensor")
-        _retron_review_ax.set_ylabel(retron_review_score_metric.value)
-        _retron_review_ax.set_title(str(retron_review_fingerprint_selector.value))
-        retron_review_fingerprint_output = _retron_review_fig
-    return (retron_review_fingerprint_output,)
-
-
-@app.cell(hide_code=True)
-def _(aggregate_on_target_scores, mo, retron_review_bundle, retron_review_score_metric):
-    retron_review_score_table = aggregate_on_target_scores(
-        retron_review_bundle.summary_df,
-        score_metric=retron_review_score_metric.value,
-    )
-    retron_review_score_table_panel = mo.vstack(
-        [
-            mo.md(
-                "## Aggregate on-target table\n"
-                "This is the normalized table behind the aggregate figures: "
-                "relevant-stress, on-target rows only, averaged across source experiments when duplicated."
-            ),
-            mo.ui.table(retron_review_score_table, page_size=20),
-        ]
-    )
-    return (retron_review_score_table_panel,)
-
-
-@app.cell(hide_code=True)
-def _(mo, retron_review_score_metric, retron_review_specificity_output):
-    retron_review_specificity_panel = mo.vstack(
-        [
-            mo.md(
-                "This heatmap uses "
-                f"`{retron_review_score_metric.value}` on relevant-stress, on-target sensor/sponge pairs only. "
-                "Rows stay blank when a pair was never tested; blank is not interpreted as zero."
-            ),
-            retron_review_specificity_output,
-        ]
-    )
-    return (retron_review_specificity_panel,)
-
-
-@app.cell(hide_code=True)
-def _(mo, retron_review_architecture_output, retron_review_architecture_x, retron_review_score_metric):
-    retron_review_architecture_panel = mo.vstack(
-        [
-            mo.md(
-                f"This view plots `{retron_review_score_metric.value}` against `{retron_review_architecture_x.value}`. "
-                "Use `irrelevant_motif_count` to ask whether extra non-cognate motifs dilute the relevant arm; "
-                "use `motif_count` to ask whether total architecture complexity tracks efficacy."
-            ),
-            retron_review_architecture_output,
-        ]
-    )
-    return (retron_review_architecture_panel,)
-
-
-@app.cell(hide_code=True)
-def _(mo, retron_review_expected_mode, retron_review_expected_vs_observed_output, retron_review_score_metric):
-    retron_review_expected_vs_observed_panel = mo.vstack(
-        [
-            mo.md(
-                f"The x-axis is `{retron_review_expected_mode.value}` derived from mono-functional references on the same sensor; "
-                f"the y-axis is the observed multifunction score `{retron_review_score_metric.value}`. "
-                "Points above the diagonal outperform mono-derived expectation; points below it suggest dilution or interference."
-            ),
-            retron_review_expected_vs_observed_output,
-        ]
-    )
-    return (retron_review_expected_vs_observed_panel,)
-
-
-@app.cell(hide_code=True)
-def _(mo, retron_review_fingerprint_output, retron_review_fingerprint_selector, retron_review_score_metric):
-    retron_review_fingerprint_panel = mo.vstack(
-        [
-            mo.md(
-                "No multifunctional sponge was available for fingerprint review."
-                if retron_review_fingerprint_selector is None
-                else (
-                    f"`{retron_review_fingerprint_selector.value}` is shown across all relevant sensors using "
-                    f"`{retron_review_score_metric.value}`. Balanced multifunction sponges stay positive across all intended sensors."
-                )
-            ),
-            retron_review_fingerprint_output,
-        ]
-    )
-    return (retron_review_fingerprint_panel,)
+def _(
+    retron_aggregate_architecture_selector,
+    retron_aggregate_expected_selector,
+    retron_aggregate_plot_selector,
+):
+    retron_aggregate_selected_plot_id = retron_aggregate_plot_selector.value
+    retron_aggregate_specific_controls = []
+    if retron_aggregate_selected_plot_id == "architecture_plot":
+        retron_aggregate_specific_controls.append(retron_aggregate_architecture_selector)
+    elif retron_aggregate_selected_plot_id == "expected_vs_observed":
+        retron_aggregate_specific_controls.append(retron_aggregate_expected_selector)
+    return retron_aggregate_selected_plot_id, retron_aggregate_specific_controls
 
 
 @app.cell(hide_code=True)
 def _(
     mo,
-    retron_review_architecture_panel,
-    retron_review_controls,
-    retron_review_expected_vs_observed_panel,
-    retron_review_fingerprint_panel,
-    retron_review_guides_panel,
-    retron_review_score_table_panel,
-    retron_review_specificity_panel,
+    retron_aggregate_plot_selector,
+    retron_aggregate_score_selector,
+    retron_aggregate_specific_controls,
 ):
-    retron_review_surfaces_panel = mo.vstack(
+    retron_aggregate_control_panel = mo.vstack(
         [
-            mo.md(
-                "## Review surfaces\n"
-                "Use the controls once, then move across the cross-run views without leaving the notebook. "
-                "Each figure tab states the transform it relies on so the aggregate layer stays auditable."
-            ),
-            retron_review_controls,
-            mo.ui.tabs(
-                {
-                    "Specificity matrix": retron_review_specificity_panel,
-                    "Architecture plot": retron_review_architecture_panel,
-                    "Expected vs observed": retron_review_expected_vs_observed_panel,
-                    "Sponge fingerprint": retron_review_fingerprint_panel,
-                    "Aggregate table": retron_review_score_table_panel,
-                    "Reference guide": retron_review_guides_panel,
-                }
-            ),
-        ]
+            retron_aggregate_plot_selector,
+            retron_aggregate_score_selector,
+            *[item for item in retron_aggregate_specific_controls if item is not None],
+        ],
+        gap=0.5,
     )
-    return (retron_review_surfaces_panel,)
+    return (retron_aggregate_control_panel,)
 
 
 @app.cell(hide_code=True)
-def _(retron_review_surfaces_panel):
-    retron_review_surfaces_panel
+def _(
+    render_retron_aggregate_plot_cached,
+    retron_aggregate_architecture_selector,
+    retron_aggregate_bundle,
+    retron_aggregate_expected_selector,
+    retron_aggregate_score_selector,
+    retron_aggregate_selected_plot_id,
+):
+    retron_aggregate_result = render_retron_aggregate_plot_cached(
+        retron_aggregate_selected_plot_id,
+        summary_df=retron_aggregate_bundle.summary_df,
+        sensor_target_map=retron_aggregate_bundle.sensor_target_map,
+        score_metric=retron_aggregate_score_selector.value,
+        architecture_x=retron_aggregate_architecture_selector.value,
+        expected_mode=retron_aggregate_expected_selector.value,
+        fingerprint_sponge=None,
+    )
+    return retron_aggregate_result, retron_aggregate_selected_plot_id
+
+
+@app.cell(hide_code=True)
+def _(
+    contextualize_retron_plot_copy,
+    retron_aggregate_bundle,
+    retron_aggregate_result,
+):
+    retron_aggregate_contextual_copy = contextualize_retron_plot_copy(
+        question=retron_aggregate_result.question,
+        math=retron_aggregate_result.math,
+        meaning=retron_aggregate_result.meaning,
+        supporting_table=retron_aggregate_result.supporting_table,
+        relevant_stress_map=retron_aggregate_bundle.relevant_stress_map,
+    )
+    return (retron_aggregate_contextual_copy,)
+
+
+@app.cell(hide_code=True)
+def _(
+    dataframe_to_csv_bytes,
+    download_safe_stem,
+    figure_to_download_bytes,
+    mo,
+    retron_aggregate_result,
+    retron_aggregate_selected_plot_id,
+):
+    retron_aggregate_export_stem = download_safe_stem(retron_aggregate_selected_plot_id)
+    retron_aggregate_export_items = [
+        mo.download(
+            data=lambda df=retron_aggregate_result.supporting_table: dataframe_to_csv_bytes(df),
+            filename=f"{retron_aggregate_export_stem}__supporting_table.csv",
+            mimetype="text/csv",
+            label="Table CSV",
+        )
+    ]
+    if retron_aggregate_result.figure is not None:
+        retron_aggregate_export_items = [
+            mo.download(
+                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                    fig,
+                    fmt="png",
+                ),
+                filename=f"{retron_aggregate_export_stem}.png",
+                mimetype="image/png",
+                label="Figure PNG",
+            ),
+            mo.download(
+                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                    fig,
+                    fmt="svg",
+                ),
+                filename=f"{retron_aggregate_export_stem}.svg",
+                mimetype="image/svg+xml",
+                label="Figure SVG",
+            ),
+            mo.download(
+                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                    fig,
+                    fmt="pdf",
+                ),
+                filename=f"{retron_aggregate_export_stem}.pdf",
+                mimetype="application/pdf",
+                label="Figure PDF",
+            ),
+            *retron_aggregate_export_items,
+        ]
+    retron_aggregate_export_panel = mo.vstack(
+        [
+            mo.hstack(
+                retron_aggregate_export_items,
+                justify="start",
+                wrap=True,
+                gap=0.5,
+            ),
+        ],
+        gap=0.0,
+    )
+    return (retron_aggregate_export_panel,)
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_aggregate_architecture_selector,
+    retron_aggregate_control_panel,
+    retron_aggregate_contextual_copy,
+    retron_aggregate_expected_selector,
+    retron_aggregate_result,
+    retron_aggregate_score_selector,
+    retron_aggregate_selected_plot_id,
+    retron_aggregate_export_panel,
+    retron_table_kwargs,
+):
+    retron_aggregate_review_blocks = [
+        retron_aggregate_control_panel,
+    ]
+    if retron_aggregate_result.figure is None:
+        retron_aggregate_review_blocks.append(
+            mo.callout(
+                mo.md("No figure is available for the current selection."),
+                kind="warn",
+            )
+        )
+    else:
+        retron_aggregate_review_blocks.append(retron_aggregate_result.figure)
+    retron_aggregate_review_blocks.append(
+        mo.callout(
+            mo.vstack(
+                [
+                    mo.md(retron_aggregate_result.title),
+                    mo.md(f"Question: {retron_aggregate_contextual_copy['question']}"),
+                    mo.md(f"Formula: `{retron_aggregate_contextual_copy['math']}`"),
+                    mo.md(f"Read it as: {retron_aggregate_contextual_copy['meaning']}"),
+                ],
+                gap=0.08,
+            ),
+            kind="info",
+        )
+    )
+    retron_aggregate_review_blocks.append(retron_aggregate_export_panel)
+
+    retron_aggregate_review_blocks.append(
+        mo.ui.table(
+            retron_aggregate_result.supporting_table,
+            **retron_table_kwargs(
+                page_size=15,
+                max_height=420,
+            ),
+        )
+    )
+    retron_aggregate_review_panel = mo.vstack(retron_aggregate_review_blocks, gap=0.45)
+    return (retron_aggregate_review_panel,)
+
+
+@app.cell(hide_code=True)
+def _(build_label_value_options, mo, retron_aggregate_bundle):
+    retron_source_selector_rows = [
+        {
+            "Selector label": f"{source.label} • {source.experiment_id}",
+            "Index": idx,
+        }
+        for idx, source in enumerate(retron_aggregate_bundle.sources)
+    ]
+    retron_source_selector_options = build_label_value_options(
+        retron_source_selector_rows,
+        label_key="Selector label",
+        value_key="Index",
+    )
+    retron_source_selector = mo.ui.dropdown(
+        options=retron_source_selector_options,
+        value=next(iter(retron_source_selector_options), None),
+        label="Source experiment",
+        full_width=True,
+    )
+    return retron_source_selector, retron_source_selector_rows
+
+
+@app.cell(hide_code=True)
+def _(load_retron_source_surface, retron_aggregate_bundle, retron_source_selector):
+    retron_source_selected_source = None
+    retron_source_surface = None
+    retron_source_surface_error = None
+    if retron_source_selector.value is not None:
+        retron_source_selected_source = retron_aggregate_bundle.sources[int(retron_source_selector.value)]
+        try:
+            retron_source_surface = load_retron_source_surface(retron_source_selected_source)
+        except Exception as retron_source_exc:
+            retron_source_surface_error = str(retron_source_exc)
+    return retron_source_selected_source, retron_source_surface, retron_source_surface_error
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_source_selected_source,
+    retron_source_surface,
+    retron_source_surface_overview_rows,
+    retron_table_kwargs,
+):
+    retron_source_context_tabs = None
+    if retron_source_selected_source is not None and retron_source_surface is not None:
+        retron_source_context_tabs = mo.ui.tabs(
+            {
+                "Source gist": mo.ui.table(
+                    retron_source_surface_overview_rows(
+                        retron_source_selected_source,
+                        retron_source_surface,
+                    ),
+                    **retron_table_kwargs(
+                        page_size=5,
+                        pagination=False,
+                    ),
+                ),
+                "Plot map": mo.ui.table(
+                    list(retron_source_surface.plot_catalog_rows),
+                    **retron_table_kwargs(
+                        page_size=min(8, max(1, len(retron_source_surface.plot_catalog_rows))),
+                        wrapped_columns=["Math / transform", "How to read"],
+                        max_height=360,
+                    ),
+                ),
+            }
+        )
+    return (retron_source_context_tabs,)
+
+
+@app.cell(hide_code=True)
+def _(build_label_value_options, mo, retron_source_surface):
+    retron_source_plot_selector_options = (
+        build_label_value_options(
+            list(retron_source_surface.plot_selector_rows),
+            label_key="Selector label",
+            value_key="Plot id",
+        )
+        if retron_source_surface is not None and retron_source_surface.plot_selector_rows
+        else {}
+    )
+    retron_source_plot_selector = (
+        mo.ui.dropdown(
+            options=retron_source_plot_selector_options,
+            value=next(iter(retron_source_plot_selector_options), None),
+            label="Source plot",
+            full_width=True,
+        )
+        if retron_source_plot_selector_options
+        else None
+    )
+    return retron_source_plot_selector, retron_source_plot_selector_options
+
+
+@app.cell(hide_code=True)
+def _(render_retron_source_plot_cached, retron_source_plot_selector, retron_source_selected_source):
+    retron_source_plot_error = None
+    retron_source_plot_result = None
+    if retron_source_selected_source is not None and retron_source_plot_selector is not None:
+        try:
+            retron_source_plot_result = render_retron_source_plot_cached(
+                retron_source_selected_source,
+                plot_id=retron_source_plot_selector.value,
+            )
+        except Exception as retron_source_exc:
+            retron_source_plot_error = str(retron_source_exc)
+    return retron_source_plot_error, retron_source_plot_result
+
+
+@app.cell(hide_code=True)
+def _(build_label_value_options, mo, retron_figure_option_rows, retron_source_plot_result):
+    retron_source_figure_option_rows = (
+        retron_figure_option_rows(retron_source_plot_result.figures)
+        if retron_source_plot_result is not None
+        else []
+    )
+    retron_source_figure_options = build_label_value_options(
+        retron_source_figure_option_rows,
+        label_key="Label",
+        value_key="Filename",
+        disambiguator_key="Filename",
+    )
+    retron_source_figure_selector = (
+        mo.ui.dropdown(
+            options=retron_source_figure_options,
+            value=next(iter(retron_source_figure_options), None),
+            label="Figure scope",
+            full_width=True,
+        )
+        if len(retron_source_figure_options) > 1
+        else None
+    )
+    return retron_source_figure_option_rows, retron_source_figure_options, retron_source_figure_selector
+
+
+@app.cell(hide_code=True)
+def _(retron_source_figure_selector, retron_source_plot_result):
+    retron_source_selected_figure = None
+    retron_source_selected_filename = None
+    if retron_source_plot_result is not None and retron_source_plot_result.figures:
+        retron_source_selected_filename = (
+            retron_source_figure_selector.value
+            if retron_source_figure_selector is not None
+            else retron_source_plot_result.figures[0].filename
+        )
+        for retron_source_figure in retron_source_plot_result.figures:
+            if retron_source_figure.filename == retron_source_selected_filename:
+                retron_source_selected_figure = retron_source_figure.fig
+                break
+    return retron_source_selected_figure, retron_source_selected_filename
+
+
+@app.cell(hide_code=True)
+def _(filter_supporting_table_for_figure, retron_source_plot_result, retron_source_selected_filename):
+    retron_source_supporting_table = (
+        filter_supporting_table_for_figure(
+            retron_source_plot_result.supporting_table,
+            filename=retron_source_selected_filename,
+        )
+        if retron_source_plot_result is not None
+        else None
+    )
+    return (retron_source_supporting_table,)
+
+
+@app.cell(hide_code=True)
+def _(
+    contextualize_retron_plot_copy,
+    retron_source_plot_result,
+    retron_source_supporting_table,
+):
+    retron_source_contextual_copy = (
+        contextualize_retron_plot_copy(
+            question=retron_source_plot_result.question,
+            math=retron_source_plot_result.math,
+            meaning=retron_source_plot_result.meaning,
+            supporting_table=retron_source_supporting_table,
+        )
+        if retron_source_plot_result is not None
+        else None
+    )
+    return (retron_source_contextual_copy,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_source_figure_selector, retron_source_plot_selector, retron_source_selector):
+    retron_source_control_items = [retron_source_selector]
+    if retron_source_plot_selector is not None:
+        retron_source_control_items.append(retron_source_plot_selector)
+    if retron_source_figure_selector is not None:
+        retron_source_control_items.append(retron_source_figure_selector)
+    retron_source_control_panel = mo.vstack(
+        retron_source_control_items,
+        gap=0.5,
+    )
+    return (retron_source_control_panel,)
+
+
+@app.cell(hide_code=True)
+def _(
+    dataframe_to_csv_bytes,
+    download_safe_stem,
+    figure_to_download_bytes,
+    mo,
+    retron_source_plot_result,
+    retron_source_plot_selector,
+    retron_source_selected_figure,
+    retron_source_selected_source,
+    retron_source_supporting_table,
+):
+    retron_source_export_panel = None
+    if (
+        retron_source_plot_result is not None
+        and retron_source_plot_selector is not None
+        and retron_source_selected_source is not None
+        and retron_source_supporting_table is not None
+    ):
+        retron_source_export_stem = download_safe_stem(
+            f"{retron_source_selected_source.label}__{retron_source_plot_selector.value}"
+        )
+        retron_source_export_items = [
+            mo.download(
+                data=lambda df=retron_source_supporting_table: dataframe_to_csv_bytes(df),
+                filename=f"{retron_source_export_stem}__supporting_table.csv",
+                mimetype="text/csv",
+                label="Table CSV",
+            )
+        ]
+        if retron_source_selected_figure is not None:
+            retron_source_export_items = [
+                mo.download(
+                    data=lambda fig=retron_source_selected_figure: figure_to_download_bytes(
+                        fig,
+                        fmt="png",
+                    ),
+                    filename=f"{retron_source_export_stem}.png",
+                    mimetype="image/png",
+                    label="Figure PNG",
+                ),
+                mo.download(
+                    data=lambda fig=retron_source_selected_figure: figure_to_download_bytes(
+                        fig,
+                        fmt="svg",
+                    ),
+                    filename=f"{retron_source_export_stem}.svg",
+                    mimetype="image/svg+xml",
+                    label="Figure SVG",
+                ),
+                mo.download(
+                    data=lambda fig=retron_source_selected_figure: figure_to_download_bytes(
+                        fig,
+                        fmt="pdf",
+                    ),
+                    filename=f"{retron_source_export_stem}.pdf",
+                    mimetype="application/pdf",
+                    label="Figure PDF",
+                ),
+                *retron_source_export_items,
+            ]
+        retron_source_export_panel = mo.hstack(
+            retron_source_export_items,
+            justify="start",
+            wrap=True,
+            gap=0.5,
+        )
+    return (retron_source_export_panel,)
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_source_contextual_copy,
+    retron_source_context_tabs,
+    retron_source_control_panel,
+    retron_source_export_panel,
+    retron_source_plot_error,
+    retron_source_plot_result,
+    retron_source_selected_figure,
+    retron_source_selected_source,
+    retron_source_surface_error,
+    retron_source_supporting_table,
+    retron_table_kwargs,
+):
+    retron_source_review_blocks = []
+    if retron_source_context_tabs is not None:
+        retron_source_review_blocks.append(retron_source_context_tabs)
+    retron_source_review_blocks.append(retron_source_control_panel)
+    if retron_source_surface_error:
+        retron_source_review_blocks.append(
+            mo.callout(
+                mo.md(
+                    "This source experiment cannot be opened as a scoped review surface from the "
+                    "master dashboard.\n\n"
+                    f"{retron_source_surface_error}"
+                ),
+                kind="warn",
+            )
+        )
+    elif retron_source_plot_error:
+        retron_source_review_blocks.append(
+            mo.callout(
+                mo.md(retron_source_plot_error),
+                kind="warn",
+            )
+        )
+    elif retron_source_plot_result is None:
+        retron_source_review_blocks.append(
+            mo.callout(
+                mo.md("No source-scoped plot is available for the current selection."),
+                kind="warn",
+            )
+        )
+    else:
+        if retron_source_selected_figure is None:
+            retron_source_review_blocks.append(
+                mo.callout(
+                    mo.md("The selected source plot did not resolve a figure."),
+                    kind="warn",
+                )
+            )
+        else:
+            retron_source_review_blocks.append(retron_source_selected_figure)
+        retron_source_review_blocks.append(
+            mo.callout(
+                mo.vstack(
+                    [
+                        mo.md(retron_source_plot_result.title),
+                        mo.md(f"Question: {retron_source_contextual_copy['question']}"),
+                        mo.md(f"Formula: `{retron_source_contextual_copy['math']}`"),
+                        mo.md(f"Read it as: {retron_source_contextual_copy['meaning']}"),
+                    ],
+                    gap=0.08,
+                ),
+                kind="info",
+            )
+        )
+        if retron_source_export_panel is not None:
+            retron_source_review_blocks.append(retron_source_export_panel)
+        if retron_source_supporting_table is not None:
+            retron_source_review_blocks.append(
+                mo.ui.table(
+                    retron_source_supporting_table,
+                    **retron_table_kwargs(
+                        page_size=15,
+                        max_height=420,
+                    ),
+                )
+            )
+    retron_source_review_panel = mo.vstack(retron_source_review_blocks, gap=0.45)
+    return (retron_source_review_panel,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_aggregate_review_panel, retron_source_review_panel):
+    retron_master_review_panel = mo.ui.tabs(
+        {
+            "Aggregate views": retron_aggregate_review_panel,
+            "Source experiments": retron_source_review_panel,
+        }
+    )
+    return (retron_master_review_panel,)
+
+
+@app.cell(hide_code=True)
+def _(retron_master_review_panel):
+    retron_master_review_panel
 
 
 if __name__ == "__main__":

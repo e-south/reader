@@ -1041,6 +1041,7 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     plan = protocol.compile()
     ingest = next(step for step in plan.pipeline if step.id == "ingest")
     semantic_metrics = next(step for step in plan.pipeline if step.id == "semantic_metrics")
+    raw_kinetics = next(step for step in plan.plots if step.id == "raw_kinetics")
     support_kinetics = next(step for step in plan.plots if step.id == "support_kinetics")
     control_burden = next(step for step in plan.plots if step.id == "control_burden_panel")
     interaction_summary = next(step for step in plan.plots if step.id == "interaction_summary")
@@ -1049,8 +1050,11 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
 
     assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
     assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
+    assert raw_kinetics.with_["ylabel_map"] == {"OD600": "OD600", "CFP": "CFP", "YFP": "YFP"}
     assert support_kinetics.with_["y"] == ["YFP/OD600", "CFP/OD600"]
+    assert support_kinetics.with_["ylabel_map"] == {"YFP/OD600": "YFP/OD600", "CFP/OD600": "CFP/OD600"}
     assert control_burden.with_["metrics"] == ["R", "mu"]
+    assert control_burden.with_["metric_label_map"] == {"R": "log2(YFP/CFP)", "mu": "d ln(OD600) / dt"}
     assert control_burden.reads["trace"].record_id == "semantic_metrics/trace"
     assert interaction_summary.with_["metric"] == "C_AUC"
     assert interaction_summary.reads["summary"].record_id == "semantic_metrics/summary"

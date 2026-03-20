@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from contextlib import suppress
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -11,7 +12,14 @@ import seaborn as sns
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
 
-from .common import colors_for, emit_plot_figure, require_columns, warn_if_empty
+from .common import (
+    annotate_points_smart,
+    bootstrap_mean_interval,
+    colors_for,
+    emit_plot_figure,
+    require_columns,
+    warn_if_empty,
+)
 
 _FAMILY_ORDER = {"mono": 0, "bi": 1, "tri": 2, "quad": 3, "control": 4}
 _IPTG_ORDER = ("-IPTG", "+IPTG")
@@ -30,6 +38,7 @@ def plot_retron_sponge_trace(
     only_control: bool = False,
     relevant_only: bool = False,
     stress_order: Sequence[str] | None = None,
+    metric_label_map: Mapping[str, str] | None = None,
     fig_kwargs: dict | None = None,
 ) -> list[PlotFigure]:
     require_columns(
@@ -65,7 +74,7 @@ def plot_retron_sponge_trace(
                 rows,
                 cols,
                 figsize=(width, height),
-                constrained_layout=True,
+                constrained_layout=False,
                 squeeze=False,
                 sharex=True,
             )
@@ -113,21 +122,41 @@ def plot_retron_sponge_trace(
                             )
                     if metric in {"B", "C", "D", "M", "O", "L_pre"}:
                         ax.axhline(0.0, color="#777777", linewidth=1.0, linestyle=":")
-                    ax.set_title(str(stress))
+                    ax.set_title(_stress_panel_label(str(stress)), pad=8)
                     if col_idx == 0:
-                        ax.set_ylabel(metric)
+                        ax.set_ylabel(_metric_axis_label(metric, metric_label_map=metric_label_map))
                     if row_idx == rows - 1:
-                        ax.set_xlabel("Time from stress (h)")
-            fig.suptitle(f"{title} • {sensor}", y=float(fig_kwargs.get("suptitle_y", 1.02)), fontweight="bold")
+                        ax.set_xlabel("Time from stress addition (h)")
+                    with suppress(Exception):
+                        ax.set_box_aspect(1.0)
+            fig.suptitle(
+                f"{title}\nSensor: {sensor}",
+                y=float(fig_kwargs.get("suptitle_y", 0.98)),
+                x=0.5,
+                ha="center",
+                fontweight="normal",
+                linespacing=1.2,
+            )
+            fig.supxlabel("Time from stress addition (h)", y=0.06)
             if legend_handles:
                 fig.legend(
                     legend_handles.values(),
                     legend_handles.keys(),
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 0.0),
-                    ncol=max(1, min(4, len(legend_handles))),
+                    loc="center left",
+                    bbox_to_anchor=(0.82, 0.5),
+                    ncol=1,
                     frameon=False,
+                    title=None,
+                    borderaxespad=0.0,
                 )
+            fig.subplots_adjust(
+                top=0.84,
+                bottom=0.12,
+                left=0.12,
+                right=0.80 if legend_handles else 0.98,
+                hspace=0.30,
+                wspace=0.18,
+            )
             figures.extend(
                 emit_plot_figure(
                     fig=fig,
@@ -243,7 +272,7 @@ def _plot_retron_interaction_summary(
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
             fig, ax = plt.subplots(
                 figsize=tuple(fig_kwargs.get("figsize", (8.5, 4.8))),
-                constrained_layout=True,
+                constrained_layout=False,
             )
             x_positions = np.arange(len(states), dtype=float)
             width = 0.8 / max(1, len(sponges))
@@ -258,9 +287,20 @@ def _plot_retron_interaction_summary(
             ax.axhline(0.0, color="#777777", linewidth=1.0, linestyle=":")
             ax.set_xticks(x_positions)
             ax.set_xticklabels(states, rotation=15, ha="right")
-            ax.set_ylabel(metric)
-            ax.set_title(f"{title} • {sensor}")
-            ax.legend(frameon=False, loc="best")
+            ax.set_ylabel(_summary_metric_label(metric))
+            ax.set_title(str(sensor), pad=8)
+            with suppress(Exception):
+                ax.set_box_aspect(1.0)
+            ax.legend(
+                frameon=False,
+                loc="center left",
+                bbox_to_anchor=(1.01, 0.5),
+                ncol=1,
+                title=None,
+                borderaxespad=0.0,
+            )
+            fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 0.98)), fontweight="normal")
+            fig.subplots_adjust(bottom=0.18, top=0.86, left=0.12, right=0.78)
             figures.extend(
                 emit_plot_figure(
                     fig=fig,
@@ -293,14 +333,32 @@ def _plot_retron_library_heatmaps(
         (
             "D_AUC",
             lambda data: data["stress_condition"].astype(str) == str(no_stress_label),
-            f"D_AUC • {no_stress_label}",
+            f"No stress induced effect ({no_stress_label}; D_AUC)",
         ),
-        ("D_AUC", lambda data: data["is_relevant_stress"].fillna(False), "D_AUC • relevant stress"),
-        ("M_AUC", lambda data: pd.Series(True, index=data.index), "M_AUC"),
-        ("S_AUC", lambda data: pd.Series(True, index=data.index), "S_AUC"),
+        ("D_AUC", lambda data: data["is_relevant_stress"].fillna(False), "Relevant stress induced effect (D_AUC)"),
+        ("M_AUC", lambda data: pd.Series(True, index=data.index), "Stress modulation (M_AUC)"),
+        ("S_AUC", lambda data: pd.Series(True, index=data.index), "Scaled on-target effect (S_AUC)"),
     )
+    panel_shapes: list[tuple[int, int]] = []
+    for metric, predicate, _panel_title in panels:
+        metric_df = df[df["metric"].astype(str) == metric].copy()
+        metric_df = metric_df[predicate(metric_df)].copy()
+        pivot = _pivot_summary(metric_df)
+        panel_shapes.append((max(1, len(pivot.index)), max(1, len(pivot.columns))))
+    max_rows = max(shape[0] for shape in panel_shapes)
+    max_cols = max(shape[1] for shape in panel_shapes)
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
-        fig, axes = plt.subplots(2, 2, figsize=tuple(fig_kwargs.get("figsize", (12.0, 9.0))), constrained_layout=True)
+        fig, axes = plt.subplots(
+            2,
+            2,
+            figsize=tuple(
+                fig_kwargs.get(
+                    "figsize",
+                    (max(10.5, 4.6 + 0.95 * max_cols), max(6.8, 4.2 + 0.75 * max_rows * 2)),
+                )
+            ),
+            constrained_layout=False,
+        )
         for ax, (metric, predicate, panel_title) in zip(axes.ravel(), panels, strict=False):
             metric_df = df[df["metric"].astype(str) == metric].copy()
             if metric_df.empty:
@@ -313,11 +371,30 @@ def _plot_retron_library_heatmaps(
                 ax.set_axis_off()
                 ax.text(0.5, 0.5, "No data", ha="center", va="center")
                 continue
-            sns.heatmap(pivot, ax=ax, cmap="vlag", center=0.0, annot=True, fmt=".2f", cbar=False)
-            ax.set_title(panel_title)
-            ax.set_xlabel("sensor")
-            ax.set_ylabel("sponge")
-        fig.suptitle(title, y=float(fig_kwargs.get("suptitle_y", 1.02)), fontweight="bold")
+            sns.heatmap(
+                pivot,
+                ax=ax,
+                cmap="vlag",
+                center=0.0,
+                annot=True,
+                fmt=".2f",
+                cbar=False,
+                square=True,
+                linewidths=0.4,
+                linecolor="#f0f0f0",
+                annot_kws={"fontsize": 8},
+            )
+            ax.set_title(panel_title, pad=10)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.tick_params(axis="x", labelrotation=45)
+            ax.tick_params(axis="y", labelrotation=0)
+            for label in ax.get_xticklabels():
+                label.set_ha("right")
+        fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 0.98)), fontweight="normal")
+        fig.supxlabel("Sponge design (sponge)", y=0.06)
+        fig.supylabel("Sensor", x=0.02)
+        fig.subplots_adjust(top=0.86, bottom=0.14, left=0.10, right=0.98, hspace=0.34, wspace=0.24)
         return emit_plot_figure(
             fig=fig,
             filename=filename or _slug(title),
@@ -353,7 +430,7 @@ def _plot_retron_stress_modulation(
             1,
             max(1, len(sensors)),
             figsize=tuple(fig_kwargs.get("figsize", (4.8 * max(1, len(sensors)), 4.8))),
-            constrained_layout=True,
+            constrained_layout=False,
             squeeze=False,
         )
         for idx, sensor in enumerate(sensors):
@@ -367,11 +444,15 @@ def _plot_retron_stress_modulation(
             family_colors = {name: family_palette[i % len(family_palette)] for i, name in enumerate(family_levels)}
             ax.barh(sponges, sensor_df["value"], color=[family_colors.get(item, "#4c72b0") for item in families])
             ax.axvline(0.0, color="#777777", linewidth=1.0, linestyle=":")
-            ax.set_title(str(sensor))
-            ax.set_xlabel(metric)
+            ax.set_title(str(sensor), pad=10)
+            ax.set_xlabel("")
             if idx == 0:
-                ax.set_ylabel("sponge")
-        fig.suptitle(title, y=float(fig_kwargs.get("suptitle_y", 1.02)), fontweight="bold")
+                ax.set_ylabel("Sponge design (sponge)")
+            with suppress(Exception):
+                ax.set_box_aspect(1.0)
+        fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 0.98)), fontweight="normal")
+        fig.supxlabel(_summary_metric_label(metric), y=0.06)
+        fig.subplots_adjust(top=0.86, bottom=0.16, left=0.18, right=0.98, wspace=0.34)
         return emit_plot_figure(
             fig=fig,
             filename=filename or _slug(title),
@@ -423,7 +504,7 @@ def _plot_retron_pareto(
     color_map = {name: palette[idx % len(palette)] for idx, name in enumerate(family_levels)}
     sizes = 80.0 + 240.0 * table["leakiness"].abs().fillna(0.0)
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
-        fig, ax = plt.subplots(figsize=tuple(fig_kwargs.get("figsize", (8.5, 5.5))), constrained_layout=True)
+        fig, ax = plt.subplots(figsize=tuple(fig_kwargs.get("figsize", (8.5, 5.5))), constrained_layout=False)
         ax.scatter(
             table["on_target"],
             table["burden"],
@@ -433,24 +514,33 @@ def _plot_retron_pareto(
             edgecolors="black",
             linewidths=0.5,
         )
-        for _, row in table.iterrows():
-            ax.annotate(
-                str(row["sponge"]),
-                (float(row["on_target"]), float(row["burden"])),
-                xytext=(4, 4),
-                textcoords="offset points",
-            )
+        annotate_points_smart(
+            ax=ax,
+            points=[(float(row["on_target"]), float(row["burden"])) for _, row in table.iterrows()],
+            labels=[str(row["sponge"]) for _, row in table.iterrows()],
+        )
         ax.axvline(0.0, color="#777777", linewidth=1.0, linestyle=":")
         ax.axhline(0.0, color="#777777", linewidth=1.0, linestyle=":")
-        ax.set_xlabel("S_AUC (mean across relevant sensors)")
-        ax.set_ylabel(burden_metric)
-        ax.set_title(title)
+        ax.set_xlabel("Mean scaled on-target effect across relevant sensors (S_AUC)")
+        ax.set_ylabel(f"tetO burden summary ({burden_metric})")
+        ax.set_title("Candidate efficacy versus burden", pad=8)
+        with suppress(Exception):
+            ax.set_box_aspect(1.0)
         legend_handles = [
             plt.Line2D([0], [0], marker="o", color="w", label=level, markerfacecolor=color_map[level], markersize=8)
             for level in family_levels
         ]
         if legend_handles:
-            ax.legend(handles=legend_handles, frameon=False, title="family")
+            ax.legend(
+                handles=legend_handles,
+                frameon=False,
+                title=None,
+                loc="center left",
+                bbox_to_anchor=(1.01, 0.5),
+                borderaxespad=0.0,
+            )
+        fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 0.98)), fontweight="normal")
+        fig.subplots_adjust(top=0.90, right=0.80)
         return emit_plot_figure(
             fig=fig,
             filename=filename or _slug(title),
@@ -462,34 +552,99 @@ def _plot_retron_pareto(
 def _plot_trace_line(
     *, ax, df: pd.DataFrame, color: str, label: str, linestyle: str, legend_handles: dict[str, object]
 ) -> None:
-    agg = df.groupby("time_from_stress", dropna=False)["value"].mean().sort_index()
-    if agg.empty:
+    summary = _trace_summary_frame(df)
+    if summary.empty:
         return
+    ax.fill_between(
+        summary["time_from_stress"],
+        summary["lower"],
+        summary["upper"],
+        alpha=0.16,
+        color=color,
+        linewidth=0.0,
+        zorder=1,
+    )
     (line,) = ax.plot(
-        agg.index.to_numpy(dtype=float),
-        agg.to_numpy(dtype=float),
+        summary["time_from_stress"].to_numpy(dtype=float),
+        summary["mean"].to_numpy(dtype=float),
         color=color,
         linestyle=linestyle,
         linewidth=2.0,
         label=label,
+        zorder=2,
     )
     legend_handles.setdefault(label, line)
 
 
+def _trace_summary_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["time_from_stress", "mean", "lower", "upper"])
+    grouped = df.groupby("time_from_stress", dropna=False)["value"]
+    rng = np.random.default_rng(0)
+    rows: list[dict[str, float]] = []
+    for time_value, series in grouped:
+        mean, lower, upper = bootstrap_mean_interval(
+            series.to_numpy(dtype=float, copy=False),
+            ci=95.0,
+            ci_boot=100,
+            rng=rng,
+        )
+        rows.append(
+            {
+                "time_from_stress": float(time_value),
+                "mean": mean,
+                "lower": lower,
+                "upper": upper,
+            }
+        )
+    return pd.DataFrame(rows).sort_values("time_from_stress", kind="stable").reset_index(drop=True)
+
+
 def _pivot_summary(df: pd.DataFrame) -> pd.DataFrame:
-    table = df.pivot_table(index="sponge", columns="sensor", values="value", aggfunc="mean")
+    table = df.pivot_table(index="sensor", columns="sponge", values="value", aggfunc="mean")
     if table.empty:
         return table
-    row_order = sorted(table.index, key=_sponge_sort_key)
-    col_order = _ordered(table.columns.tolist())
+    row_order = _ordered(table.index.tolist())
+    col_order = sorted(table.columns, key=_sponge_sort_key)
     return table.reindex(index=row_order, columns=col_order)
 
 
 def _state_label(row: pd.Series, *, no_stress_label: str) -> str:
     iptg = str(row.get("IPTG") or "").strip() or "None"
     stress = str(row.get("stress_condition") or "").strip()
-    stress_suffix = "-stress" if stress == str(no_stress_label) else "+stress"
-    return f"{iptg}/{stress_suffix}"
+    return f"{stress or no_stress_label} / {iptg}"
+
+
+def _metric_axis_label(metric: str, *, metric_label_map: Mapping[str, str] | None = None) -> str:
+    if metric_label_map and str(metric) in metric_label_map:
+        return str(metric_label_map[str(metric)])
+    labels = {
+        "B": "Baseline-shifted ratio (B)",
+        "C": "Matched-control-normalized ratio (C)",
+        "D": "Induced sponge effect (D)",
+        "M": "Stress modulation (M)",
+        "O": "Sign-corrected effect (O)",
+        "R": "Dual-reporter ratio (R)",
+        "mu": "Growth-rate estimate (mu)",
+    }
+    return labels.get(str(metric), f"Retron sponge metric ({metric})")
+
+
+def _summary_metric_label(metric: str) -> str:
+    labels = {
+        "C_AUC": "Matched-control response (C_AUC)",
+        "C_END": "Matched-control endpoint (C_END)",
+        "D_AUC": "Induced sponge effect (D_AUC)",
+        "M_AUC": "Stress modulation (M_AUC)",
+        "S_AUC": "Scaled on-target effect (S_AUC)",
+    }
+    return labels.get(str(metric), f"Retron sponge summary metric ({metric})")
+
+
+def _stress_panel_label(stress: str) -> str:
+    if not stress:
+        return "Stress condition not declared"
+    return f"Stress condition: {stress}"
 
 
 def _first_non_null(series: pd.Series) -> str:

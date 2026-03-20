@@ -14,6 +14,7 @@ from ._shared import FigurePlotPlugin
 
 class RetronTraceCfg(PluginConfig):
     metrics: list[str] = Field(default_factory=list)
+    metric_label_map: dict[str, str] = Field(default_factory=dict)
     title: str = "Retron sponge trace"
     filename: str | None = None
     control_name: str = "tetO"
@@ -47,5 +48,6 @@ class RetronTracePlot(FigurePlotPlugin):
             only_control=cfg.only_control,
             relevant_only=cfg.relevant_only,
             stress_order=cfg.stress_order,
+            metric_label_map=cfg.metric_label_map,
             fig_kwargs=cfg.fig,
         )

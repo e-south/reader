@@ -1284,9 +1284,51 @@ def _plate_reader_retron_plot_output(
                 normalizer_channel=normalizer_channel,
             )
         ]
+        raw_ylabel_map = {
+            normalizer_channel: normalizer_channel,
+            reporter_channel: reporter_channel,
+        }
+        treatment_label_map = {
+            "-IPTG/-stress": "No stress, -IPTG",
+            "+IPTG/-stress": "No stress, +IPTG",
+            "-IPTG/+stress": "Relevant stress, -IPTG",
+            "+IPTG/+stress": "Relevant stress, +IPTG",
+        }
+        support_ylabel_map = {
+            _single_reporter_ratio_label(
+                reporter_channel=reporter_channel,
+                normalizer_channel=normalizer_channel,
+            ): _single_reporter_ratio_label(
+                reporter_channel=reporter_channel,
+                normalizer_channel=normalizer_channel,
+            ),
+        }
+        control_metric_label_map = {
+            "R": f"log2({_single_reporter_ratio_label(reporter_channel=reporter_channel, normalizer_channel=normalizer_channel)})",
+            "mu": f"d ln({normalizer_channel}) / dt",
+        }
     elif measurement == "yfp_cfp":
         raw_channels = ["OD600", "CFP", "YFP"]
         support_channels = ["YFP/OD600", "CFP/OD600"]
+        raw_ylabel_map = {
+            "OD600": "OD600",
+            "CFP": "CFP",
+            "YFP": "YFP",
+        }
+        treatment_label_map = {
+            "-IPTG/-stress": "No stress, -IPTG",
+            "+IPTG/-stress": "No stress, +IPTG",
+            "-IPTG/+stress": "Relevant stress, -IPTG",
+            "+IPTG/+stress": "Relevant stress, +IPTG",
+        }
+        support_ylabel_map = {
+            "YFP/OD600": "YFP/OD600",
+            "CFP/OD600": "CFP/OD600",
+        }
+        control_metric_label_map = {
+            "R": "log2(YFP/CFP)",
+            "mu": "d ln(OD600) / dt",
+        }
     else:
         raise ConfigError(f"Unsupported retron plot measurement {measurement!r}")
 
@@ -1305,8 +1347,13 @@ def _plate_reader_retron_plot_output(
         defaults = {
             "partition": {"by": "design_id"},
             "hue": "treatment",
+            "xlabel": "Time from stress addition (h)",
             "y": raw_channels,
+            "ylabel_map": raw_ylabel_map,
+            "hue_label_map": treatment_label_map,
             "add_sheet_line": True,
+            "shared_legend": True,
+            "show_replicates": False,
             "filename": "raw_kinetics",
         }
         return _step(
@@ -1319,8 +1366,13 @@ def _plate_reader_retron_plot_output(
         defaults = {
             "partition": {"by": "design_id"},
             "hue": "treatment",
+            "xlabel": "Time from stress addition (h)",
             "y": support_channels,
+            "ylabel_map": support_ylabel_map,
+            "hue_label_map": treatment_label_map,
             "add_sheet_line": True,
+            "shared_legend": True,
+            "show_replicates": False,
             "filename": "support_kinetics",
         }
         return _step(
@@ -1338,6 +1390,7 @@ def _plate_reader_retron_plot_output(
             "include_control": True,
             "only_control": True,
             "stress_order": stress_order,
+            "metric_label_map": control_metric_label_map,
         }
         return _step(
             id="control_burden_panel",
