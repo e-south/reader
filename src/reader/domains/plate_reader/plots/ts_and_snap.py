@@ -188,6 +188,22 @@ def plot_ts_and_snap(
                 if ts_add_sheet_line and "sheet_index" in ts.columns:
                     starts = sorted(ts.groupby("sheet_index")[ts_x_col].min().dropna().tolist())
                     sheet_lines = starts[1:] if len(starts) > 1 else []
+                ts_segment_col = None
+                ts_segment_parts = (
+                    ["acquisition_segment_id"]
+                    if "acquisition_segment_id" in ts.columns
+                    else [
+                        column
+                        for column in ("plate_id", "source_file", "sheet_name", "sheet_index")
+                        if column in ts.columns
+                    ]
+                )
+                if ts_segment_parts:
+                    ts_segment_col = "__plot_segment"
+                    ts_segments = ts[ts_segment_parts].copy()
+                    for column in ts_segment_parts:
+                        ts_segments[column] = ts_segments[column].astype(str)
+                    ts[ts_segment_col] = ts_segments.agg("::".join, axis=1)
 
                 draw_time_series_panel(
                     ax_ts,
@@ -197,6 +213,7 @@ def plot_ts_and_snap(
                     hue_levels=hue_levels_ts,
                     color_map=color_map,
                     marker_map=marker_map,
+                    segment_col=ts_segment_col,
                     show_replicates=ts_show_replicates,
                     ci=ts_ci,
                     ci_alpha=ts_ci_alpha,

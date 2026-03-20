@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import polars as pl
+from matplotlib.lines import Line2D
 
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
@@ -24,6 +26,60 @@ from ..ordering import order_levels
 from .common import alias_column, best_subplot_grid, emit_plot_figure, pretty_name, require_columns, warn_if_empty
 from .grouping import GroupMatch, resolve_groups
 from .panels import draw_time_series_panel, marker_map_for_levels
+
+
+def _extract_stress_from_treatment(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parts = [part.strip() for part in text.split(",")]
+    stress_parts = [part for part in parts if "IPTG" not in part and part != "H2O"]
+    if not stress_parts:
+        return None
+    stress = ", ".join(stress_parts).strip()
+    return stress or None
+
+
+def _resolve_dynamic_hue_label_map(
+    *,
+    data: pd.DataFrame,
+    hue_col: str,
+    hue_levels: list[str],
+    base_label_map: Mapping[str, str] | None,
+) -> dict[str, str] | None:
+    resolved = {str(key): str(value) for key, value in (base_label_map or {}).items()}
+    if "treatment" not in data.columns:
+        return resolved or None
+    hue_values = data[hue_col].astype(str) if hue_col in data.columns else pd.Series(dtype=str)
+    for hue in hue_levels:
+        label = resolved.get(str(hue), str(hue))
+        if "relevant stress" not in label.lower() and "+stress" not in str(hue):
+            continue
+        mask = hue_values == str(hue)
+        if not mask.any():
+            continue
+        stresses = sorted(
+            {
+                stress
+                for stress in (_extract_stress_from_treatment(value) for value in data.loc[mask, "treatment"])
+                if stress
+            }
+        )
+        if len(stresses) != 1:
+            continue
+        stress = stresses[0]
+        if str(hue) == "-IPTG/+stress":
+            resolved[str(hue)] = f"{stress}, -IPTG"
+        elif str(hue) == "+IPTG/+stress":
+            resolved[str(hue)] = f"{stress}, +IPTG"
+        else:
+            resolved[str(hue)] = (
+                label.replace("Relevant stress", stress)
+                .replace("relevant stress", stress)
+                .replace("Relevant-stress", stress)
+                .replace("relevant-stress", stress)
+            )
+    return resolved or None
 
 
 def plot_time_series(
@@ -52,6 +108,10 @@ def plot_time_series(
     legend_loc: str = "upper right",
     show_replicates: bool = False,
     filename: str | None = None,
+    xlabel: str | None = None,
+    ylabel_map: Mapping[str, str] | None = None,
+    hue_label_map: Mapping[str, str] | None = None,
+    shared_legend: bool = False,
 ) -> list[PlotFigure]:
     """
     Time-series plotting with one figure per group (default: per genotype[(_alias)]),
@@ -106,6 +166,19 @@ def plot_time_series(
     else:
         fig_groups = [("all", [None])]
 
+    segment_columns = (
+        ["acquisition_segment_id"]
+        if "acquisition_segment_id" in base.columns
+        else [column for column in ("plate_id", "source_file", "sheet_name", "sheet_index") if column in base.columns]
+    )
+    segment_col: str | None = None
+    if segment_columns:
+        segment_col = "__plot_segment"
+        segment_frame = base[segment_columns].copy()
+        for column in segment_columns:
+            segment_frame[column] = segment_frame[column].astype(str)
+        base[segment_col] = segment_frame.agg("::".join, axis=1)
+
     available_channels = sorted(base["channel"].astype(str).unique().tolist())
     explicit_channels = list(y) if y else (list(channels) if channels else [])
     if explicit_channels:
@@ -128,9 +201,7 @@ def plot_time_series(
                 first = (pal[0] or "").lower()
                 return [pal[1]] if first in {"#000000", "black"} else [pal[0]]
             return palette_book.colors(n)
-        cyc = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-        if not cyc:
-            raise RuntimeError("No color cycle available; configure Matplotlib rc or provide a PaletteBook.")
+        cyc = PaletteBook(name="colorblind").colors(max(2, n))
         if n == 1 and str(cyc[0]).lower() in {"#000000", "black"} and len(cyc) > 1:
             return [cyc[1]]
         return cyc[:n]
@@ -148,10 +219,21 @@ def plot_time_series(
         marker_map = marker_map_for_levels(hue_levels)
         colors = _colors(len(hue_levels))
         color_map = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels)}
+        legend_label_map = _resolve_dynamic_hue_label_map(
+            data=d,
+            hue_col=hue_col,
+            hue_levels=hue_levels,
+            base_label_map=hue_label_map,
+        )
         rows, cols = best_subplot_grid(len(y_feats))
 
         with use_style(rc=(fig_kwargs or {}).get("rc"), color_cycle=colors):
-            fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), constrained_layout=True)
+            fig, axes = plt.subplots(
+                rows,
+                cols,
+                figsize=(cols * 5, rows * 5),
+                constrained_layout=False,
+            )
             axes = np.atleast_1d(axes).ravel()
 
             # Optional rasterization threshold for heavy artists (replicate dots)
@@ -160,7 +242,13 @@ def plot_time_series(
                 for ax in axes:
                     ax.set_rasterization_zorder(float(rz))
 
-            fig.suptitle(f"{label}", y=1.04, fontweight="bold")
+            fig.suptitle(
+                f"{label}",
+                y=0.97 if shared_legend else 0.985,
+                fontweight="normal",
+                x=0.5,
+                ha="center",
+            )
 
             for idx, ch in enumerate(y_feats):
                 ax = axes[idx]
@@ -178,6 +266,7 @@ def plot_time_series(
                     hue_levels=hue_levels,
                     color_map=color_map,
                     marker_map=marker_map,
+                    segment_col=segment_col,
                     show_replicates=show_replicates,
                     ci=ci,
                     ci_alpha=ci_alpha,
@@ -190,10 +279,15 @@ def plot_time_series(
                     sheet_lines=sheet_lines,
                     sheet_line_kwargs=sheet_line_kwargs,
                     log_y=(ch in log_transform) if isinstance(log_transform, list) else bool(log_transform),
-                    xlabel=("Time (h)" if str(x).lower() == "time" else pretty_name(str(xcol))),
-                    ylabel=str(ch),
+                    xlabel=(
+                        str(xlabel)
+                        if xlabel is not None
+                        else ("Time (h)" if str(x).lower() == "time" else pretty_name(str(xcol)))
+                    ),
+                    ylabel=(str(ylabel_map.get(str(ch), ch)) if ylabel_map is not None else str(ch)),
                     legend_loc=legend_loc,
-                    show_legend=(idx == 0),
+                    show_legend=(idx == 0 and not shared_legend),
+                    legend_label_map=legend_label_map,
                 )
                 with suppress(Exception):
                     ax.set_box_aspect(1.0)
@@ -201,6 +295,40 @@ def plot_time_series(
             # Hide extra axes if any
             for j in range(len(y_feats), len(axes)):
                 axes[j].set_visible(False)
+
+            if shared_legend and hue_levels:
+                handles = [
+                    Line2D(
+                        [0],
+                        [0],
+                        color=color_map[hue],
+                        marker=marker_map[hue],
+                        markersize=7,
+                        linestyle="-",
+                        linewidth=1.8,
+                        alpha=mean_marker_alpha,
+                        label=(str(legend_label_map.get(str(hue), hue)) if legend_label_map is not None else str(hue)),
+                    )
+                    for hue in hue_levels
+                ]
+                fig.legend(
+                    handles=handles,
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, 0.94),
+                    ncol=max(1, min(4, len(handles))),
+                    frameon=False,
+                    title=None,
+                )
+                fig.subplots_adjust(
+                    top=0.82,
+                    bottom=0.10,
+                    left=0.08,
+                    right=0.98,
+                    wspace=0.22,
+                    hspace=0.24,
+                )
+            else:
+                fig.subplots_adjust(top=0.92, bottom=0.10, left=0.08, right=0.98, wspace=0.22, hspace=0.24)
 
             # Allow file type override via fig.ext ("pdf" | "png" | "svg", etc.)
             group_tag = None

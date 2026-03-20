@@ -284,6 +284,34 @@ def test_retron_sponge_metrics_masks_invalid_post_stress_rows_without_crashing()
     assert pd.notna(d_end)
 
 
+def test_retron_sponge_metrics_keeps_one_logical_plate_and_tracks_acquisition_segments() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+    df = pd.concat(
+        [
+            _input_df(),
+            _input_df().assign(
+                sheet_name="Plate 2",
+                time=lambda frame: frame["time"] + 3.5,
+                value=lambda frame: frame["value"] * 1.01,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    outputs = plugin.run(_ctx(), {"df": df}, cfg)
+    trace = outputs["trace"]
+
+    raw_trace = trace[trace["metric"].isin({"R", "B", "C", "mu"})]
+
+    assert set(trace["plate_id"].astype(str)) == {"plate"}
+    assert set(raw_trace["acquisition_segment_id"].astype(str)) == {"Plate 1", "Plate 2"}
+
+
 def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
     plugin = RetronSpongeMetrics()
     cfg = RetronSpongeMetricsCfg(

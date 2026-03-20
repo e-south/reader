@@ -69,6 +69,14 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
         sensor_target_map=sensor_target_map,
         expected_sign_map=expected_sign_map,
     )
+    if not cfg.plate_column:
+        segment_count = int(wide["acquisition_segment_id"].astype(str).nunique())
+        if segment_count > 1:
+            ctx.logger.debug(
+                "retron_sponge_metrics: plate_column is unset; treating %d acquisition segment(s) as one logical "
+                "plate for normalization and time-zero inference",
+                segment_count,
+            )
     relevant_stress_map = _resolve_relevant_stress_map(
         wide=wide,
         configured_map=relevant_stress_map,
@@ -273,10 +281,9 @@ def _derive_metadata(
     out = wide.copy()
     if cfg.plate_column:
         out["plate_id"] = out[cfg.plate_column].astype(str)
-    elif "source_file" in out.columns:
-        out["plate_id"] = out["source_file"].astype(str)
     else:
-        out["plate_id"] = "plate"
+        out["plate_id"] = _fallback_plate_id(out)
+    out["acquisition_segment_id"] = _fallback_acquisition_segment_id(out)
     out["replicate_id"] = out[cfg.replicate_column].astype(str)
     if cfg.sensor_column and cfg.sponge_column:
         if cfg.sensor_column not in out.columns or cfg.sponge_column not in out.columns:
@@ -392,6 +399,24 @@ def _derive_metadata(
         )
     out["time"] = pd.to_numeric(out["time"], errors="raise").astype(float)
     return out
+
+
+def _fallback_plate_id(frame: pd.DataFrame) -> pd.Series:
+    if "source_file" in frame.columns:
+        return frame["source_file"].astype(str)
+    return pd.Series("plate", index=frame.index, dtype="object")
+
+
+def _fallback_acquisition_segment_id(frame: pd.DataFrame) -> pd.Series:
+    components = [
+        column for column in ("source", "source_file", "sheet_name", "sheet_index") if column in frame.columns
+    ]
+    if not components:
+        return pd.Series("segment", index=frame.index, dtype="object")
+    values = frame[components].copy()
+    for column in components:
+        values[column] = values[column].astype(str)
+    return values.agg("::".join, axis=1)
 
 
 def _resolve_relevant_stress_map(
@@ -739,6 +764,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
             rows.append(
                 {
                     "plate_id": row["plate_id"],
+                    "acquisition_segment_id": row["acquisition_segment_id"],
                     "sensor": row["sensor"],
                     "sponge": row["sponge"],
                     "genotype_id": row["genotype_id"],
@@ -764,6 +790,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
             rows.append(
                 {
                     "plate_id": row["plate_id"],
+                    "acquisition_segment_id": pd.NA,
                     "sensor": row["sensor"],
                     "sponge": row["sponge"],
                     "genotype_id": row["genotype_id"],
@@ -788,6 +815,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
         rows.append(
             {
                 "plate_id": row["plate_id"],
+                "acquisition_segment_id": pd.NA,
                 "sensor": row["sensor"],
                 "sponge": row["sponge"],
                 "genotype_id": row["genotype_id"],
@@ -813,6 +841,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
         return pd.DataFrame(
             columns=[
                 "plate_id",
+                "acquisition_segment_id",
                 "sensor",
                 "sponge",
                 "genotype_id",

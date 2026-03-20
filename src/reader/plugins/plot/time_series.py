@@ -22,7 +22,10 @@ from reader.workbench.registry import PluginConfig
 
 class TimeSeriesCfg(PluginConfig):
     x: str = "time"
+    xlabel: str | None = None
     y: list[str] | None = None
+    ylabel_map: dict[str, str] = Field(default_factory=dict)
+    hue_label_map: dict[str, str] = Field(default_factory=dict)
     hue: str = "treatment"
     partition: PlotPartitionCfg = Field(default_factory=PlotPartitionCfg)
     fig: dict[str, Any] = Field(default_factory=dict)
@@ -37,6 +40,7 @@ class TimeSeriesCfg(PluginConfig):
     ci_seed: int = 0
     legend_loc: str = "upper left"
     show_replicates: bool = False
+    shared_legend: bool = False
     filename: str | None = None
 
 
@@ -62,7 +66,10 @@ class TimeSeriesPlot(FigurePlotPlugin):
             blanks=blanks,
             output_dir=None,
             x=cfg.x,
+            xlabel=cfg.xlabel,
             y=cfg.y,
+            ylabel_map=cfg.ylabel_map,
+            hue_label_map=cfg.hue_label_map,
             hue=cfg.hue,
             channels=cfg.channels,
             subplots=None,
@@ -81,5 +88,6 @@ class TimeSeriesPlot(FigurePlotPlugin):
             ci_seed=cfg.ci_seed,
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
+            shared_legend=cfg.shared_legend,
             filename=cfg.filename,
         )

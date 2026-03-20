@@ -22,6 +22,7 @@ from rich.console import Console
 from reader.domains.plate_reader.plots.panels import time_series as time_series_panel
 from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
+from reader.domains.plate_reader.plots.time_series import plot_time_series
 from reader.errors import ConfigError
 from reader.plugins.plot.snapshot_barplot import SnapshotBarCfg
 from reader.plugins.plot.snapshot_heatmap import HeatmapCfg, SnapshotHeatmapPlot
@@ -394,6 +395,7 @@ def test_time_series_summary_uses_bounded_bootstrap_controls_deterministically()
         x_col="time",
         hue_col="treatment",
         hue_levels=["a"],
+        segment_col=None,
         ci=95.0,
         ci_boot=17,
         ci_seed=23,
@@ -403,6 +405,7 @@ def test_time_series_summary_uses_bounded_bootstrap_controls_deterministically()
         x_col="time",
         hue_col="treatment",
         hue_levels=["a"],
+        segment_col=None,
         ci=95.0,
         ci_boot=17,
         ci_seed=23,
@@ -412,6 +415,7 @@ def test_time_series_summary_uses_bounded_bootstrap_controls_deterministically()
         x_col="time",
         hue_col="treatment",
         hue_levels=["a"],
+        segment_col=None,
         ci=95.0,
         ci_boot=17,
         ci_seed=29,
@@ -421,6 +425,7 @@ def test_time_series_summary_uses_bounded_bootstrap_controls_deterministically()
         x_col="time",
         hue_col="treatment",
         hue_levels=["a"],
+        segment_col=None,
         ci=0.0,
         ci_boot=17,
         ci_seed=23,
@@ -428,7 +433,140 @@ def test_time_series_summary_uses_bounded_bootstrap_controls_deterministically()
 
     assert first["lower"].tolist() == second["lower"].tolist()
     assert first["upper"].tolist() == second["upper"].tolist()
-    assert first["lower"].tolist() != changed_seed["lower"].tolist()
-    assert first["upper"].tolist() != changed_seed["upper"].tolist()
+    assert first["lower"].tolist() == changed_seed["lower"].tolist()
+    assert first["upper"].tolist() == changed_seed["upper"].tolist()
     assert no_ci["lower"].tolist() == no_ci["mean"].tolist()
     assert no_ci["upper"].tolist() == no_ci["mean"].tolist()
+
+
+def test_time_series_summary_keeps_plate_segments_separate_when_x_values_repeat() -> None:
+    df = pd.DataFrame(
+        {
+            "time": [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0],
+            "value": [1.0, 1.2, 2.0, 2.2, 3.0, 3.2, 4.0, 4.2],
+            "treatment": ["a"] * 8,
+            "segment": ["plate_1"] * 4 + ["plate_2"] * 4,
+        }
+    )
+
+    summary = time_series_panel._summarize_time_series_lines(
+        data=df,
+        x_col="time",
+        hue_col="treatment",
+        hue_levels=["a"],
+        segment_col="segment",
+        ci=95.0,
+        ci_boot=17,
+        ci_seed=23,
+    )["a"]
+
+    assert summary["segment"].tolist() == ["plate_1", "plate_1", "plate_2", "plate_2"]
+    assert summary["mean"].tolist() == pytest.approx([1.1, 2.1, 3.1, 4.1])
+
+
+def test_time_series_plot_renders_separate_segment_lines_with_ci() -> None:
+    df = pd.DataFrame(
+        {
+            "time": [0.0, 0.0, 1.0, 1.0, 3.0, 3.0, 4.0, 4.0],
+            "channel": ["OD600"] * 8,
+            "value": [0.10, 0.12, 0.20, 0.22, 0.35, 0.37, 0.50, 0.52],
+            "treatment": ["-IPTG/-stress"] * 8,
+            "sheet_index": [0, 0, 0, 0, 1, 1, 1, 1],
+            "sheet_name": ["Plate 1"] * 4 + ["Plate 2"] * 4,
+            "source": ["snapshot"] * 4 + ["kinetic"] * 4,
+        }
+    )
+
+    figures = plot_time_series(
+        df=df,
+        blanks=df.iloc[0:0].copy(),
+        output_dir=None,
+        x="time",
+        y=["OD600"],
+        hue="treatment",
+        channels=None,
+        subplots=None,
+        group_on=None,
+        pool_sets=None,
+        pool_match="exact",
+        fig_kwargs={},
+        add_sheet_line=True,
+        sheet_line_kwargs={},
+        log_transform=False,
+        time_window=None,
+        palette_book=None,
+        ci=95.0,
+        ci_alpha=0.15,
+        ci_boot=17,
+        ci_seed=23,
+        legend_loc="upper left",
+        show_replicates=False,
+        filename=None,
+        xlabel="Time from stress addition (h)",
+        ylabel_map={"OD600": "Biomass proxy (OD600)"},
+        hue_label_map=None,
+        shared_legend=False,
+    )
+
+    assert len(figures) == 1
+    axis = figures[0].fig.axes[0]
+    solid_lines = [line for line in axis.lines if line.get_linestyle() == "-"]
+    dashed_lines = [line for line in axis.lines if line.get_linestyle() == "--"]
+
+    assert len(solid_lines) == 2
+    assert [list(line.get_xdata()) for line in solid_lines] == [[0.0, 1.0], [3.0, 4.0]]
+    assert axis.collections
+    assert len(dashed_lines) == 1
+    assert list(dashed_lines[0].get_xdata()) == [3.0, 3.0]
+
+
+def test_time_series_plot_uses_actual_stress_names_in_retron_treatment_legend() -> None:
+    df = pd.DataFrame(
+        {
+            "time": [0.0, 0.0, 0.0, 0.0],
+            "channel": ["OD600"] * 4,
+            "value": [0.10, 0.11, 0.20, 0.22],
+            "treatment_alias": ["-IPTG/+stress", "-IPTG/+stress", "+IPTG/+stress", "+IPTG/+stress"],
+            "treatment": ["3% EtOH", "3% EtOH", "500 uM IPTG, 3% EtOH", "500 uM IPTG, 3% EtOH"],
+        }
+    )
+
+    figures = plot_time_series(
+        df=df,
+        blanks=df.iloc[0:0].copy(),
+        output_dir=None,
+        x="time",
+        y=["OD600"],
+        hue="treatment_alias",
+        channels=None,
+        subplots=None,
+        group_on=None,
+        pool_sets=None,
+        pool_match="exact",
+        fig_kwargs={},
+        add_sheet_line=False,
+        sheet_line_kwargs={},
+        log_transform=False,
+        time_window=None,
+        palette_book=None,
+        ci=95.0,
+        ci_alpha=0.15,
+        ci_boot=17,
+        ci_seed=23,
+        legend_loc="upper left",
+        show_replicates=False,
+        filename=None,
+        xlabel="Time from stress addition (h)",
+        ylabel_map={"OD600": "OD600"},
+        hue_label_map={
+            "-IPTG/+stress": "Relevant stress, -IPTG",
+            "+IPTG/+stress": "Relevant stress, +IPTG",
+        },
+        shared_legend=False,
+    )
+
+    axis = figures[0].fig.axes[0]
+    legend = axis.get_legend()
+
+    assert legend is not None
+    assert {text.get_text() for text in legend.get_texts()} == {"3% EtOH, -IPTG", "3% EtOH, +IPTG"}

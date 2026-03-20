@@ -9,11 +9,13 @@ Shared time-series drawing primitives.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+
+from ..common import bootstrap_mean_interval
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
 
@@ -30,31 +32,13 @@ def _maybe_log(ax, enable: bool) -> None:
             ax.set_ylim(bottom=max(1e-12, ymin))
 
 
-def _bootstrap_interval(
-    values: np.ndarray,
-    *,
-    ci: float,
-    ci_boot: int,
-    rng: np.random.Generator,
-) -> tuple[float, float]:
-    mean = float(values.mean())
-    if float(ci) <= 0 or values.size <= 1:
-        return mean, mean
-    alpha = max(0.0, min(0.5, (100.0 - float(ci)) / 200.0))
-    if alpha == 0.0:
-        return mean, mean
-    samples = rng.integers(0, values.size, size=(max(1, int(ci_boot)), values.size))
-    boot_means = values[samples].mean(axis=1)
-    lower, upper = np.quantile(boot_means, [alpha, 1.0 - alpha])
-    return float(lower), float(upper)
-
-
 def _summarize_time_series_lines(
     *,
     data: pd.DataFrame,
     x_col: str,
     hue_col: str,
     hue_levels: Sequence[str],
+    segment_col: str | None,
     ci: float,
     ci_boot: int,
     ci_seed: int,
@@ -62,16 +46,25 @@ def _summarize_time_series_lines(
     if data.empty:
         return {}
 
-    plot_data = data.loc[:, [x_col, hue_col, "value"]].copy()
+    columns = [x_col, hue_col, "value"]
+    if segment_col is not None and segment_col in data.columns:
+        columns.append(segment_col)
+    plot_data = data.loc[:, columns].copy()
     plot_data[hue_col] = plot_data[hue_col].astype(str)
+    active_segment_col = segment_col if segment_col is not None and segment_col in plot_data.columns else None
+    if active_segment_col is not None:
+        plot_data[active_segment_col] = plot_data[active_segment_col].astype(str)
+    else:
+        active_segment_col = "__segment_id"
+        plot_data[active_segment_col] = "segment"
     plot_data["value"] = pd.to_numeric(plot_data["value"], errors="coerce")
-    grouped = plot_data.groupby([hue_col, x_col], dropna=False, sort=True)["value"]
+    grouped = plot_data.groupby([hue_col, active_segment_col, x_col], dropna=False, sort=True)["value"]
     rng = np.random.default_rng(int(ci_seed))
 
     summaries: dict[str, dict[str, list[object]]] = {
-        str(hue): {x_col: [], "mean": [], "lower": [], "upper": []} for hue in hue_levels
+        str(hue): {x_col: [], "segment": [], "mean": [], "lower": [], "upper": []} for hue in hue_levels
     }
-    for (hue, x_value), series in grouped:
+    for (hue, segment_id, x_value), series in grouped:
         hue_key = str(hue)
         payload = summaries.get(hue_key)
         if payload is None:
@@ -80,9 +73,9 @@ def _summarize_time_series_lines(
         values = values[~np.isnan(values)]
         if values.size == 0:
             continue
-        mean = float(values.mean())
-        lower, upper = _bootstrap_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
+        mean, lower, upper = bootstrap_mean_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
         payload[x_col].append(x_value)
+        payload["segment"].append(str(segment_id))
         payload["mean"].append(mean)
         payload["lower"].append(lower)
         payload["upper"].append(upper)
@@ -92,7 +85,7 @@ def _summarize_time_series_lines(
         payload = summaries[str(hue)]
         if not payload[x_col]:
             continue
-        out[str(hue)] = pd.DataFrame(payload).sort_values(x_col, kind="stable")
+        out[str(hue)] = pd.DataFrame(payload).sort_values(["segment", x_col], kind="stable")
     return out
 
 
@@ -105,6 +98,7 @@ def draw_time_series_panel(
     hue_levels: list[str],
     color_map: dict[str, str],
     marker_map: dict[str, str],
+    segment_col: str | None,
     show_replicates: bool,
     ci: float,
     ci_alpha: float,
@@ -121,6 +115,7 @@ def draw_time_series_panel(
     ylabel: str,
     legend_loc: str,
     show_legend: bool,
+    legend_label_map: Mapping[str, str] | None = None,
     marked_time: float | None = None,
     marked_time_kwargs: dict | None = None,
 ) -> None:
@@ -148,6 +143,7 @@ def draw_time_series_panel(
         x_col=x_col,
         hue_col=hue_col,
         hue_levels=hue_levels,
+        segment_col=segment_col,
         ci=ci,
         ci_boot=ci_boot,
         ci_seed=ci_seed,
@@ -156,35 +152,36 @@ def draw_time_series_panel(
         mm = summary_by_hue.get(str(hue))
         if mm is None or mm.empty:
             continue
-        if float(ci) > 0:
-            ax.fill_between(
-                mm[x_col],
-                mm["lower"],
-                mm["upper"],
-                alpha=float(ci_alpha),
+        for _, segment_df in mm.groupby("segment", sort=False):
+            if float(ci) > 0:
+                ax.fill_between(
+                    segment_df[x_col],
+                    segment_df["lower"],
+                    segment_df["upper"],
+                    alpha=float(ci_alpha),
+                    color=color_map[hue],
+                    linewidth=0.0,
+                    zorder=1,
+                )
+            ax.plot(
+                segment_df[x_col],
+                segment_df["mean"],
                 color=color_map[hue],
-                linewidth=0.0,
-                zorder=1,
+                linewidth=1.8,
+                alpha=line_alpha,
+                zorder=1.5,
             )
-        ax.plot(
-            mm[x_col],
-            mm["mean"],
-            color=color_map[hue],
-            linewidth=1.8,
-            alpha=line_alpha,
-            zorder=1.5,
-        )
-        ax.scatter(
-            mm[x_col],
-            mm["mean"],
-            s=36,
-            zorder=2.5,
-            marker=marker_map[hue],
-            alpha=mean_marker_alpha,
-            edgecolors="none",
-            linewidths=0.0,
-            c=color_map[hue],
-        )
+            ax.scatter(
+                segment_df[x_col],
+                segment_df["mean"],
+                s=36,
+                zorder=2.5,
+                marker=marker_map[hue],
+                alpha=mean_marker_alpha,
+                edgecolors="none",
+                linewidths=0.0,
+                c=color_map[hue],
+            )
 
     if add_sheet_lines and sheet_lines:
         style = {"color": "#9E9E9E", "linestyle": "--", "linewidth": 0.8, "alpha": 0.9, "zorder": 0.5}
@@ -212,8 +209,8 @@ def draw_time_series_panel(
                 linestyle="-",
                 linewidth=1.8,
                 alpha=mean_marker_alpha,
-                label=str(hue),
+                label=(str(legend_label_map.get(str(hue), hue)) if legend_label_map is not None else str(hue)),
             )
             for hue in hue_levels
         ]
-        ax.legend(handles=handles, loc=legend_loc, title=None)
+        ax.legend(handles=handles, loc=legend_loc, title=None, frameon=False)
