@@ -1,4 +1,4 @@
-## reader demo
+# End-to-end demo
 
 This walkthrough shows a typical flow from discovery to dataframe records, then plots/exports or notebooks. Prefer an explicit config path or experiment directory; `CONFIG|DIR|INDEX` works, but paths are deterministic and easier for agents to replay.
 
@@ -66,7 +66,3 @@ uv run reader notebook ./experiments/2025/20250614_sensor_panel_M9_glu/config.ya
 If you want a specific template, pass `--template <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).
 
 See the [Notebooks guide](./notebooks.md) for opening and dependency setup.
-
----
-
-@e-south

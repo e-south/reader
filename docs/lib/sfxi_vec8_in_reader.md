@@ -543,7 +543,3 @@ The following example uses the SFXI-capable experiment
     * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 
 4) (Optional) export vec8 from the notebook UI:
-
----
-
-@e-south

@@ -6,9 +6,8 @@
 - semantics: `reader.protocols`
 - execution: compiled workbench IR
 
-The config surface is for human authors. It should describe assay inputs,
-analysis choices, and requested outputs in domain terms, not plugin or graph
-terms.
+The config should describe assay inputs, analysis choices, and requested outputs
+in domain terms, not plugin or graph terms.
 
 ## Minimal shape
 
@@ -41,7 +40,7 @@ resources:
   may be `draft` or `template` for intentionally non-runnable configs; omit it for
   normal active experiments.
 - `protocol`
-  Assay binding plus human-facing semantic config.
+  Assay binding plus semantic config.
 - `resources`
   External files such as `sample_map` or `metadata`.
 - `annotations`
@@ -166,34 +165,25 @@ protocol:
       require_non_null: true
 ```
 
-## Discoverability
+## Inspect the config surface
 
-Use the CLI to inspect the semantic surface:
+Use the CLI to inspect one protocol or one experiment:
 
 ```bash
-uv run reader ls --details
-uv run reader ls --details --format json
-uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/dual_reporter_screen
-uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/single_reporter_screen
-uv run reader init ./experiments/20260317_new_assay --protocol plate_reader/retron_sponge_screen
-uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
-uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --format json
-uv run reader protocols plate_reader/dual_reporter_screen
-uv run reader protocols plate_reader/single_reporter_screen
-uv run reader protocols plate_reader/retron_sponge_screen
-uv run reader protocols plate_reader/dual_reporter_screen --format json
-uv run reader protocols plate_reader/single_reporter_screen --format json
-uv run reader protocols plate_reader/retron_sponge_screen --format json
-uv run reader protocols plate_reader/dual_reporter_screen --example-config
-uv run reader protocols plate_reader/retron_sponge_screen --example-config
-uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform
-uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
-uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot --format json
-uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform --format json
-uv run reader explain experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
-uv run reader plot experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
-uv run reader export experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --list
+uv run reader protocols <protocol-id>
+uv run reader protocols <protocol-id> --example-config
+uv run reader inspect <config|dir|index>
+uv run reader config <config|dir|index> --format json
+uv run reader explain <config|dir|index>
+uv run reader plot <config|dir|index> --list
+uv run reader export <config|dir|index> --list
 ```
+
+For setup and task-oriented command routes, use
+[Getting started](../guides/getting_started.md),
+[Common tasks](../guides/common_routes.md), and the
+[CLI reference](./cli.md). For machine-readable inspection, use
+[Automation and JSON](../guides/automation.md).
 
 For plate-reader assays, the protocol boundary matters:
 
@@ -203,31 +193,15 @@ For plate-reader assays, the protocol boundary matters:
 
 For the direct-ratio retron workflow, including the compiled `R -> B -> C -> D -> M -> O` program and semantic-table exports, see the [Retron sponge screen guide](../guides/retron_sponge_screen.md).
 
-These commands show:
-
-- what experiments exist, which protocol each one binds, and how many outputs already exist
-- the same experiment inventory as a machine-readable contract for agents and automation
-- a starter experiment directory for a chosen protocol
-- one bound experiment as explicit `authoring`, `semantics`, and `implementation` layers, including inputs/resources, generated output examples, and the compiled runtime chain
-- the same three-layer JSON contract for `reader config`, `reader steps`, `reader inspect`, and `reader explain`, so automation does not need to reconcile multiple experiment surfaces
-- the authoring inputs and analysis surface for the selected protocol, plus the default compiled pipeline and output implementations, in either table or JSON form
-- the plugin registry filtered to the transform kernel a given protocol actually uses
-- a starter YAML outline for that protocol
-- the bound protocol
-- the compiled pipeline chain and record/resource daisy chain
-- the selected plot outputs
-- the selected export artifacts
-- the notebook template policy
-
 ## Mental model
 
-The authoritative flow is:
+The flow is:
 
 `config -> protocol binding -> protocol compiler -> workbench decl -> graph -> engine -> records`
 
 That keeps:
 
-- human authoring in config
+- authored config in `config.yaml`
 - assay semantics in `reader.protocols`
 - execution IR in `decl/` and `graph/`
 - plugin mechanics in `plugins/`

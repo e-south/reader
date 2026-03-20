@@ -1,6 +1,6 @@
 # Quality
 
-`reader` quality is not just “tests pass.” The quality bar is that humans and agents can discover, validate, dry-run, execute, and verify experiments through explicit contracts with low ambiguity and low retry cost.
+`reader` quality is not just “tests pass.” The quality bar is that users and agents can discover, validate, dry-run, execute, and verify experiments through explicit contracts with low ambiguity and low retry cost.
 
 This document defines that bar.
 
@@ -18,7 +18,7 @@ The workbench is healthy when these questions have fast, deterministic answers.
 ## Harness Contract
 
 - Objective:
-  Keep `reader` ergonomic for experiment authors and mechanically legible for maintainers and agents.
+  Keep `reader` clear for experiment authors and mechanically legible for maintainers and agents.
 - Scope boundary:
   In scope are the CLI, docs, config surface, protocol catalog, runtime planning, validation, and records.
   Out of scope are ad hoc manual edits to generated outputs.
@@ -36,7 +36,7 @@ The top-level quality program for `reader` currently centers on three harness en
 ### `knowledge-integrity`
 
 - Docs must be current, cross-linked, and aligned with the actual CLI and config surface.
-- README and docs index must route users and agents to the right depth quickly.
+- README and docs index must route readers to setup, preflight/run/verify, automation, and maintainer paths without duplication.
 
 ### `autonomy-capability`
 
@@ -64,10 +64,13 @@ The preferred quality loop is:
 
 This follows the same harness lesson emphasized in OpenAI’s harness-engineering article: speed and explicit feedback loops matter because slow or ambiguous verification causes retries and drift.
 
+Use [docs/guides/preflight_run_verify.md](./docs/guides/preflight_run_verify.md) for the task-oriented version of this loop.
+
 ## Required Evidence For Changes
 
 The minimum verification bundle for workbench-facing changes should include:
 
+- `uv run python tools/check_docs.py`
 - targeted CLI command coverage for the changed surface
 - targeted tests for changed behavior
 - `uv run ruff check .`
@@ -77,6 +80,7 @@ The minimum verification bundle for workbench-facing changes should include:
 
 For documentation-only changes, at least verify:
 
+- `uv run python tools/check_docs.py`
 - linked routes are still valid
 - command examples match current CLI behavior
 - changed docs stay aligned with `reader/v7`
@@ -99,7 +103,7 @@ For documentation-only changes, at least verify:
 
 ### UX quality
 
-- progressive disclosure in docs and CLI
+- clear routing from overview pages to workflow guides and detailed reference
 - machine-readable JSON surfaces for core discovery and preflight paths
 - explicit empty-state and failure-state behavior
 
@@ -109,8 +113,8 @@ These are the failure classes that quality work should continue to reduce.
 
 - semantic drift
   Protocol meaning lives partly in one place and execution truth in another.
-- human-only surface
-  Important inspection or preflight paths exist only as Rich text.
+- table-only surface
+  Important inspection or preflight paths exist only in table output.
 - silent fallback
   Broken configs or empty selections appear as success without explicit signal.
 - junk-drawer config growth
@@ -120,7 +124,7 @@ These are the failure classes that quality work should continue to reduce.
 
 ## Current Open Quality Debt
 
-The main unresolved quality debt is still semantic, not ergonomic. Protocol windows, controls, metrics, and ranking are not yet compiled from one executable typed analysis program. Until that changes, there is still some duplicate truth between protocol metadata and compiler behavior.
+The main unresolved quality debt is still semantic, not documentation. Protocol windows, controls, metrics, and ranking are not yet compiled from one executable typed analysis program. Until that changes, there is still some duplicate truth between protocol metadata and compiler behavior.
 
 ## Definition Of Done
 

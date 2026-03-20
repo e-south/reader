@@ -4,6 +4,8 @@
 
 This document describes the expected reliability loop.
 
+For the task-oriented route, use [docs/guides/preflight_run_verify.md](./docs/guides/preflight_run_verify.md).
+
 ## Reliability Contract
 
 The canonical operating path is:
@@ -126,10 +128,12 @@ Use the cheapest command that answers the current question.
 
 This follows the same harness principle highlighted in OpenAI’s harness-engineering article: better harnesses reduce retries by shortening the path from action to trustworthy feedback.
 
+Use [docs/guides/automation.md](./docs/guides/automation.md) for the compact JSON route.
+
 ## Reliability Invariants
 
 - Discovery and preflight should not require full execution.
-- Machine-readable contracts should not silently fall back to human-only output.
+- Machine-readable contracts should not silently fall back to table output.
 - Generated outputs should be reproducible from config and code.
 - Records should remain the authoritative provenance surface.
 - Experiment directories should remain compact and legible.

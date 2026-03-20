@@ -444,7 +444,3 @@ def _(mo, weather):
     )
     return seattle_weather_df
 ```
-
----
-
-@e-south

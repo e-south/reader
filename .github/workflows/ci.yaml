@@ -38,6 +38,9 @@ jobs:
       - name: Lockfile drift check
         run: uv lock --check
 
+      - name: Docs integrity
+        run: uv run python tools/check_docs.py
+
       - name: Lint
         run: uv run ruff check .
 
@@ -50,8 +53,8 @@ jobs:
       - name: Build (sdist + wheel)
         run: uv build
 
-  main-tests:
-    name: Main Tests
+  default-tests:
+    name: Default Tests
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -74,22 +77,20 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --locked --group dev
 
-      - name: Run main test batch with coverage
+      - name: Run default test lane with coverage
         run: |
           mkdir -p .artifacts
           uv run pytest -q \
-            -o addopts='--strict-config --strict-markers -ra' \
-            -m 'not fleet and not repo_matrix' \
             --cov=reader \
             --cov-report=term-missing:skip-covered \
             --cov-report=xml:.artifacts/coverage.xml \
-            --junitxml=.artifacts/pytest-main.xml
+            --junitxml=.artifacts/pytest-default.xml
 
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: main-test-artifacts
+          name: default-test-artifacts
           path: .artifacts/
 
       - name: Upload coverage to Codecov
@@ -98,43 +99,7 @@ jobs:
         with:
           use_oidc: true
           files: .artifacts/coverage.xml
-          flags: main
-          name: main-suite
+          flags: default
+          name: default-suite
           fail_ci_if_error: false
           verbose: true
-
-  repo-matrix:
-    name: Repo Matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version-file: ".python-version"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Install dependencies (locked)
-        run: uv sync --locked --group dev
-
-      - name: Run repo matrix batch
-        run: |
-          mkdir -p .artifacts
-          uv run pytest -q \
-            -o addopts='--strict-config --strict-markers -ra' \
-            -m repo_matrix \
-            --junitxml=.artifacts/pytest-repo-matrix.xml
-
-      - name: Upload repo matrix artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: repo-matrix-artifacts
-          path: .artifacts/

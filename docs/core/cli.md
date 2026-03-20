@@ -1,12 +1,18 @@
 # CLI reference
 
-Use the CLI in progressive disclosure order:
+This page is the full CLI reference. For setup and the shortest common paths,
+start with [Getting started](../guides/getting_started.md) and
+[Common tasks](../guides/common_routes.md). For the operating loop and
+machine-readable routes, use [Preflight, run, verify](../guides/preflight_run_verify.md)
+and [Automation and JSON](../guides/automation.md).
+
+A typical order is:
 
 1. `uv run reader ls` to find experiments.
-2. `uv run reader init` to scaffold a new experiment from a protocol.
-3. `uv run reader inspect` to see one experiment’s authoring bindings, inputs, pipeline chain, plots, exports, and current outputs.
-4. `uv run reader steps` for a compact pipeline-only daisy chain.
-5. `uv run reader explain` for the full compiled runtime plan.
+2. `uv run reader protocols` or `uv run reader init` to choose a protocol and scaffold a new experiment.
+3. `uv run reader inspect` to see one experiment’s config, inputs, pipeline chain, plots, exports, and current outputs.
+4. `uv run reader steps` or `uv run reader explain` to inspect the compiled plan.
+5. `uv run reader validate` to run preflight checks.
 6. `uv run reader run`, `uv run reader plot`, `uv run reader export`, and `uv run reader notebook` to materialize outputs.
 
 `uv run reader` commands accept a config path, experiment directory, or an index from `uv run reader ls` (shown below as `CONFIG|DIR|INDEX`).
@@ -130,53 +136,18 @@ Guided walkthrough:
 uv run reader demo
 ```
 
-Protocol descriptions are the main discovery surface for user-facing outputs:
+Protocol descriptions are the main discovery surface for assay-specific inputs
+and outputs. For the compact route, use [Common tasks](../guides/common_routes.md).
+For machine-readable contracts, use [Automation and JSON](../guides/automation.md).
 
-- `uv run reader protocols <id>` lists the protocol input/analysis surface, plot profiles, plot outputs, export artifacts, and the default compiled pipeline/plot/export implementations behind them.
-- `uv run reader protocols <id> --example-config` prints a starter `reader/v7` YAML outline.
-- `uv run reader protocols <id> --format json` exposes the assay in three explicit layers: `authoring`, `semantics`, and `implementation`.
-- `uv run reader config ... --format json`, `uv run reader steps ... --format json`, `uv run reader inspect ... --format json`, and `uv run reader explain ... --format json` use shared `authoring`, `semantics`, and `implementation` layers for one bound experiment, plus command-specific envelope fields.
-- `uv run reader protocols <id>`, `uv run reader config`, `uv run reader steps`, `uv run reader inspect`, and `uv run reader explain` surface a semantic program with explicit execution status for controls, windows, metrics, and ranking nodes so users can see what is compiled today versus what remains descriptive-only.
-- `uv run reader plugins --protocol <id> --category transform|plot|export|ingest` scopes the registry to the plugins a protocol actually uses by default, and JSON mode adds explicit `selection` plus ontology summaries by category, domain, and family.
-- `uv run reader ls --details` is the scalable workbench inventory view: protocol id, selected runtime plan summary, generated output summary, and explicit config-error state.
-- `uv run reader ls --details --readiness` adds preflight-aware state so users and agents can see whether an experiment is draft/template, blocked by dependencies or files, runnable, only has legacy outputs, or already has records without separately composing `validate`, `run`, and `records`.
-- `uv run reader inspect ...` shows the experiment root, bound authoring values, inputs/resources, transform chain, selected plot outputs, export artifacts, current generated outputs, and the latest record catalog.
-- `uv run reader inspect ...` now also carries readiness under `implementation`, including preflight status, record-catalog presence, concrete capabilities, and suggested next commands.
-- `uv run reader config ... --format json` keeps the full `reader/v7` document under `authoring`, then shows assay semantics and the fully compiled runtime chain beside it.
-- `uv run reader steps ... --format json` keeps the same top-level contract but narrows `implementation` to the pipeline slice and its bindings.
-- `uv run reader plot ... --list` and `uv run reader export ... --list` show the concrete outputs selected after protocol compilation, and JSON mode adds explicit `catalog`, `selection`, and output-summary blocks so agents do not need to reconstruct registry shape from raw rows.
+In short:
 
-For agent harnesses and scripted audits, the discovery commands support a shared
-machine-readable contract:
-
-```bash
-uv run reader ls --root experiments --details --status config_error --format json
-uv run reader protocols plate_reader/dual_reporter_screen --format json
-uv run reader protocols plate_reader/single_reporter_screen --format json
-uv run reader protocols plate_reader/retron_sponge_screen --format json
-uv run reader plugins --protocol plate_reader/dual_reporter_screen --category transform --format json
-uv run reader plugins --protocol plate_reader/single_reporter_screen --category plot --format json
-uv run reader plugins --protocol plate_reader/retron_sponge_screen --category transform --format json
-uv run reader records CONFIG|DIR|INDEX --format json
-```
-
-These JSON payloads now carry upstream producer and contract-surface metadata
-for record bindings. `uv run reader protocols`, `uv run reader config`, `uv run reader steps`,
-`uv run reader inspect`, and `uv run reader explain` all separate their machine-readable
-surface into `authoring`, `semantics`, and `implementation`, and the
-semantic-program block includes explicit `compiled` vs `descriptive_only`
-assay-node status. `semantics.program.summary` adds compiled/descriptive
-coverage counts, so a consumer can see both the runtime chain and how much of
-the assay semantic surface is implemented today. `uv run reader records --format json`
-is the companion result-inventory surface for one experiment: it includes the
-experiment identity, manifest path, summary counts by record kind and producer,
-and optional revision counts when `--all` is requested. `uv run reader plugins
---format json` keeps registry filters in `selection` and ontology totals in
-`summary`, while `uv run reader plot --list --format json` and `uv run reader export --list
---format json` do the same for resolved output specs. `uv run reader ls --details
---readiness --format json` is the fleet-level preflight surface, and `uv run reader
-inspect --format json` embeds the same readiness view for one experiment under
-`implementation.readiness`.
+- `uv run reader protocols <id>` shows the protocol authoring surface, selected outputs, and compiled defaults.
+- `uv run reader protocols <id> --example-config` prints a starter `reader/v7` outline.
+- `uv run reader inspect`, `config`, `steps`, and `explain` show one bound experiment; JSON mode uses shared `authoring`, `semantics`, and `implementation` sections.
+- `uv run reader ls --details --readiness` is the fleet-level inventory and preflight view.
+- `uv run reader plot --list`, `uv run reader export --list`, and `uv run reader records` show selected outputs and generated records.
+- `uv run reader plugins --protocol <id> --category ...` scopes registry inspection to the plugins a protocol uses by default.
 
 ---
 
@@ -188,7 +159,7 @@ Inspect the experiment summary before reading the lower-level plan:
 uv run reader inspect CONFIG|DIR|INDEX
 ```
 
-The human view now includes a readiness panel so you can see, in one place,
+The default table view now includes a readiness panel so you can see, in one place,
 whether the config is blocked by files or dependencies, already has records,
 and which next command is appropriate.
 
@@ -222,6 +193,7 @@ declared file and auto-root counts even when the checks are skipped.
 If you want the same preflight signal while browsing the whole workbench, use
 `uv run reader ls --details --readiness`. If you want the readiness view beside
 one experiment’s compiled plan and current outputs, use `uv run reader inspect`.
+For the full operating loop, use [Preflight, run, verify](../guides/preflight_run_verify.md).
 
 Skip file checks (config-only):
 
@@ -479,7 +451,3 @@ List step ids and plugins:
 uv run reader steps CONFIG|DIR|INDEX
 uv run reader plugins
 ```
-
----
-
-@e-south

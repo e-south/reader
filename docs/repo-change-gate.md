@@ -15,7 +15,7 @@ Before finalizing a change:
 1. Review the diff.
 2. Confirm you did not hand-edit `experiments/**/outputs/`.
 3. Run the smallest verification bundle that matches the change:
-   - docs-only: validate referenced routes and run `git diff --check`
+   - docs-only: run `uv run python tools/check_docs.py` and `git diff --check`
    - CLI/code: targeted tests plus `uv run ruff check .`
    - runtime/contract changes: targeted tests, lint, and a representative CLI preflight path
 4. State any skipped verification explicitly.
@@ -31,6 +31,7 @@ Before finalizing a change:
 ## Canonical Verification Commands
 
 ```bash
+uv run python tools/check_docs.py
 uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q

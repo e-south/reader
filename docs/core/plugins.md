@@ -421,7 +421,3 @@ protocol:
           path: sfxi_vec8.xlsx
           sheet_name: vec8
 ```
-
----
-
-@e-south

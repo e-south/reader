@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 jobs:
-  repo-integration-matrix:
-    name: Repo Integration Matrix
+  integration:
+    name: Integration
     runs-on: ubuntu-latest
     timeout-minutes: 90
 

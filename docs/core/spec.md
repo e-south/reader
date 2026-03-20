@@ -225,7 +225,3 @@ uv sync --upgrade-package <name>
 ```
 
 Commit `pyproject.toml` and `uv.lock` together.
-
----
-
-@e-south
