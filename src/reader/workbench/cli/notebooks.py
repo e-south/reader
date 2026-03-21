@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import typer
@@ -47,14 +48,84 @@ def render_marimo_help(target: Path, *, mode: str, has_fcs: bool) -> None:
     )
 
 
-def _launch_marimo(mode: str, target: Path, *, has_fcs: bool) -> None:
-    cmd = [shared.sys.executable, "-m", "marimo", mode, str(target)]
+def render_marimo_routes(*, target: Path, url: str, runtime_root: Path) -> None:
+    check_cmd = f"uv run marimo check {target}"
+    shared.console.print(
+        Panel.fit(
+            "Review routes:\n"
+            f"  Static check: {check_cmd}\n"
+            f"  Browser review: {url}\n"
+            "  Chrome MCP: open the URL in a fresh isolated page.\n\n"
+            f"Managed runtime root: [path]{runtime_root}[/path]",
+            border_style="accent",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _launch_marimo(
+    mode: str,
+    target: Path,
+    *,
+    has_fcs: bool,
+    headless: bool = False,
+    port: int | None = None,
+) -> None:
+    launch = _load("reader.workbench.notebooks.launch")
+    plan = launch.plan_marimo_launch(
+        mode=mode,
+        target=target,
+        headless=headless,
+        preferred_port=port,
+        base_env=os.environ.copy(),
+    )
+    if plan.terminated_sessions:
+        shared.console.print(
+            Panel.fit(
+                f"Pruned {len(plan.terminated_sessions)} existing reader-managed Marimo session(s) "
+                "for this experiment before launch.",
+                border_style="warn",
+                box=box.ROUNDED,
+            )
+        )
+    if plan.reused_session is not None:
+        shared.console.print(
+            Panel.fit(
+                f"Notebook already running: [path]{target}[/path]\n[muted]url[/muted]: {plan.url}",
+                border_style="ok",
+                box=box.ROUNDED,
+            )
+        )
+        render_marimo_routes(target=target, url=plan.url, runtime_root=plan.runtime_paths.root)
+        if not headless:
+            launch.open_url(plan.url)
+        return
+    shared.console.print(
+        Panel.fit(
+            f"Launching: {' '.join(plan.cmd)}\n[muted]url[/muted]: {plan.url}",
+            border_style="accent",
+            box=box.ROUNDED,
+        )
+    )
+    render_marimo_routes(target=target, url=plan.url, runtime_root=plan.runtime_paths.root)
     try:
-        result = shared.subprocess.run(cmd, check=False)
+        proc = shared.subprocess.Popen(plan.cmd, env=plan.env)
     except FileNotFoundError:
         render_marimo_help(target, mode=mode, has_fcs=has_fcs)
         raise typer.Exit(code=1) from None
-    if result.returncode != 0:
+    launch.register_managed_session(
+        registry_path=plan.runtime_paths.registry_path,
+        pid=proc.pid,
+        port=plan.port,
+        host=plan.host,
+        mode=mode,
+        target=target,
+    )
+    try:
+        returncode = proc.wait()
+    finally:
+        launch.unregister_managed_session(registry_path=plan.runtime_paths.registry_path, pid=proc.pid)
+    if returncode != 0:
         render_marimo_help(target, mode=mode, has_fcs=has_fcs)
         raise typer.Exit(code=1)
 
@@ -72,6 +143,8 @@ def _scaffold_notebook(
     plot_only: list[str] | None,
     plot_exclude: list[str] | None,
     scan_records: bool,
+    headless: bool,
+    port: int | None,
 ) -> None:
     try:
         templates = _load("reader.workbench.templates")
@@ -180,9 +253,7 @@ def _scaffold_notebook(
         if mode_value == "none":
             shared.console.print(str(target))
             return
-        launch_cmd = f"{shared.sys.executable} -m marimo {mode_value} {target}"
-        shared.console.print(Panel.fit(f"Launching: {launch_cmd}", border_style="accent", box=box.ROUNDED))
-        _launch_marimo(mode_value, target, has_fcs=has_fcs)
+        _launch_marimo(mode_value, target, has_fcs=has_fcs, headless=headless, port=port)
     except (ConfigError, RecordError) as err:
         raise typer.BadParameter(str(err)) from err
 
@@ -226,6 +297,18 @@ def notebook(
         "--scan-records",
         help="Allow notebook templates to scan outputs/artifacts when records.json is missing.",
     ),
+    headless: bool = typer.Option(
+        False,
+        "--headless",
+        help="Launch without opening a browser. Reader prints a loopback URL suitable for Chrome MCP review.",
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        min=1,
+        max=65535,
+        help="Preferred loopback port. Defaults to a reader-managed clean port starting at 2718.",
+    ),
     mode: str = NOTEBOOK_MODE_OPTION,
     only: list[str] = NOTEBOOK_PLOT_ONLY_OPTION,
     exclude: list[str] = NOTEBOOK_PLOT_EXCLUDE_OPTION,
@@ -239,6 +322,8 @@ def notebook(
         new=new,
         refresh=refresh,
         scan_records=scan_records,
+        headless=headless,
+        port=port,
         mode=mode,
         plot_only=only,
         plot_exclude=exclude,

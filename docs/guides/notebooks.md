@@ -71,6 +71,12 @@ Scaffold a notebook (opens Marimo by default):
 uv run reader notebook experiments/my_experiment/config.yaml
 ```
 
+For browser review without opening the editor, prefer:
+
+```bash
+uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
+```
+
 What the scaffolded notebook includes:
 
 * dataframe record discovery via `outputs/manifests/records.json`
@@ -98,8 +104,16 @@ uv run reader notebook --list-templates
 Notes:
 
 * `uv run reader notebook` only scaffolds the notebook; it does not run the pipeline.
-* `uv run reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
-* Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
+* `uv run reader notebook` launches Marimo with the active Python interpreter, so running via `uv run` ensures the notebook deps are available.
+* `reader notebook` manages Marimo runtime state under `.cache/marimo/` in the repo. It uses clean repo-local XDG and Matplotlib cache directories instead of leaking into user-global Marimo state.
+* `reader notebook` reuses an existing reader-managed session for the same notebook only when the notebook file and reader runtime fingerprint still match. If either has drifted, it restarts the stale session instead of silently attaching to it.
+* It also prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
+* Use `--mode none` to scaffold without launching Marimo, `--mode run` to launch a read-only app, and `--headless` when an agent or browser automation should attach to the printed loopback URL.
+* Use `--port <n>` only when you need a fixed loopback port. Otherwise let `reader` choose a clean port starting at `2718`.
+* For agent review, the low-friction path is:
+  - `uv run reader notebook <config> --mode run --headless`
+  - open the printed URL in Chrome MCP
+  - or run `uv run marimo check <notebook.py>` for a static validation pass
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
 * Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
 * Template behavior is capability-driven:

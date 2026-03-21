@@ -390,6 +390,16 @@ Launch modes:
 - `--mode edit` (default): open Marimo editor
 - `--mode run`: run as a read-only app
 - `--mode none`: create only (no launch)
+- `--headless`: keep the server in the terminal and print a loopback URL for browser automation
+- `--port <n>`: request a specific loopback port instead of the reader-managed clean-port selection
+
+Runtime notes:
+
+- `reader notebook` manages Marimo runtime state under `.cache/marimo/`.
+- It reuses a live reader-managed session for the same notebook only when the notebook file and reader runtime fingerprint still match.
+- If the notebook or runtime has drifted, it restarts the stale session instead of silently reusing it.
+- It prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
+- For agent review, prefer `--mode run --headless`, then open the printed URL in Chrome MCP.
 
 See templates:
 
