@@ -1178,7 +1178,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="control_burden_panel",
         kind="qc",
-        summary="Matched-control burden panel over the primary readout and growth-rate traces.",
+        summary="tetO-only burden panel over the primary readout and growth-rate traces across the full run.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1190,19 +1190,25 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="matched_control_kinetics",
         kind="kinetics",
-        summary="Matched-control-normalized kinetics that show sponge-specific deviation from same-sensor tetO controls.",
+        summary="Per-arm matched-control-normalized kinetics that show deviation from same-sensor tetO controls across the full run.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="induced_effect_kinetics",
         kind="kinetics",
-        summary="IPTG-state effect trajectories after matched-control normalization.",
+        summary="Per-arm IPTG-state effect trajectories after matched-control normalization, paired with a compact D_AUC sidecar.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="absolute_effect_kinetics",
         kind="kinetics",
-        summary="Absolute matched-control IPTG-state effect that preserves pre-stress preload differences.",
+        summary="Per-arm absolute matched-control IPTG-state effect that preserves pre-stress preload differences, paired with a compact D_abs_AUC sidecar.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="control_anchored_decomposition",
+        kind="summary",
+        summary="Per-pair decision cards that combine relevant-stress traces, H2O context, and preload/total/increment/burden summaries.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1214,7 +1220,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="library_heatmaps",
         kind="summary",
-        summary="Library-wide heatmaps over IPTG-state, stress-modulation, and scaled on-target summary metrics.",
+        summary="Library-wide heatmaps over absolute effect, post-stress increment, and preload shift.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1226,7 +1232,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="pareto_ranking",
         kind="summary",
-        summary="Pareto-style ranking of on-target effect against burden and leakiness.",
+        summary="Pareto-style ranking of absolute on-target effect against burden and leakiness.",
         primary=True,
     ),
 )
@@ -1234,17 +1240,15 @@ _RETRON_SPONGE_FIGURES = (
 _RETRON_SPONGE_PLOT_PROFILES = (
     ProtocolPlotProfileSpec(
         id="screen_overview",
-        summary="Didactic default set for matched-control sponge screens from raw QC through ranking.",
+        summary="Reader-first default set for matched-control sponge screens from QC through decision and ranking.",
         figures=(
             "raw_kinetics",
             "support_kinetics",
             "control_burden_panel",
-            "matched_control_kinetics",
-            "induced_effect_kinetics",
+            "control_anchored_decomposition",
             "absolute_effect_kinetics",
-            "interaction_summary",
+            "induced_effect_kinetics",
             "library_heatmaps",
-            "stress_modulation_scores",
             "pareto_ranking",
         ),
     ),
@@ -1255,12 +1259,13 @@ _RETRON_SPONGE_PLOT_PROFILES = (
     ),
     ProtocolPlotProfileSpec(
         id="analysis_review",
-        summary="Semantic matched-control review over compiled sponge metrics and rankings.",
+        summary="Expanded semantic review over compiled sponge metrics, intermediate transforms, and rankings.",
         figures=(
             "baseline_shifted_kinetics",
             "matched_control_kinetics",
-            "induced_effect_kinetics",
             "absolute_effect_kinetics",
+            "induced_effect_kinetics",
+            "control_anchored_decomposition",
             "interaction_summary",
             "library_heatmaps",
             "stress_modulation_scores",
@@ -1689,7 +1694,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             id="yfp_cfp",
             family="matched_control_dual_reporter",
             summary="Dual-reporter sponge-screen semantics on the log2(YFP/CFP) axis.",
-            primary_metric="O_AUC",
+            primary_metric="O_abs_AUC",
             primary_readout="log2(YFP / CFP)",
             tags=("dual_reporter", "matched_control", "sponge"),
         ),
@@ -1697,7 +1702,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             id="single_reporter",
             family="matched_control_single_reporter",
             summary="Single-reporter sponge-screen semantics on the log2(configured reporter / configured growth channel) axis.",
-            primary_metric="O_AUC",
+            primary_metric="O_abs_AUC",
             primary_readout="log2(configured_reporter_channel / configured_growth_channel)",
             tags=("single_reporter", "matched_control", "sponge"),
         ),
@@ -1825,6 +1830,17 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             value_space="log2_ratio",
             unit="log2_ratio",
             comparable_group="primary_ratio_log2",
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="P_pre",
+            stage="summary",
+            summary="Pre-stress matched-control preload shift between +IPTG and -IPTG states.",
+            formula="mean(R_pre - R_pre_tetO,matched)(+IPTG) - mean(R_pre - R_pre_tetO,matched)(-IPTG)",
+            depends_on=("R_pre", "matched_same_sensor_control"),
+            value_space="delta_log2_ratio",
+            unit="log2_ratio_delta",
+            comparable_group="response_delta_log2",
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
@@ -2004,6 +2020,25 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
+            id="O_abs",
+            stage="ranking",
+            summary="Sign-corrected absolute matched-control IPTG-state effect.",
+            formula="expected_decoy_sign * D_abs",
+            depends_on=("D_abs",),
+            value_space="delta_log2_ratio",
+            unit="log2_ratio_delta",
+            comparable_group="response_delta_log2",
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="O_abs_AUC",
+            stage="ranking",
+            summary="AUC of the sign-corrected absolute matched-control IPTG-state effect.",
+            formula="AUC(O_abs over primary_post_stress)",
+            depends_on=("O_abs", "primary_post_stress"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
             id="G_sensor",
             stage="summary",
             summary="Native tetO sensor response used for cross-sensor scaling.",
@@ -2017,6 +2052,14 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             summary="Cross-sensor scaled effect size relative to the native sensor response.",
             formula="O_AUC / abs(G_sensor)",
             depends_on=("O_AUC", "G_sensor"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="S_abs_AUC",
+            stage="ranking",
+            summary="Cross-sensor scaled absolute effect size relative to the native sensor response.",
+            formula="O_abs_AUC / abs(G_sensor)",
+            depends_on=("O_abs_AUC", "G_sensor"),
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
@@ -2093,11 +2136,11 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ),
     ),
     ranking=ProtocolRankingSpec(
-        primary_metric="O_AUC",
+        primary_metric="O_abs_AUC",
         direction="higher_is_better",
         penalties=("T_ratio_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
-        supporting_metrics=("S_AUC", "M_AUC", "D_END"),
-        summary="Rank hits by sign-corrected AUC, then penalize burden and leakiness.",
+        supporting_metrics=("S_abs_AUC", "P_pre", "D_AUC", "M_AUC"),
+        summary="Rank hits by sign-corrected absolute AUC, then inspect preload, post-stress increment, burden, and leakiness.",
         profiles=("yfp_cfp", "single_reporter"),
     ),
     execution=ProtocolExecutionPlan(

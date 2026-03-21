@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
@@ -22,6 +22,7 @@ class RetronTraceCfg(PluginConfig):
     only_control: bool = False
     relevant_only: bool = False
     stress_order: list[str] | None = None
+    panel_by: Literal["stress", "sponge"] = "stress"
     fig: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -48,6 +49,7 @@ class RetronTracePlot(FigurePlotPlugin):
             only_control=cfg.only_control,
             relevant_only=cfg.relevant_only,
             stress_order=cfg.stress_order,
+            panel_by=cfg.panel_by,
             metric_label_map=cfg.metric_label_map,
             fig_kwargs=cfg.fig,
         )

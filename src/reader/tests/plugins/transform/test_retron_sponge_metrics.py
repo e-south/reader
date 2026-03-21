@@ -238,16 +238,19 @@ def test_retron_sponge_metrics_plugin_emits_trace_and_summary_tables():
     trace = outputs["trace"]
     summary = outputs["summary"]
 
-    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "mu"} <= set(trace["metric"])
+    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "O_abs", "mu"} <= set(trace["metric"])
     assert {
         "R_pre",
+        "P_pre",
         "L_pre",
         "D_AUC",
         "D_abs_AUC",
         "D_growth_AUC",
         "M_AUC",
         "O_AUC",
+        "O_abs_AUC",
         "S_AUC",
+        "S_abs_AUC",
         "T_ratio_AUC",
         "T_finalOD",
     } <= set(summary["metric"])
@@ -290,8 +293,20 @@ def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
     trace = outputs["trace"]
     summary = outputs["summary"]
 
-    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "mu"} <= set(trace["metric"])
-    assert {"R_pre", "D_AUC", "D_abs_AUC", "D_growth_AUC", "M_AUC", "O_AUC", "S_AUC", "L_pre"} <= set(summary["metric"])
+    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "O_abs", "mu"} <= set(trace["metric"])
+    assert {
+        "R_pre",
+        "P_pre",
+        "D_AUC",
+        "D_abs_AUC",
+        "D_growth_AUC",
+        "M_AUC",
+        "O_AUC",
+        "O_abs_AUC",
+        "S_AUC",
+        "S_abs_AUC",
+        "L_pre",
+    } <= set(summary["metric"])
 
     d_auc = summary[
         (summary["metric"] == "D_AUC")
@@ -350,9 +365,16 @@ def test_retron_sponge_metrics_absolute_companion_preserves_preload_sensitive_si
         & (summary["sponge"] == "LexA")
         & (summary["stress_condition"] == "100 nM ciprofloxacin")
     ]["value"].iloc[0]
+    p_pre = summary[
+        (summary["metric"] == "P_pre")
+        & (summary["sensor"] == "sulAp")
+        & (summary["sponge"] == "LexA")
+        & (summary["stress_condition"] == "100 nM ciprofloxacin")
+    ]["value"].iloc[0]
 
     assert d_auc < 0
     assert d_abs_auc > 0
+    assert p_pre > 0
 
 
 def test_retron_sponge_metrics_masks_invalid_post_stress_rows_without_crashing():
@@ -435,7 +457,7 @@ def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
         & (summary["stress_condition"] == "3% EtOH")
     ]["value"].iloc[0]
 
-    assert {"R_pre", "D_AUC", "O_AUC", "S_AUC"} <= set(summary["metric"])
+    assert {"R_pre", "P_pre", "D_AUC", "O_AUC", "O_abs_AUC", "S_AUC", "S_abs_AUC"} <= set(summary["metric"])
     assert d_auc < 0
 
 

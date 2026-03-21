@@ -667,6 +667,7 @@ def _plate_reader_retron_sponge_semantic_program(
         ),
         "R": trace_binding,
         "R_pre": summary_binding,
+        "P_pre": summary_binding,
         "B": trace_binding,
         "C": trace_binding,
         "C_AUC": summary_binding,
@@ -686,8 +687,11 @@ def _plate_reader_retron_sponge_semantic_program(
         "M_END": summary_binding,
         "O": trace_binding,
         "O_AUC": summary_binding,
+        "O_abs": trace_binding,
+        "O_abs_AUC": summary_binding,
         "G_sensor": summary_binding,
         "S_AUC": summary_binding,
+        "S_abs_AUC": summary_binding,
         "L_pre": summary_binding,
         "L_post_AUC": summary_binding,
         "T_ratio_AUC": summary_binding,
@@ -932,6 +936,7 @@ def _plate_reader_retron_plot_output_ids() -> set[str]:
         "matched_control_kinetics",
         "induced_effect_kinetics",
         "absolute_effect_kinetics",
+        "control_anchored_decomposition",
         "interaction_summary",
         "library_heatmaps",
         "stress_modulation_scores",
@@ -1428,6 +1433,7 @@ def _plate_reader_retron_plot_output(
             "control_name": control_name,
             "relevant_only": True,
             "stress_order": stress_order,
+            "panel_by": "sponge",
         }
         return _step(
             id="matched_control_kinetics",
@@ -1443,6 +1449,7 @@ def _plate_reader_retron_plot_output(
             "control_name": control_name,
             "relevant_only": True,
             "stress_order": stress_order,
+            "panel_by": "sponge",
         }
         return _step(
             id="induced_effect_kinetics",
@@ -1458,11 +1465,28 @@ def _plate_reader_retron_plot_output(
             "control_name": control_name,
             "relevant_only": True,
             "stress_order": stress_order,
+            "panel_by": "sponge",
         }
         return _step(
             id="absolute_effect_kinetics",
             plugin="plot/retron_trace",
             reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "control_anchored_decomposition":
+        defaults = {
+            "view": "decomposition",
+            "metric": "D_abs_AUC",
+            "title": "Decision cards",
+            "filename": "control_anchored_decomposition",
+            "control_name": control_name,
+            "no_stress_label": no_stress_label,
+            "relevant_only": True,
+        }
+        return _step(
+            id="control_anchored_decomposition",
+            plugin="plot/retron_summary",
+            reads={"summary": plot_reads["summary"], "trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "interaction_summary":
@@ -1485,7 +1509,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "library_heatmaps":
         defaults = {
             "view": "heatmap",
-            "title": "Library heatmaps",
+            "title": "Absolute-effect library heatmaps",
             "filename": "library_heatmaps",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
@@ -1516,10 +1540,11 @@ def _plate_reader_retron_plot_output(
     if output_id == "pareto_ranking":
         defaults = {
             "view": "pareto",
-            "title": "Pareto ranking",
+            "title": "Absolute-effect Pareto ranking",
             "filename": "pareto_ranking",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
+            "metric": "S_abs_AUC",
             "burden_metric": "D_growth_AUC",
         }
         return _step(

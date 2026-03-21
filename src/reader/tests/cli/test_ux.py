@@ -892,6 +892,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
         "matched_control_kinetics",
         "induced_effect_kinetics",
         "absolute_effect_kinetics",
+        "control_anchored_decomposition",
         "interaction_summary",
         "library_heatmaps",
         "stress_modulation_scores",
@@ -917,7 +918,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
     assert program["controls"][0]["execution"]["status"] == "compiled"
     assert program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
-    assert program["ranking"]["primary_metric"] == "O_AUC"
+    assert program["ranking"]["primary_metric"] == "O_abs_AUC"
     assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
     assert payload["implementation"]["compiled"]["pipeline"][-1]["id"] == "semantic_metrics"
 
@@ -1000,7 +1001,21 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
 
     assert program["active_profile"] == "single_reporter"
     assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "single_reporter"}
-    assert {"OD", "Reporter", "R", "Reporter_OD", "R_pre", "B", "C", "D", "M", "O", "S_AUC"} <= set(metrics)
+    assert {
+        "OD",
+        "Reporter",
+        "R",
+        "Reporter_OD",
+        "R_pre",
+        "P_pre",
+        "B",
+        "C",
+        "D",
+        "D_abs",
+        "O",
+        "O_abs",
+        "S_abs_AUC",
+    } <= set(metrics)
     assert "YFP" not in metrics
     assert "CFP" not in metrics
     assert metrics["OD"]["formula"] == "configured_growth_channel"
@@ -1017,7 +1032,7 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
         == "The mCherry/OD700 support channel is materialized as a ratio step output."
     )
     assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
-    assert program["ranking"]["primary_metric"] == "O_AUC"
+    assert program["ranking"]["primary_metric"] == "O_abs_AUC"
     assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
 
 
@@ -1044,17 +1059,28 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     plan = protocol.compile()
     ingest = next(step for step in plan.pipeline if step.id == "ingest")
     semantic_metrics = next(step for step in plan.pipeline if step.id == "semantic_metrics")
+    plot_ids = {step.id for step in plan.plots}
     raw_kinetics = next(step for step in plan.plots if step.id == "raw_kinetics")
     support_kinetics = next(step for step in plan.plots if step.id == "support_kinetics")
     control_burden = next(step for step in plan.plots if step.id == "control_burden_panel")
     absolute_effect = next(step for step in plan.plots if step.id == "absolute_effect_kinetics")
-    interaction_summary = next(step for step in plan.plots if step.id == "interaction_summary")
+    induced_effect = next(step for step in plan.plots if step.id == "induced_effect_kinetics")
+    decomposition = next(step for step in plan.plots if step.id == "control_anchored_decomposition")
     library_heatmaps = next(step for step in plan.plots if step.id == "library_heatmaps")
-    stress_modulation = next(step for step in plan.plots if step.id == "stress_modulation_scores")
     pareto_ranking = next(step for step in plan.plots if step.id == "pareto_ranking")
     summary_export = next(step for step in plan.exports if step.id == "semantic_summary_table")
     trace_export = next(step for step in plan.exports if step.id == "semantic_trace_table")
 
+    assert plot_ids == {
+        "raw_kinetics",
+        "support_kinetics",
+        "control_burden_panel",
+        "control_anchored_decomposition",
+        "absolute_effect_kinetics",
+        "induced_effect_kinetics",
+        "library_heatmaps",
+        "pareto_ranking",
+    }
     assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
     assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
     assert semantic_metrics.reads["df"].record_id == "ratio_yfp_cfp/df"
@@ -1064,16 +1090,17 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     assert control_burden.with_["metrics"] == ["R", "mu"]
     assert control_burden.with_["metric_label_map"] == {"R": "log2(YFP/CFP)", "mu": "d ln(OD600) / dt"}
     assert control_burden.reads["trace"].record_id == "semantic_metrics/trace"
+    assert induced_effect.with_["panel_by"] == "sponge"
     assert absolute_effect.with_["metrics"] == ["D_abs"]
-    assert interaction_summary.with_["metric"] == "C_AUC"
-    assert interaction_summary.reads["summary"].record_id == "semantic_metrics/summary"
-    assert interaction_summary.reads["trace"].record_id == "semantic_metrics/trace"
+    assert absolute_effect.with_["panel_by"] == "sponge"
+    assert decomposition.with_["view"] == "decomposition"
+    assert decomposition.reads["summary"].record_id == "semantic_metrics/summary"
+    assert decomposition.reads["trace"].record_id == "semantic_metrics/trace"
     assert library_heatmaps.reads["summary"].record_id == "semantic_metrics/summary"
     assert library_heatmaps.reads["trace"].record_id == "semantic_metrics/trace"
-    assert stress_modulation.reads["summary"].record_id == "semantic_metrics/summary"
-    assert stress_modulation.reads["trace"].record_id == "semantic_metrics/trace"
     assert pareto_ranking.reads["summary"].record_id == "semantic_metrics/summary"
     assert pareto_ranking.reads["trace"].record_id == "semantic_metrics/trace"
+    assert pareto_ranking.with_["metric"] == "S_abs_AUC"
     assert pareto_ranking.with_["burden_metric"] == "D_growth_AUC"
     assert summary_export.reads["df"].record_id == "semantic_metrics/summary"
     assert summary_export.with_["path"] == "retron/semantic_summary.csv"

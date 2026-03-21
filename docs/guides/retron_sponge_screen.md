@@ -31,7 +31,7 @@ The transform `transform/retron_sponge_metrics` materializes two typed assay rec
   - carries `R`, `B`, `C`, `D`, `D_abs`, `D_growth`, `M`, `O`, `mu`, window flags, and the derived matching metadata
 - `semantic_metrics/summary`
   - contract: `plate_reader.sponge_summary.v1`
-  - carries `R_pre`, `C_AUC`, `C_END`, `D_AUC`, `D_END`, `D_abs_AUC`, `D_abs_END`, `D_growth_AUC`, `D_growth_END`, `M_AUC`, `M_END`, `O_AUC`, `S_AUC`, `L_pre`, `L_post_AUC`, `T_ratio_AUC`, `T_growth_AUC`, and `T_finalOD`
+  - carries `R_pre`, `P_pre`, `C_AUC`, `C_END`, `D_AUC`, `D_END`, `D_abs_AUC`, `D_abs_END`, `D_growth_AUC`, `D_growth_END`, `M_AUC`, `M_END`, `O_AUC`, `O_abs_AUC`, `S_AUC`, `S_abs_AUC`, `L_pre`, `L_post_AUC`, `T_ratio_AUC`, `T_growth_AUC`, and `T_finalOD`
 
 The internal config key is still `protocol.analysis.semantic_metrics` for compatibility. In the user-facing docs and notebooks, treat those outputs as derived assay metrics rather than a separate semantic layer.
 
@@ -48,8 +48,8 @@ The compiled analysis sequence is:
 7. isolate the incremental post-stress IPTG-state effect with `D`
 8. keep a preload-sensitive companion with `D_abs`
 9. compare relevant stress to the no-stress condition with `M`
-10. sign-correct for cross-sensor ranking with `O`
-11. summarize with AUC and endpoint metrics, then rank with burden and leakiness penalties
+10. sign-correct the incremental and absolute effects with `O` and `O_abs`
+11. summarize with preload, AUC, and endpoint metrics, then rank with burden and leakiness penalties
 
 Because IPTG is present from inoculation, `D` is a state contrast, not a time-zero induction pulse. `D` intentionally removes pre-stress preload effects by baselining each well, while `D_abs` keeps the same tetO control subtraction without erasing that preload. The dashed vertical boundary in retron kinetics plots marks stress addition and the plate-sheet junction.
 
@@ -92,13 +92,13 @@ The default `screen_overview` profile materializes the core review portfolio:
 - `raw_kinetics`
 - `support_kinetics`
 - `control_burden_panel`
-- `matched_control_kinetics`
-- `induced_effect_kinetics`
+- `control_anchored_decomposition`
 - `absolute_effect_kinetics`
-- `interaction_summary`
+- `induced_effect_kinetics`
 - `library_heatmaps`
-- `stress_modulation_scores`
 - `pareto_ranking`
+
+`control_anchored_decomposition` is now the decision-card view: relevant-stress and H2O `R(t)=log2(YFP/CFP)` traces for the selected sample and matched `tetO`, plus summary intervals for `P_pre`, `D_abs_AUC`, `D_AUC`, and `D_growth_AUC`.
 
 Additional profiles:
 
@@ -107,11 +107,11 @@ Additional profiles:
 - `analysis_review`
   - baseline-shifted, matched-control, IPTG-state, summary, and ranking review
 
-To materialize the full 10-figure retron portfolio without dropping QC plots, keep
+To materialize the reader-first portfolio plus the baseline-only debug surface, keep
 `profile: screen_overview` and add `baseline_shifted_kinetics` under
 `protocol.outputs.plots.include`. The March 2026 mono/bi/tri/tetra sponge-screen
-configs use that pattern so the newer screens exercise the complete registered
-retron plot surface.
+configs use that pattern so the default render stays concise while the debug view
+remains available when needed.
 
 ## Notebook surface
 
@@ -121,6 +121,7 @@ That scaffold is experiment-scoped and progressive:
 - it inventories the selected plot portfolio by review phase
 - it collapses raw and support QC channels into one `QC traces` review path instead of duplicating two notebook routes
 - it keeps the experiment-scoped notebook focused on QC and direct assay-kinetics views instead of repeating ranking-heavy review figures that are better compared cross-run
+- it now favors the decision-card view over baseline-only debug plots in the source selector so the direct control-anchored answer stays visible
 - it adds a direct-ratio transform ladder so each figure is tied back to the math that produced it
 - it shows whether each selected plot/export has already been rendered
 - it prefers the derived trace and summary records when present

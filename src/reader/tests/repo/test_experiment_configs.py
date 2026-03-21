@@ -42,12 +42,10 @@ RETRON_SPONGE_FULL_PLOT_IDS = [
     "support_kinetics",
     "control_burden_panel",
     "baseline_shifted_kinetics",
-    "matched_control_kinetics",
-    "induced_effect_kinetics",
+    "control_anchored_decomposition",
     "absolute_effect_kinetics",
-    "interaction_summary",
+    "induced_effect_kinetics",
     "library_heatmaps",
-    "stress_modulation_scores",
     "pareto_ranking",
 ]
 CROSSTALK_CONFIG = "experiments/2025/20250620_sensor_panel_crosstalk/config.yaml"
@@ -168,8 +166,8 @@ def test_retron_sponge_repo_configs_surface_full_plot_portfolio_and_review_noteb
     assert set(plot_ids) == set(RETRON_SPONGE_FULL_PLOT_IDS)
     assert "baseline_shifted_kinetics" in plot_ids
     assert plot_payload["summary"]["by_plugin"] == {
-        "plot/retron_summary": 4,
-        "plot/retron_trace": 5,
+        "plot/retron_summary": 3,
+        "plot/retron_trace": 4,
         "plot/time_series": 2,
     }
     assert inspect_payload["experiment"]["notebook_template"] == "notebook/retron_sponge"

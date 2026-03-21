@@ -13,7 +13,7 @@ from ._shared import FigurePlotPlugin
 
 
 class RetronSummaryCfg(PluginConfig):
-    view: Literal["interaction", "heatmap", "stress_modulation", "pareto"]
+    view: Literal["interaction", "heatmap", "stress_modulation", "pareto", "decomposition"]
     title: str = "Retron sponge summary"
     filename: str | None = None
     control_name: str = "tetO"
