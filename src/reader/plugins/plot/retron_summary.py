@@ -21,7 +21,7 @@ class RetronSummaryCfg(PluginConfig):
     relevant_only: bool = True
     metric: str | None = None
     state_order: list[str] | None = None
-    burden_metric: Literal["T_growth_AUC", "T_finalOD"] = "T_growth_AUC"
+    burden_metric: Literal["D_growth_AUC", "T_growth_AUC", "T_finalOD"] = "D_growth_AUC"
     fig: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -30,14 +30,19 @@ class RetronSummaryPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {"summary": dataframe_input("summary", "plate_reader.sponge_summary.v1")}
+        return {
+            "summary": dataframe_input("summary", "plate_reader.sponge_summary.v1"),
+            "trace": dataframe_input("trace", "plate_reader.sponge_trace.v1", optional=True),
+        }
 
     def render(self, ctx, inputs, cfg: RetronSummaryCfg) -> list[PlotFigure]:
         summary: pd.DataFrame = inputs["summary"]
+        trace: pd.DataFrame | None = inputs.get("trace")
         from reader.domains.plate_reader.plots.retron_sponge import plot_retron_sponge_summary  # noqa: PLC0415
 
         return plot_retron_sponge_summary(
             summary=summary,
+            trace=trace,
             output_dir=None,
             view=cfg.view,
             title=cfg.title,

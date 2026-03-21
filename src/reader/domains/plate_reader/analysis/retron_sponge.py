@@ -100,6 +100,9 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     wide["in_pre_window"] = False
     wide["in_primary_post_stress"] = False
     wide["in_endpoint_window"] = False
+    wide["configured_max_post_stress_hours"] = (
+        np.nan if cfg.max_post_stress_hours is None else float(cfg.max_post_stress_hours)
+    )
 
     time_zero_by_plate = _stress_time_zero_by_plate(ctx, wide=wide, cfg=cfg)
     wide["stress_time_zero_h"] = wide["plate_id"].map(time_zero_by_plate).astype(float)
@@ -200,16 +203,76 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
             f"stress={sample['stress_condition']!r}, IPTG={sample['IPTG']!r}, time={sample['time']!r}"
         )
     wide["C"] = wide["B"] - wide["control_B"]
+    control_r_means = (
+        wide.loc[control_mask]
+        .groupby(["plate_id", "sensor", "stress_condition", "IPTG", "time"], dropna=False)["R"]
+        .mean()
+        .rename("control_R")
+        .reset_index()
+    )
+    wide = wide.merge(
+        control_r_means,
+        on=["plate_id", "sensor", "stress_condition", "IPTG", "time"],
+        how="left",
+        validate="many_to_one",
+    )
+    missing_control_r = wide["control_R"].isna()
+    if bool(missing_control_r.any()):
+        sample = wide.loc[missing_control_r, ["plate_id", "sensor", "stress_condition", "IPTG", "time"]].iloc[0]
+        raise ValueError(
+            "retron_sponge_metrics: missing matched tetO raw-ratio control for "
+            f"plate={sample['plate_id']!r}, sensor={sample['sensor']!r}, "
+            f"stress={sample['stress_condition']!r}, IPTG={sample['IPTG']!r}, time={sample['time']!r}"
+        )
+    wide["C_abs"] = wide["R"] - wide["control_R"]
+    control_mu_means = (
+        wide.loc[control_mask]
+        .groupby(["plate_id", "sensor", "stress_condition", "IPTG", "time"], dropna=False)["mu"]
+        .mean()
+        .rename("control_mu")
+        .reset_index()
+    )
+    wide = wide.merge(
+        control_mu_means,
+        on=["plate_id", "sensor", "stress_condition", "IPTG", "time"],
+        how="left",
+        validate="many_to_one",
+    )
+    missing_control_mu = wide["control_mu"].isna()
+    if bool(missing_control_mu.any()):
+        sample = wide.loc[missing_control_mu, ["plate_id", "sensor", "stress_condition", "IPTG", "time"]].iloc[0]
+        raise ValueError(
+            "retron_sponge_metrics: missing matched tetO growth control for "
+            f"plate={sample['plate_id']!r}, sensor={sample['sensor']!r}, "
+            f"stress={sample['stress_condition']!r}, IPTG={sample['IPTG']!r}, time={sample['time']!r}"
+        )
+    wide["C_growth"] = wide["mu"] - wide["control_mu"]
 
     c_means = _state_metric_means(wide, metric="C")
+    c_abs_means = _state_metric_means(wide, metric="C_abs")
     b_means = _state_metric_means(wide, metric="B")
     mu_means = _state_metric_means(wide, metric="mu")
     od_means = _state_metric_means(wide, metric=cfg.growth_channel)
+    c_growth_means = _state_metric_means(wide, metric="C_growth")
 
     d_trace = _difference_by_state(
         c_means,
         value_column="value",
         out_metric="D",
+        positive_state="+IPTG",
+        negative_state="-IPTG",
+    )
+    d_abs_trace = _difference_by_state(
+        c_abs_means,
+        value_column="value",
+        out_metric="D_abs",
+        positive_state="+IPTG",
+        negative_state="-IPTG",
+    )
+    d_growth_trace = _difference_by_state(
+        c_growth_means,
+        value_column="value",
+        out_metric="D_growth",
         positive_state="+IPTG",
         negative_state="-IPTG",
     )
@@ -242,12 +305,16 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
     trace = _build_trace_table(
         wide=wide,
         d_trace=d_trace,
+        d_abs_trace=d_abs_trace,
+        d_growth_trace=d_growth_trace,
         m_trace=m_trace,
     )
     summary = _build_summary_table(
         wide=wide,
         c_means=c_means,
         d_trace=d_trace,
+        d_abs_trace=d_abs_trace,
+        d_growth_trace=d_growth_trace,
         m_trace=m_trace,
         control_burden=control_burden,
         control_growth_burden=control_growth_burden,
@@ -627,6 +694,8 @@ def _primary_window_cutoffs(
             mode=str(cfg.plateau.mode),
             slope_tolerance=float(cfg.plateau.slope_tolerance),
             min_intervals=int(cfg.plateau.min_intervals),
+            time_zero=time_zero,
+            max_post_stress_hours=cfg.max_post_stress_hours,
         )
     return cutoffs
 
@@ -638,19 +707,35 @@ def _post_window_cutoff(
     mode: Literal["full_post_stress", "control_plateau"],
     slope_tolerance: float,
     min_intervals: int,
+    time_zero: float,
+    max_post_stress_hours: float | None,
 ) -> float:
+    max_cutoff = float(times[-1])
     if mode == "full_post_stress":
-        return float(times[-1])
-    if mode != "control_plateau":
+        raw_cutoff = float(times[-1])
+    elif mode != "control_plateau":
         raise ValueError(f"retron_sponge_metrics: unsupported plateau.mode={mode!r}")
-    if len(times) < 2:
-        return float(times[-1])
-    slopes = np.diff(od_values) / np.diff(times)
-    min_intervals = max(int(min_intervals), 1)
-    for index in range(0, len(slopes) - min_intervals + 1):
-        if np.all(np.abs(slopes[index:]) <= slope_tolerance):
-            return float(times[index])
-    return float(times[-1])
+    elif len(times) < 2:
+        raw_cutoff = float(times[-1])
+    else:
+        slopes = np.diff(od_values) / np.diff(times)
+        min_intervals = max(int(min_intervals), 1)
+        raw_cutoff = float(times[-1])
+        for index in range(0, len(slopes) - min_intervals + 1):
+            if np.all(np.abs(slopes[index:]) <= slope_tolerance):
+                raw_cutoff = float(times[index])
+                break
+    if max_post_stress_hours is None:
+        return raw_cutoff
+    capped_cutoff = min(raw_cutoff, float(time_zero) + float(max_post_stress_hours))
+    first_post_time = float(times[0])
+    if capped_cutoff < first_post_time:
+        raise ValueError(
+            "retron_sponge_metrics: max_post_stress_hours ends before the first post-stress read; "
+            f"first_post_stress_time={first_post_time!r}, time_zero={time_zero!r}, "
+            f"max_post_stress_hours={max_post_stress_hours!r}"
+        )
+    return min(capped_cutoff, max_cutoff)
 
 
 def _state_metric_means(wide: pd.DataFrame, *, metric: str) -> pd.DataFrame:
@@ -703,6 +788,8 @@ def _difference_by_state(
         "in_primary_post_stress",
         "in_endpoint_window",
     ]
+    if "configured_max_post_stress_hours" in frame.columns:
+        index_columns.append("configured_max_post_stress_hours")
     pivot = frame.pivot_table(index=index_columns, columns="IPTG", values=value_column, aggfunc="first").reset_index()
     if positive_state not in pivot.columns or negative_state not in pivot.columns:
         return pd.DataFrame(columns=[*index_columns, out_metric])
@@ -751,12 +838,20 @@ def _stress_modulation_trace(
                     rel_row["in_primary_post_stress"] and base_row["in_primary_post_stress"]
                 ),
                 "in_endpoint_window": bool(rel_row["in_endpoint_window"] and base_row["in_endpoint_window"]),
+                "configured_max_post_stress_hours": rel_row.get("configured_max_post_stress_hours", np.nan),
             }
         )
     return pd.DataFrame(rows)
 
 
-def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd.DataFrame) -> pd.DataFrame:
+def _build_trace_table(
+    *,
+    wide: pd.DataFrame,
+    d_trace: pd.DataFrame,
+    d_abs_trace: pd.DataFrame,
+    d_growth_trace: pd.DataFrame,
+    m_trace: pd.DataFrame,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for metric in ("R", "B", "C", "mu"):
         metric_values = pd.to_numeric(wide[metric], errors="coerce")
@@ -783,6 +878,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                     "in_pre_window": row["in_pre_window"],
                     "in_primary_post_stress": row["in_primary_post_stress"],
                     "in_endpoint_window": row["in_endpoint_window"],
+                    "configured_max_post_stress_hours": row.get("configured_max_post_stress_hours", np.nan),
                 }
             )
     for _, row in d_trace.iterrows():
@@ -809,8 +905,61 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                     "in_pre_window": False,
                     "in_primary_post_stress": row["in_primary_post_stress"],
                     "in_endpoint_window": row["in_endpoint_window"],
+                    "configured_max_post_stress_hours": row.get("configured_max_post_stress_hours", np.nan),
                 }
             )
+    for _, row in d_abs_trace.iterrows():
+        rows.append(
+            {
+                "plate_id": row["plate_id"],
+                "acquisition_segment_id": pd.NA,
+                "sensor": row["sensor"],
+                "sponge": row["sponge"],
+                "genotype_id": row["genotype_id"],
+                "replicate_id": pd.NA,
+                "stress_condition": row["stress_condition"],
+                "IPTG": pd.NA,
+                "time": float(row["time"]),
+                "time_from_stress": float(row["time_from_stress"]),
+                "metric": "D_abs",
+                "value": _numeric_or_nan(row["D_abs"]),
+                "expected_decoy_sign": row["expected_decoy_sign"],
+                "is_relevant_stress": row["is_relevant_stress"],
+                "relevant_sensor_pair": row["relevant_sensor_pair"],
+                "sponge_family_size": row["sponge_family_size"],
+                "matched_tetO_group": pd.NA,
+                "in_pre_window": False,
+                "in_primary_post_stress": row["in_primary_post_stress"],
+                "in_endpoint_window": row["in_endpoint_window"],
+                "configured_max_post_stress_hours": row.get("configured_max_post_stress_hours", np.nan),
+            }
+        )
+    for _, row in d_growth_trace.iterrows():
+        rows.append(
+            {
+                "plate_id": row["plate_id"],
+                "acquisition_segment_id": pd.NA,
+                "sensor": row["sensor"],
+                "sponge": row["sponge"],
+                "genotype_id": row["genotype_id"],
+                "replicate_id": pd.NA,
+                "stress_condition": row["stress_condition"],
+                "IPTG": pd.NA,
+                "time": float(row["time"]),
+                "time_from_stress": float(row["time_from_stress"]),
+                "metric": "D_growth",
+                "value": _numeric_or_nan(row["D_growth"]),
+                "expected_decoy_sign": row["expected_decoy_sign"],
+                "is_relevant_stress": row["is_relevant_stress"],
+                "relevant_sensor_pair": row["relevant_sensor_pair"],
+                "sponge_family_size": row["sponge_family_size"],
+                "matched_tetO_group": pd.NA,
+                "in_pre_window": False,
+                "in_primary_post_stress": row["in_primary_post_stress"],
+                "in_endpoint_window": row["in_endpoint_window"],
+                "configured_max_post_stress_hours": row.get("configured_max_post_stress_hours", np.nan),
+            }
+        )
     for _, row in m_trace.iterrows():
         rows.append(
             {
@@ -834,6 +983,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                 "in_pre_window": False,
                 "in_primary_post_stress": row["in_primary_post_stress"],
                 "in_endpoint_window": row["in_endpoint_window"],
+                "configured_max_post_stress_hours": row.get("configured_max_post_stress_hours", np.nan),
             }
         )
     out = pd.DataFrame(rows)
@@ -860,6 +1010,7 @@ def _build_trace_table(*, wide: pd.DataFrame, d_trace: pd.DataFrame, m_trace: pd
                 "in_pre_window",
                 "in_primary_post_stress",
                 "in_endpoint_window",
+                "configured_max_post_stress_hours",
             ]
         )
     return out
@@ -870,6 +1021,8 @@ def _build_summary_table(
     wide: pd.DataFrame,
     c_means: pd.DataFrame,
     d_trace: pd.DataFrame,
+    d_abs_trace: pd.DataFrame,
+    d_growth_trace: pd.DataFrame,
     m_trace: pd.DataFrame,
     control_burden: pd.DataFrame,
     control_growth_burden: pd.DataFrame,
@@ -920,6 +1073,11 @@ def _build_summary_table(
         for _, row in frame.iterrows():
             rows.append(_summary_row(metric=metric_name, row=row, iptg=None))
 
+    d_abs_summary = _window_summaries(d_abs_trace, value_column="D_abs", metrics=("D_abs_AUC", "D_abs_END"))
+    for metric_name, frame in d_abs_summary.items():
+        for _, row in frame.iterrows():
+            rows.append(_summary_row(metric=metric_name, row=row, iptg=None))
+
     o_trace = d_trace.assign(value=pd.to_numeric(d_trace["O"], errors="coerce"))
     o_summary = _window_summaries(o_trace, value_column="value", metrics=("O_AUC",))
     for _, row in o_summary["O_AUC"].iterrows():
@@ -945,6 +1103,13 @@ def _build_summary_table(
     }.items():
         for _, row in frame.iterrows():
             rows.append(_summary_row(metric=metric_name, row=row, sponge=control_name, genotype_id=None, iptg=None))
+
+    d_growth_summary = _window_summaries(
+        d_growth_trace, value_column="D_growth", metrics=("D_growth_AUC", "D_growth_END")
+    )
+    for metric_name, frame in d_growth_summary.items():
+        for _, row in frame.iterrows():
+            rows.append(_summary_row(metric=metric_name, row=row, iptg=None))
 
     for _, row in control_od_endpoint.iterrows():
         row = row.copy()

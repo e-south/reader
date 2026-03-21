@@ -196,7 +196,7 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
         )
         semantic_step = _plate_reader_semantic_metrics_step(
             measurement_channel="YFP/CFP",
-            record_id="ratio_yfp_od600/df",
+            record_id="ratio_yfp_cfp/df",
             config=semantic_cfg,
         )
     else:
@@ -675,6 +675,12 @@ def _plate_reader_retron_sponge_semantic_program(
         "D": trace_binding,
         "D_AUC": summary_binding,
         "D_END": summary_binding,
+        "D_abs": trace_binding,
+        "D_abs_AUC": summary_binding,
+        "D_abs_END": summary_binding,
+        "D_growth": trace_binding,
+        "D_growth_AUC": summary_binding,
+        "D_growth_END": summary_binding,
         "M": trace_binding,
         "M_AUC": summary_binding,
         "M_END": summary_binding,
@@ -925,6 +931,7 @@ def _plate_reader_retron_plot_output_ids() -> set[str]:
         "baseline_shifted_kinetics",
         "matched_control_kinetics",
         "induced_effect_kinetics",
+        "absolute_effect_kinetics",
         "interaction_summary",
         "library_heatmaps",
         "stress_modulation_scores",
@@ -1431,7 +1438,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "induced_effect_kinetics":
         defaults = {
             "metrics": ["D"],
-            "title": "Induced sponge effect kinetics",
+            "title": "IPTG-state effect kinetics",
             "filename": "induced_effect_kinetics",
             "control_name": control_name,
             "relevant_only": True,
@@ -1443,11 +1450,26 @@ def _plate_reader_retron_plot_output(
             reads={"trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
+    if output_id == "absolute_effect_kinetics":
+        defaults = {
+            "metrics": ["D_abs"],
+            "title": "Absolute matched-control effect kinetics",
+            "filename": "absolute_effect_kinetics",
+            "control_name": control_name,
+            "relevant_only": True,
+            "stress_order": stress_order,
+        }
+        return _step(
+            id="absolute_effect_kinetics",
+            plugin="plot/retron_trace",
+            reads={"trace": plot_reads["trace"]},
+            with_=_deep_merge(defaults, settings),
+        )
     if output_id == "interaction_summary":
         defaults = {
             "view": "interaction",
             "metric": "C_AUC",
-            "title": "2x2 interaction summary",
+            "title": "IPTG and stress state summary",
             "filename": "interaction_summary",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
@@ -1457,7 +1479,7 @@ def _plate_reader_retron_plot_output(
         return _step(
             id="interaction_summary",
             plugin="plot/retron_summary",
-            reads={"summary": plot_reads["summary"]},
+            reads={"summary": plot_reads["summary"], "trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "library_heatmaps":
@@ -1472,7 +1494,7 @@ def _plate_reader_retron_plot_output(
         return _step(
             id="library_heatmaps",
             plugin="plot/retron_summary",
-            reads={"summary": plot_reads["summary"]},
+            reads={"summary": plot_reads["summary"], "trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "stress_modulation_scores":
@@ -1488,7 +1510,7 @@ def _plate_reader_retron_plot_output(
         return _step(
             id="stress_modulation_scores",
             plugin="plot/retron_summary",
-            reads={"summary": plot_reads["summary"]},
+            reads={"summary": plot_reads["summary"], "trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "pareto_ranking":
@@ -1498,12 +1520,12 @@ def _plate_reader_retron_plot_output(
             "filename": "pareto_ranking",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
-            "burden_metric": "T_growth_AUC",
+            "burden_metric": "D_growth_AUC",
         }
         return _step(
             id="pareto_ranking",
             plugin="plot/retron_summary",
-            reads={"summary": plot_reads["summary"]},
+            reads={"summary": plot_reads["summary"], "trace": plot_reads["trace"]},
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown retron plot output {output_id!r}")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import math
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -10,11 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import yaml
 
-from reader.domains.plate_reader.plots.common import annotate_points_smart
+from reader.domains.plate_reader.plots.common import annotate_points_smart, shared_numeric_limits
 from reader.domains.plate_reader.plots.retron_sponge import (
     plot_retron_sponge_summary,
     plot_retron_sponge_trace,
@@ -47,30 +47,55 @@ _RETRON_AGGREGATE_PLOT_CACHE: dict[
     RetronAggregatePlotResult,
 ] = {}
 
+_RETRON_SOURCE_PLOT_SELECTOR_TAGS = {
+    "control_burden_panel": "R,mu",
+    "baseline_shifted_kinetics": "B",
+    "matched_control_kinetics": "C",
+    "induced_effect_kinetics": "D",
+    "absolute_effect_kinetics": "D_abs",
+    "interaction_summary": "C_AUC/C_END",
+    "library_heatmaps": "D_AUC/M_AUC/S_AUC",
+    "stress_modulation_scores": "M_AUC",
+    "pareto_ranking": "S_AUC vs burden",
+}
+
+_RETRON_SOURCE_PLOT_SELECTOR_TITLES = {
+    "raw_kinetics": "QC traces",
+    "control_burden_panel": "tetO burden",
+    "baseline_shifted_kinetics": "Baseline-shifted kinetics",
+    "matched_control_kinetics": "tetO-subtracted kinetics",
+    "induced_effect_kinetics": "IPTG-state effect",
+    "absolute_effect_kinetics": "Absolute matched-control effect",
+    "interaction_summary": "IPTG x stress summary",
+    "library_heatmaps": "Library heatmaps",
+    "stress_modulation_scores": "Stress-gated score",
+    "pareto_ranking": "Pareto ranking",
+}
+
 _RETRON_PLOT_GUIDE = {
     "raw_kinetics": {
-        "title": "Raw kinetics QC",
+        "title": "QC traces",
         "stage": "1. QC",
-        "question": "Do any wells fail basic assay sanity checks before normalization?",
-        "math": "Raw OD600(t), CFP(t), and YFP(t) after ingest plus blank/overflow preprocessing only.",
-        "record": "ratio_yfp_od600/df",
-        "meaning": "Find failed wells, saturation, mixing artifacts, or growth collapse before normalization.",
+        "question": "Do any wells or channels show plate-junction offsets or fail basic assay sanity checks before normalization?",
+        "math": "Notebook QC surface: raw OD600(t), YFP(t), and CFP(t) from overflow/df, plus YFP/OD600, CFP/OD600, and YFP/CFP from the downstream ratio table.",
+        "record": "overflow/df for raw OD600/YFP/CFP; ratio_yfp_od600/df for support ratios",
+        "meaning": "Check growth, fluorescence, support ratios, the raw reporter ratio, and any sheet-boundary channel shifts. If CFP flattens at a repeated ceiling, inspect overflow=True rows before blaming the ingest parser.",
     },
     "support_kinetics": {
-        "title": "Support ratios per OD",
+        "title": "QC traces",
         "stage": "1. QC",
-        "question": "Do both fluorescence channels move together with biomass, or is the reporter ratio doing something specific?",
-        "math": "Support ratios YFP/OD600 and CFP/OD600 from the tidy dataframe.",
-        "record": "ratio_yfp_od600/df",
-        "meaning": "Separate broad physiology shifts from reporter-specific movement; support only, not the primary score.",
+        "question": "Do both fluorescence channels move with biomass, or is one channel showing a sheet-boundary offset or reporter-specific shift?",
+        "math": "Support ratios (YFP/OD600, CFP/OD600, YFP/CFP) from ratio_yfp_od600/df, interpreted beside raw OD600/YFP/CFP from overflow/df.",
+        "record": "ratio_yfp_od600/df for support ratios; overflow/df for raw OD600/YFP/CFP context",
+        "meaning": "Read support ratios beside the raw channels to separate broad physiology shifts from reporter-specific movement. Overflow-capped fluorescence rows can flatten a channel without implying a ratio bug.",
     },
     "control_burden_panel": {
         "title": "tetO burden panel",
         "stage": "1. QC",
-        "question": "How much of the response comes from IPTG plus retron burden rather than a real sponge site?",
+        "question": "How much of the response comes from IPTG-driven retron expression burden rather than a real sponge site?",
         "math": "tetO-only traces over R(t)=log2(YFP/CFP) and mu(t)=d ln(OD600) / dt.",
         "record": "semantic_metrics/trace",
-        "meaning": "Measures IPTG and retron burden without a cognate sponge site.",
+        "meaning": "Measures IPTG-state burden without a cognate sponge site.",
     },
     "baseline_shifted_kinetics": {
         "title": "Baseline-shifted kinetics",
@@ -89,28 +114,36 @@ _RETRON_PLOT_GUIDE = {
         "meaning": "Shows sponge-specific deviation after same-sensor tetO control subtraction.",
     },
     "induced_effect_kinetics": {
-        "title": "Induced sponge effect kinetics",
+        "title": "IPTG-state effect kinetics",
         "stage": "2. Assay kinetics",
-        "question": "What does turning on the sponge change after matched-control normalization?",
+        "question": "After matched-control normalization, how does the +IPTG versus -IPTG contrast evolve within each stress state?",
         "math": "D(t)=mean(C +IPTG)-mean(C -IPTG) within each sensor and stress state.",
         "record": "semantic_metrics/trace",
-        "meaning": "Isolates induction-dependent sponge activity after matched-control normalization.",
+        "meaning": "Isolates the IPTG-state effect after matched-control normalization. IPTG is present from the start of the assay; the dashed line marks stress addition and the plate-sheet junction, not a new induction event.",
+    },
+    "absolute_effect_kinetics": {
+        "title": "Absolute matched-control effect kinetics",
+        "stage": "2. Assay kinetics",
+        "question": "If a sponge preloads the reporter before stress, does a same-sensor tetO-matched absolute IPTG effect still remain?",
+        "math": "D_abs(t)=mean(R-R_tetO,matched)(+IPTG)-mean(R-R_tetO,matched)(-IPTG) within each sensor and stress state.",
+        "record": "semantic_metrics/trace",
+        "meaning": "Keeps the same-sensor tetO correction but does not remove pre-stress preload effects. This is the companion view to D(t) when baseline subtraction could undercall derepression-heavy sensors such as sulAp/LexA.",
     },
     "interaction_summary": {
-        "title": "2x2 interaction summary",
+        "title": "IPTG and stress state summary",
         "stage": "3. Ranking and overview",
-        "question": "Does the phenotype appear only when the sponge is induced, only under stress, or both?",
-        "math": "C_AUC or C_END across the four 2x2 states: H2O/-IPTG, H2O/+IPTG, stress/-IPTG, stress/+IPTG.",
-        "record": "semantic_metrics/summary",
-        "meaning": "Shows whether activity is inducible, stress-gated, leaky, or burden-dominated.",
+        "question": "Across the four assay states, is the phenotype linked to IPTG state, stress state, or both?",
+        "math": "C_AUC or C_END across the four IPTG/stress states: H2O/-IPTG, H2O/+IPTG, stress/-IPTG, stress/+IPTG.",
+        "record": "semantic_metrics/trace + semantic_metrics/summary",
+        "meaning": "Shows whether activity tracks IPTG state, requires stress addition, leaks without IPTG, or is burden-dominated.",
     },
     "library_heatmaps": {
         "title": "Library heatmaps",
         "stage": "3. Ranking and overview",
-        "question": "Across the library, which sponge-sensor pairs are on-target, stress-gated, or strong after cross-sensor scaling?",
+        "question": "Across the library, which sponge-sensor pairs are on-target, stress-dependent, or strong after cross-sensor scaling?",
         "math": "Heatmaps over D_AUC(H2O), D_AUC(relevant stress), M_AUC, and S_AUC.",
         "record": "semantic_metrics/summary",
-        "meaning": "Summarizes library-wide on-target, stress-gated, and cross-sensor scaled effects.",
+        "meaning": "Summarizes library-wide on-target, stress-dependent, and cross-sensor scaled effects.",
     },
     "stress_modulation_scores": {
         "title": "Stress modulation scores",
@@ -124,7 +157,7 @@ _RETRON_PLOT_GUIDE = {
         "title": "Pareto ranking",
         "stage": "3. Ranking and overview",
         "question": "Which candidates balance on-target effect with low burden and low leakiness?",
-        "math": "On-target score S_AUC versus burden (T_growth_AUC by default), with |L_pre| encoded as point size.",
+        "math": "On-target score S_AUC versus construct-specific burden (D_growth_AUC by default), with |L_pre| encoded as point size.",
         "record": "semantic_metrics/summary",
         "meaning": "Balances efficacy against burden and leakiness for candidate selection.",
     },
@@ -132,10 +165,16 @@ _RETRON_PLOT_GUIDE = {
 
 _RETRON_AGGREGATE_PLOT_GUIDE = {
     "specificity_matrix": {
-        "title": "Specificity matrix",
-        "question": "How is activity distributed across the sensors each sponge is meant to affect?",
-        "math": "Relevant-stress on-target pivot over S_AUC or O_AUC across sponge x sensor.",
-        "meaning": "Shows whether mono, bi, tri, and quad sponges distribute activity across the sensors they are meant to affect.",
+        "title": "Target activity matrix",
+        "question": "Across the tested on-target sensor arms, where is activity concentrated for each sponge design?",
+        "math": "Relevant-stress on-target pivot over S_AUC or O_AUC across tested sponge x sensor pairs.",
+        "meaning": "Shows how mono, bi, tri, and quad sponges distribute activity across the sensor arms they were actually tested against, without implying exhaustive off-target specificity coverage.",
+    },
+    "pareto_ranking": {
+        "title": "Pareto ranking",
+        "question": "Which sponge designs stay strong after burden and leakiness are considered across the review set?",
+        "math": "Mean on-target score versus mean construct-specific burden, with absolute leakiness encoded as point size.",
+        "meaning": "Ranks candidates across the full review set instead of within a single source experiment.",
     },
     "architecture_plot": {
         "title": "Architecture plot",
@@ -152,8 +191,8 @@ _RETRON_AGGREGATE_PLOT_GUIDE = {
     "sponge_fingerprint": {
         "title": "Sponge fingerprint",
         "question": "For one multi-functional sponge, which intended sensor arms are strong and which are weak?",
-        "math": "Selected multifunction sponge plotted across relevant sensors over S_AUC or O_AUC.",
-        "meaning": "Shows whether a multi-functional sponge is balanced across its intended sensor arms.",
+        "math": "Selected multifunction sponge plotted beside the matched tetO reference across relevant sensors over S_AUC or O_AUC, with source-experiment replicate points.",
+        "meaning": "Shows whether a multi-functional sponge is balanced across its intended sensor arms and how far each arm moves away from the matched tetO control.",
     },
 }
 
@@ -163,12 +202,16 @@ _RETRON_ASSAY_CONTEXT = (
         "Details": "Each genotype is one sensor plasmid plus one sponge plasmid measured in a 2x2 H2O or stress by -IPTG or +IPTG design.",
     },
     {
+        "Topic": "Timing",
+        "Details": "IPTG is present in the starting media and sets the retron-expression state from the start of the run. The t=0 boundary in kinetics plots marks stress addition and the plate-sheet junction, not IPTG addition or sponge induction.",
+    },
+    {
         "Topic": "Matched control",
         "Details": "Every real sponge row is normalized to the same-sensor tetO control on the same plate, stress state, IPTG state, and timepoint.",
     },
     {
         "Topic": "Primary score",
-        "Details": "The direct-ratio core is R(t)=log2(YFP/CFP), then B(t), C(t), D(t), M(t), O(t), and S_AUC for cross-sensor ranking.",
+        "Details": "The direct-ratio core is R(t)=log2(YFP/CFP), then B(t), C(t), D(t) for incremental post-stress effect, D_abs(t) for preload-sensitive absolute effect, M(t), O(t), and S_AUC for cross-sensor ranking.",
     },
     {
         "Topic": "Decision logic",
@@ -214,10 +257,16 @@ _RETRON_TRANSFORM_LADDER = (
         "Meaning": "Subtracts same-sensor control behavior on the same plate.",
     },
     {
-        "Step": "Induced effect",
+        "Step": "IPTG-state effect",
         "Formula": "D(t)=mean(C +IPTG)-mean(C -IPTG)",
         "Output": "trace metric D; summary D_AUC and D_END",
-        "Meaning": "Clean sequence-specific sponge effect after matched-control subtraction.",
+        "Meaning": "Compares matched-control-normalized +IPTG and -IPTG states within each stress condition; because IPTG is present from the start, this is a state contrast rather than a t=0 induction pulse.",
+    },
+    {
+        "Step": "Absolute matched-control effect",
+        "Formula": "D_abs(t)=mean(R-R_tetO,matched)(+IPTG)-mean(R-R_tetO,matched)(-IPTG)",
+        "Output": "trace metric D_abs; summary D_abs_AUC and D_abs_END",
+        "Meaning": "Keeps same-sensor tetO subtraction but preserves pre-stress preload differences that D(t) intentionally removes.",
     },
     {
         "Step": "Stress modulation",
@@ -239,17 +288,22 @@ _RETRON_TRANSFORM_LADDER = (
     },
     {
         "Step": "Leakiness and burden",
-        "Formula": "L_pre, L_post_AUC, T_ratio_AUC, T_growth_AUC, T_finalOD",
+        "Formula": "L_pre, L_post_AUC, D_growth_AUC, T_ratio_AUC, T_growth_AUC, T_finalOD",
         "Output": "summary metrics",
-        "Meaning": "Separates strong hits from leaky or burdensome constructs.",
+        "Meaning": "Separates strong hits from leaky constructs and distinguishes sponge-specific burden from assay-context tetO burden.",
     },
 )
 
 _RETRON_AGGREGATE_FIGURES = (
     {
-        "Figure": "Specificity matrix",
-        "Math": "Cross-run pivot over relevant-stress S_AUC or O_AUC for tested sensor/sponge pairs.",
-        "Why": "Shows whether mono, bi, tri, and quad sponges distribute activity across intended sensors.",
+        "Figure": "Target activity matrix",
+        "Math": "Cross-run pivot over relevant-stress S_AUC or O_AUC for tested on-target sensor/sponge pairs.",
+        "Why": "Shows how mono, bi, tri, and quad sponges distribute activity across the sensor arms they were actually tested against.",
+    },
+    {
+        "Figure": "Pareto ranking",
+        "Math": "Mean on-target score versus mean construct-specific burden, with absolute leakiness encoded as point size.",
+        "Why": "Ranks candidate sponge designs across the full review set instead of within one source experiment.",
     },
     {
         "Figure": "Architecture plot",
@@ -263,8 +317,8 @@ _RETRON_AGGREGATE_FIGURES = (
     },
     {
         "Figure": "Sponge fingerprint",
-        "Math": "Selected sponge across sensors over relevant-stress S_AUC or O_AUC.",
-        "Why": "Shows whether a multi-functional sponge is balanced across its intended sensor arms.",
+        "Math": "Selected sponge versus matched tetO reference across sensors over relevant-stress S_AUC or O_AUC, with source-experiment replicate points.",
+        "Why": "Shows whether a multi-functional sponge is balanced across its intended sensor arms and whether that signal sits above the matched tetO baseline.",
     },
 )
 
@@ -274,14 +328,14 @@ _RETRON_FIGURE_COVERAGE = (
         "Scope": "Per experiment",
         "Surface": "raw_kinetics",
         "Coverage": "Exact compiled plot",
-        "Math": "Raw OD600(t), CFP(t), and YFP(t).",
+        "Math": "OD600(t), YFP(t), CFP(t), YFP/OD600, CFP/OD600, and YFP/CFP.",
     },
     {
         "Figure": "Figure 2 — Support ratios per OD",
         "Scope": "Per experiment",
-        "Surface": "support_kinetics",
-        "Coverage": "Exact compiled plot",
-        "Math": "YFP/OD600 and CFP/OD600 support channels.",
+        "Surface": "raw_kinetics",
+        "Coverage": "Combined into the QC trace surface",
+        "Math": "Support ratios are shown in the same QC panel as the raw channels.",
     },
     {
         "Figure": "Figure 3 — tetO burden panel",
@@ -319,7 +373,7 @@ _RETRON_FIGURE_COVERAGE = (
         "Math": "C(t)=B(t)-mean(B matched tetO).",
     },
     {
-        "Figure": "Figure 8 — Induced sponge effect over time",
+        "Figure": "Figure 8 — IPTG-state effect over time",
         "Scope": "Per experiment",
         "Surface": "induced_effect_kinetics",
         "Coverage": "Exact compiled plot",
@@ -330,7 +384,7 @@ _RETRON_FIGURE_COVERAGE = (
         "Scope": "Per experiment",
         "Surface": "interaction_summary",
         "Coverage": "Exact compiled plot",
-        "Math": "C_AUC or C_END across the four induction/stress states.",
+        "Math": "C_AUC or C_END across the four IPTG/stress states.",
     },
     {
         "Figure": "Figure 10 — Library heatmaps",
@@ -340,63 +394,56 @@ _RETRON_FIGURE_COVERAGE = (
         "Math": "D_AUC, M_AUC, and scaled ranking heatmaps.",
     },
     {
-        "Figure": "Figure 11 — Stress modulation forest plot",
-        "Scope": "Per experiment",
-        "Surface": "stress_modulation_scores",
-        "Coverage": "Exact compiled plot",
-        "Math": "M_AUC summary over relevant sensor/sponge pairs.",
-    },
-    {
-        "Figure": "Figure 12 — Leakiness panel",
+        "Figure": "Figure 11 — Leakiness panel",
         "Scope": "Per experiment",
         "Surface": "assay summary review",
         "Coverage": "Derived from assay tables",
         "Math": "L_pre and L_post_AUC from the derived assay summary table.",
     },
     {
-        "Figure": "Figure 13 — Specificity matrix",
+        "Figure": "Figure 12 — Target activity matrix",
         "Scope": "Cross run",
         "Surface": "notebook/retron_sponge_aggregate",
         "Coverage": "Exact aggregate notebook figure",
         "Math": "Relevant-stress O_AUC or S_AUC pivoted over sponge x sensor.",
     },
     {
-        "Figure": "Figure 14 — Pareto ranking",
-        "Scope": "Per experiment",
-        "Surface": "pareto_ranking",
-        "Coverage": "Exact compiled plot",
+        "Figure": "Figure 13 — Pareto ranking",
+        "Scope": "Cross run",
+        "Surface": "notebook/retron_sponge_aggregate",
+        "Coverage": "Exact aggregate notebook figure",
         "Math": "On-target score versus burden, with leakiness encoded.",
     },
     {
-        "Figure": "Figure 15 — Architecture plot",
+        "Figure": "Figure 14 — Architecture plot",
         "Scope": "Cross run",
         "Surface": "notebook/retron_sponge_aggregate",
         "Coverage": "Exact aggregate notebook figure",
         "Math": "Relevant-stress O_AUC or S_AUC versus motif complexity.",
     },
     {
-        "Figure": "Figure 16 — Observed versus expected multi-functional performance",
+        "Figure": "Figure 15 — Observed versus expected multi-functional performance",
         "Scope": "Cross run",
         "Surface": "notebook/retron_sponge_aggregate",
         "Coverage": "Exact aggregate notebook figure",
         "Math": "Observed multi-site score versus mono-derived expected score.",
     },
     {
-        "Figure": "Figure 17 — Sponge-centric fingerprint plots",
+        "Figure": "Figure 16 — Sponge-centric fingerprint plots",
         "Scope": "Cross run",
         "Surface": "notebook/retron_sponge_aggregate",
         "Coverage": "Exact aggregate notebook figure",
-        "Math": "Selected multifunction sponge across relevant sensors over O_AUC or S_AUC.",
+        "Math": "Selected multifunction sponge versus matched tetO reference across relevant sensors over O_AUC or S_AUC.",
     },
     {
-        "Figure": "Figure 18 — Growth impact summary",
+        "Figure": "Figure 17 — Growth impact summary",
         "Scope": "Per experiment",
         "Surface": "control_burden_panel plus assay summary review",
         "Coverage": "Derived from assay tables",
         "Math": "mu(t), T_growth_AUC, and T_finalOD burden summaries.",
     },
     {
-        "Figure": "Figure 19 — Plate-position heatmaps",
+        "Figure": "Figure 18 — Plate-position heatmaps",
         "Scope": "Per experiment",
         "Surface": "raw well layout follow-on",
         "Coverage": "Not first-class compiled yet",
@@ -622,15 +669,17 @@ def load_retron_source_surface(source: RetronReviewSource) -> RetronReviewSource
     config_path = source.config_path.expanduser().resolve()
     if not config_path.exists():
         raise FileNotFoundError(f"retron_review: source config not found for scoped review: {config_path}")
-    stat = config_path.stat()
-    return _load_retron_source_surface_cached(str(config_path), stat.st_mtime_ns, stat.st_size)
+    return _load_retron_source_surface(str(config_path))
 
 
-@lru_cache(maxsize=32)
-def _load_retron_source_surface_cached(path: str, mtime_ns: int, size_bytes: int) -> RetronReviewSourceSurface:
-    del mtime_ns, size_bytes
+def retron_visible_plot_specs(plot_specs: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+    redundant_plot_ids = _redundant_retron_surface_plot_ids(plot_specs)
+    return tuple(dict(spec) for spec in plot_specs if str(spec.get("id", "")) not in redundant_plot_ids)
+
+
+def _load_retron_source_surface(path: str) -> RetronReviewSourceSurface:
     source_context = load_notebook_workbench_context(Path(path))
-    plot_specs = tuple(spec.to_dict() for spec in source_context.workbench.plots)
+    plot_specs = retron_visible_plot_specs(tuple(spec.to_dict() for spec in source_context.workbench.plots))
     plot_guides = {row["Plot id"]: row for row in retron_plot_guide_rows([spec.get("id", "") for spec in plot_specs])}
     plot_selector_rows: list[dict[str, str]] = []
     plot_catalog_rows: list[dict[str, str]] = []
@@ -646,7 +695,7 @@ def _load_retron_source_surface_cached(path: str, mtime_ns: int, size_bytes: int
         )
         plot_selector_rows.append(
             {
-                "Selector label": f"{stage} • {title}",
+                "Selector label": _retron_source_plot_selector_label(plot_id=plot_id, title=title),
                 "Stage": stage,
                 "Plot": title,
                 "Plot id": plot_id,
@@ -692,6 +741,15 @@ def _load_retron_source_surface_cached(path: str, mtime_ns: int, size_bytes: int
     )
 
 
+def _redundant_retron_surface_plot_ids(plot_specs: Sequence[Mapping[str, Any]]) -> set[str]:
+    plot_ids = {str(spec.get("id", "")) for spec in plot_specs}
+    redundant: set[str] = set()
+    if {"raw_kinetics", "support_kinetics"}.issubset(plot_ids):
+        redundant.add("support_kinetics")
+    redundant.update({"stress_modulation_scores", "pareto_ranking"} & plot_ids)
+    return redundant
+
+
 def load_retron_review_bundle(
     manifest_path: Path,
     *,
@@ -723,6 +781,19 @@ def load_retron_review_bundle(
     )
 
 
+def retron_source_selector_rows(bundle: RetronReviewBundle) -> list[dict[str, str | int]]:
+    counts: dict[str, int] = {}
+    for source in bundle.sources:
+        label = str(source.label)
+        counts[label] = counts.get(label, 0) + 1
+    rows: list[dict[str, str | int]] = []
+    for idx, source in enumerate(bundle.sources):
+        label = str(source.label)
+        selector_label = label if counts.get(label, 0) == 1 else f"{label} • {source.experiment_id}"
+        rows.append({"Selector label": selector_label, "Index": idx})
+    return rows
+
+
 def source_rows(bundle: RetronReviewBundle) -> list[dict[str, str]]:
     return [
         {
@@ -747,6 +818,14 @@ def retron_source_surface_overview_rows(
         {"Field": "Compiled plots", "Value": str(len(surface.plot_catalog_rows))},
         {"Field": "Dataframe records", "Value": str(len(surface.record_paths))},
     ]
+
+
+def _retron_source_plot_selector_label(*, plot_id: str, title: str) -> str:
+    display_title = str(_RETRON_SOURCE_PLOT_SELECTOR_TITLES.get(str(plot_id), title)).strip() or str(title)
+    tag = str(_RETRON_SOURCE_PLOT_SELECTOR_TAGS.get(str(plot_id), "")).strip()
+    if not tag:
+        return display_title
+    return f"[{tag}] {display_title}"
 
 
 def retron_figure_option_rows(figures: list[Any] | tuple[Any, ...]) -> list[dict[str, str]]:
@@ -791,6 +870,15 @@ def filter_supporting_table_for_figure(table: pd.DataFrame, *, filename: str | N
         if mask.any():
             frame = frame.loc[mask].copy()
     return frame.reset_index(drop=True)
+
+
+def retron_notebook_table_preview(table: pd.DataFrame | None, *, max_rows: int = 500) -> pd.DataFrame | None:
+    if table is None:
+        return None
+    frame = table.reset_index(drop=True)
+    if max_rows <= 0 or len(frame) <= max_rows:
+        return frame
+    return frame.head(max_rows).copy()
 
 
 def contextualize_retron_plot_copy(
@@ -937,13 +1025,24 @@ def render_retron_experiment_plot(
     with_cfg = dict(plot_spec.get("with") or {})
 
     if plugin == "plot/time_series":
-        figures = _render_time_series_plot_spec(plot_spec=plot_spec, datasets=datasets)
-        supporting_table = _time_series_supporting_table(
-            _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="df"),
-            channels=_normalize_optional_str_list(with_cfg.get("y"))
-            or _normalize_optional_str_list(with_cfg.get("channels")),
-        )
-        supporting_table_title = "Underlying tidy rows for the selected raw or support channels"
+        if plot_id in {"raw_kinetics", "support_kinetics"}:
+            qc_df = _retron_qc_dataframe(plot_spec=plot_spec, datasets=datasets)
+            figures = _render_retron_qc_plot_spec(plot_spec=plot_spec, datasets=datasets)
+            channels = ["OD600", "YFP", "CFP", "YFP/OD600", "CFP/OD600", "YFP/CFP"]
+            supporting_table = _time_series_supporting_table(qc_df, channels=channels)
+            supporting_table_title = (
+                "Underlying overflow-handled raw channel rows plus derived support-ratio rows for the selected QC view"
+            )
+        else:
+            figures = _render_time_series_plot_spec(plot_spec=plot_spec, datasets=datasets)
+            channels = _normalize_optional_str_list(with_cfg.get("y")) or _normalize_optional_str_list(
+                with_cfg.get("channels")
+            )
+            supporting_table = _time_series_supporting_table(
+                _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="df"),
+                channels=channels,
+            )
+            supporting_table_title = "Underlying tidy rows for the selected raw or support channels"
     elif plugin == "plot/retron_trace":
         figures = _render_retron_trace_plot_spec(plot_spec=plot_spec, datasets=datasets)
         supporting_table = _trace_supporting_table(
@@ -957,7 +1056,7 @@ def render_retron_experiment_plot(
             _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="summary"),
             view=str(with_cfg.get("view") or ""),
             metric=str(with_cfg.get("metric") or ""),
-            burden_metric=str(with_cfg.get("burden_metric") or "T_growth_AUC"),
+            burden_metric=str(with_cfg.get("burden_metric") or "D_growth_AUC"),
         )
         supporting_table_title = "Underlying assay summary rows for the selected ranking view"
     else:
@@ -1021,6 +1120,13 @@ def render_retron_source_plot_cached(
             datasets[record_id] = load_cached_parquet_frame(record_path)
         except Exception as exc:
             errors.append(f"Failed to load `{record_id}`: {exc}")
+    if plot_id_value in {"raw_kinetics", "support_kinetics"}:
+        overflow_path = record_paths.get("overflow/df")
+        if overflow_path is not None and "overflow/df" not in datasets:
+            try:
+                datasets["overflow/df"] = load_cached_parquet_frame(overflow_path)
+            except Exception as exc:
+                errors.append(f"Failed to load `overflow/df`: {exc}")
     if errors:
         raise ValueError(" ".join(errors))
     return render_retron_experiment_plot_cached(plot_spec, datasets=datasets)
@@ -1043,6 +1149,10 @@ def render_retron_aggregate_plot(
         figure = _build_specificity_matrix_figure(matrix=matrix, score_metric=score_metric)
         supporting_table = matrix.reset_index().rename(columns={"index": "sponge"})
         supporting_table_title = "Relevant-stress on-target matrix behind the heatmap"
+    elif selected_plot_id == "pareto_ranking":
+        supporting_table = build_aggregate_pareto_frame(summary_df, score_metric=score_metric)
+        figure = _build_aggregate_pareto_figure(pareto_df=supporting_table, score_metric=score_metric)
+        supporting_table_title = "Aggregate on-target, burden, and leakiness table for candidate ranking"
     elif selected_plot_id == "architecture_plot":
         supporting_table = build_architecture_frame(
             summary_df,
@@ -1071,12 +1181,15 @@ def render_retron_aggregate_plot(
         supporting_table = build_fingerprint_frame(
             summary_df,
             score_metric=score_metric,
+            fingerprint_sponge=fingerprint_sponge,
         )
         figure = _build_fingerprint_figure(
             fingerprint_df=supporting_table,
             score_metric=score_metric,
         )
-        supporting_table_title = "Relevant-sensor score table for multifunctional sponge fingerprints"
+        supporting_table_title = (
+            "Relevant-sensor score table for the selected multifunctional sponge and its source-matched tetO references"
+        )
     else:
         raise ValueError(f"retron_review: unknown aggregate plot id {selected_plot_id!r}")
 
@@ -1204,12 +1317,169 @@ def build_fingerprint_frame(
     summary_df: pd.DataFrame,
     *,
     score_metric: str = "S_AUC",
+    fingerprint_sponge: str | None = None,
+    control_name: str = "tetO",
 ) -> pd.DataFrame:
-    scores = aggregate_on_target_scores(summary_df, score_metric=score_metric)
-    if scores.empty:
-        return pd.DataFrame()
-    frame = scores[scores["sponge_family_size"].astype(str).isin({"bi", "tri", "quad"})].copy()
-    return frame.sort_values(["sponge", "sensor"], kind="stable").reset_index(drop=True)
+    empty_columns = [
+        "selected_sponge",
+        "sensor",
+        "stress_condition",
+        "source_experiment_id",
+        "source_label",
+        "comparison_group",
+        "sponge",
+        "sponge_family_size",
+        "value",
+    ]
+    required = {"sensor", "sponge", "metric", "value", "is_relevant_stress", "sponge_family_size"}
+    missing = sorted(required - set(summary_df.columns))
+    if missing:
+        raise ValueError(f"retron_review: summary dataframe is missing required columns: {missing}")
+    frame = summary_df.copy()
+    frame["metric"] = frame["metric"].astype(str)
+    frame["sponge"] = frame["sponge"].astype(str)
+    frame["sensor"] = frame["sensor"].astype(str)
+    frame["sponge_family_size"] = frame["sponge_family_size"].astype(str)
+    frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
+    frame["is_relevant_stress"] = _coerce_optional_bool_series(frame["is_relevant_stress"], label="is_relevant_stress")
+    if "relevant_sensor_pair" in frame.columns:
+        frame["relevant_sensor_pair"] = _coerce_optional_bool_series(
+            frame["relevant_sensor_pair"], label="relevant_sensor_pair"
+        )
+
+    sample_rows = frame[
+        (frame["metric"] == str(score_metric))
+        & frame["is_relevant_stress"].fillna(False)
+        & frame["sponge_family_size"].isin({"bi", "tri", "quad"})
+    ].copy()
+    if "relevant_sensor_pair" in sample_rows.columns:
+        sample_rows = sample_rows[sample_rows["relevant_sensor_pair"].fillna(False)]
+    available = sorted({str(value) for value in sample_rows["sponge"].dropna()}, key=_sponge_sort_key)
+    if not available:
+        return pd.DataFrame(columns=empty_columns)
+    selected_sponge = (
+        str(fingerprint_sponge)
+        if fingerprint_sponge is not None and str(fingerprint_sponge) in set(available)
+        else available[0]
+    )
+    sample_rows = sample_rows[sample_rows["sponge"] == selected_sponge].copy()
+    if sample_rows.empty:
+        return pd.DataFrame(columns=empty_columns)
+
+    source_group_columns = [
+        column
+        for column in (
+            "source_experiment_id",
+            "source_label",
+            "sensor",
+            "stress_condition",
+            "sponge",
+            "sponge_family_size",
+        )
+        if column in sample_rows.columns
+    ]
+    sample_rows = (
+        sample_rows.groupby(source_group_columns, dropna=False)["value"].mean().reset_index()
+        if source_group_columns
+        else sample_rows[["value"]].copy()
+    )
+
+    control_rows = frame[
+        (frame["metric"] == str(score_metric))
+        & frame["is_relevant_stress"].fillna(False)
+        & (frame["sponge"] == str(control_name))
+        & frame["sensor"].isin(sample_rows["sensor"].astype(str))
+    ].copy()
+    control_group_columns = [
+        column
+        for column in (
+            "source_experiment_id",
+            "source_label",
+            "sensor",
+            "stress_condition",
+            "sponge",
+            "sponge_family_size",
+        )
+        if column in control_rows.columns
+    ]
+    control_rows = (
+        control_rows.groupby(control_group_columns, dropna=False)["value"].mean().reset_index()
+        if control_group_columns
+        else control_rows[["value"]].copy()
+    )
+    control_rows = control_rows.rename(
+        columns={
+            "value": "control_value",
+            "sponge": "control_sponge",
+            "sponge_family_size": "control_family_size",
+        }
+    )
+
+    match_columns = [
+        column
+        for column in ("source_experiment_id", "source_label", "sensor", "stress_condition")
+        if column in sample_rows.columns and column in control_rows.columns
+    ]
+    paired_rows = sample_rows.merge(
+        control_rows[match_columns + ["control_value", "control_sponge", "control_family_size"]],
+        on=match_columns,
+        how="left",
+    )
+
+    long_rows: list[dict[str, Any]] = []
+    has_source_experiment_id = "source_experiment_id" in paired_rows.columns
+    has_source_label = "source_label" in paired_rows.columns
+    has_stress_condition = "stress_condition" in paired_rows.columns
+    has_sample_family_size = "sponge_family_size" in paired_rows.columns
+    has_control_sponge = "control_sponge" in paired_rows.columns
+    has_control_family_size = "control_family_size" in paired_rows.columns
+    for row in paired_rows.itertuples(index=False):
+        source_experiment_id = row.source_experiment_id if has_source_experiment_id else pd.NA
+        source_label = row.source_label if has_source_label else pd.NA
+        stress_condition = row.stress_condition if has_stress_condition else pd.NA
+        sensor = str(row.sensor)
+        sponge = str(row.sponge)
+        sponge_family_size = str(row.sponge_family_size) if has_sample_family_size else "other"
+        sample_value = float(row.value)
+        long_rows.append(
+            {
+                "selected_sponge": selected_sponge,
+                "sensor": sensor,
+                "stress_condition": stress_condition,
+                "source_experiment_id": source_experiment_id,
+                "source_label": source_label,
+                "comparison_group": "Selected sponge",
+                "sponge": sponge,
+                "sponge_family_size": sponge_family_size,
+                "value": sample_value,
+            }
+        )
+        control_value = getattr(row, "control_value", pd.NA)
+        if pd.notna(control_value):
+            long_rows.append(
+                {
+                    "selected_sponge": selected_sponge,
+                    "sensor": sensor,
+                    "stress_condition": stress_condition,
+                    "source_experiment_id": source_experiment_id,
+                    "source_label": source_label,
+                    "comparison_group": "tetO reference",
+                    "sponge": str(row.control_sponge) if has_control_sponge else str(control_name),
+                    "sponge_family_size": str(row.control_family_size) if has_control_family_size else "control",
+                    "value": float(control_value),
+                }
+            )
+
+    out = pd.DataFrame(long_rows)
+    if out.empty:
+        return out
+    sensor_order = sorted(out["sensor"].dropna().astype(str).unique())
+    sensor_order_map = {sensor: idx for idx, sensor in enumerate(sensor_order)}
+    out["__sensor_order"] = out["sensor"].map(sensor_order_map)
+    out["__group_order"] = out["comparison_group"].map({"tetO reference": 0, "Selected sponge": 1}).fillna(99)
+    order = ["__sensor_order", "__group_order", "source_experiment_id", "source_label", "sponge"]
+    out = out.sort_values(order, kind="stable").drop(columns=["__sensor_order", "__group_order"])
+    return out.reset_index(drop=True)
 
 
 def available_multifunctional_sponges(summary_df: pd.DataFrame) -> list[str]:
@@ -1261,6 +1531,50 @@ def aggregate_on_target_scores(summary_df: pd.DataFrame, *, score_metric: str) -
     if "n_experiments" not in grouped.columns:
         grouped["n_experiments"] = 1
     return grouped.sort_values(["sensor", "sponge"], kind="stable").reset_index(drop=True)
+
+
+def build_aggregate_pareto_frame(
+    summary_df: pd.DataFrame,
+    *,
+    score_metric: str = "S_AUC",
+    burden_metric: str = "D_growth_AUC",
+) -> pd.DataFrame:
+    scores = aggregate_on_target_scores(summary_df, score_metric=score_metric)
+    if scores.empty:
+        return pd.DataFrame(
+            columns=["sponge", "on_target", "burden", "leakiness", "sponge_family_size", "n_experiments"]
+        )
+    score_by_sponge = scores.groupby("sponge", dropna=False)["value"].mean().rename("on_target")
+    experiment_count = scores.groupby("sponge", dropna=False)["n_experiments"].max().rename("n_experiments")
+    family = scores.groupby("sponge", dropna=False)["sponge_family_size"].first()
+    leak_rows = summary_df[
+        (summary_df["metric"].astype(str) == "L_pre")
+        & (summary_df["sponge"].astype(str) != "tetO")
+        & _coerce_optional_bool_series(summary_df["relevant_sensor_pair"], label="relevant_sensor_pair").fillna(False)
+    ].copy()
+    leak_rows["value"] = pd.to_numeric(leak_rows["value"], errors="coerce").abs()
+    leakiness = leak_rows.groupby("sponge", dropna=False)["value"].mean().rename("leakiness")
+    burden_rows = summary_df[
+        (summary_df["metric"].astype(str) == burden_metric)
+        & (summary_df["sponge"].astype(str) != "tetO")
+        & _coerce_optional_bool_series(summary_df["relevant_sensor_pair"], label="relevant_sensor_pair").fillna(False)
+    ][["sponge", "value"]].copy()
+    burden_rows["value"] = pd.to_numeric(burden_rows["value"], errors="coerce")
+    burden = burden_rows.groupby("sponge", dropna=False)["value"].mean().rename("burden")
+    table = (
+        pd.concat([score_by_sponge, burden, leakiness, family.rename("sponge_family_size"), experiment_count], axis=1)
+        .reset_index()
+        .dropna(subset=["on_target", "burden"])
+    )
+    if table.empty:
+        return table
+    table["__family_order"] = table["sponge_family_size"].map(lambda value: _FAMILY_ORDER.get(str(value), 99))
+    table["__sponge_order"] = table["sponge"].map(_sponge_sort_key)
+    return (
+        table.sort_values(["__family_order", "__sponge_order"], kind="stable")
+        .drop(columns=["__family_order", "__sponge_order"])
+        .reset_index(drop=True)
+    )
 
 
 def _plot_guide_metadata(plot_id: str) -> dict[str, str]:
@@ -1378,6 +1692,85 @@ def _render_time_series_plot_spec(
     )
 
 
+def _render_retron_qc_plot_spec(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+) -> list[Any]:
+    with_cfg = dict(plot_spec.get("with") or {})
+    partition = dict(with_cfg.get("partition") or {})
+    df = _retron_qc_dataframe(plot_spec=plot_spec, datasets=datasets)
+    blanks = _optional_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="blanks")
+    preferred_channels = ["OD600", "YFP", "CFP", "YFP/CFP", "YFP/OD600", "CFP/OD600"]
+    available = set(df["channel"].astype(str).tolist()) if "channel" in df.columns else set()
+    channels = [channel for channel in preferred_channels if channel in available]
+    ylabel_map = {
+        "OD600": "OD600",
+        "YFP": "YFP",
+        "CFP": "CFP",
+        "YFP/OD600": "YFP/OD600",
+        "CFP/OD600": "CFP/OD600",
+        "YFP/CFP": "YFP/CFP",
+    }
+    return plot_time_series(
+        df=df,
+        blanks=blanks if blanks is not None else df.iloc[0:0].copy(),
+        output_dir=None,
+        x=str(with_cfg.get("x") or "time"),
+        xlabel=str(with_cfg.get("xlabel") or "Time from stress addition (h)"),
+        y=channels,
+        ylabel_map={key: value for key, value in ylabel_map.items() if key in channels},
+        hue_label_map=dict(with_cfg.get("hue_label_map") or {}),
+        hue=str(with_cfg.get("hue") or "treatment"),
+        channels=None,
+        subplots=None,
+        group_on=_normalize_optional_str(partition.get("by")),
+        pool_sets=partition.get("collection_items"),
+        pool_match=str(partition.get("match") or "exact"),
+        fig_kwargs=dict(with_cfg.get("fig") or {}),
+        add_sheet_line=True,
+        sheet_line_kwargs={"color": "#9E9E9E", "linestyle": "--", "linewidth": 0.9, "alpha": 0.95},
+        log_transform=with_cfg.get("log_transform", False),
+        time_window=_normalize_optional_float_list(with_cfg.get("time_window")),
+        palette_book=None,
+        ci=float(with_cfg.get("ci", 95.0)),
+        ci_alpha=float(with_cfg.get("ci_alpha", 0.15)),
+        ci_boot=int(with_cfg.get("ci_boot", 100)),
+        ci_seed=int(with_cfg.get("ci_seed", 0)),
+        legend_loc=str(with_cfg.get("legend_loc") or "upper left"),
+        show_replicates=bool(with_cfg.get("show_replicates", False)),
+        shared_legend=True,
+        filename=_normalize_optional_str(with_cfg.get("filename")),
+    )
+
+
+def _retron_qc_dataframe(
+    *,
+    plot_spec: Mapping[str, Any],
+    datasets: Mapping[str, pd.DataFrame],
+) -> pd.DataFrame:
+    ratio_df = _require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="df")
+    raw_df = datasets.get("overflow/df")
+    if raw_df is None or raw_df.empty or "channel" not in raw_df.columns:
+        return ratio_df
+    raw_channels = [channel for channel in raw_df["channel"].astype(str).unique().tolist() if "/" not in channel]
+    if not raw_channels:
+        return ratio_df
+    support_channels = (
+        [channel for channel in ratio_df["channel"].astype(str).unique().tolist() if "/" in channel]
+        if "channel" in ratio_df.columns
+        else []
+    )
+    frames = [raw_df[raw_df["channel"].astype(str).isin(raw_channels)].copy()]
+    if support_channels:
+        frames.append(ratio_df[ratio_df["channel"].astype(str).isin(support_channels)].copy())
+    all_columns = list(dict.fromkeys([*raw_df.columns.tolist(), *ratio_df.columns.tolist()]))
+    aligned = [frame.reindex(columns=all_columns) for frame in frames if not frame.empty]
+    if not aligned:
+        return ratio_df
+    return pd.concat(aligned, ignore_index=True)
+
+
 def _render_retron_trace_plot_spec(
     *,
     plot_spec: Mapping[str, Any],
@@ -1409,6 +1802,7 @@ def _render_retron_summary_plot_spec(
     with_cfg = dict(plot_spec.get("with") or {})
     return plot_retron_sponge_summary(
         summary=_require_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="summary"),
+        trace=_optional_plot_dataset(plot_spec=plot_spec, datasets=datasets, label="trace"),
         output_dir=None,
         view=str(with_cfg.get("view") or "heatmap"),
         title=str(with_cfg.get("title") or "Retron sponge summary"),
@@ -1480,6 +1874,7 @@ def _time_series_supporting_table(df: pd.DataFrame, *, channels: list[str] | Non
             "treatment",
             "time",
             "sheet_index",
+            "overflow",
             "channel",
             "value",
         )
@@ -1506,6 +1901,7 @@ def _trace_supporting_table(trace_df: pd.DataFrame, *, metrics: list[str]) -> pd
             "time_from_stress",
             "metric",
             "value",
+            "configured_max_post_stress_hours",
             "relevant_sensor_pair",
             "is_relevant_stress",
             "sponge_family_size",
@@ -1537,7 +1933,7 @@ def _summary_supporting_table(
     elif view_id == "stress_modulation":
         metric_names = [metric or "M_AUC"]
     elif view_id == "pareto":
-        metric_names = ["S_AUC", burden_metric or "T_growth_AUC", "L_pre"]
+        metric_names = ["S_AUC", burden_metric or "D_growth_AUC", "L_pre"]
     elif view_id == "heatmap":
         metric_names = ["D_AUC", "M_AUC", "S_AUC"]
     else:
@@ -1583,19 +1979,87 @@ def _build_specificity_matrix_figure(*, matrix: pd.DataFrame, score_metric: str)
         center=0.0,
         annot=True,
         fmt=".2f",
+        annot_kws={"fontsize": 8},
         cbar=True,
         square=True,
         linewidths=0.3,
         linecolor="#f0f0f0",
         cbar_kws={"label": _metric_axis_label(score_metric), "shrink": 0.80},
     )
-    axis.set_title("Relevant-stress specificity matrix", pad=12)
-    axis.set_xlabel("Sponge design")
+    axis.set_title("Relevant-stress target activity matrix", pad=10, fontweight="normal", fontsize=11)
+    axis.set_xlabel("Sponge design", fontsize=10)
     axis.set_ylabel("")
-    axis.tick_params(axis="x", labelrotation=45)
-    axis.tick_params(axis="y", labelrotation=0)
+    axis.tick_params(axis="x", labelrotation=45, labelsize=8)
+    axis.tick_params(axis="y", labelrotation=0, labelsize=9)
     for label in axis.get_xticklabels():
         label.set_ha("right")
+    return figure
+
+
+def _build_aggregate_pareto_figure(*, pareto_df: pd.DataFrame, score_metric: str) -> Any | None:
+    if pareto_df.empty:
+        return None
+    family_levels = _ordered_text(pareto_df["sponge_family_size"].fillna("other").astype(str).tolist())
+    color_values = sns.color_palette("colorblind", n_colors=max(1, len(family_levels)))
+    color_map = {family: color_values[idx % len(color_values)] for idx, family in enumerate(family_levels)}
+    sizes = 90.0 + 260.0 * pareto_df["leakiness"].fillna(0.0)
+    figure, axis = plt.subplots(figsize=(8.2, 6.0), constrained_layout=False)
+    axis.scatter(
+        pareto_df["on_target"],
+        pareto_df["burden"],
+        s=sizes,
+        c=[color_map.get(str(item), "#4c72b0") for item in pareto_df["sponge_family_size"].fillna("other")],
+        alpha=0.85,
+        edgecolors="#222222",
+        linewidths=0.5,
+        zorder=2,
+    )
+    annotate_points_smart(
+        ax=axis,
+        points=[(float(row["on_target"]), float(row["burden"])) for _, row in pareto_df.iterrows()],
+        labels=[str(row["sponge"]) for _, row in pareto_df.iterrows()],
+        text_kwargs={"fontsize": 8},
+    )
+    axis.axvline(0.0, color="#777777", linestyle=":", linewidth=1.0, zorder=1)
+    axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0, zorder=1)
+    axis.set_xlabel(f"Mean on-target effect ({score_metric})", fontsize=11)
+    axis.set_ylabel("Mean construct-specific growth burden (D_growth_AUC)", fontsize=11)
+    axis.tick_params(axis="both", labelsize=7)
+    with suppress(Exception):
+        axis.set_box_aspect(1.0)
+    legend_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label=family,
+            markerfacecolor=color_map[family],
+            markeredgecolor="#222222",
+            markersize=7,
+        )
+        for family in family_levels
+    ]
+    if legend_handles:
+        axis.legend(
+            handles=legend_handles,
+            frameon=False,
+            title=None,
+            loc="center left",
+            bbox_to_anchor=(1.01, 0.5),
+            borderaxespad=0.0,
+        )
+    figure.suptitle("Aggregate pareto ranking", y=0.97, x=0.5, ha="center", fontweight="normal", fontsize=13)
+    figure.text(
+        0.5,
+        0.93,
+        "Mean on-target score versus mean construct-specific burden across the review set; point size encodes |L_pre|.",
+        ha="center",
+        va="top",
+        fontsize=9,
+        color="#333333",
+    )
+    figure.subplots_adjust(top=0.85, right=0.79, left=0.12, bottom=0.12)
     return figure
 
 
@@ -1617,7 +2081,19 @@ def _build_architecture_figure(
         figsize=(5.3 * len(sensors), 4.9),
         constrained_layout=False,
         squeeze=False,
+        sharex=True,
         sharey=True,
+    )
+    x_limits = shared_numeric_limits(
+        architecture_df[architecture_x].to_numpy(dtype=float, copy=False),
+        pad_fraction=0.10,
+        min_span=1.0,
+    )
+    y_limits = shared_numeric_limits(
+        architecture_df["value"].to_numpy(dtype=float, copy=False),
+        center=0.0,
+        pad_fraction=0.10,
+        min_span=0.10,
     )
     for axis, sensor in zip(axes[0], sensors, strict=True):
         sensor_df = architecture_df[architecture_df["sensor"].astype(str) == sensor].copy()
@@ -1639,7 +2115,9 @@ def _build_architecture_figure(
             text_kwargs={"fontsize": 8},
         )
         axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
-        axis.set_title(str(sensor), pad=8)
+        axis.set_xlim(x_limits)
+        axis.set_ylim(y_limits)
+        axis.set_title(str(sensor), pad=8, fontweight="normal")
         axis.set_xlabel("")
         axis.set_ylabel("")
     handles, labels = axes[0][0].get_legend_handles_labels()
@@ -1683,8 +2161,20 @@ def _build_expected_vs_observed_figure(
         figsize=(5.3 * len(sensors), 5.1),
         constrained_layout=False,
         squeeze=False,
-        sharex=False,
-        sharey=False,
+        sharex=True,
+        sharey=True,
+    )
+    combined_limits = shared_numeric_limits(
+        pd.concat(
+            [
+                expected_vs_observed_df[expected_mode],
+                expected_vs_observed_df["observed"],
+            ],
+            ignore_index=True,
+        ).to_numpy(dtype=float, copy=False),
+        center=0.0,
+        pad_fraction=0.10,
+        min_span=0.10,
     )
     for axis, sensor in zip(axes[0], sensors, strict=True):
         sensor_df = expected_vs_observed_df[expected_vs_observed_df["sensor"].astype(str) == sensor].copy()
@@ -1699,18 +2189,23 @@ def _build_expected_vs_observed_figure(
             linewidth=0.45,
             ax=axis,
         )
-        min_value = min(float(sensor_df[expected_mode].min()), float(sensor_df["observed"].min()))
-        max_value = max(float(sensor_df[expected_mode].max()), float(sensor_df["observed"].max()))
-        axis.plot([min_value, max_value], [min_value, max_value], color="#777777", linestyle=":", linewidth=1.0)
+        axis.plot(
+            [combined_limits[0], combined_limits[1]],
+            [combined_limits[0], combined_limits[1]],
+            color="#777777",
+            linestyle=":",
+            linewidth=1.0,
+        )
         annotate_points_smart(
             ax=axis,
             points=[(float(row[expected_mode]), float(row["observed"])) for _, row in sensor_df.iterrows()],
             labels=[str(row["sponge"]) for _, row in sensor_df.iterrows()],
             text_kwargs={"fontsize": 8},
         )
+        axis.set_xlim(combined_limits)
+        axis.set_ylim(combined_limits)
         axis.set_aspect("equal", adjustable="box")
-        axis.margins(0.08)
-        axis.set_title(str(sensor), pad=8)
+        axis.set_title(str(sensor), pad=8, fontweight="normal")
         axis.set_xlabel("")
         axis.set_ylabel("")
     handles, labels = axes[0][0].get_legend_handles_labels()
@@ -1743,45 +2238,123 @@ def _build_fingerprint_figure(
 ) -> Any | None:
     if fingerprint_df.empty:
         return None
-
-    sponges = sorted(fingerprint_df["sponge"].dropna().astype(str).unique().tolist(), key=_sponge_sort_key)
-    cols = min(3, max(1, len(sponges)))
-    rows = max(1, math.ceil(len(sponges) / cols))
+    selected_sponge = str(fingerprint_df["selected_sponge"].dropna().astype(str).iloc[0])
     sensor_levels = sorted(fingerprint_df["sensor"].dropna().astype(str).unique().tolist())
-    sensor_palette = sns.color_palette("colorblind", n_colors=max(1, len(sensor_levels)))
-    sensor_color_map = {sensor: sensor_palette[idx % len(sensor_palette)] for idx, sensor in enumerate(sensor_levels)}
-    figure, axes = plt.subplots(
-        rows,
-        cols,
-        figsize=(4.1 * cols, 3.7 * rows),
-        constrained_layout=False,
-        squeeze=False,
-        sharey=True,
+    comparison_order = [
+        group for group in ("tetO reference", "Selected sponge") if group in set(fingerprint_df["comparison_group"])
+    ]
+    stats = (
+        fingerprint_df.groupby(["sensor", "comparison_group"], dropna=False)["value"]
+        .agg(mean="mean", sd="std", n="size")
+        .reset_index()
     )
-    axes_flat = axes.ravel()
-    for axis, sponge in zip(axes_flat, sponges, strict=False):
-        sponge_df = fingerprint_df[fingerprint_df["sponge"].astype(str) == sponge].copy()
-        sns.barplot(
-            data=sponge_df,
-            x="sensor",
-            y="value",
-            order=sensor_levels,
-            palette=[sensor_color_map[sensor] for sensor in sensor_levels],
-            ax=axis,
+    y_limits = shared_numeric_limits(
+        fingerprint_df["value"].to_numpy(dtype=float, copy=False),
+        center=0.0,
+        pad_fraction=0.12,
+        min_span=0.10,
+    )
+    comparison_colors = {
+        "tetO reference": "#f3ebe7",
+        "Selected sponge": "#4c72b0",
+    }
+    edge_colors = {
+        "tetO reference": "#9b7d72",
+        "Selected sponge": "#1f3552",
+    }
+    point_facecolors = {
+        "tetO reference": "#ffffff",
+        "Selected sponge": "#4c72b0",
+    }
+    source_counts = (
+        fingerprint_df.groupby(["sensor", "comparison_group"], dropna=False)["value"]
+        .size()
+        .reset_index(name="n_sources")
+    )
+    max_sources = int(source_counts["n_sources"].max()) if not source_counts.empty else 0
+    width = 0.34
+    offsets = {group: ((idx - (len(comparison_order) - 1) / 2.0) * width) for idx, group in enumerate(comparison_order)}
+    figure, axis = plt.subplots(
+        figsize=(max(6.0, 1.8 + 1.45 * len(sensor_levels)), 4.9),
+        constrained_layout=False,
+    )
+    x_positions = {sensor: float(idx) for idx, sensor in enumerate(sensor_levels)}
+    for group in comparison_order:
+        group_stats = stats[stats["comparison_group"].astype(str) == group].copy()
+        group_stats = group_stats.set_index("sensor").reindex(sensor_levels).reset_index()
+        x_values = [x_positions[str(sensor)] + offsets[group] for sensor in group_stats["sensor"].astype(str)]
+        mean_values = pd.to_numeric(group_stats["mean"], errors="coerce").to_numpy(dtype=float)
+        error_values = pd.to_numeric(group_stats["sd"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+        axis.bar(
+            x_values,
+            mean_values,
+            width=width * 0.92,
+            color=comparison_colors.get(group, "#4c72b0"),
+            edgecolor=edge_colors.get(group, "#222222"),
+            linewidth=0.9,
+            label=group,
+            zorder=2,
         )
-        axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0)
-        axis.set_title(str(sponge), pad=8)
-        axis.set_xlabel("")
-        axis.set_ylabel("")
-        axis.tick_params(axis="x", labelrotation=30)
-        for label in axis.get_xticklabels():
-            label.set_ha("right")
-        with suppress(Exception):
-            axis.set_box_aspect(1.0)
-    for axis in axes_flat[len(sponges) :]:
-        axis.set_visible(False)
-    figure.supylabel(_metric_axis_label(score_metric), x=0.02)
-    figure.subplots_adjust(bottom=0.16, left=0.10, top=0.90, wspace=0.28, hspace=0.34)
+        replicate_counts = pd.to_numeric(group_stats["n"], errors="coerce").fillna(0).to_numpy(dtype=int)
+        error_mask = (replicate_counts > 1) & np.isfinite(error_values)
+        if error_mask.any():
+            axis.errorbar(
+                np.asarray(x_values, dtype=float)[error_mask],
+                mean_values[error_mask],
+                yerr=error_values[error_mask],
+                fmt="none",
+                ecolor=edge_colors.get(group, "#222222"),
+                elinewidth=1.0,
+                capsize=3.0,
+                capthick=1.0,
+                zorder=3,
+            )
+    for group in comparison_order:
+        group_points = fingerprint_df[fingerprint_df["comparison_group"].astype(str) == group].copy()
+        for sensor in sensor_levels:
+            sensor_points = group_points[group_points["sensor"].astype(str) == sensor].copy()
+            if sensor_points.empty:
+                continue
+            count = len(sensor_points)
+            jitters = [0.0] if count == 1 else np.linspace(-0.06, 0.06, count).tolist()
+            x_center = x_positions[str(sensor)] + offsets[group]
+            for jitter, (_, point_row) in zip(jitters, sensor_points.iterrows(), strict=False):
+                axis.scatter(
+                    x_center + float(jitter),
+                    float(point_row["value"]),
+                    s=28,
+                    facecolor=point_facecolors.get(group, "#4c72b0"),
+                    edgecolor=edge_colors.get(group, "#222222"),
+                    linewidth=0.8,
+                    zorder=4,
+                )
+    axis.axhline(0.0, color="#777777", linestyle=":", linewidth=1.0, zorder=1)
+    axis.set_xlim(-0.55, max(0.55, len(sensor_levels) - 0.45))
+    axis.set_ylim(y_limits)
+    axis.set_xticks([x_positions[sensor] for sensor in sensor_levels])
+    axis.set_xticklabels(sensor_levels)
+    axis.set_xlabel("Relevant sensor arm", fontsize=11)
+    axis.set_ylabel(_metric_axis_label(score_metric), fontsize=11)
+    axis.tick_params(axis="x", labelsize=9)
+    axis.tick_params(axis="y", labelsize=8)
+    axis.grid(axis="y", color="#d9d9d9", linewidth=0.6, alpha=0.50)
+    axis.set_title(selected_sponge, pad=10, fontweight="normal", fontsize=11)
+    axis.legend(frameon=False, title=None, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0)
+    figure.suptitle("Sponge fingerprint", y=0.97, x=0.5, ha="center", fontweight="normal", fontsize=13)
+    figure.text(
+        0.5,
+        0.92,
+        (
+            "Bars show means across source experiments; points show source-level replicates against the matched tetO reference."
+            if max_sources > 1
+            else "Bars show the single available source experiment per arm (n=1 in this view); points mark that source-level estimate against the matched tetO reference."
+        ),
+        ha="center",
+        va="top",
+        fontsize=9,
+        color="#333333",
+    )
+    figure.subplots_adjust(bottom=0.16, left=0.11, right=0.80, top=0.84)
     return figure
 
 
@@ -1790,7 +2363,7 @@ def _metric_axis_label(metric: str) -> str:
         "S_AUC": "Scaled on-target effect (S_AUC)",
         "O_AUC": "Sign-corrected effect (O_AUC)",
         "C": "Matched-control-normalized ratio response (C)",
-        "D": "Induced sponge effect (D)",
+        "D": "IPTG-state effect (D)",
         "M": "Stress modulation (M)",
     }
     return labels.get(str(metric), f"Retron sponge score ({metric})")

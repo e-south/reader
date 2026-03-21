@@ -21,6 +21,7 @@ def _():
         load_cached_parquet_frame,
         load_retron_semantic_maps_from_config,
         render_retron_experiment_plot_cached,
+        retron_notebook_table_preview,
         retron_assay_context_rows,
         retron_figure_coverage_rows,
         retron_figure_label,
@@ -28,6 +29,7 @@ def _():
         retron_plot_guide_rows,
         retron_plot_rendered_files,
         retron_sensor_context_rows,
+        retron_visible_plot_specs,
         retron_table_kwargs,
         retron_transform_ladder_rows,
     )
@@ -47,6 +49,7 @@ def _():
         load_retron_semantic_maps_from_config,
         mo,
         render_retron_experiment_plot_cached,
+        retron_notebook_table_preview,
         retron_assay_context_rows,
         retron_figure_coverage_rows,
         retron_figure_label,
@@ -54,6 +57,7 @@ def _():
         retron_plot_guide_rows,
         retron_plot_rendered_files,
         retron_sensor_context_rows,
+        retron_visible_plot_specs,
         retron_table_kwargs,
         retron_transform_ladder_rows,
     )
@@ -135,10 +139,11 @@ def _(
     retron_scope_protocol_id,
     retron_scope_workbench,
     retron_sensor_context_rows,
+    retron_visible_plot_specs,
     retron_table_kwargs,
     retron_transform_ladder_rows,
 ):
-    retron_scope_plot_specs = __PLOT_SPECS__
+    retron_scope_plot_specs = retron_visible_plot_specs(__PLOT_SPECS__)
     retron_scope_relevant_map, retron_scope_target_map = load_retron_semantic_maps_from_config(
         retron_scope_config_path
     )
@@ -228,12 +233,6 @@ def _(
                 {
                     "Gist": mo.vstack(
                         [
-                            mo.md(
-                                "### What this notebook contains\n"
-                                "One experiment-scoped review surface for a 2x2 stress-by-IPTG "
-                                "retron sponge screen. The path is: raw QC, assay kinetics, "
-                                "then ranking views."
-                            ),
                             mo.ui.table(
                                 retron_scope_overview_rows,
                                 **retron_table_kwargs(
@@ -253,7 +252,7 @@ def _(
                             mo.ui.table(
                                 retron_assay_context_rows(),
                                 **retron_table_kwargs(
-                                    page_size=4,
+                                    page_size=len(retron_assay_context_rows()),
                                     pagination=False,
                                     wrapped_columns=["Details"],
                                 ),
@@ -467,6 +466,7 @@ def _(retron_scope_figure_selector, retron_scope_plot_result):
 @app.cell(hide_code=True)
 def _(
     filter_supporting_table_for_figure,
+    retron_notebook_table_preview,
     retron_scope_plot_result,
     retron_scope_selected_filename,
 ):
@@ -478,7 +478,11 @@ def _(
         if retron_scope_plot_result is not None
         else None
     )
-    return (retron_scope_supporting_table_view,)
+    retron_scope_supporting_table_preview = retron_notebook_table_preview(
+        retron_scope_supporting_table_view,
+        max_rows=500,
+    )
+    return retron_scope_supporting_table_preview, retron_scope_supporting_table_view
 
 
 @app.cell(hide_code=True)
@@ -586,6 +590,7 @@ def _(
     retron_scope_plot_selector,
     retron_scope_selected_filename,
     retron_scope_selected_figure,
+    retron_scope_supporting_table_preview,
     retron_scope_supporting_table_view,
     retron_scope_export_panel,
     retron_table_kwargs,
@@ -599,7 +604,13 @@ def _(
         if retron_scope_figure_selector is not None:
             retron_scope_control_items.append(retron_scope_figure_selector)
         retron_scope_review_blocks.append(
-            mo.vstack(retron_scope_control_items, gap=0.35)
+            mo.hstack(
+                retron_scope_control_items,
+                gap=0.75,
+                align="start",
+                justify="start",
+                wrap=True,
+            )
         )
         if retron_scope_plot_dataset_errors:
             retron_scope_review_blocks.append(
@@ -648,7 +659,7 @@ def _(
                 retron_scope_review_blocks.append(retron_scope_export_panel)
             retron_scope_review_blocks.append(
                 mo.ui.table(
-                    retron_scope_supporting_table_view,
+                    retron_scope_supporting_table_preview,
                     **retron_table_kwargs(
                         page_size=12,
                         max_height=420,

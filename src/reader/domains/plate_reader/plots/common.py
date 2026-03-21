@@ -119,6 +119,74 @@ def bootstrap_mean_interval(
     return mean, float(lower), float(upper)
 
 
+def bootstrap_linear_interval(
+    groups: Iterable[np.ndarray | list[float] | tuple[float, ...]],
+    *,
+    coefficients: Iterable[float],
+    ci: float,
+    ci_boot: int,
+    rng: np.random.Generator,
+) -> tuple[float, float, float]:
+    finite_groups: list[np.ndarray] = []
+    coeffs = [float(value) for value in coefficients]
+    for group in groups:
+        values = np.asarray(group, dtype=float)
+        values = values[np.isfinite(values)]
+        if values.size == 0:
+            return (math.nan, math.nan, math.nan)
+        finite_groups.append(values)
+    if len(finite_groups) != len(coeffs):
+        raise ValueError("bootstrap_linear_interval: groups and coefficients must have the same length")
+
+    mean = float(sum(coeff * values.mean() for coeff, values in zip(coeffs, finite_groups, strict=True)))
+    if float(ci) <= 0 or all(values.size <= 1 for values in finite_groups):
+        return mean, mean, mean
+    alpha = max(0.0, min(0.5, (100.0 - float(ci)) / 200.0))
+    if alpha == 0.0:
+        return mean, mean, mean
+
+    draws = max(1, int(ci_boot))
+    boot_values = np.zeros(draws, dtype=float)
+    for coeff, values in zip(coeffs, finite_groups, strict=True):
+        if values.size == 1:
+            boot_values += coeff * float(values[0])
+            continue
+        sample_index = rng.integers(0, values.size, size=(draws, values.size))
+        boot_values += coeff * values[sample_index].mean(axis=1)
+    lower, upper = np.quantile(boot_values, [alpha, 1.0 - alpha])
+    return mean, float(lower), float(upper)
+
+
+def shared_numeric_limits(
+    values: Iterable[object],
+    *,
+    center: float | None = None,
+    pad_fraction: float = 0.08,
+    min_span: float = 1e-6,
+) -> tuple[float, float]:
+    finite = np.asarray(list(values), dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        raise ValueError("shared_numeric_limits: expected at least one finite value")
+
+    lower = float(finite.min())
+    upper = float(finite.max())
+    span_floor = max(float(min_span), 1e-12)
+    pad_fraction = max(0.0, float(pad_fraction))
+
+    if center is not None:
+        midpoint = float(center)
+        half_span = max(abs(lower - midpoint), abs(upper - midpoint), span_floor / 2.0)
+        half_span *= 1.0 + pad_fraction
+        return midpoint - half_span, midpoint + half_span
+
+    span = max(upper - lower, span_floor)
+    pad = span * pad_fraction
+    midpoint = (lower + upper) / 2.0
+    half_span = max(span / 2.0 + pad, span_floor / 2.0)
+    return midpoint - half_span, midpoint + half_span
+
+
 @lru_cache(maxsize=4)
 def _ordered_bootstrap_indices(size: int) -> np.ndarray:
     if size <= 0:
@@ -226,11 +294,13 @@ def _bbox_outside_axes_penalty(bbox: Any, axes_bbox: Any) -> float:
 __all__ = [
     "alias_column",
     "annotate_points_smart",
+    "bootstrap_linear_interval",
     "best_subplot_grid",
     "bootstrap_mean_interval",
     "colors_for",
     "emit_plot_figure",
     "pretty_name",
     "require_columns",
+    "shared_numeric_limits",
     "warn_if_empty",
 ]

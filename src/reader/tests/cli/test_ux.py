@@ -891,6 +891,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
         "baseline_shifted_kinetics",
         "matched_control_kinetics",
         "induced_effect_kinetics",
+        "absolute_effect_kinetics",
         "interaction_summary",
         "library_heatmaps",
         "stress_modulation_scores",
@@ -912,6 +913,8 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
     assert metrics["D_AUC"]["execution"]["status"] == "compiled"
     assert metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert metrics["D_abs_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
     assert program["controls"][0]["execution"]["status"] == "compiled"
     assert program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_AUC"
@@ -1044,20 +1047,34 @@ def test_plate_reader_retron_sponge_compiler_derives_dual_reporter_ingest_channe
     raw_kinetics = next(step for step in plan.plots if step.id == "raw_kinetics")
     support_kinetics = next(step for step in plan.plots if step.id == "support_kinetics")
     control_burden = next(step for step in plan.plots if step.id == "control_burden_panel")
+    absolute_effect = next(step for step in plan.plots if step.id == "absolute_effect_kinetics")
     interaction_summary = next(step for step in plan.plots if step.id == "interaction_summary")
+    library_heatmaps = next(step for step in plan.plots if step.id == "library_heatmaps")
+    stress_modulation = next(step for step in plan.plots if step.id == "stress_modulation_scores")
+    pareto_ranking = next(step for step in plan.plots if step.id == "pareto_ranking")
     summary_export = next(step for step in plan.exports if step.id == "semantic_summary_table")
     trace_export = next(step for step in plan.exports if step.id == "semantic_trace_table")
 
     assert ingest.with_["channels"] == ["OD600", "CFP", "YFP"]
     assert semantic_metrics.with_["measurement_channel"] == "YFP/CFP"
+    assert semantic_metrics.reads["df"].record_id == "ratio_yfp_cfp/df"
     assert raw_kinetics.with_["ylabel_map"] == {"OD600": "OD600", "CFP": "CFP", "YFP": "YFP"}
     assert support_kinetics.with_["y"] == ["YFP/OD600", "CFP/OD600"]
     assert support_kinetics.with_["ylabel_map"] == {"YFP/OD600": "YFP/OD600", "CFP/OD600": "CFP/OD600"}
     assert control_burden.with_["metrics"] == ["R", "mu"]
     assert control_burden.with_["metric_label_map"] == {"R": "log2(YFP/CFP)", "mu": "d ln(OD600) / dt"}
     assert control_burden.reads["trace"].record_id == "semantic_metrics/trace"
+    assert absolute_effect.with_["metrics"] == ["D_abs"]
     assert interaction_summary.with_["metric"] == "C_AUC"
     assert interaction_summary.reads["summary"].record_id == "semantic_metrics/summary"
+    assert interaction_summary.reads["trace"].record_id == "semantic_metrics/trace"
+    assert library_heatmaps.reads["summary"].record_id == "semantic_metrics/summary"
+    assert library_heatmaps.reads["trace"].record_id == "semantic_metrics/trace"
+    assert stress_modulation.reads["summary"].record_id == "semantic_metrics/summary"
+    assert stress_modulation.reads["trace"].record_id == "semantic_metrics/trace"
+    assert pareto_ranking.reads["summary"].record_id == "semantic_metrics/summary"
+    assert pareto_ranking.reads["trace"].record_id == "semantic_metrics/trace"
+    assert pareto_ranking.with_["burden_metric"] == "D_growth_AUC"
     assert summary_export.reads["df"].record_id == "semantic_metrics/summary"
     assert summary_export.with_["path"] == "retron/semantic_summary.csv"
     assert trace_export.reads["df"].record_id == "semantic_metrics/trace"

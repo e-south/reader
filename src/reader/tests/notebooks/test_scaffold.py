@@ -162,7 +162,7 @@ def test_retron_notebook_scaffold_surfaces_plot_portfolio_and_semantic_focus(tmp
     content = nb_path.read_text(encoding="utf-8")
     assert "Retron sponge screen review" in content
     assert 'app = marimo.App(width="medium")' in content
-    assert "What this notebook contains" in content
+    assert "What this notebook contains" not in content
     assert "Assay contract" in content
     assert "Plot map" in content
     assert "Transforms" in content
@@ -170,7 +170,10 @@ def test_retron_notebook_scaffold_surfaces_plot_portfolio_and_semantic_focus(tmp
     assert "Compiled plot views and exports" in content
     assert '"Analysis exports"' in content
     assert 'label="Plot view"' in content
+    assert "retron_scope_control_items" in content
+    assert "mo.hstack(" in content
     assert "baseline_shifted_kinetics" in content
+    assert "retron_visible_plot_specs" in content
     assert "Math / transform" in content
     assert "mo.ui.data_explorer" not in content
     assert "## Semantic table focus" not in content
@@ -199,16 +202,24 @@ def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(t
     content = nb_path.read_text(encoding="utf-8")
     assert "Retron sponge aggregate review" in content
     assert 'app = marimo.App(width="medium")' in content
-    assert "What this notebook contains" in content
+    assert "What this notebook contains" not in content
     assert "Source experiments" in content
     assert "Workflow map" in content
     assert "Aggregate views" in content
     assert "Source experiment" in content
     assert "Source plot" in content
+    assert "retron_source_control_panel = mo.hstack" in content
+    assert "retron_aggregate_control_panel = mo.hstack" in content
+    assert "retron_source_selector_rows(retron_aggregate_bundle)" in content
+    assert "wrap=False" in content
+    assert 'label="Cross-sensor score"' in content
+    assert 'label="Fingerprint sponge"' in content
+    assert content.count("full_width=False") >= 5
     assert "load_retron_source_surface" in content
     assert "retron_figure_coverage_rows" in content
     assert "retron_aggregate_figure_rows" in content
     assert "retron_aggregate_plot_rows" in content
+    assert "mo.state({})" in content
     assert "expected_vs_observed" in content
     assert "review_manifest" in content
     assert "mo.ui.data_explorer" not in content

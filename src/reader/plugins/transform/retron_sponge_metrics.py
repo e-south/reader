@@ -44,6 +44,7 @@ class RetronSpongeMetricsCfg(PluginConfig):
     no_stress_label: str = "H2O"
     stress_time_zero_policy: Literal["explicit", "largest_gap_midpoint"] = "largest_gap_midpoint"
     stress_time_zero_h: float | None = None
+    max_post_stress_hours: float | None = Field(default=4.0, gt=0)
     pre_reads: int = 3
     endpoint_reads: int = 3
     states: SpongeStatesCfg = Field(default_factory=SpongeStatesCfg)

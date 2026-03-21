@@ -11,9 +11,11 @@ from reader.contracts import builtin_contract_catalog
 from reader.domains.plate_reader.plots.common import annotate_points_smart
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.notebooks.retron_review import (
+    RetronReviewBundle,
     RetronReviewSource,
     build_architecture_frame,
     build_expected_vs_observed_frame,
+    build_fingerprint_frame,
     build_label_value_options,
     build_specificity_matrix,
     contextualize_retron_plot_copy,
@@ -28,6 +30,7 @@ from reader.workbench.notebooks.retron_review import (
     render_retron_experiment_plot_cached,
     retron_figure_coverage_rows,
     retron_plot_rendered_files,
+    retron_source_selector_rows,
     retron_source_surface_overview_rows,
     retron_table_kwargs,
 )
@@ -277,12 +280,58 @@ def test_retron_review_bundle_resolves_experiment_sources_relative_to_source_roo
     )
 
 
+def test_retron_source_selector_rows_only_expand_duplicate_labels() -> None:
+    dummy_summary = Path("outputs/exports/retron/semantic_summary.csv")
+    dummy_trace = Path("outputs/exports/retron/semantic_trace.csv")
+    bundle = RetronReviewBundle(
+        manifest_path=Path("inputs/review_manifest.yaml"),
+        sources=(
+            RetronReviewSource(
+                label="mono",
+                experiment_id="exp_a",
+                experiment_root=None,
+                config_path=None,
+                summary_path=dummy_summary,
+                trace_path=dummy_trace,
+            ),
+            RetronReviewSource(
+                label="mono",
+                experiment_id="exp_b",
+                experiment_root=None,
+                config_path=None,
+                summary_path=dummy_summary,
+                trace_path=dummy_trace,
+            ),
+            RetronReviewSource(
+                label="combo",
+                experiment_id="exp_c",
+                experiment_root=None,
+                config_path=None,
+                summary_path=dummy_summary,
+                trace_path=dummy_trace,
+            ),
+        ),
+        summary_df=pd.DataFrame(),
+        trace_df=pd.DataFrame(),
+        relevant_stress_map={},
+        sensor_target_map={},
+    )
+
+    rows = retron_source_selector_rows(bundle)
+
+    assert rows == [
+        {"Selector label": "mono • exp_a", "Index": 0},
+        {"Selector label": "mono • exp_b", "Index": 1},
+        {"Selector label": "combo", "Index": 2},
+    ]
+
+
 def test_retron_figure_coverage_rows_call_out_cross_run_and_follow_on_views() -> None:
     coverage = retron_figure_coverage_rows()
     by_figure = {row["Figure"]: row for row in coverage}
 
-    assert by_figure["Figure 13 — Specificity matrix"]["Coverage"] == "Exact aggregate notebook figure"
-    assert by_figure["Figure 19 — Plate-position heatmaps"]["Coverage"] == "Not first-class compiled yet"
+    assert by_figure["Figure 12 — Target activity matrix"]["Coverage"] == "Exact aggregate notebook figure"
+    assert by_figure["Figure 18 — Plate-position heatmaps"]["Coverage"] == "Not first-class compiled yet"
 
 
 def test_load_notebook_workbench_context_uses_builtin_protocol_catalog(tmp_path: Path) -> None:
@@ -399,10 +448,21 @@ def test_load_retron_source_surface_reads_scoped_plot_catalog_and_record_paths(t
 
     surface = load_retron_source_surface(source)
     overview_rows = retron_source_surface_overview_rows(source, surface)
+    selector_labels = {row["Plot id"]: row["Selector label"] for row in surface.plot_selector_rows}
 
     assert surface.experiment_title == "Source surface test"
     assert surface.protocol_id == "plate_reader/retron_sponge_screen"
     assert any(row["Plot id"] == "raw_kinetics" for row in surface.plot_catalog_rows)
+    assert not any(row["Plot id"] == "support_kinetics" for row in surface.plot_selector_rows)
+    assert not any(row["Plot id"] == "support_kinetics" for row in surface.plot_catalog_rows)
+    assert not any(row["Plot id"] == "stress_modulation_scores" for row in surface.plot_selector_rows)
+    assert not any(row["Plot id"] == "stress_modulation_scores" for row in surface.plot_catalog_rows)
+    assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_selector_rows)
+    assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_catalog_rows)
+    assert selector_labels["raw_kinetics"] == "QC traces"
+    assert selector_labels["matched_control_kinetics"] == "[C] tetO-subtracted kinetics"
+    assert selector_labels["induced_effect_kinetics"] == "[D] IPTG-state effect"
+    assert selector_labels["absolute_effect_kinetics"] == "[D_abs] Absolute matched-control effect"
     assert any(record_id == "semantic_metrics/trace" for record_id, _ in surface.record_paths)
     assert any(record_id == "ratio_yfp_od600/df" for record_id, _ in surface.record_paths)
     assert overview_rows[0] == {"Field": "Source label", "Value": "mono"}
@@ -512,6 +572,63 @@ def test_contextualize_retron_plot_copy_replaces_generic_relevant_stress_text() 
     assert contextual["meaning"] == "Compares 3% EtOH against H2O for the selected sensor."
 
 
+def test_render_retron_experiment_plot_uses_explicit_iptg_state_wording_for_d_metric() -> None:
+    rows: list[dict[str, object]] = []
+    for time_value in (0.0, 1.0):
+        for iptg, base in (("-IPTG", 0.2), ("+IPTG", -0.4)):
+            for idx, delta in enumerate((0.00, 0.05), start=1):
+                rows.append(
+                    {
+                        "sensor": "spyP",
+                        "sponge": "CpxR",
+                        "stress_condition": "3% EtOH",
+                        "time_from_stress": time_value,
+                        "metric": "C",
+                        "value": base + time_value + delta,
+                        "IPTG": iptg,
+                        "replicate_id": f"r{idx}",
+                        "is_relevant_stress": True,
+                        "relevant_sensor_pair": True,
+                        "expected_decoy_sign": -1,
+                    }
+                )
+        rows.append(
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "stress_condition": "3% EtOH",
+                "time_from_stress": time_value,
+                "metric": "D",
+                "value": -0.6,
+                "IPTG": pd.NA,
+                "replicate_id": pd.NA,
+                "is_relevant_stress": True,
+                "relevant_sensor_pair": True,
+                "expected_decoy_sign": -1,
+            }
+        )
+    trace = pd.DataFrame(rows)
+    plot_spec = {
+        "id": "induced_effect_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {"trace": {"record": "semantic_metrics/trace"}},
+        "with": {
+            "metrics": ["D"],
+            "title": "IPTG-state effect kinetics",
+            "filename": "induced_effect_kinetics",
+            "relevant_only": True,
+        },
+    }
+
+    result = render_retron_experiment_plot(plot_spec, datasets={"semantic_metrics/trace": trace})
+
+    assert result.title == "IPTG-state effect kinetics"
+    assert "+IPTG versus -IPTG contrast evolve" in result.question
+    assert "IPTG is present from the start of the assay" in result.meaning
+    assert set(result.supporting_table["metric"]) == {"D"}
+    plt.close(result.figures[0].fig)
+
+
 def test_render_retron_experiment_plot_uses_descriptive_time_series_axis_labels() -> None:
     tidy = pd.DataFrame(
         [
@@ -598,15 +715,141 @@ def test_render_retron_experiment_plot_uses_descriptive_time_series_axis_labels(
 
     result = render_retron_experiment_plot(plot_spec, datasets={"ratio_yfp_od600/df": tidy})
 
-    assert result.title == "Raw kinetics QC"
+    assert result.title == "QC traces"
     assert len(result.figures) == 1
-    axis_labels = [axis.get_ylabel() for axis in result.figures[0].fig.axes[:3]]
-    assert axis_labels == [
-        "Biomass proxy (OD600)",
-        "Reference fluorescence (CFP)",
-        "Reporter fluorescence (YFP)",
-    ]
+    axis_labels = [axis.get_ylabel() for axis in result.figures[0].fig.axes if axis.get_visible()]
+    assert axis_labels == ["OD600", "YFP", "CFP"]
     assert result.figures[0].fig.axes[0].get_xlabel() == "Time from stress addition (h)"
+    plt.close(result.figures[0].fig)
+
+
+def test_render_retron_experiment_plot_prefers_overflow_surface_for_raw_cfp_rows() -> None:
+    overflow_df = pd.DataFrame(
+        [
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "overflow": False,
+                "channel": "OD600",
+                "value": 0.1,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "overflow": False,
+                "channel": "OD600",
+                "value": 0.2,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "overflow": False,
+                "channel": "CFP",
+                "value": 8000.0,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "overflow": True,
+                "channel": "CFP",
+                "value": 9000.0,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 0.0,
+                "sheet_index": 0,
+                "overflow": False,
+                "channel": "YFP",
+                "value": 1200.0,
+            },
+            {
+                "design_id": "spyP/CpxR",
+                "design_id_alias": "spyP/CpxR",
+                "treatment": "0 uM IPTG",
+                "treatment_alias": "-IPTG/-stress",
+                "time": 1.0,
+                "sheet_index": 0,
+                "overflow": False,
+                "channel": "YFP",
+                "value": 1800.0,
+            },
+        ]
+    )
+    ratio_df = pd.concat(
+        [
+            overflow_df.assign(value=lambda frame: frame["value"].where(frame["channel"] != "CFP", 96117.196)),
+            pd.DataFrame(
+                [
+                    {
+                        "design_id": "spyP/CpxR",
+                        "design_id_alias": "spyP/CpxR",
+                        "treatment": "0 uM IPTG",
+                        "treatment_alias": "-IPTG/-stress",
+                        "time": 0.0,
+                        "sheet_index": 0,
+                        "overflow": False,
+                        "channel": "YFP/OD600",
+                        "value": 12000.0,
+                    },
+                    {
+                        "design_id": "spyP/CpxR",
+                        "design_id_alias": "spyP/CpxR",
+                        "treatment": "0 uM IPTG",
+                        "treatment_alias": "-IPTG/-stress",
+                        "time": 1.0,
+                        "sheet_index": 0,
+                        "overflow": False,
+                        "channel": "YFP/OD600",
+                        "value": 9000.0,
+                    },
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    plot_spec = {
+        "id": "raw_kinetics",
+        "plugin": "plot/time_series",
+        "reads": {"df": {"record": "ratio_yfp_od600/df"}},
+        "with": {
+            "partition": {"by": "design_id"},
+            "hue": "treatment",
+            "xlabel": "Time from stress addition (h)",
+            "filename": "raw_kinetics",
+        },
+    }
+
+    result = render_retron_experiment_plot(
+        plot_spec,
+        datasets={
+            "ratio_yfp_od600/df": ratio_df,
+            "overflow/df": overflow_df,
+        },
+    )
+
+    cfp_rows = result.supporting_table[result.supporting_table["channel"] == "CFP"].sort_values("time")
+    assert cfp_rows["value"].tolist() == [8000.0, 9000.0]
+    assert cfp_rows["overflow"].tolist() == [False, True]
+    assert result.source_record == "overflow/df for raw OD600/YFP/CFP; ratio_yfp_od600/df for support ratios"
     plt.close(result.figures[0].fig)
 
 
@@ -683,13 +926,467 @@ def test_render_retron_aggregate_plot_returns_specificity_matrix_bundle() -> Non
         fingerprint_sponge=None,
     )
 
-    assert result.title == "Specificity matrix"
+    assert result.title == "Target activity matrix"
     assert result.figure is not None
-    assert "activity distributed across the sensors" in result.question
+    assert "tested on-target sensor arms" in result.question
     assert result.figure.get_facecolor()[:3] == pytest.approx((1.0, 1.0, 1.0))
     assert result.figure.axes[0].get_xlabel() == "Sponge design"
     assert result.figure.axes[0].get_ylabel() == ""
     assert not result.supporting_table.empty
+    plt.close(result.figure)
+
+
+def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_AUC",
+                "value": 0.40,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "SoxR-SoxS",
+                "metric": "S_AUC",
+                "value": 0.55,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "L_pre",
+                "value": 0.02,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "SoxR-SoxS",
+                "metric": "L_pre",
+                "value": -0.03,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "D_growth_AUC",
+                "value": -0.01,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "SoxR-SoxS",
+                "metric": "D_growth_AUC",
+                "value": 0.04,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "pareto_ranking",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR",), "soxSp": ("SoxR", "SoxS")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert result.title == "Pareto ranking"
+    assert result.figure is not None
+    assert not result.supporting_table.empty
+    assert set(result.supporting_table["sponge"]) == {"CpxR", "SoxR-SoxS"}
+    x_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_xticklabels() if label.get_text()}
+    y_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_yticklabels() if label.get_text()}
+    assert x_tick_sizes == {7.0}
+    assert y_tick_sizes == {7.0}
+    plt.close(result.figure)
+
+
+def test_build_fingerprint_frame_preserves_source_replicates_and_matched_teto_rows() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "sulAp",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": 0.36,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "sulAp",
+                "sponge": "tetO",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": -0.02,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.47,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "sulAp",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": 0.29,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.03,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "sulAp",
+                "sponge": "tetO",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": -0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ]
+    )
+
+    frame = build_fingerprint_frame(summary, score_metric="S_AUC", fingerprint_sponge="CpxR-LexA")
+
+    assert set(frame["comparison_group"]) == {"Selected sponge", "tetO reference"}
+    assert set(frame["source_experiment_id"]) == {"exp_a", "exp_b"}
+    assert set(frame["sensor"]) == {"spyP", "sulAp"}
+    assert frame["selected_sponge"].tolist() == ["CpxR-LexA"] * len(frame)
+    assert len(frame) == 8
+
+
+def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "sulAp",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": 0.36,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "sulAp",
+                "sponge": "tetO",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": -0.02,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.47,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "sulAp",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": 0.29,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.03,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "quad",
+                "sensor": "sulAp",
+                "sponge": "tetO",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "S_AUC",
+                "value": -0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "sponge_fingerprint",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR"), "sulAp": ("LexA",)},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge="CpxR-LexA",
+    )
+
+    assert result.title == "Sponge fingerprint"
+    assert result.figure is not None
+    assert set(result.supporting_table["comparison_group"]) == {"Selected sponge", "tetO reference"}
+    axis = result.figure.axes[0]
+    assert axis.get_title() == "CpxR-LexA"
+    assert [label.get_text() for label in axis.get_xticklabels()] == ["spyP", "sulAp"]
+    assert len(axis.patches) == 4
+    assert len(axis.collections) >= 4
+    legend = axis.get_legend()
+    assert legend is not None
+    assert {text.get_text() for text in legend.get_texts()} == {"Selected sponge", "tetO reference"}
+    plt.close(result.figure)
+
+
+def test_render_retron_aggregate_architecture_plot_uses_shared_subplot_limits() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_AUC",
+                "value": 0.20,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "metric": "S_AUC",
+                "value": -0.25,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "SoxR",
+                "metric": "S_AUC",
+                "value": 0.10,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "BaeR-SoxR",
+                "metric": "S_AUC",
+                "value": 0.35,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "architecture_plot",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR"), "soxSp": ("SoxR", "SoxS")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert result.figure is not None
+    axes = [axis for axis in result.figure.axes if axis.get_visible()]
+    assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
+    assert axes[0].get_ylim() == pytest.approx(axes[1].get_ylim())
+    plt.close(result.figure)
+
+
+def test_render_retron_aggregate_expected_vs_observed_uses_shared_square_limits() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_AUC",
+                "value": 0.20,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "metric": "S_AUC",
+                "value": -0.10,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "metric": "S_AUC",
+                "value": 0.12,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "sulAp",
+                "sponge": "CpxR-LexA",
+                "metric": "S_AUC",
+                "value": 0.05,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "SoxR",
+                "metric": "S_AUC",
+                "value": 0.08,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "soxSp",
+                "sponge": "CpxR-SoxR",
+                "metric": "S_AUC",
+                "value": 0.18,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "expected_vs_observed",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR"), "sulAp": ("LexA",), "soxSp": ("SoxR", "SoxS")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_best_single",
+        fingerprint_sponge=None,
+    )
+
+    assert result.figure is not None
+    axes = [axis for axis in result.figure.axes if axis.get_visible()]
+    assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
+    assert axes[0].get_xlim() == pytest.approx(axes[0].get_ylim())
     plt.close(result.figure)
 
 

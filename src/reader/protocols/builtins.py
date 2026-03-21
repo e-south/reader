@@ -1196,7 +1196,13 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="induced_effect_kinetics",
         kind="kinetics",
-        summary="Induced sponge-effect trajectories after matched-control normalization.",
+        summary="IPTG-state effect trajectories after matched-control normalization.",
+        primary=True,
+    ),
+    ProtocolFigureSpec(
+        id="absolute_effect_kinetics",
+        kind="kinetics",
+        summary="Absolute matched-control IPTG-state effect that preserves pre-stress preload differences.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1208,7 +1214,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="library_heatmaps",
         kind="summary",
-        summary="Library-wide heatmaps over induced, modulation, and scaled on-target summary metrics.",
+        summary="Library-wide heatmaps over IPTG-state, stress-modulation, and scaled on-target summary metrics.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1235,6 +1241,7 @@ _RETRON_SPONGE_PLOT_PROFILES = (
             "control_burden_panel",
             "matched_control_kinetics",
             "induced_effect_kinetics",
+            "absolute_effect_kinetics",
             "interaction_summary",
             "library_heatmaps",
             "stress_modulation_scores",
@@ -1253,6 +1260,7 @@ _RETRON_SPONGE_PLOT_PROFILES = (
             "baseline_shifted_kinetics",
             "matched_control_kinetics",
             "induced_effect_kinetics",
+            "absolute_effect_kinetics",
             "interaction_summary",
             "library_heatmaps",
             "stress_modulation_scores",
@@ -1575,12 +1583,20 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
                     default=None,
                 ),
                 _field(
+                    "max_post_stress_hours",
+                    "Optional cap on the primary post-stress window, measured in hours after stress addition, "
+                    "before both AUC and endpoint summaries are computed.",
+                    kind="number",
+                    allow_none=True,
+                    default=4.0,
+                ),
+                _field(
                     "pre_reads", "Number of pre-stress reads used for the baseline window.", kind="integer", default=3
                 ),
                 _field("endpoint_reads", "Number of reads used in the endpoint window.", kind="integer", default=3),
                 _field(
                     "states",
-                    "Explicit 2x2 induction/stress state labels.",
+                    "Explicit 2x2 IPTG/stress state labels.",
                     children=(
                         _field(
                             "uninduced_unstressed",
@@ -1658,7 +1674,11 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolFactorSpec(name="sensor", role="sensor", summary="Reporter promoter / sensor arm."),
         ProtocolFactorSpec(name="sponge", role="construct", summary="Real or tetO sponge arm."),
         ProtocolFactorSpec(name="stress_condition", role="stress", summary="Relevant stress or H2O control."),
-        ProtocolFactorSpec(name="IPTG", role="induction", summary="Induction state for sponge expression."),
+        ProtocolFactorSpec(
+            name="IPTG",
+            role="induction",
+            summary="IPTG-driven retron-expression state.",
+        ),
         ProtocolFactorSpec(name="replicate_id", role="replicate", summary="Replicate well identifier."),
         ProtocolFactorSpec(name="time", role="time", summary="Time on the assay clock in hours."),
         ProtocolFactorSpec(name="plate_id", role="plate", summary="Plate-local normalization boundary."),
@@ -1687,7 +1707,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
             id="matched_same_sensor_control",
             summary=(
                 "Normalize every real sponge well to the same-sensor tetO control on the same plate, "
-                "matched by stress state, induction state, and timepoint."
+                "matched by stress state, IPTG state, and timepoint."
             ),
             match_on=("sensor", "plate_id", "stress_condition", "IPTG", "time"),
             control_selector="matched_tetO_group",
@@ -1713,7 +1733,8 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ),
         ProtocolWindowSpec(
             id="endpoint_last_n",
-            summary="Use the last N reads inside the primary post-stress window as the endpoint window.",
+            summary="Use the last N reads inside the primary post-stress window as the endpoint window after any "
+            "configured post-stress time cap is applied.",
             anchor="primary_post_stress",
             selector="last_n_within",
             params={"n": 3},
@@ -1861,7 +1882,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="D",
             stage="comparison",
-            summary="Induced sponge effect after matched-control normalization.",
+            summary="IPTG-state effect after matched-control normalization.",
             formula="mean(C +IPTG) - mean(C -IPTG)",
             depends_on=("C",),
             value_space="delta_log2_ratio",
@@ -1872,7 +1893,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="D_AUC",
             stage="summary",
-            summary="AUC of the induced sponge effect.",
+            summary="AUC of the IPTG-state effect.",
             formula="AUC(D over primary_post_stress)",
             depends_on=("D", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),
@@ -1880,15 +1901,66 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="D_END",
             stage="summary",
-            summary="Endpoint mean of the induced sponge effect.",
+            summary="Endpoint mean of the IPTG-state effect.",
             formula="mean(D over endpoint_last_n)",
             depends_on=("D", "endpoint_last_n"),
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
+            id="D_abs",
+            stage="comparison",
+            summary="Absolute matched-control IPTG-state effect that retains pre-stress preload differences.",
+            formula="mean(R - R_tetO,matched)(+IPTG) - mean(R - R_tetO,matched)(-IPTG)",
+            depends_on=("R", "matched_same_sensor_control"),
+            value_space="delta_log2_ratio",
+            unit="log2_ratio_delta",
+            comparable_group="response_delta_log2",
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="D_abs_AUC",
+            stage="summary",
+            summary="AUC of the absolute matched-control IPTG-state effect.",
+            formula="AUC(D_abs over primary_post_stress)",
+            depends_on=("D_abs", "primary_post_stress"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="D_abs_END",
+            stage="summary",
+            summary="Endpoint mean of the absolute matched-control IPTG-state effect.",
+            formula="mean(D_abs over endpoint_last_n)",
+            depends_on=("D_abs", "endpoint_last_n"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="D_growth",
+            stage="burden",
+            summary="Construct-specific growth burden after same-sensor tetO subtraction.",
+            formula="mean(mu - mu_tetO,matched)(+IPTG) - mean(mu - mu_tetO,matched)(-IPTG)",
+            depends_on=("mu", "matched_same_sensor_control"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="D_growth_AUC",
+            stage="burden",
+            summary="AUC of construct-specific growth burden over the primary window.",
+            formula="AUC(D_growth over primary_post_stress)",
+            depends_on=("D_growth", "primary_post_stress"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
+            id="D_growth_END",
+            stage="burden",
+            summary="Endpoint mean of construct-specific growth burden.",
+            formula="mean(D_growth over endpoint_last_n)",
+            depends_on=("D_growth", "endpoint_last_n"),
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        ProtocolMetricSpec(
             id="M",
             stage="comparison",
-            summary="Stress modulation of the induced sponge effect.",
+            summary="Stress modulation of the IPTG-state effect after stress addition.",
             formula="D(relevant_stress) - D(H2O)",
             depends_on=("D",),
             value_space="delta_log2_ratio",
@@ -1915,7 +1987,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="O",
             stage="ranking",
-            summary="Sign-corrected induced sponge effect.",
+            summary="Sign-corrected IPTG-state effect.",
             formula="expected_decoy_sign * D",
             depends_on=("D",),
             value_space="delta_log2_ratio",
@@ -1926,7 +1998,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="O_AUC",
             stage="ranking",
-            summary="AUC of the sign-corrected induced sponge effect.",
+            summary="AUC of the sign-corrected IPTG-state effect.",
             formula="AUC(O over primary_post_stress)",
             depends_on=("O", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),
@@ -1966,7 +2038,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="T_ratio_AUC",
             stage="burden",
-            summary="tetO ratio burden under induction.",
+            summary="tetO ratio burden from the +IPTG versus -IPTG state contrast.",
             formula="AUC(mean(B tetO,+IPTG) - mean(B tetO,-IPTG))",
             depends_on=("B", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),
@@ -1974,7 +2046,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="T_growth_AUC",
             stage="burden",
-            summary="tetO growth burden under induction.",
+            summary="tetO growth burden from the +IPTG versus -IPTG state contrast.",
             formula="AUC(mean(mu tetO,+IPTG) - mean(mu tetO,-IPTG))",
             depends_on=("mu", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),

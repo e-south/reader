@@ -148,6 +148,63 @@ def _input_df_single_reporter() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _input_df_single_reporter_preload() -> pd.DataFrame:
+    times = [0.0, 0.5, 1.0, 2.0, 2.5, 3.0]
+    od = {
+        position: [0.10, 0.15, 0.20, 0.31, 0.36, 0.40] for position in ("A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4")
+    }
+    ratio = {
+        "A1": [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],  # tetO H2O -IPTG
+        "A2": [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],  # tetO H2O +IPTG
+        "A3": [1.00, 1.00, 1.00, 1.30, 1.31, 1.32],  # tetO cipro -IPTG
+        "A4": [1.00, 1.00, 1.00, 1.30, 1.31, 1.32],  # tetO cipro +IPTG
+        "B1": [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],  # LexA H2O -IPTG
+        "B2": [1.30, 1.30, 1.30, 1.30, 1.31, 1.32],  # LexA H2O +IPTG preload
+        "B3": [1.00, 1.00, 1.00, 1.60, 1.62, 1.64],  # LexA cipro -IPTG
+        "B4": [1.30, 1.30, 1.30, 1.75, 1.76, 1.77],  # LexA cipro +IPTG preload + stress
+    }
+    meta = {
+        "A1": ("sulAp/tetO", "-IPTG/-stress", "0 uM IPTG"),
+        "A2": ("sulAp/tetO", "+IPTG/-stress", "500 uM IPTG"),
+        "A3": ("sulAp/tetO", "-IPTG/+stress", "100 nM ciprofloxacin"),
+        "A4": ("sulAp/tetO", "+IPTG/+stress", "500 uM IPTG, 100 nM ciprofloxacin"),
+        "B1": ("sulAp/LexA", "-IPTG/-stress", "0 uM IPTG"),
+        "B2": ("sulAp/LexA", "+IPTG/-stress", "500 uM IPTG"),
+        "B3": ("sulAp/LexA", "-IPTG/+stress", "100 nM ciprofloxacin"),
+        "B4": ("sulAp/LexA", "+IPTG/+stress", "500 uM IPTG, 100 nM ciprofloxacin"),
+    }
+    rows: list[dict[str, object]] = []
+    for position, (design_id_alias, treatment_alias, treatment) in meta.items():
+        for time, od_value, ratio_value in zip(times, od[position], ratio[position], strict=True):
+            rows.append(
+                {
+                    "position": position,
+                    "time": time,
+                    "channel": "OD600",
+                    "value": od_value,
+                    "design_id": design_id_alias,
+                    "design_id_alias": design_id_alias,
+                    "treatment": treatment,
+                    "treatment_alias": treatment_alias,
+                    "sheet_name": "Plate 3",
+                }
+            )
+            rows.append(
+                {
+                    "position": position,
+                    "time": time,
+                    "channel": "RFP/OD600",
+                    "value": ratio_value,
+                    "design_id": design_id_alias,
+                    "design_id_alias": design_id_alias,
+                    "treatment": treatment,
+                    "treatment_alias": treatment_alias,
+                    "sheet_name": "Plate 3",
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _input_df_explicit_semantics() -> pd.DataFrame:
     df = _input_df()
     design_parts = df["design_id_alias"].str.split("/", n=1, expand=True)
@@ -181,8 +238,19 @@ def test_retron_sponge_metrics_plugin_emits_trace_and_summary_tables():
     trace = outputs["trace"]
     summary = outputs["summary"]
 
-    assert {"R", "B", "C", "D", "M", "O", "mu"} <= set(trace["metric"])
-    assert {"R_pre", "L_pre", "D_AUC", "M_AUC", "O_AUC", "S_AUC", "T_ratio_AUC", "T_finalOD"} <= set(summary["metric"])
+    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "mu"} <= set(trace["metric"])
+    assert {
+        "R_pre",
+        "L_pre",
+        "D_AUC",
+        "D_abs_AUC",
+        "D_growth_AUC",
+        "M_AUC",
+        "O_AUC",
+        "S_AUC",
+        "T_ratio_AUC",
+        "T_finalOD",
+    } <= set(summary["metric"])
 
     d_auc = summary[
         (summary["metric"] == "D_AUC")
@@ -222,8 +290,8 @@ def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
     trace = outputs["trace"]
     summary = outputs["summary"]
 
-    assert {"R", "B", "C", "D", "M", "O", "mu"} <= set(trace["metric"])
-    assert {"R_pre", "D_AUC", "M_AUC", "O_AUC", "S_AUC", "L_pre"} <= set(summary["metric"])
+    assert {"R", "B", "C", "D", "D_abs", "D_growth", "M", "O", "mu"} <= set(trace["metric"])
+    assert {"R_pre", "D_AUC", "D_abs_AUC", "D_growth_AUC", "M_AUC", "O_AUC", "S_AUC", "L_pre"} <= set(summary["metric"])
 
     d_auc = summary[
         (summary["metric"] == "D_AUC")
@@ -255,6 +323,36 @@ def test_retron_sponge_metrics_cfg_defaults_match_protocol_surface() -> None:
     assert cfg.plate_column is None
     assert cfg.stress_time_zero_policy == "largest_gap_midpoint"
     assert cfg.stress_time_zero_h is None
+    assert cfg.max_post_stress_hours == 4.0
+
+
+def test_retron_sponge_metrics_absolute_companion_preserves_preload_sensitive_signal() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        measurement_channel="RFP/OD600",
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"sulAp": "100 nM ciprofloxacin"},
+        sensor_target_map={"sulAp": ["LexA"]},
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df_single_reporter_preload()}, cfg)
+    summary = outputs["summary"]
+
+    d_auc = summary[
+        (summary["metric"] == "D_AUC")
+        & (summary["sensor"] == "sulAp")
+        & (summary["sponge"] == "LexA")
+        & (summary["stress_condition"] == "100 nM ciprofloxacin")
+    ]["value"].iloc[0]
+    d_abs_auc = summary[
+        (summary["metric"] == "D_abs_AUC")
+        & (summary["sensor"] == "sulAp")
+        & (summary["sponge"] == "LexA")
+        & (summary["stress_condition"] == "100 nM ciprofloxacin")
+    ]["value"].iloc[0]
+
+    assert d_auc < 0
+    assert d_abs_auc > 0
 
 
 def test_retron_sponge_metrics_masks_invalid_post_stress_rows_without_crashing():
@@ -339,3 +437,35 @@ def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
 
     assert {"R_pre", "D_AUC", "O_AUC", "S_AUC"} <= set(summary["metric"])
     assert d_auc < 0
+
+
+def test_retron_sponge_metrics_respects_post_stress_time_cap() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        max_post_stress_hours=1.0,
+        endpoint_reads=2,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df()}, cfg)
+    trace = outputs["trace"]
+
+    capped_rows = trace[
+        (trace["metric"] == "C")
+        & (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["time"] == 3.0)
+    ]
+    uncapped_rows = trace[
+        (trace["metric"] == "C")
+        & (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["time"] == 2.5)
+    ]
+
+    assert not capped_rows["in_primary_post_stress"].any()
+    assert uncapped_rows["in_primary_post_stress"].all()

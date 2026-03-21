@@ -11,6 +11,7 @@ protocol:
     measurement: yfp_cfp
     semantic_metrics:
       plate_column: null
+      max_post_stress_hours: 4.0
       relevant_stress_map:
         spyP: 3% EtOH
         sulAp: 100 nM ciprofloxacin

@@ -44,6 +44,7 @@ RETRON_SPONGE_FULL_PLOT_IDS = [
     "baseline_shifted_kinetics",
     "matched_control_kinetics",
     "induced_effect_kinetics",
+    "absolute_effect_kinetics",
     "interaction_summary",
     "library_heatmaps",
     "stress_modulation_scores",
@@ -168,7 +169,7 @@ def test_retron_sponge_repo_configs_surface_full_plot_portfolio_and_review_noteb
     assert "baseline_shifted_kinetics" in plot_ids
     assert plot_payload["summary"]["by_plugin"] == {
         "plot/retron_summary": 4,
-        "plot/retron_trace": 4,
+        "plot/retron_trace": 5,
         "plot/time_series": 2,
     }
     assert inspect_payload["experiment"]["notebook_template"] == "notebook/retron_sponge"
