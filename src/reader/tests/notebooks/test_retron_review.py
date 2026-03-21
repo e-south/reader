@@ -233,6 +233,42 @@ def test_retron_review_bundle_fails_fast_when_source_exports_are_missing(tmp_pat
         load_retron_review_bundle(manifest_path)
 
 
+def test_retron_review_bundle_rejects_non_list_sources(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "review_manifest.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "relevant_stress_map": {"spyP": "3% EtOH"},
+                "sensor_target_map": {"spyP": ["CpxR", "BaeR"]},
+                "sources": {"label": "mono"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="manifest 'sources' must be a list"):
+        load_retron_review_bundle(manifest_path)
+
+
+def test_retron_review_bundle_rejects_non_mapping_source_entry(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "review_manifest.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "relevant_stress_map": {"spyP": "3% EtOH"},
+                "sensor_target_map": {"spyP": ["CpxR", "BaeR"]},
+                "sources": ["not-a-mapping"],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"sources\[1\] must be a mapping"):
+        load_retron_review_bundle(manifest_path)
+
+
 def test_retron_review_bundle_resolves_experiment_sources_relative_to_source_root(tmp_path: Path) -> None:
     aggregate_root = tmp_path / "20260319_retron_review"
     manifest_path = aggregate_root / "inputs" / "review_manifest.yaml"
@@ -330,7 +366,7 @@ def test_retron_figure_coverage_rows_call_out_cross_run_and_follow_on_views() ->
     coverage = retron_figure_coverage_rows()
     by_figure = {row["Figure"]: row for row in coverage}
 
-    assert by_figure["Figure 12 — Target activity matrix"]["Coverage"] == "Exact aggregate notebook figure"
+    assert by_figure["Figure 13 — Target activity matrix"]["Coverage"] == "Exact aggregate notebook figure"
     assert by_figure["Figure 18 — Plate-position heatmaps"]["Coverage"] == "Not first-class compiled yet"
 
 
@@ -455,14 +491,18 @@ def test_load_retron_source_surface_reads_scoped_plot_catalog_and_record_paths(t
     assert any(row["Plot id"] == "raw_kinetics" for row in surface.plot_catalog_rows)
     assert not any(row["Plot id"] == "support_kinetics" for row in surface.plot_selector_rows)
     assert not any(row["Plot id"] == "support_kinetics" for row in surface.plot_catalog_rows)
+    assert not any(row["Plot id"] == "baseline_shifted_kinetics" for row in surface.plot_selector_rows)
+    assert not any(row["Plot id"] == "baseline_shifted_kinetics" for row in surface.plot_catalog_rows)
+    assert not any(row["Plot id"] == "matched_control_kinetics" for row in surface.plot_selector_rows)
+    assert not any(row["Plot id"] == "matched_control_kinetics" for row in surface.plot_catalog_rows)
     assert not any(row["Plot id"] == "stress_modulation_scores" for row in surface.plot_selector_rows)
     assert not any(row["Plot id"] == "stress_modulation_scores" for row in surface.plot_catalog_rows)
     assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_selector_rows)
     assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_catalog_rows)
     assert selector_labels["raw_kinetics"] == "QC traces"
-    assert selector_labels["matched_control_kinetics"] == "[C] tetO-subtracted kinetics"
     assert selector_labels["induced_effect_kinetics"] == "[D] IPTG-state effect"
     assert selector_labels["absolute_effect_kinetics"] == "[D_abs] Absolute matched-control effect"
+    assert selector_labels["control_anchored_decomposition"] == "[R/P_pre/D_abs] Decision cards"
     assert any(record_id == "semantic_metrics/trace" for record_id, _ in surface.record_paths)
     assert any(record_id == "ratio_yfp_od600/df" for record_id, _ in surface.record_paths)
     assert overview_rows[0] == {"Field": "Source label", "Value": "mono"}
@@ -623,9 +663,93 @@ def test_render_retron_experiment_plot_uses_explicit_iptg_state_wording_for_d_me
     result = render_retron_experiment_plot(plot_spec, datasets={"semantic_metrics/trace": trace})
 
     assert result.title == "IPTG-state effect kinetics"
-    assert "+IPTG versus -IPTG contrast evolve" in result.question
-    assert "IPTG is present from the start of the assay" in result.meaning
+    assert "baseline shift and tetO matching" in result.question
+    assert "incremental effects over the displayed trace window" in result.meaning
     assert set(result.supporting_table["metric"]) == {"D"}
+    plt.close(result.figures[0].fig)
+
+
+def test_render_retron_experiment_plot_rejects_unknown_plugin() -> None:
+    plot_spec = {"id": "mystery_plot", "plugin": "plot/unknown", "reads": {}, "with": {}}
+
+    with pytest.raises(ValueError, match="unsupported notebook plot plugin"):
+        render_retron_experiment_plot(plot_spec, datasets={})
+
+
+def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_frame() -> None:
+    rows: list[dict[str, object]] = []
+    for sponge, control_flag, minus_values, plus_values in (
+        ("LexA", False, (0.85, 0.88), (1.28, 1.31)),
+        ("tetO", True, (0.72, 0.75), (0.90, 0.92)),
+    ):
+        for iptg, values in (("-IPTG", minus_values), ("+IPTG", plus_values)):
+            for idx, value in enumerate(values, start=1):
+                for time_value in (0.0, 4.0):
+                    rows.append(
+                        {
+                            "plate_id": "plate-1",
+                            "sensor": "sulAp",
+                            "sponge": sponge,
+                            "stress_condition": "100 nM ciprofloxacin",
+                            "time_from_stress": time_value,
+                            "metric": "R",
+                            "value": value + (0.10 if time_value > 0 else 0.0),
+                            "IPTG": iptg,
+                            "replicate_id": f"r{idx}",
+                            "is_relevant_stress": True,
+                            "relevant_sensor_pair": not control_flag,
+                            "in_primary_post_stress": True,
+                            "configured_max_post_stress_hours": 4.0,
+                        }
+                    )
+    trace = pd.DataFrame(rows)
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "metric": "D_abs_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            }
+        ]
+    )
+    plot_spec = {
+        "id": "control_anchored_decomposition",
+        "plugin": "plot/retron_summary",
+        "reads": {
+            "summary": {"record": "semantic_metrics/summary"},
+            "trace": {"record": "semantic_metrics/trace"},
+        },
+        "with": {
+            "view": "decomposition",
+            "metric": "D_abs_AUC",
+            "title": "Decision cards",
+            "filename": "control_anchored_decomposition",
+            "control_name": "tetO",
+            "relevant_only": True,
+        },
+    }
+
+    result = render_retron_experiment_plot(
+        plot_spec,
+        datasets={"semantic_metrics/summary": summary, "semantic_metrics/trace": trace},
+    )
+
+    assert result.title == "Decision cards"
+    assert "matched tetO" in result.question
+    assert "primary decision surface" in result.meaning
+    assert {
+        "sample_minus_auc",
+        "sample_plus_auc",
+        "delta_real_auc",
+        "control_minus_auc",
+        "control_plus_auc",
+        "delta_teto_auc",
+        "delta_net_auc",
+    } <= set(result.supporting_table.columns)
     plt.close(result.figures[0].fig)
 
 
@@ -1128,6 +1252,28 @@ def test_build_fingerprint_frame_preserves_source_replicates_and_matched_teto_ro
     assert len(frame) == 8
 
 
+def test_build_fingerprint_frame_rejects_unknown_requested_sponge() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="requested fingerprint sponge"):
+        build_fingerprint_frame(summary, score_metric="S_AUC", fingerprint_sponge="BaeR-LexA")
+
+
 def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> None:
     summary = pd.DataFrame(
         [
@@ -1252,6 +1398,36 @@ def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> No
     assert legend is not None
     assert {text.get_text() for text in legend.get_texts()} == {"Selected sponge", "tetO reference"}
     plt.close(result.figure)
+
+
+def test_render_retron_aggregate_plot_rejects_unknown_fingerprint_sponge() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "tri",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="requested fingerprint sponge"):
+        render_retron_aggregate_plot(
+            "sponge_fingerprint",
+            summary_df=summary,
+            sensor_target_map={"spyP": ("CpxR", "BaeR")},
+            score_metric="S_AUC",
+            architecture_x="irrelevant_motif_count",
+            expected_mode="expected_sum",
+            fingerprint_sponge="BaeR-LexA",
+        )
 
 
 def test_render_retron_aggregate_architecture_plot_uses_shared_subplot_limits() -> None:
