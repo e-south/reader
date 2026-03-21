@@ -4,7 +4,7 @@
 
 ![reader banner](assets/reader-banner.svg)
 
-`reader` is a Python package and CLI for organizing experiment directories and running config-driven analysis pipelines over structured assay data. Each experiment keeps raw inputs in `inputs/`, optional notebooks in `notebooks/`, and generated artifacts in `outputs/`; authors describe the assay in a `reader/v7` `config.yaml`, then use commands such as `reader ls`, `reader inspect`, `reader validate`, `reader run`, `reader plot`, `reader export`, and `reader notebook` to inspect the plan, check readiness, and materialize records, plots, exports, and notebooks.
+`reader` is a toolkit for organizing experiment directories and running config-driven analysis pipelines over structured assay data. Each experiment has a clear working layout: raw inputs live in `inputs/`, optional notebooks live in `notebooks/`, generated results live in `outputs/`, and a `reader/v7` `config.yaml` describes what should be run.
 
 ---
 

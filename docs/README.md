@@ -1,6 +1,9 @@
 # Documentation index
 
-Use this index to pick the smallest document that matches the task.
+Use this index to find the smallest document that matches what you need. Start
+with the guides if you want to understand how `reader` is organized or how an
+experiment moves from inputs to outputs. Use the reference pages when you need
+exact CLI or config details.
 
 ## Start here
 

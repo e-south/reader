@@ -1,7 +1,8 @@
 # Documentation index
 
-Use [docs/README.md](./README.md) for the full documentation map when browsing the
-repository. If you reached `docs/index.md` directly, start here:
+Use [docs/README.md](./README.md) for the full documentation map. If you
+reached `docs/index.md` directly, start here for the guide or reference page
+that matches the question.
 
 ## Start here
 
