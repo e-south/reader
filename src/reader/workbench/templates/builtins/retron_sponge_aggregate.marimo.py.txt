@@ -21,8 +21,8 @@ def _():
         figure_to_download_bytes,
         load_retron_review_bundle,
         load_retron_source_surface,
-        render_retron_aggregate_plot_cached,
         render_retron_source_plot_cached,
+        try_render_retron_aggregate_plot_cached,
         retron_notebook_table_preview,
         retron_aggregate_figure_rows,
         retron_aggregate_plot_rows,
@@ -50,8 +50,8 @@ def _():
         load_retron_review_bundle,
         load_retron_source_surface,
         mo,
-        render_retron_aggregate_plot_cached,
         render_retron_source_plot_cached,
+        try_render_retron_aggregate_plot_cached,
         retron_notebook_table_preview,
         retron_aggregate_figure_rows,
         retron_aggregate_plot_rows,
@@ -192,12 +192,12 @@ def _(
     retron_aggregate_overview_panel = mo.vstack(
         [
             mo.md(
-                f"# Retron sponge aggregate review\n"
+                f"# Retron sponge review set\n"
                 f"Experiment: `{retron_aggregate_exp_title}`\n\n"
-                "This notebook keeps cross-run aggregate views and source-scoped experiment views "
-                "in one place for retron sponge screens that share the same direct-ratio "
-                "matched-control contract. Read the gist first, then move into either the "
-                "aggregate or source review surface."
+                "Use the aggregate panels to rank across experiments, then drill back to the source "
+                "sponge-versus-matched-tetO summary when you need the raw traces and within-run context. "
+                "The aggregate path opens on the absolute expected-direction score before the incremental "
+                "views."
             ),
             mo.ui.tabs(
                 {
@@ -255,9 +255,9 @@ def _(
                     "Workflow map": mo.vstack(
                         [
                             mo.md(
-                                "### Ingest and aggregate transform path\n"
-                                "Use this tab when you need to trace a cross-run score back to the "
-                                "underlying per-experiment derived assay metrics."
+                                "### Aggregate math ladder\n"
+                                "Use this when you need to trace a cross-run score back to the "
+                                "underlying per-experiment assay metrics."
                             ),
                             mo.ui.tabs(
                                 {
@@ -319,9 +319,9 @@ def _(available_multifunctional_sponges, mo, retron_aggregate_bundle, retron_agg
         full_width=False,
     )
     retron_aggregate_score_selector = mo.ui.dropdown(
-        options=["S_abs_AUC", "O_abs_AUC", "S_AUC", "O_AUC"],
-        value="S_abs_AUC",
-        label="Cross-sensor score",
+        options=["O_abs_AUC", "S_abs_AUC", "O_AUC", "S_AUC"],
+        value="O_abs_AUC",
+        label="Aggregate evidence family",
         full_width=False,
     )
     retron_aggregate_architecture_selector = mo.ui.dropdown(
@@ -399,15 +399,15 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
-    render_retron_aggregate_plot_cached,
     retron_aggregate_architecture_selector,
     retron_aggregate_bundle,
     retron_aggregate_expected_selector,
     retron_aggregate_fingerprint_selector,
     retron_aggregate_score_selector,
     retron_aggregate_selected_plot_id,
+    try_render_retron_aggregate_plot_cached,
 ):
-    retron_aggregate_result = render_retron_aggregate_plot_cached(
+    retron_aggregate_result, retron_aggregate_result_error = try_render_retron_aggregate_plot_cached(
         retron_aggregate_selected_plot_id,
         summary_df=retron_aggregate_bundle.summary_df,
         sensor_target_map=retron_aggregate_bundle.sensor_target_map,
@@ -418,7 +418,7 @@ def _(
             retron_aggregate_fingerprint_selector.value if retron_aggregate_fingerprint_selector is not None else None
         ),
     )
-    return retron_aggregate_result, retron_aggregate_selected_plot_id
+    return retron_aggregate_result, retron_aggregate_result_error, retron_aggregate_selected_plot_id
 
 
 @app.cell(hide_code=True)
@@ -427,12 +427,16 @@ def _(
     retron_aggregate_bundle,
     retron_aggregate_result,
 ):
-    retron_aggregate_contextual_copy = contextualize_retron_plot_copy(
-        question=retron_aggregate_result.question,
-        math=retron_aggregate_result.math,
-        meaning=retron_aggregate_result.meaning,
-        supporting_table=retron_aggregate_result.supporting_table,
-        relevant_stress_map=retron_aggregate_bundle.relevant_stress_map,
+    retron_aggregate_contextual_copy = (
+        contextualize_retron_plot_copy(
+            question=retron_aggregate_result.question,
+            math=retron_aggregate_result.math,
+            meaning=retron_aggregate_result.meaning,
+            supporting_table=retron_aggregate_result.supporting_table,
+            relevant_stress_map=retron_aggregate_bundle.relevant_stress_map,
+        )
+        if retron_aggregate_result is not None
+        else None
     )
     return (retron_aggregate_contextual_copy,)
 
@@ -446,57 +450,59 @@ def _(
     retron_aggregate_result,
     retron_aggregate_selected_plot_id,
 ):
-    retron_aggregate_export_stem = download_safe_stem(retron_aggregate_selected_plot_id)
-    retron_aggregate_export_items = [
-        mo.download(
-            data=lambda df=retron_aggregate_result.supporting_table: dataframe_to_csv_bytes(df),
-            filename=f"{retron_aggregate_export_stem}__supporting_table.csv",
-            mimetype="text/csv",
-            label="Table CSV",
-        )
-    ]
-    if retron_aggregate_result.figure is not None:
+    retron_aggregate_export_panel = None
+    if retron_aggregate_result is not None:
+        retron_aggregate_export_stem = download_safe_stem(retron_aggregate_selected_plot_id)
         retron_aggregate_export_items = [
             mo.download(
-                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
-                    fig,
-                    fmt="png",
-                ),
-                filename=f"{retron_aggregate_export_stem}.png",
-                mimetype="image/png",
-                label="Figure PNG",
-            ),
-            mo.download(
-                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
-                    fig,
-                    fmt="svg",
-                ),
-                filename=f"{retron_aggregate_export_stem}.svg",
-                mimetype="image/svg+xml",
-                label="Figure SVG",
-            ),
-            mo.download(
-                data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
-                    fig,
-                    fmt="pdf",
-                ),
-                filename=f"{retron_aggregate_export_stem}.pdf",
-                mimetype="application/pdf",
-                label="Figure PDF",
-            ),
-            *retron_aggregate_export_items,
+                data=lambda df=retron_aggregate_result.supporting_table: dataframe_to_csv_bytes(df),
+                filename=f"{retron_aggregate_export_stem}__supporting_table.csv",
+                mimetype="text/csv",
+                label="Table CSV",
+            )
         ]
-    retron_aggregate_export_panel = mo.vstack(
-        [
-            mo.hstack(
-                retron_aggregate_export_items,
-                justify="start",
-                wrap=True,
-                gap=0.5,
-            ),
-        ],
-        gap=0.0,
-    )
+        if retron_aggregate_result.figure is not None:
+            retron_aggregate_export_items = [
+                mo.download(
+                    data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                        fig,
+                        fmt="png",
+                    ),
+                    filename=f"{retron_aggregate_export_stem}.png",
+                    mimetype="image/png",
+                    label="Figure PNG",
+                ),
+                mo.download(
+                    data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                        fig,
+                        fmt="svg",
+                    ),
+                    filename=f"{retron_aggregate_export_stem}.svg",
+                    mimetype="image/svg+xml",
+                    label="Figure SVG",
+                ),
+                mo.download(
+                    data=lambda fig=retron_aggregate_result.figure: figure_to_download_bytes(
+                        fig,
+                        fmt="pdf",
+                    ),
+                    filename=f"{retron_aggregate_export_stem}.pdf",
+                    mimetype="application/pdf",
+                    label="Figure PDF",
+                ),
+                *retron_aggregate_export_items,
+            ]
+        retron_aggregate_export_panel = mo.vstack(
+            [
+                mo.hstack(
+                    retron_aggregate_export_items,
+                    justify="start",
+                    wrap=True,
+                    gap=0.5,
+                ),
+            ],
+            gap=0.0,
+        )
     return (retron_aggregate_export_panel,)
 
 
@@ -520,6 +526,7 @@ def _(
     retron_aggregate_contextual_copy,
     retron_aggregate_expected_selector,
     retron_aggregate_result,
+    retron_aggregate_result_error,
     retron_aggregate_score_selector,
     retron_aggregate_selected_plot_id,
     retron_aggregate_export_panel,
@@ -529,7 +536,21 @@ def _(
     retron_aggregate_review_blocks = [
         retron_aggregate_control_panel,
     ]
-    if retron_aggregate_result.figure is None:
+    if retron_aggregate_result_error:
+        retron_aggregate_review_blocks.append(
+            mo.callout(
+                mo.md(retron_aggregate_result_error),
+                kind="danger",
+            )
+        )
+    elif retron_aggregate_result is None:
+        retron_aggregate_review_blocks.append(
+            mo.callout(
+                mo.md("The selected aggregate plot did not resolve a render result."),
+                kind="warn",
+            )
+        )
+    elif retron_aggregate_result.figure is None:
         retron_aggregate_review_blocks.append(
             mo.callout(
                 mo.md("No figure is available for the current selection."),
@@ -538,31 +559,34 @@ def _(
         )
     else:
         retron_aggregate_review_blocks.append(retron_aggregate_result.figure)
-    retron_aggregate_review_blocks.append(
-        mo.callout(
-            mo.vstack(
-                [
-                    mo.md(retron_aggregate_result.title),
-                    mo.md(f"Use this view for: {retron_aggregate_contextual_copy['question']}"),
-                    mo.md(f"Computed from: `{retron_aggregate_contextual_copy['math']}`"),
-                    mo.md(f"Interpretation: {retron_aggregate_contextual_copy['meaning']}"),
-                ],
-                gap=0.08,
-            ),
-            kind="info",
+    if retron_aggregate_result is not None and retron_aggregate_contextual_copy is not None:
+        retron_aggregate_review_blocks.append(
+            mo.callout(
+                mo.vstack(
+                    [
+                        mo.md(f"### {retron_aggregate_result.title}"),
+                        mo.md(f"**Question**\n{retron_aggregate_contextual_copy['question']}"),
+                        mo.md(f"**Formula**\n```text\n{retron_aggregate_contextual_copy['math']}\n```"),
+                        mo.md(f"**Interpretation**\n{retron_aggregate_contextual_copy['meaning']}"),
+                    ],
+                    gap=0.08,
+                ),
+                kind="info",
+            )
         )
-    )
-    retron_aggregate_review_blocks.append(retron_aggregate_export_panel)
+    if retron_aggregate_export_panel is not None:
+        retron_aggregate_review_blocks.append(retron_aggregate_export_panel)
 
-    retron_aggregate_review_blocks.append(
-        mo.ui.table(
-            retron_aggregate_supporting_table_preview,
-            **retron_table_kwargs(
-                page_size=15,
-                max_height=420,
-            ),
+    if retron_aggregate_result is not None:
+        retron_aggregate_review_blocks.append(
+            mo.ui.table(
+                retron_aggregate_supporting_table_preview,
+                **retron_table_kwargs(
+                    page_size=15,
+                    max_height=420,
+                ),
+            )
         )
-    )
     retron_aggregate_review_panel = mo.vstack(retron_aggregate_review_blocks, gap=0.45)
     return (retron_aggregate_review_panel,)
 
@@ -674,7 +698,7 @@ def _(
         mo.ui.dropdown(
             options=retron_source_plot_selector_options,
             value=retron_source_plot_selected_key,
-            label="Source plot",
+            label="Source assay view",
             full_width=False,
         )
         if retron_source_plot_selector_options
@@ -758,7 +782,7 @@ def _(
         mo.ui.dropdown(
             options=retron_source_figure_options,
             value=retron_source_figure_selected_key,
-            label="Figure scope",
+            label="Figure",
             full_width=False,
         )
         if len(retron_source_figure_options) > 1
@@ -991,10 +1015,10 @@ def _(
             mo.callout(
                 mo.vstack(
                     [
-                        mo.md(retron_source_plot_result.title),
-                        mo.md(f"Use this view for: {retron_source_contextual_copy['question']}"),
-                        mo.md(f"Computed from: `{retron_source_contextual_copy['math']}`"),
-                        mo.md(f"Interpretation: {retron_source_contextual_copy['meaning']}"),
+                        mo.md(f"### {retron_source_plot_result.title}"),
+                        mo.md(f"**Question**\n{retron_source_contextual_copy['question']}"),
+                        mo.md(f"**Formula**\n```text\n{retron_source_contextual_copy['math']}\n```"),
+                        mo.md(f"**Interpretation**\n{retron_source_contextual_copy['meaning']}"),
                     ],
                     gap=0.08,
                 ),

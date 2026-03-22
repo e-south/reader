@@ -1,0 +1,1863 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+from dataclasses import dataclass
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from reader.plotting.sinks import PlotFigure
+from reader.plotting.style import use_style
+
+from .. import _retron_sponge_presentation as retron_presentation
+from .._retron_sponge_trace_support import (
+    annotate_primary_window,
+    annotate_stress_addition,
+    empty_trace_summary_frame,
+    grouped_trace_summary_frames,
+    trace_display_bounds,
+)
+from ..common import (
+    bootstrap_linear_interval,
+    bootstrap_mean_interval,
+    emit_plot_figure,
+    require_columns,
+    shared_numeric_limits,
+    warn_if_empty,
+)
+from .shared import (
+    _auc,
+    _finalize_summary_figure,
+    _ordered,
+    _preferred_stresses,
+    _require_relevant_sensor_pair,
+    _RetronSummaryPlotRequest,
+    _slug,
+    _SummaryFigurePolicy,
+    _SummarySubplotPolicy,
+)
+
+
+@dataclass(frozen=True)
+class _DecisionCardRowPayload:
+    row_idx: int
+    sensor: str
+    sponge: str
+    stress: str
+    panel_limits: tuple[float, float]
+    h2o_panel: _DecisionCardPanelPayload
+    relevant_panel: _DecisionCardPanelPayload
+    summary_strip: _DecisionCardSummaryStripPayload
+
+
+@dataclass(frozen=True)
+class _DecisionCardTraceLinePayload:
+    label: str
+    color: str
+    linestyle: str
+    summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _DecisionCardSummaryItemPayload:
+    label: str
+    units: str
+    point_color: str
+    minus_values: tuple[float, ...]
+    plus_values: tuple[float, ...]
+    minus_mean: float | None
+    plus_mean: float | None
+    contrast_mean: float | None
+    contrast_lower: float | None
+    contrast_upper: float | None
+    x_limits: tuple[float, float]
+
+
+@dataclass(frozen=True)
+class _DecisionCardTraceAxisPolicy:
+    grid_color: str
+    grid_linewidth: float
+    grid_alpha: float
+    tick_size: float
+    ylabel: str
+    ylabel_fontsize: float
+    legend_loc: str
+    legend_fontsize: float
+    box_aspect_with_ylabel: float
+    box_aspect_without_ylabel: float
+
+
+@dataclass(frozen=True)
+class _DecisionCardSummaryAxisPolicy:
+    header_facecolor: str
+    header_edgecolor: str
+    header_fontsize: float
+    header_line_spacing: float
+    zero_line_color: str
+    zero_line_linewidth: float
+    zero_line_linestyle: str
+    tick_size: float
+    grid_color: str
+    grid_linewidth: float
+    grid_alpha: float
+    label_fontsize: float
+    xlabel_fontsize: float
+    ylabel_fontsize: float
+    ytick_fontsize: float
+    box_aspect: float
+
+
+@dataclass(frozen=True)
+class _DecisionCardPanelPayload:
+    stress_condition: str
+    title: str
+    show_ylabel: bool
+    show_legend: bool
+    panel_trace: pd.DataFrame
+    line_payloads: tuple[_DecisionCardTraceLinePayload, ...]
+
+
+@dataclass(frozen=True)
+class _DecisionCardSummaryStripPayload:
+    items: tuple[_DecisionCardSummaryItemPayload, ...]
+
+
+_DECISION_CARD_TRACE_AXIS_POLICY = _DecisionCardTraceAxisPolicy(
+    grid_color="#d9d9d9",
+    grid_linewidth=0.6,
+    grid_alpha=0.45,
+    tick_size=8.0,
+    ylabel="Reporter ratio R(t)",
+    ylabel_fontsize=11.0,
+    legend_loc="upper left",
+    legend_fontsize=7.0,
+    box_aspect_with_ylabel=1.0,
+    box_aspect_without_ylabel=1.0,
+)
+
+_DECISION_CARD_SUMMARY_AXIS_POLICY = _DecisionCardSummaryAxisPolicy(
+    header_facecolor="#f7f7f7",
+    header_edgecolor="#d0d0d0",
+    header_fontsize=7.8,
+    header_line_spacing=1.18,
+    zero_line_color="#777777",
+    zero_line_linewidth=1.0,
+    zero_line_linestyle=":",
+    tick_size=8.0,
+    grid_color="#d9d9d9",
+    grid_linewidth=0.6,
+    grid_alpha=0.55,
+    label_fontsize=8.4,
+    xlabel_fontsize=7.3,
+    ylabel_fontsize=7.4,
+    ytick_fontsize=7.0,
+    box_aspect=0.92,
+)
+
+
+def render_decomposition_view(request: _RetronSummaryPlotRequest) -> list[PlotFigure]:
+    return _plot_retron_decomposition(
+        summary=request.summary,
+        trace=request.trace,
+        output_dir=request.output_dir,
+        title=request.title,
+        filename=request.filename,
+        control_name=request.control_name,
+        no_stress_label=request.no_stress_label,
+        relevant_only=request.relevant_only,
+        fig_kwargs=request.fig_kwargs,
+    )
+
+
+def build_retron_decomposition_frame(
+    trace: pd.DataFrame,
+    *,
+    control_name: str,
+    relevant_only: bool,
+    summary: pd.DataFrame | None = None,
+    no_stress_label: str = "H2O",
+) -> pd.DataFrame:
+    trace = _normalize_decision_card_trace_metadata(trace, control_name=control_name)
+    base_frame = _build_primary_window_decomposition_frame(
+        trace,
+        control_name=control_name,
+        relevant_only=relevant_only,
+    )
+    if summary is None:
+        return base_frame
+    return _build_decision_card_support_frame(
+        trace=trace,
+        summary=summary,
+        base_frame=base_frame,
+        control_name=control_name,
+        relevant_only=relevant_only,
+        no_stress_label=no_stress_label,
+    )
+
+
+def _build_primary_window_decomposition_frame(
+    trace: pd.DataFrame,
+    *,
+    control_name: str,
+    relevant_only: bool,
+) -> pd.DataFrame:
+    state_auc = _primary_window_auc_frame(trace, metric="R", control_name=control_name, relevant_only=relevant_only)
+    if state_auc.empty:
+        return _empty_decomposition_frame()
+    sample_rows = state_auc[~state_auc["is_control"]].copy()
+    control_rows = state_auc[state_auc["is_control"]].copy()
+    sample_group = _decomposition_group_columns(sample_rows, include_sponge=True)
+    control_group = _decomposition_group_columns(control_rows, include_sponge=False)
+    sample_pivot = _pivot_state_auc(sample_rows, index_columns=sample_group, value_prefix="sample")
+    control_pivot = _pivot_state_auc(control_rows, index_columns=control_group, value_prefix="control")
+    join_columns = [column for column in control_group if column in sample_pivot.columns]
+    if join_columns:
+        out = sample_pivot.merge(control_pivot, on=join_columns, how="left", validate="many_to_one")
+    else:
+        out = sample_pivot.assign(
+            control_minus_auc=np.nan,
+            control_plus_auc=np.nan,
+        )
+    out["delta_real_auc"] = out["sample_plus_auc"] - out["sample_minus_auc"]
+    out["delta_teto_auc"] = out["control_plus_auc"] - out["control_minus_auc"]
+    out["delta_net_auc"] = out["delta_real_auc"] - out["delta_teto_auc"]
+    order = [column for column in ("sensor", "sponge", "stress_condition", "plate_id") if column in out.columns]
+    if order:
+        out = out.sort_values(order, kind="stable")
+    return out.reset_index(drop=True)
+
+
+def _empty_decomposition_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "sensor",
+            "sponge",
+            "stress_condition",
+            "plate_id",
+            "source_experiment_id",
+            "source_label",
+            "sample_minus_auc",
+            "sample_plus_auc",
+            "delta_real_auc",
+            "control_minus_auc",
+            "control_plus_auc",
+            "delta_teto_auc",
+            "delta_net_auc",
+        ]
+    )
+
+
+def _build_decision_card_support_frame(
+    *,
+    trace: pd.DataFrame,
+    summary: pd.DataFrame,
+    base_frame: pd.DataFrame,
+    control_name: str,
+    relevant_only: bool,
+    no_stress_label: str,
+) -> pd.DataFrame:
+    trace_frame = _matched_control_relevant_trace_frame(
+        trace,
+        metric="R",
+        control_name=control_name,
+        relevant_only=relevant_only,
+        where="retron_decision_card_support",
+    )
+    if trace_frame.empty:
+        return base_frame
+    _require_decision_card_summary_columns(summary)
+    r_trace = trace[(trace["metric"].astype(str) == "R") & trace["IPTG"].notna()].copy()
+    rows: list[dict[str, object]] = []
+    for sensor in _ordered(trace_frame["sensor"].astype(str).tolist()):
+        sensor_df = trace_frame[trace_frame["sensor"].astype(str) == sensor].copy()
+        sample_df = sensor_df[sensor_df["sponge"].astype(str) != str(control_name)].copy()
+        sensor_trace = trace[trace["sensor"].astype(str) == sensor].copy()
+        sensor_r_trace = r_trace[r_trace["sensor"].astype(str) == sensor].copy()
+        for _, spec in _decision_card_row_specs(sample_df).iterrows():
+            sponge = str(spec["sponge"])
+            stress = str(spec["stress_condition"])
+            relevant_sample, relevant_control = _matched_control_condition_frame(
+                sensor_r_trace,
+                sensor=sensor,
+                sponge=sponge,
+                stress_condition=stress,
+                control_name=control_name,
+            )
+            h2o_sample, h2o_control = _matched_control_condition_frame(
+                sensor_r_trace,
+                sensor=sensor,
+                sponge=sponge,
+                stress_condition=no_stress_label,
+                control_name=control_name,
+                match_reference=relevant_sample,
+            )
+            rows.append(
+                _decision_card_support_row(
+                    sensor_trace=sensor_trace,
+                    sensor=sensor,
+                    sponge=sponge,
+                    stress_condition=stress,
+                    primary_stress=stress,
+                    panel_role="primary",
+                    sample_panel=relevant_sample,
+                    control_panel=relevant_control,
+                    summary=summary,
+                    base_frame=base_frame,
+                    control_name=control_name,
+                    strict_summary_metrics=True,
+                )
+            )
+            if not h2o_sample.empty or not h2o_control.empty:
+                rows.append(
+                    _decision_card_support_row(
+                        sensor_trace=sensor_trace,
+                        sensor=sensor,
+                        sponge=sponge,
+                        stress_condition=no_stress_label,
+                        primary_stress=stress,
+                        panel_role="context",
+                        sample_panel=h2o_sample,
+                        control_panel=h2o_control,
+                        summary=summary,
+                        base_frame=base_frame,
+                        control_name=control_name,
+                        strict_summary_metrics=False,
+                    )
+                )
+    if not rows:
+        return base_frame
+    out = pd.DataFrame(rows)
+    order = [
+        column
+        for column in ("sensor", "sponge", "primary_stress", "panel_role", "stress_condition")
+        if column in out.columns
+    ]
+    if order:
+        out = out.sort_values(order, kind="stable")
+    return out.reset_index(drop=True)
+
+
+def _require_decision_card_trace_metadata(trace: pd.DataFrame) -> None:
+    require_columns(
+        trace,
+        [
+            "replicate_id",
+            "matched_control_key",
+            "summary_window_start_h",
+            "summary_window_end_h",
+            "summary_window_duration_h",
+            "in_pre_window",
+            "in_primary_post_stress",
+            "pre_stress_read_count",
+            "post_stress_read_count",
+            "matched_group_sample_count",
+            "stress_addition_gap_h",
+        ],
+        where="retron_decomposition",
+    )
+
+
+def _normalize_decision_card_trace_metadata(
+    trace: pd.DataFrame,
+    *,
+    control_name: str,
+) -> pd.DataFrame:
+    frame = trace.copy()
+    require_columns(
+        frame,
+        ["sensor", "sponge", "stress_condition", "time_from_stress", "metric", "value", "replicate_id"],
+        where="retron_decomposition",
+    )
+    if "matched_control_key" not in frame.columns:
+        frame["matched_control_key"] = _derived_matched_control_key(frame)
+    if "in_pre_window" not in frame.columns:
+        frame["in_pre_window"] = _derived_pre_window_mask(frame)
+    if "in_primary_post_stress" not in frame.columns:
+        frame["in_primary_post_stress"] = _derived_primary_post_stress_mask(frame)
+    if "summary_window_start_h" not in frame.columns:
+        frame["summary_window_start_h"] = _derived_summary_window_start(frame)
+    if "summary_window_end_h" not in frame.columns:
+        frame["summary_window_end_h"] = _derived_summary_window_end(frame)
+    if "summary_window_duration_h" not in frame.columns:
+        frame["summary_window_duration_h"] = pd.to_numeric(
+            frame["summary_window_end_h"], errors="coerce"
+        ) - pd.to_numeric(frame["summary_window_start_h"], errors="coerce")
+    if "pre_stress_read_count" not in frame.columns:
+        frame["pre_stress_read_count"] = _derived_window_read_counts(frame, flag_column="in_pre_window")
+    if "post_stress_read_count" not in frame.columns:
+        frame["post_stress_read_count"] = _derived_window_read_counts(frame, flag_column="in_primary_post_stress")
+    if "matched_group_sample_count" not in frame.columns:
+        frame["matched_group_sample_count"] = _derived_matched_group_sample_count(frame, control_name=control_name)
+    if "stress_addition_gap_h" not in frame.columns:
+        frame["stress_addition_gap_h"] = np.nan
+    _require_decision_card_trace_metadata(frame)
+    return frame
+
+
+def _decision_card_group_columns(
+    frame: pd.DataFrame,
+    *,
+    include_sponge: bool = True,
+    include_stress: bool = True,
+    include_iptg: bool = True,
+    include_replicate: bool = True,
+) -> list[str]:
+    columns = [column for column in ("source_experiment_id", "plate_id", "sensor") if column in frame.columns]
+    if include_sponge and "sponge" in frame.columns:
+        columns.append("sponge")
+    if include_stress and "stress_condition" in frame.columns:
+        columns.append("stress_condition")
+    if include_iptg and "IPTG" in frame.columns:
+        columns.append("IPTG")
+    if include_replicate and "replicate_id" in frame.columns:
+        columns.append("replicate_id")
+    return columns
+
+
+def _derived_matched_control_key(frame: pd.DataFrame) -> pd.Series:
+    key_columns = [
+        column
+        for column in ("source_experiment_id", "plate_id", "sensor", "stress_condition")
+        if column in frame.columns
+    ]
+    if not key_columns:
+        return pd.Series(["matched-control"] * len(frame), index=frame.index, dtype="object")
+    parts = frame[key_columns].copy()
+    for column in key_columns:
+        parts[column] = parts[column].fillna("NA").astype(str)
+    return parts.agg("::".join, axis=1)
+
+
+def _derived_pre_window_mask(frame: pd.DataFrame) -> pd.Series:
+    group_columns = _decision_card_group_columns(frame)
+    if not group_columns:
+        group_columns = ["sensor"]
+    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
+    minima = time_values.groupby([frame[column] for column in group_columns], dropna=False).transform("min")
+    return time_values.eq(minima).fillna(False)
+
+
+def _derived_primary_post_stress_mask(frame: pd.DataFrame) -> pd.Series:
+    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
+    if {"summary_window_start_h", "summary_window_end_h"}.issubset(frame.columns):
+        start = pd.to_numeric(frame["summary_window_start_h"], errors="coerce")
+        end = pd.to_numeric(frame["summary_window_end_h"], errors="coerce")
+        mask = time_values.ge(start) & time_values.le(end)
+        return mask.fillna(False)
+    if "configured_max_post_stress_hours" in frame.columns:
+        end = pd.to_numeric(frame["configured_max_post_stress_hours"], errors="coerce")
+        mask = time_values.ge(0.0) & time_values.le(end)
+        return mask.fillna(False)
+    return time_values.ge(0.0).fillna(False)
+
+
+def _derived_summary_window_start(frame: pd.DataFrame) -> pd.Series:
+    if "in_primary_post_stress" in frame.columns:
+        time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
+        flagged = time_values.where(frame["in_primary_post_stress"].fillna(False))
+        group_columns = _decision_card_group_columns(frame)
+        if group_columns:
+            return flagged.groupby([frame[column] for column in group_columns], dropna=False).transform("min")
+    return pd.Series(0.0, index=frame.index, dtype=float)
+
+
+def _derived_summary_window_end(frame: pd.DataFrame) -> pd.Series:
+    if "configured_max_post_stress_hours" in frame.columns:
+        configured = pd.to_numeric(frame["configured_max_post_stress_hours"], errors="coerce")
+        if configured.notna().any():
+            return configured
+    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
+    if "in_primary_post_stress" in frame.columns:
+        flagged = time_values.where(frame["in_primary_post_stress"].fillna(False))
+    else:
+        flagged = time_values.where(time_values.ge(0.0))
+    group_columns = _decision_card_group_columns(frame)
+    if group_columns:
+        return flagged.groupby([frame[column] for column in group_columns], dropna=False).transform("max")
+    return pd.Series(float(flagged.max()), index=frame.index, dtype=float)
+
+
+def _derived_window_read_counts(frame: pd.DataFrame, *, flag_column: str) -> pd.Series:
+    if flag_column not in frame.columns:
+        return pd.Series(np.nan, index=frame.index, dtype=float)
+    flagged = frame[frame[flag_column].fillna(False)].copy()
+    if flagged.empty:
+        return pd.Series(np.nan, index=frame.index, dtype=float)
+    group_columns = _decision_card_group_columns(frame, include_replicate=False)
+    replicate_columns = _decision_card_group_columns(flagged)
+    counts = (
+        flagged.groupby(replicate_columns, dropna=False)["time_from_stress"]
+        .nunique()
+        .rename("__read_count")
+        .reset_index()
+    )
+    counts["__read_count"] = pd.to_numeric(counts["__read_count"], errors="coerce")
+    if group_columns:
+        lookup = counts.groupby(group_columns, dropna=False)["__read_count"].median().rename(flag_column).reset_index()
+        merged = frame[group_columns].merge(lookup, on=group_columns, how="left")
+        return pd.to_numeric(merged[flag_column], errors="coerce")
+    median = float(counts["__read_count"].median())
+    return pd.Series(median, index=frame.index, dtype=float)
+
+
+def _derived_matched_group_sample_count(frame: pd.DataFrame, control_name: str) -> pd.Series:
+    sample = frame[frame["sponge"].astype(str) != str(control_name)].copy()
+    group_columns = _decision_card_group_columns(
+        frame, include_sponge=False, include_iptg=False, include_replicate=False
+    )
+    if sample.empty or not group_columns:
+        counts = frame.groupby(_decision_card_group_columns(frame, include_replicate=False), dropna=False)[
+            "replicate_id"
+        ].transform("nunique")
+        return pd.to_numeric(counts, errors="coerce")
+    lookup = (
+        sample.groupby(group_columns, dropna=False)["replicate_id"]
+        .nunique()
+        .rename("matched_group_sample_count")
+        .reset_index()
+    )
+    merged = frame[group_columns].merge(lookup, on=group_columns, how="left")
+    return pd.to_numeric(merged["matched_group_sample_count"], errors="coerce")
+
+
+def _require_decision_card_summary_columns(summary: pd.DataFrame) -> None:
+    required = {"sensor", "sponge", "stress_condition", "metric", "value"}
+    missing = sorted(required - set(summary.columns))
+    if missing:
+        raise ValueError(f"retron_decomposition: summary input is missing required columns: {missing}")
+
+
+def _decision_card_support_row(
+    *,
+    sensor_trace: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress_condition: str,
+    primary_stress: str,
+    panel_role: str,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    summary: pd.DataFrame,
+    base_frame: pd.DataFrame,
+    control_name: str,
+    strict_summary_metrics: bool,
+) -> dict[str, object]:
+    first_row = _panel_reference_row(sample_panel, control_panel)
+    base_row = _lookup_primary_window_decomposition_row(
+        base_frame,
+        sensor=sensor,
+        sponge=sponge,
+        stress_condition=stress_condition,
+    )
+    g_sensor_value = _decision_card_sensor_response_value(
+        summary=summary,
+        sensor=sensor,
+        control_name=control_name,
+    )
+    warning_flag = _decision_card_warning_flag(summary=summary, sensor=sensor, stress=primary_stress)
+    record: dict[str, object] = {
+        "sensor": sensor,
+        "sponge": sponge,
+        "stress_condition": stress_condition,
+        "primary_stress": primary_stress,
+        "panel_role": panel_role,
+        "matched_control_key": _panel_metadata_value(
+            sample_panel,
+            control_panel,
+            column="matched_control_key",
+        ),
+        "sample_minus_auc": _panel_state_auc(sample_panel, iptg="-IPTG"),
+        "sample_plus_auc": _panel_state_auc(sample_panel, iptg="+IPTG"),
+        "control_minus_auc": _panel_state_auc(control_panel, iptg="-IPTG"),
+        "control_plus_auc": _panel_state_auc(control_panel, iptg="+IPTG"),
+        "matched_group_sample_count": _panel_metadata_value(
+            sample_panel,
+            control_panel,
+            column="matched_group_sample_count",
+            fallback=float(sample_panel["replicate_id"].astype(str).nunique())
+            if "replicate_id" in sample_panel.columns
+            else np.nan,
+        ),
+        "pre_stress_read_count": _panel_metadata_value(
+            sample_panel,
+            control_panel,
+            column="pre_stress_read_count",
+            fallback=float(_window_read_count(sample_panel, flag_column="in_pre_window") or np.nan),
+        ),
+        "post_stress_read_count": _panel_metadata_value(
+            sample_panel,
+            control_panel,
+            column="post_stress_read_count",
+            fallback=float(_window_read_count(sample_panel, flag_column="in_primary_post_stress") or np.nan),
+        ),
+        "summary_window_start_h": _panel_metadata_value(sample_panel, control_panel, column="summary_window_start_h"),
+        "summary_window_end_h": _panel_metadata_value(sample_panel, control_panel, column="summary_window_end_h"),
+        "summary_window_duration_h": _panel_metadata_value(
+            sample_panel,
+            control_panel,
+            column="summary_window_duration_h",
+        ),
+        "stress_time_zero_h": _panel_metadata_value(sample_panel, control_panel, column="stress_time_zero_h"),
+        "stress_addition_gap_h": _panel_metadata_value(sample_panel, control_panel, column="stress_addition_gap_h"),
+        "G_sensor": g_sensor_value,
+        "warning_flag": warning_flag,
+    }
+    if first_row is not None:
+        for column in ("source_experiment_id", "source_label", "plate_id"):
+            if column in first_row.index:
+                record[column] = first_row.get(column)
+    if base_row is not None:
+        for column in (
+            "sample_minus_auc",
+            "sample_plus_auc",
+            "delta_real_auc",
+            "control_minus_auc",
+            "control_plus_auc",
+            "delta_teto_auc",
+            "delta_net_auc",
+        ):
+            if column in base_row:
+                record[column] = base_row.get(column)
+    record["delta_real_auc"] = _safe_difference(record.get("sample_plus_auc"), record.get("sample_minus_auc"))
+    record["delta_teto_auc"] = _safe_difference(record.get("control_plus_auc"), record.get("control_minus_auc"))
+    record["delta_net_auc"] = _safe_difference(record.get("delta_real_auc"), record.get("delta_teto_auc"))
+    for spec in retron_presentation.decision_card_metric_specs():
+        minus_values = np.asarray([], dtype=float)
+        plus_values = np.asarray([], dtype=float)
+        with suppress(ValueError):
+            minus_values, plus_values = _summary_strip_metric_values(
+                metric=spec.metric,
+                sensor_trace=sensor_trace,
+                sensor=sensor,
+                sponge=sponge,
+                stress=stress_condition,
+                sample_panel=sample_panel,
+                control_panel=control_panel,
+            )
+        contrast_mean, contrast_lower, contrast_upper = _summary_strip_contrast_interval(
+            plus_values=plus_values,
+            minus_values=minus_values,
+        )
+        if contrast_mean is None:
+            summary_record = _summary_metric_interval(
+                summary,
+                sensor=sensor,
+                sponge=sponge,
+                stress_condition=stress_condition,
+                metric=spec.metric,
+                strict=strict_summary_metrics,
+            )
+            if summary_record is None:
+                contrast_mean = contrast_lower = contrast_upper = np.nan
+            else:
+                contrast_mean = summary_record["mean"]
+                contrast_lower = summary_record["lower"]
+                contrast_upper = summary_record["upper"]
+        record[f"{spec.metric}_mean"] = contrast_mean
+        record[f"{spec.metric}_lower"] = contrast_lower
+        record[f"{spec.metric}_upper"] = contrast_upper
+        record[f"{spec.metric}_units"] = spec.units
+        record[f"{spec.metric}_minus_values"] = tuple(float(value) for value in minus_values if np.isfinite(value))
+        record[f"{spec.metric}_plus_values"] = tuple(float(value) for value in plus_values if np.isfinite(value))
+        record[f"{spec.metric}_minus_n"] = int(len(minus_values))
+        record[f"{spec.metric}_plus_n"] = int(len(plus_values))
+        record[f"{spec.metric}_minus_mean"] = _finite_mean(minus_values)
+        record[f"{spec.metric}_plus_mean"] = _finite_mean(plus_values)
+    burden_record = _summary_metric_interval(
+        summary,
+        sensor=sensor,
+        sponge=sponge,
+        stress_condition=stress_condition,
+        metric="D_growth_AUC",
+        strict=strict_summary_metrics,
+    )
+    raw_mean = burden_record["mean"] if burden_record is not None else np.nan
+    raw_lower = burden_record["lower"] if burden_record is not None else np.nan
+    raw_upper = burden_record["upper"] if burden_record is not None else np.nan
+    record["D_growth_AUC_mean"] = raw_mean
+    record["D_growth_AUC_lower"] = raw_lower
+    record["D_growth_AUC_upper"] = raw_upper
+    record["D_growth_AUC_units"] = "growth delta x h"
+    transformed = _apply_metric_display_transform(
+        spec=retron_presentation.DecisionCardMetricSpec(
+            metric="D_growth_AUC",
+            label="Burden penalty",
+            color="#D55E00",
+            units="growth delta x h",
+            display_multiplier=-1.0,
+        ),
+        mean=raw_mean,
+        lower=raw_lower,
+        upper=raw_upper,
+    )
+    record["D_growth_AUC_display_mean"] = transformed[0]
+    record["D_growth_AUC_display_lower"] = transformed[1]
+    record["D_growth_AUC_display_upper"] = transformed[2]
+    return record
+
+
+def _panel_reference_row(sample_panel: pd.DataFrame, control_panel: pd.DataFrame) -> pd.Series | None:
+    for frame in (sample_panel, control_panel):
+        if not frame.empty:
+            return frame.iloc[0]
+    return None
+
+
+def _lookup_primary_window_decomposition_row(
+    frame: pd.DataFrame,
+    *,
+    sensor: str,
+    sponge: str,
+    stress_condition: str,
+) -> Mapping[str, object] | None:
+    if frame.empty:
+        return None
+    matches = frame[
+        (frame["sensor"].astype(str) == sensor)
+        & (frame["sponge"].astype(str) == sponge)
+        & (frame["stress_condition"].astype(str) == stress_condition)
+    ]
+    if matches.empty:
+        return None
+    return matches.iloc[0]
+
+
+def _decision_card_support_lookup(
+    frame: pd.DataFrame,
+    *,
+    sensor: str,
+    sponge: str,
+    primary_stress: str,
+    panel_role: str,
+) -> Mapping[str, object]:
+    if frame.empty:
+        raise ValueError("retron_decomposition: support frame is empty for the matched-tetO summary")
+    matches = frame[
+        (frame["sensor"].astype(str) == sensor)
+        & (frame["sponge"].astype(str) == sponge)
+        & (frame["primary_stress"].astype(str) == primary_stress)
+        & (frame["panel_role"].astype(str) == panel_role)
+    ]
+    if matches.empty:
+        raise ValueError(
+            "retron_decomposition: support frame is missing the matched-tetO summary row for "
+            f"sensor={sensor!r}, sponge={sponge!r}, stress={primary_stress!r}, panel_role={panel_role!r}"
+        )
+    return matches.iloc[0]
+
+
+def _summary_metric_interval(
+    summary: pd.DataFrame,
+    *,
+    sensor: str,
+    sponge: str,
+    stress_condition: str,
+    metric: str,
+    strict: bool,
+) -> dict[str, float] | None:
+    metric_df = summary[
+        (summary["sensor"].astype(str) == sensor)
+        & (summary["sponge"].astype(str) == sponge)
+        & (summary["stress_condition"].astype(str) == stress_condition)
+        & (summary["metric"].astype(str) == str(metric))
+    ].copy()
+    values = pd.to_numeric(metric_df["value"], errors="coerce").to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        if strict:
+            raise ValueError(
+                "retron_decomposition: summary input is missing required matched-tetO summary metrics for "
+                f"sensor={sensor!r}, sponge={sponge!r}, stress={stress_condition!r}: {[str(metric)]!r}"
+            )
+        return None
+    if values.size == 1:
+        mean = lower = upper = float(values[0])
+    else:
+        mean, lower, upper = bootstrap_mean_interval(
+            values,
+            ci=95.0,
+            ci_boot=100,
+            rng=np.random.default_rng(0),
+        )
+    return {"mean": mean, "lower": lower, "upper": upper}
+
+
+def _panel_state_auc(frame: pd.DataFrame, *, iptg: str) -> float:
+    if frame.empty:
+        return float("nan")
+    state = frame[frame["IPTG"].astype(str) == str(iptg)].copy()
+    if state.empty:
+        return float("nan")
+    ordered = state.sort_values("time_from_stress", kind="stable")
+    times = pd.to_numeric(ordered["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+    values = pd.to_numeric(ordered["value"], errors="coerce").to_numpy(dtype=float)
+    return _auc(times, values)
+
+
+def _panel_metadata_value(
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    *,
+    column: str,
+    fallback: float | str | None = None,
+) -> float | str | None:
+    for frame in (sample_panel, control_panel):
+        if column not in frame.columns:
+            continue
+        values = frame[column].dropna()
+        if values.empty:
+            continue
+        value = values.iloc[0]
+        numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+        if np.isfinite(numeric):
+            return float(numeric)
+        text = str(value).strip()
+        if text:
+            return text
+    return fallback
+
+
+def _decision_card_warning_flag(
+    *,
+    summary: pd.DataFrame,
+    sensor: str,
+    stress: str,
+) -> str | None:
+    if "warning_flag" not in summary.columns:
+        return None
+    flags = summary[
+        (summary["sensor"].astype(str) == sensor)
+        & (summary["stress_condition"].astype(str) == stress)
+        & summary["warning_flag"].notna()
+    ]["warning_flag"].astype(str)
+    if flags.empty:
+        return None
+    unique = sorted({flag for flag in flags if flag.strip()})
+    return ", ".join(unique) if unique else None
+
+
+def _apply_metric_display_transform(
+    *,
+    spec: retron_presentation.DecisionCardMetricSpec,
+    mean: float,
+    lower: float,
+    upper: float,
+) -> tuple[float, float, float]:
+    values = np.asarray([mean, lower, upper], dtype=float)
+    if not np.isfinite(values).any():
+        return (np.nan, np.nan, np.nan)
+    transformed = values * float(spec.display_multiplier)
+    low = float(np.nanmin(transformed))
+    high = float(np.nanmax(transformed))
+    return float(transformed[0]), low, high
+
+
+def _safe_difference(left: object, right: object) -> float:
+    left_value = pd.to_numeric(pd.Series([left]), errors="coerce").iloc[0]
+    right_value = pd.to_numeric(pd.Series([right]), errors="coerce").iloc[0]
+    if np.isfinite(left_value) and np.isfinite(right_value):
+        return float(left_value - right_value)
+    return float("nan")
+
+
+def _decomposition_figure_policy(*, row_count: int) -> _SummaryFigurePolicy:
+    return _SummaryFigurePolicy(
+        default_figsize=(12.2, max(5.2, 4.55 * row_count)),
+        title_y=0.988,
+        subtitle_y=0.952,
+        adjust=_SummarySubplotPolicy(
+            top=0.89,
+            bottom=0.08,
+            left=0.07,
+            right=0.985,
+            hspace=0.24,
+            wspace=0.10,
+        ),
+    )
+
+
+def _plot_retron_decomposition(
+    *,
+    summary: pd.DataFrame,
+    trace: pd.DataFrame | None,
+    output_dir,
+    title: str,
+    filename: str | None,
+    control_name: str,
+    no_stress_label: str,
+    relevant_only: bool,
+    fig_kwargs: dict,
+) -> list[PlotFigure]:
+    if trace is None:
+        raise ValueError("retron_decomposition: trace input is required")
+    trace = _normalize_decision_card_trace_metadata(trace, control_name=control_name)
+    trace_frame = _matched_control_relevant_trace_frame(
+        trace,
+        metric="R",
+        control_name=control_name,
+        relevant_only=relevant_only,
+        where="retron_decomposition",
+    )
+    if warn_if_empty(trace_frame, where="retron_decomposition", detail="matched-control R traces"):
+        return []
+    r_trace = trace[(trace["metric"].astype(str) == "R") & trace["IPTG"].notna()].copy()
+    support_frame = build_retron_decomposition_frame(
+        trace,
+        control_name=control_name,
+        relevant_only=relevant_only,
+        summary=summary,
+        no_stress_label=no_stress_label,
+    )
+    row_payloads: list[_DecisionCardRowPayload] = []
+    for sensor in _ordered(trace_frame["sensor"].astype(str).tolist()):
+        sensor_df = trace_frame[trace_frame["sensor"].astype(str) == sensor].copy()
+        sensor_trace = trace[trace["sensor"].astype(str) == sensor].copy()
+        sensor_r_trace = r_trace[r_trace["sensor"].astype(str) == sensor].copy()
+        for _, spec in _decision_card_row_specs(
+            sensor_df[sensor_df["sponge"].astype(str) != str(control_name)]
+        ).iterrows():
+            row_payloads.append(
+                _decision_card_row_payload(
+                    row_idx=len(row_payloads),
+                    sensor_trace=sensor_trace,
+                    sensor_r_trace=sensor_r_trace,
+                    sensor=str(sensor),
+                    sponge=str(spec["sponge"]),
+                    stress=str(spec["stress_condition"]),
+                    support_frame=support_frame,
+                    control_name=control_name,
+                    no_stress_label=no_stress_label,
+                )
+            )
+    if not row_payloads:
+        return []
+    policy = _decomposition_figure_policy(row_count=len(row_payloads))
+    display_bounds = trace_display_bounds(
+        trace,
+        max_post_stress_hours=float(fig_kwargs.get("display_post_stress_hours", 4.0)),
+    )
+    with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
+        figsize = fig_kwargs.get("figsize", policy.default_figsize)
+        fig = plt.figure(figsize=figsize, constrained_layout=False)
+        outer = fig.add_gridspec(
+            len(row_payloads),
+            1,
+            left=policy.adjust.left,
+            right=policy.adjust.right,
+            top=policy.adjust.top,
+            bottom=policy.adjust.bottom,
+            hspace=0.42,
+        )
+        for row_payload in row_payloads:
+            _render_decision_card_row(
+                figure=fig,
+                row_spec=outer[row_payload.row_idx],
+                row=row_payload,
+                display_bounds=display_bounds,
+            )
+        _finalize_summary_figure(
+            fig,
+            policy=policy,
+            fig_kwargs=fig_kwargs,
+            title=title,
+            context=None,
+            subtitle=retron_presentation.render_summary_text(
+                retron_presentation.DECOMPOSITION_TEXT_SPEC,
+                trace=trace,
+            ),
+        )
+        return emit_plot_figure(
+            fig=fig,
+            filename=filename or _slug(title),
+            output_dir=output_dir,
+            fig_kwargs=fig_kwargs,
+        )
+
+
+def _primary_window_auc_frame(
+    trace: pd.DataFrame,
+    *,
+    metric: str,
+    control_name: str,
+    relevant_only: bool,
+) -> pd.DataFrame:
+    require_columns(
+        trace,
+        [
+            "sensor",
+            "sponge",
+            "stress_condition",
+            "IPTG",
+            "replicate_id",
+            "time_from_stress",
+            "metric",
+            "value",
+            "in_primary_post_stress",
+        ],
+        where="retron_primary_window_auc_frame",
+    )
+    frame = trace[trace["metric"].astype(str) == str(metric)].copy()
+    frame = frame[frame["in_primary_post_stress"].fillna(False)]
+    frame = frame[frame["IPTG"].notna()]
+    if frame.empty:
+        return pd.DataFrame()
+    if relevant_only:
+        frame = _matched_control_relevant_trace_frame(
+            frame,
+            metric=str(metric),
+            control_name=control_name,
+            relevant_only=True,
+            where="retron_primary_window_auc_frame",
+        )
+        if frame.empty:
+            return pd.DataFrame()
+    group_columns = [
+        column
+        for column in (
+            "source_experiment_id",
+            "source_label",
+            "plate_id",
+            "sensor",
+            "sponge",
+            "stress_condition",
+            "replicate_id",
+            "IPTG",
+            "configured_max_post_stress_hours",
+        )
+        if column in frame.columns
+    ]
+    rows: list[dict[str, object]] = []
+    for keys, group in frame.groupby(group_columns, dropna=False):
+        record = dict(zip(group_columns, keys, strict=False))
+        ordered = group.sort_values("time_from_stress", kind="stable")
+        times = pd.to_numeric(ordered["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+        values = pd.to_numeric(ordered["value"], errors="coerce").to_numpy(dtype=float)
+        record["primary_window_auc"] = _auc(times, values)
+        record["is_control"] = str(record.get("sponge", "")) == str(control_name)
+        rows.append(record)
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out["sensor"] = out["sensor"].astype(str)
+    out["sponge"] = out["sponge"].astype(str)
+    out["stress_condition"] = out["stress_condition"].astype(str)
+    out["IPTG"] = out["IPTG"].astype(str)
+    return out
+
+
+def _decomposition_group_columns(frame: pd.DataFrame, *, include_sponge: bool) -> list[str]:
+    columns = [
+        column
+        for column in ("source_experiment_id", "source_label", "plate_id", "sensor", "stress_condition")
+        if column in frame.columns
+    ]
+    if include_sponge and "sponge" in frame.columns:
+        columns.append("sponge")
+    return columns
+
+
+def _pivot_state_auc(frame: pd.DataFrame, *, index_columns: Sequence[str], value_prefix: str) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=[*index_columns, f"{value_prefix}_minus_auc", f"{value_prefix}_plus_auc"])
+    pivot = (
+        frame.pivot_table(
+            index=list(index_columns),
+            columns="IPTG",
+            values="primary_window_auc",
+            aggfunc="mean",
+        )
+        .rename(columns={"-IPTG": f"{value_prefix}_minus_auc", "+IPTG": f"{value_prefix}_plus_auc"})
+        .reset_index()
+    )
+    for expected in (f"{value_prefix}_minus_auc", f"{value_prefix}_plus_auc"):
+        if expected not in pivot.columns:
+            pivot[expected] = np.nan
+    return pivot
+
+
+def _matched_control_relevant_trace_frame(
+    trace: pd.DataFrame,
+    *,
+    metric: str,
+    control_name: str,
+    relevant_only: bool,
+    where: str,
+) -> pd.DataFrame:
+    require_columns(
+        trace,
+        ["sensor", "sponge", "stress_condition", "IPTG", "metric", "value"],
+        where=where,
+    )
+    frame = trace[trace["metric"].astype(str) == str(metric)].copy()
+    frame = frame[frame["IPTG"].notna()]
+    if frame.empty or not relevant_only:
+        return frame
+    _require_relevant_sensor_pair(frame, where=where)
+    sample_mask = frame["sponge"].astype(str) != str(control_name)
+    sample_frame = frame[sample_mask].copy()
+    sample_frame = sample_frame[sample_frame["relevant_sensor_pair"].fillna(False)]
+    if "is_relevant_stress" in sample_frame.columns:
+        sample_frame = sample_frame[sample_frame["is_relevant_stress"].fillna(False)]
+    control_frame = frame[~sample_mask].copy()
+    match_columns = [
+        column
+        for column in ("source_experiment_id", "source_label", "plate_id", "sensor", "stress_condition")
+        if column in sample_frame.columns and column in control_frame.columns
+    ]
+    if match_columns and not sample_frame.empty:
+        control_frame = control_frame.merge(
+            sample_frame[match_columns].drop_duplicates(),
+            on=match_columns,
+            how="inner",
+        )
+    elif "is_relevant_stress" in control_frame.columns:
+        control_frame = control_frame[control_frame["is_relevant_stress"].fillna(False)]
+    return pd.concat([sample_frame, control_frame], ignore_index=True)
+
+
+def _matched_control_condition_frame(
+    trace: pd.DataFrame,
+    *,
+    sensor: str,
+    sponge: str,
+    stress_condition: str,
+    control_name: str,
+    match_reference: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    frame = trace[
+        (trace["sensor"].astype(str) == str(sensor))
+        & (trace["stress_condition"].astype(str) == str(stress_condition))
+        & trace["IPTG"].notna()
+    ].copy()
+    sample = frame[frame["sponge"].astype(str) == str(sponge)].copy()
+    control = frame[frame["sponge"].astype(str) == str(control_name)].copy()
+    match_columns = [
+        column
+        for column in ("source_experiment_id", "source_label", "plate_id")
+        if column in sample.columns and column in control.columns
+    ]
+    if match_columns:
+        reference = match_reference if match_reference is not None else sample
+        keys = reference[match_columns].drop_duplicates()
+        if not keys.empty:
+            sample = sample.merge(keys, on=match_columns, how="inner")
+            control = control.merge(keys, on=match_columns, how="inner")
+    return sample, control
+
+
+def _window_read_count(trace: pd.DataFrame, *, flag_column: str) -> int | None:
+    if trace.empty or flag_column not in trace.columns or "replicate_id" not in trace.columns:
+        return None
+    flagged = trace[trace[flag_column].fillna(False)].copy()
+    if flagged.empty:
+        return None
+    counts = (
+        flagged.groupby("replicate_id", dropna=False)["time_from_stress"].nunique().to_numpy(dtype=float, copy=False)
+    )
+    finite = counts[np.isfinite(counts)]
+    if finite.size == 0:
+        return None
+    return int(round(float(np.median(finite))))
+
+
+def _decision_card_row_specs(sample_df: pd.DataFrame) -> pd.DataFrame:
+    if sample_df.empty:
+        return pd.DataFrame(columns=["sponge", "stress_condition"])
+    stress_levels = _preferred_stresses(
+        sample_df["stress_condition"].astype(str).tolist(),
+        stress_order=_ordered(sample_df["stress_condition"].astype(str).tolist()),
+    )
+    out = sample_df.assign(
+        __stress_rank=pd.Categorical(
+            sample_df["stress_condition"].astype(str),
+            categories=stress_levels,
+            ordered=True,
+        )
+    )
+    return (
+        out[["sponge", "stress_condition", "__stress_rank"]]
+        .drop_duplicates()
+        .sort_values(["__stress_rank", "sponge"], kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+def _decision_card_panel_limits(*frames: pd.DataFrame) -> tuple[float, float]:
+    values = pd.concat(
+        [pd.to_numeric(frame["value"], errors="coerce") for frame in frames],
+        ignore_index=True,
+    ).to_numpy(dtype=float, copy=False)
+    return shared_numeric_limits(values, center=None, pad_fraction=0.10, min_span=0.12)
+
+
+def _decision_card_row_payloads(
+    *,
+    sensor_df: pd.DataFrame,
+    sensor_r_trace: pd.DataFrame,
+    support_frame: pd.DataFrame,
+    control_name: str,
+    no_stress_label: str,
+) -> list[_DecisionCardRowPayload]:
+    sample_df = sensor_df[sensor_df["sponge"].astype(str) != str(control_name)].copy()
+    row_specs = _decision_card_row_specs(sample_df)
+    return [
+        _decision_card_row_payload(
+            row_idx=row_idx,
+            sensor_r_trace=sensor_r_trace,
+            sensor=str(sensor_df["sensor"].astype(str).iloc[0]),
+            sponge=str(spec["sponge"]),
+            stress=str(spec["stress_condition"]),
+            support_frame=support_frame,
+            control_name=control_name,
+            no_stress_label=no_stress_label,
+        )
+        for row_idx, spec in row_specs.iterrows()
+    ]
+
+
+def _decision_card_row_payload(
+    *,
+    row_idx: int,
+    sensor_trace: pd.DataFrame,
+    sensor_r_trace: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress: str,
+    support_frame: pd.DataFrame,
+    control_name: str,
+    no_stress_label: str,
+) -> _DecisionCardRowPayload:
+    relevant_sample, relevant_control = _matched_control_condition_frame(
+        sensor_r_trace,
+        sensor=sensor,
+        sponge=sponge,
+        stress_condition=stress,
+        control_name=control_name,
+    )
+    h2o_sample, h2o_control = _matched_control_condition_frame(
+        sensor_r_trace,
+        sensor=sensor,
+        sponge=sponge,
+        stress_condition=no_stress_label,
+        control_name=control_name,
+        match_reference=relevant_sample,
+    )
+    panel_limits = _decision_card_panel_limits(relevant_sample, relevant_control, h2o_sample, h2o_control)
+    support_row = _decision_card_support_lookup(
+        support_frame,
+        sensor=sensor,
+        sponge=sponge,
+        primary_stress=stress,
+        panel_role="primary",
+    )
+    return _DecisionCardRowPayload(
+        row_idx=row_idx,
+        sensor=sensor,
+        sponge=sponge,
+        stress=stress,
+        panel_limits=panel_limits,
+        h2o_panel=_decision_card_panel_payload(
+            row_idx=row_idx,
+            sample_panel=h2o_sample,
+            control_panel=h2o_control,
+            sensor=sensor,
+            stress_condition=no_stress_label,
+            sponge=sponge,
+            control_name=control_name,
+            no_stress_label=no_stress_label,
+        ),
+        relevant_panel=_decision_card_panel_payload(
+            row_idx=row_idx,
+            sample_panel=relevant_sample,
+            control_panel=relevant_control,
+            sensor=sensor,
+            stress_condition=stress,
+            sponge=sponge,
+            control_name=control_name,
+            no_stress_label=no_stress_label,
+        ),
+        summary_strip=_decision_card_summary_strip_payload(
+            support_row=support_row,
+        ),
+    )
+
+
+def _decision_card_panel_payload(
+    *,
+    row_idx: int,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    sensor: str,
+    stress_condition: str,
+    sponge: str,
+    control_name: str,
+    no_stress_label: str,
+) -> _DecisionCardPanelPayload:
+    panel_trace = pd.concat([sample_panel, control_panel], ignore_index=True)
+    title = _decision_card_panel_title(sensor=sensor, sponge=sponge, stress_condition=stress_condition)
+    return _DecisionCardPanelPayload(
+        stress_condition=stress_condition,
+        title=title,
+        show_ylabel=True,
+        show_legend=stress_condition != no_stress_label and row_idx == 0,
+        panel_trace=panel_trace,
+        line_payloads=_decision_card_line_payloads(
+            sample_panel=sample_panel,
+            control_panel=control_panel,
+            control_name=control_name,
+        ),
+    )
+
+
+def _decision_card_panel_title(*, sensor: str, sponge: str, stress_condition: str) -> str:
+    sensor_text = str(sensor).strip()
+    sponge_text = str(sponge).strip()
+    stress_text = str(stress_condition).strip()
+    parts = [part for part in (sensor_text, sponge_text, stress_text) if part]
+    return " · ".join(parts)
+
+
+def _decision_card_line_payloads(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    control_name: str,
+) -> tuple[_DecisionCardTraceLinePayload, ...]:
+    line_specs = (
+        ("sample-minus", "Sample -IPTG", sample_panel[sample_panel["IPTG"].astype(str) == "-IPTG"], "#1f77b4", "-"),
+        ("sample-plus", "Sample +IPTG", sample_panel[sample_panel["IPTG"].astype(str) == "+IPTG"], "#1f77b4", "--"),
+        (
+            "control-minus",
+            f"{control_name} -IPTG",
+            control_panel[control_panel["IPTG"].astype(str) == "-IPTG"],
+            "#8c8c8c",
+            "-",
+        ),
+        (
+            "control-plus",
+            f"{control_name} +IPTG",
+            control_panel[control_panel["IPTG"].astype(str) == "+IPTG"],
+            "#8c8c8c",
+            "--",
+        ),
+    )
+    keyed_frames: list[pd.DataFrame] = []
+    keyed_styles: list[tuple[str, str, str, str]] = []
+    for key, label, line_df, color, linestyle in line_specs:
+        if line_df.empty:
+            continue
+        keyed_frames.append(line_df.assign(__line_key=key))
+        keyed_styles.append((key, label, color, linestyle))
+    if not keyed_frames:
+        return ()
+    summary_map = grouped_trace_summary_frames(
+        pd.concat(keyed_frames, ignore_index=True),
+        group_columns=("__line_key",),
+    )
+    return tuple(
+        _DecisionCardTraceLinePayload(
+            label=label,
+            color=color,
+            linestyle=linestyle,
+            summary=summary_map.get((key,), empty_trace_summary_frame()),
+        )
+        for key, label, color, linestyle in keyed_styles
+    )
+
+
+def _decision_card_summary_strip_payload(
+    *,
+    support_row: Mapping[str, object],
+) -> _DecisionCardSummaryStripPayload:
+    return _DecisionCardSummaryStripPayload(
+        items=tuple(
+            _decision_card_summary_item(spec=spec, support_row=support_row)
+            for spec in retron_presentation.decision_card_metric_specs()
+        )
+    )
+
+
+def _decision_card_summary_item(
+    *,
+    spec: retron_presentation.DecisionCardMetricSpec,
+    support_row: Mapping[str, object],
+) -> _DecisionCardSummaryItemPayload:
+    minus_values = _support_tuple_values(support_row.get(f"{spec.metric}_minus_values"))
+    plus_values = _support_tuple_values(support_row.get(f"{spec.metric}_plus_values"))
+    contrast_mean = _support_float(support_row.get(f"{spec.metric}_mean"))
+    contrast_lower = _support_float(support_row.get(f"{spec.metric}_lower"))
+    contrast_upper = _support_float(support_row.get(f"{spec.metric}_upper"))
+    minus_mean = _support_float(support_row.get(f"{spec.metric}_minus_mean"))
+    plus_mean = _support_float(support_row.get(f"{spec.metric}_plus_mean"))
+    finite = np.asarray([*minus_values, *plus_values, contrast_mean, contrast_lower, contrast_upper], dtype=float)
+    finite = finite[np.isfinite(finite)]
+    limits = shared_numeric_limits(
+        finite if finite.size else np.array([0.0], dtype=float),
+        center=0.0,
+        pad_fraction=0.12,
+        min_span=0.10,
+    )
+    return _DecisionCardSummaryItemPayload(
+        label=spec.label,
+        units=spec.units,
+        point_color=spec.color,
+        minus_values=tuple(float(value) for value in minus_values if np.isfinite(value)),
+        plus_values=tuple(float(value) for value in plus_values if np.isfinite(value)),
+        minus_mean=minus_mean,
+        plus_mean=plus_mean,
+        contrast_mean=contrast_mean,
+        contrast_lower=contrast_lower,
+        contrast_upper=contrast_upper,
+        x_limits=limits,
+    )
+
+
+def _support_tuple_values(value: object) -> np.ndarray:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return np.asarray([], dtype=float)
+    if isinstance(value, np.ndarray):
+        raw = value
+    elif isinstance(value, (list, tuple)):
+        raw = np.asarray(value, dtype=float)
+    else:
+        raw = np.asarray([value], dtype=float)
+    finite = raw[np.isfinite(raw)]
+    return np.asarray(finite, dtype=float)
+
+
+def _support_float(value: object) -> float | None:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if np.isfinite(numeric):
+        return float(numeric)
+    return None
+
+
+def _summary_strip_metric_values(
+    *,
+    metric: str,
+    sensor_trace: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress: str,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray]:
+    metric_id = str(metric)
+    if metric_id == "P_pre":
+        return _preload_state_values(sample_panel=sample_panel, control_panel=control_panel)
+    if metric_id == "D_abs_AUC":
+        return _absolute_effect_state_auc_values(sample_panel=sample_panel, control_panel=control_panel)
+    if metric_id == "D_AUC":
+        return _matched_control_state_auc_values(
+            sensor_trace=sensor_trace,
+            sensor=sensor,
+            sponge=sponge,
+            stress=stress,
+            metric="C",
+        )
+    raise ValueError(f"retron_decomposition: unsupported summary-strip metric {metric_id!r}")
+
+
+def _preload_state_values(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray]:
+    minus = _state_preload_values(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
+    plus = _state_preload_values(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
+    return minus, plus
+
+
+def _state_preload_values(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    iptg: str,
+) -> np.ndarray:
+    sample = sample_panel[
+        (sample_panel["IPTG"].astype(str) == str(iptg)) & sample_panel["in_pre_window"].fillna(False)
+    ].copy()
+    control = control_panel[
+        (control_panel["IPTG"].astype(str) == str(iptg)) & control_panel["in_pre_window"].fillna(False)
+    ].copy()
+    if sample.empty or control.empty or "replicate_id" not in sample.columns:
+        return np.asarray([], dtype=float)
+    sample_values = (
+        sample.groupby("replicate_id", dropna=False)["value"]
+        .mean()
+        .pipe(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=float)
+    )
+    control_ref = pd.to_numeric(control["value"], errors="coerce").dropna().to_numpy(dtype=float)
+    if control_ref.size == 0:
+        return np.asarray([], dtype=float)
+    return sample_values - float(control_ref.mean())
+
+
+def _absolute_effect_state_auc_values(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray]:
+    minus = _state_adjusted_auc_values(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
+    plus = _state_adjusted_auc_values(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
+    return minus, plus
+
+
+def _state_adjusted_auc_values(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    iptg: str,
+) -> np.ndarray:
+    sample = sample_panel[
+        (sample_panel["IPTG"].astype(str) == str(iptg)) & sample_panel["in_primary_post_stress"].fillna(False)
+    ].copy()
+    control = control_panel[
+        (control_panel["IPTG"].astype(str) == str(iptg)) & control_panel["in_primary_post_stress"].fillna(False)
+    ].copy()
+    if sample.empty or control.empty or "replicate_id" not in sample.columns:
+        return np.asarray([], dtype=float)
+    control_mean = (
+        control.groupby("time_from_stress", dropna=False)["value"].mean().rename("control_value").reset_index()
+    )
+    values: list[float] = []
+    for _, replicate in sample.groupby("replicate_id", dropna=False):
+        ordered = replicate.sort_values("time_from_stress", kind="stable")
+        aligned = ordered.merge(control_mean, on="time_from_stress", how="inner", validate="many_to_one")
+        if aligned.empty:
+            continue
+        times = pd.to_numeric(aligned["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+        adjusted = pd.to_numeric(aligned["value"], errors="coerce").to_numpy(dtype=float) - pd.to_numeric(
+            aligned["control_value"], errors="coerce"
+        ).to_numpy(dtype=float)
+        values.append(_auc(times, adjusted))
+    return np.asarray(values, dtype=float)
+
+
+def _matched_control_state_auc_values(
+    *,
+    sensor_trace: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress: str,
+    metric: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    frame = sensor_trace[
+        (sensor_trace["sensor"].astype(str) == str(sensor))
+        & (sensor_trace["sponge"].astype(str) == str(sponge))
+        & (sensor_trace["stress_condition"].astype(str) == str(stress))
+        & (sensor_trace["metric"].astype(str) == str(metric))
+        & sensor_trace["IPTG"].notna()
+        & sensor_trace["in_primary_post_stress"].fillna(False)
+    ].copy()
+    if frame.empty:
+        raise ValueError(
+            "retron_decomposition: semantic trace input is missing replicate-level matched-control rows for "
+            f"metric={metric!r}, sensor={sensor!r}, sponge={sponge!r}, stress={stress!r}"
+        )
+    return (
+        _state_auc_values(frame=frame, iptg="-IPTG"),
+        _state_auc_values(frame=frame, iptg="+IPTG"),
+    )
+
+
+def _state_auc_values(
+    *,
+    frame: pd.DataFrame,
+    iptg: str,
+) -> np.ndarray:
+    state = frame[frame["IPTG"].astype(str) == str(iptg)].copy()
+    if state.empty or "replicate_id" not in state.columns:
+        return np.asarray([], dtype=float)
+    values: list[float] = []
+    for _, replicate in state.groupby("replicate_id", dropna=False):
+        ordered = replicate.sort_values("time_from_stress", kind="stable")
+        times = pd.to_numeric(ordered["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+        metric_values = pd.to_numeric(ordered["value"], errors="coerce").to_numpy(dtype=float)
+        values.append(_auc(times, metric_values))
+    return np.asarray(values, dtype=float)
+
+
+def _summary_strip_contrast_interval(
+    *,
+    plus_values: np.ndarray,
+    minus_values: np.ndarray,
+) -> tuple[float | None, float | None, float | None]:
+    if plus_values.size == 0 or minus_values.size == 0:
+        return None, None, None
+    mean, lower, upper = bootstrap_linear_interval(
+        [plus_values, minus_values],
+        coefficients=(1.0, -1.0),
+        ci=95.0,
+        ci_boot=200,
+        rng=np.random.default_rng(0),
+    )
+    return float(mean), float(lower), float(upper)
+
+
+def _finite_mean(values: np.ndarray) -> float | None:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return None
+    return float(finite.mean())
+
+
+def _render_decision_card_row(
+    *,
+    figure: plt.Figure,
+    row_spec,
+    row: _DecisionCardRowPayload,
+    display_bounds: tuple[float, float] | None,
+) -> None:
+    grid = row_spec.subgridspec(2, 1, height_ratios=(3.2, 1.5), hspace=0.20)
+    trace_grid = grid[0].subgridspec(1, 2, width_ratios=(0.92, 1.08), wspace=0.18)
+    summary_grid = grid[1].subgridspec(1, len(row.summary_strip.items), wspace=0.34)
+    h2o_ax = figure.add_subplot(trace_grid[0, 0])
+    relevant_ax = figure.add_subplot(trace_grid[0, 1], sharex=h2o_ax, sharey=h2o_ax)
+    _plot_decision_card_trace_axis(
+        ax=h2o_ax,
+        panel=row.h2o_panel,
+        panel_limits=row.panel_limits,
+        display_bounds=display_bounds,
+    )
+    _plot_decision_card_trace_axis(
+        ax=relevant_ax,
+        panel=row.relevant_panel,
+        panel_limits=row.panel_limits,
+        display_bounds=display_bounds,
+    )
+    for idx, item in enumerate(row.summary_strip.items):
+        _render_decision_card_metric_axis(
+            ax=figure.add_subplot(summary_grid[0, idx]),
+            item=item,
+        )
+
+
+def _plot_decision_card_trace_axis(
+    *,
+    ax: plt.Axes,
+    panel: _DecisionCardPanelPayload,
+    panel_limits: tuple[float, float],
+    display_bounds: tuple[float, float] | None,
+) -> None:
+    legend_handles = _plot_decision_card_trace_lines(ax=ax, line_payloads=panel.line_payloads)
+    _decorate_decision_card_trace_axis(
+        ax=ax,
+        panel=panel,
+        panel_limits=panel_limits,
+        display_bounds=display_bounds,
+        legend_handles=legend_handles,
+    )
+
+
+def _plot_decision_card_trace_lines(
+    *,
+    ax: plt.Axes,
+    line_payloads: Sequence[_DecisionCardTraceLinePayload],
+) -> dict[str, object]:
+    legend_handles: dict[str, object] = {}
+    for line in line_payloads:
+        _plot_trace_summary_line(ax=ax, line=line, legend_handles=legend_handles)
+    return legend_handles
+
+
+def _plot_trace_summary_line(
+    *,
+    ax: plt.Axes,
+    line: _DecisionCardTraceLinePayload,
+    legend_handles: dict[str, object],
+) -> None:
+    if line.summary.empty:
+        return
+    ax.fill_between(
+        line.summary["time_from_stress"],
+        line.summary["lower"],
+        line.summary["upper"],
+        alpha=0.16,
+        color=line.color,
+        linewidth=0.0,
+        zorder=1,
+    )
+    (trace_line,) = ax.plot(
+        line.summary["time_from_stress"].to_numpy(dtype=float),
+        line.summary["mean"].to_numpy(dtype=float),
+        color=line.color,
+        linestyle=line.linestyle,
+        linewidth=2.0,
+        label=line.label,
+        zorder=2,
+    )
+    legend_handles.setdefault(line.label, trace_line)
+
+
+def _decorate_decision_card_trace_axis(
+    *,
+    ax: plt.Axes,
+    panel: _DecisionCardPanelPayload,
+    panel_limits: tuple[float, float],
+    display_bounds: tuple[float, float] | None,
+    legend_handles: Mapping[str, object],
+) -> None:
+    annotate_primary_window(ax, panel.panel_trace, stress_condition=panel.stress_condition)
+    annotate_stress_addition(ax)
+    ax.grid(
+        axis="both",
+        color=_DECISION_CARD_TRACE_AXIS_POLICY.grid_color,
+        linewidth=_DECISION_CARD_TRACE_AXIS_POLICY.grid_linewidth,
+        alpha=_DECISION_CARD_TRACE_AXIS_POLICY.grid_alpha,
+    )
+    ax.tick_params(axis="x", labelsize=_DECISION_CARD_TRACE_AXIS_POLICY.tick_size)
+    ax.tick_params(axis="y", labelsize=_DECISION_CARD_TRACE_AXIS_POLICY.tick_size)
+    ax.set_ylim(panel_limits)
+    if display_bounds is not None:
+        ax.set_xlim(display_bounds)
+    if panel.title:
+        ax.set_title(panel.title, pad=6, fontsize=10, fontweight="normal")
+    ax.set_xlabel("Time from stress addition (h)", fontsize=9.4)
+    ax.set_ylabel(
+        _DECISION_CARD_TRACE_AXIS_POLICY.ylabel,
+        fontsize=_DECISION_CARD_TRACE_AXIS_POLICY.ylabel_fontsize,
+    )
+    if panel.show_legend and legend_handles:
+        ax.legend(
+            frameon=False,
+            title=None,
+            loc=_DECISION_CARD_TRACE_AXIS_POLICY.legend_loc,
+            fontsize=_DECISION_CARD_TRACE_AXIS_POLICY.legend_fontsize,
+        )
+    with suppress(Exception):
+        ax.set_box_aspect(
+            _DECISION_CARD_TRACE_AXIS_POLICY.box_aspect_with_ylabel
+            if panel.show_ylabel
+            else _DECISION_CARD_TRACE_AXIS_POLICY.box_aspect_without_ylabel
+        )
+
+
+def _render_decision_card_metric_axis(
+    *,
+    ax: plt.Axes,
+    item: _DecisionCardSummaryItemPayload,
+) -> None:
+    ax.axvline(
+        0.0,
+        color=_DECISION_CARD_SUMMARY_AXIS_POLICY.zero_line_color,
+        linewidth=_DECISION_CARD_SUMMARY_AXIS_POLICY.zero_line_linewidth,
+        linestyle=_DECISION_CARD_SUMMARY_AXIS_POLICY.zero_line_linestyle,
+        zorder=1,
+    )
+    ax.set_xlim(item.x_limits)
+    ax.set_xlabel(item.units, fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.xlabel_fontsize)
+    ax.set_ylabel("State", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ylabel_fontsize)
+    ax.set_yticks([0.0, 1.0, 2.0])
+    ax.set_yticklabels(["-IPTG", "+IPTG", "ΔIPTG"])
+    ax.tick_params(axis="x", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.tick_size)
+    ax.tick_params(axis="y", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ytick_fontsize)
+    ax.grid(
+        axis="x",
+        color=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_color,
+        linewidth=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_linewidth,
+        alpha=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_alpha,
+    )
+    ax.set_title(item.label, loc="left", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.label_fontsize, pad=2)
+    _render_metric_state_points(ax=ax, values=item.minus_values, y_base=0.0, color="#8c8c8c")
+    _render_metric_state_points(ax=ax, values=item.plus_values, y_base=1.0, color=item.point_color)
+    _render_metric_state_mean(ax=ax, value=item.minus_mean, y_base=0.0, color="#5f5f5f")
+    _render_metric_state_mean(ax=ax, value=item.plus_mean, y_base=1.0, color=item.point_color)
+    if item.contrast_mean is None or not np.isfinite(item.contrast_mean):
+        ax.text(0.5, 0.5, "NA", transform=ax.transAxes, ha="center", va="center", fontsize=8.0, color="#777777")
+    else:
+        lower = (
+            item.contrast_lower
+            if item.contrast_lower is not None and np.isfinite(item.contrast_lower)
+            else item.contrast_mean
+        )
+        upper = (
+            item.contrast_upper
+            if item.contrast_upper is not None and np.isfinite(item.contrast_upper)
+            else item.contrast_mean
+        )
+        ax.hlines(y=2.0, xmin=lower, xmax=upper, color="#222222", linewidth=2.4, alpha=0.95, zorder=2)
+        ax.scatter(item.contrast_mean, 2.0, s=46, color="#222222", edgecolor="white", linewidth=0.6, zorder=3)
+    ax.set_ylim(-0.5, 2.5)
+    for spine_name in ("top", "right"):
+        ax.spines[spine_name].set_visible(False)
+    ax.spines["left"].set_alpha(0.25)
+    ax.spines["bottom"].set_alpha(0.35)
+    with suppress(Exception):
+        ax.set_box_aspect(_DECISION_CARD_SUMMARY_AXIS_POLICY.box_aspect)
+
+
+def _decision_card_sensor_response_value(
+    *,
+    summary: pd.DataFrame,
+    sensor: str,
+    control_name: str,
+) -> float:
+    g_sensor = summary[
+        (summary["sensor"].astype(str) == sensor)
+        & (summary["sponge"].astype(str) == control_name)
+        & (summary["metric"].astype(str) == "G_sensor")
+    ]["value"]
+    return _numeric_series_mean(g_sensor)
+
+
+def _render_metric_state_points(
+    *,
+    ax: plt.Axes,
+    values: Sequence[float],
+    y_base: float,
+    color: str,
+) -> None:
+    if not values:
+        return
+    jitter = _symmetric_jitter(len(values), span=0.16)
+    ax.scatter(
+        np.asarray(values, dtype=float),
+        np.full(len(values), float(y_base), dtype=float) + jitter,
+        s=22,
+        color=color,
+        alpha=0.78,
+        edgecolor="white",
+        linewidth=0.45,
+        zorder=2.2,
+    )
+
+
+def _render_metric_state_mean(
+    *,
+    ax: plt.Axes,
+    value: float | None,
+    y_base: float,
+    color: str,
+) -> None:
+    if value is None or not np.isfinite(value):
+        return
+    ax.scatter(
+        [float(value)],
+        [float(y_base)],
+        s=42,
+        color="white",
+        edgecolor=color,
+        linewidth=1.3,
+        zorder=3.0,
+    )
+
+
+def _symmetric_jitter(count: int, *, span: float) -> np.ndarray:
+    if count <= 1:
+        return np.zeros(max(count, 0), dtype=float)
+    return np.linspace(-float(span) / 2.0, float(span) / 2.0, count, dtype=float)
+
+
+def _numeric_series_mean(values: pd.Series | object) -> float:
+    numeric = pd.to_numeric(values, errors="coerce")
+    if isinstance(numeric, pd.Series):
+        numeric = numeric.dropna()
+        return float(numeric.mean()) if not numeric.empty else float("nan")
+    numeric_array = np.asarray(numeric, dtype=float)
+    finite = numeric_array[np.isfinite(numeric_array)]
+    return float(finite.mean()) if finite.size else float("nan")

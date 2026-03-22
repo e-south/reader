@@ -16,6 +16,7 @@ def _():
         contextualize_retron_plot_copy,
         dataframe_to_csv_bytes,
         download_safe_stem,
+        retron_experiment_plot_rows,
         figure_to_download_bytes,
         filter_supporting_table_for_figure,
         load_cached_parquet_frame,
@@ -26,7 +27,6 @@ def _():
         retron_figure_coverage_rows,
         retron_figure_label,
         retron_figure_option_rows,
-        retron_plot_guide_rows,
         retron_plot_rendered_files,
         retron_sensor_context_rows,
         retron_visible_plot_specs,
@@ -42,6 +42,7 @@ def _():
         dataframe_to_csv_bytes,
         discover_dataframe_records,
         download_safe_stem,
+        retron_experiment_plot_rows,
         figure_to_download_bytes,
         filter_supporting_table_for_figure,
         load_cached_parquet_frame,
@@ -54,7 +55,6 @@ def _():
         retron_figure_coverage_rows,
         retron_figure_label,
         retron_figure_option_rows,
-        retron_plot_guide_rows,
         retron_plot_rendered_files,
         retron_sensor_context_rows,
         retron_visible_plot_specs,
@@ -126,9 +126,9 @@ def _(
     build_label_value_options,
     load_retron_semantic_maps_from_config,
     mo,
+    retron_experiment_plot_rows,
     retron_assay_context_rows,
     retron_figure_coverage_rows,
-    retron_plot_guide_rows,
     retron_plot_rendered_files,
     retron_scope_config_path,
     retron_scope_decl,
@@ -147,30 +147,14 @@ def _(
     retron_scope_relevant_map, retron_scope_target_map = load_retron_semantic_maps_from_config(
         retron_scope_config_path
     )
-    retron_scope_plot_guides = {
-        row["Plot id"]: row for row in retron_plot_guide_rows([spec.get("id", "") for spec in retron_scope_plot_specs])
+    retron_scope_plot_entries = retron_experiment_plot_rows(retron_scope_plot_specs)
+    retron_scope_plot_spec_map = {
+        str(spec.get("id", "")): spec for spec in retron_scope_plot_specs
     }
-    retron_scope_plot_entries = []
     retron_scope_plot_catalog_rows = []
-    for retron_scope_spec in retron_scope_plot_specs:
-        retron_scope_plot_id = str(retron_scope_spec.get("id", ""))
-        retron_scope_guide = retron_scope_plot_guides.get(retron_scope_plot_id, {})
-        retron_scope_stage = str(retron_scope_guide.get("Stage", "3. Ranking and overview"))
-        retron_scope_title = str(
-            retron_scope_guide.get(
-                "Plot",
-                (retron_scope_spec.get("with") or {}).get("title", retron_scope_plot_id),
-            )
-        )
-        _retron_scope_option_label = f"{retron_scope_stage} • {retron_scope_title}"
-        retron_scope_plot_entries.append(
-            {
-                "Selector label": _retron_scope_option_label,
-                "Stage": retron_scope_stage,
-                "Plot": retron_scope_title,
-                "Plot id": retron_scope_plot_id,
-            }
-        )
+    for retron_scope_entry in retron_scope_plot_entries:
+        retron_scope_plot_id = str(retron_scope_entry["Plot id"])
+        retron_scope_spec = retron_scope_plot_spec_map[retron_scope_plot_id]
         _retron_scope_rendered_files = retron_plot_rendered_files(
             retron_scope_plots_dir,
             plot_id=retron_scope_plot_id,
@@ -178,26 +162,29 @@ def _(
         )
         retron_scope_plot_catalog_rows.append(
             {
-                "Stage": retron_scope_stage,
-                "Plot": retron_scope_title,
+                "Stage": str(retron_scope_entry["Stage"]),
+                "Plot": str(retron_scope_entry["Plot"]),
                 "Plot id": retron_scope_plot_id,
                 "Rendered": "yes" if _retron_scope_rendered_files else "no",
                 "Math / transform": str(
-                    retron_scope_guide.get("Math / transform", "Interpret against the direct-ratio matched-control workflow.")
+                    retron_scope_entry.get(
+                        "Math / transform",
+                        "Interpret against the direct-ratio matched-control workflow.",
+                    )
                 ),
-                                "How to read": str(retron_scope_guide.get("How to read", "See the transform ladder for the exact semantics.")),
+                "How to read": str(
+                    retron_scope_entry.get(
+                        "How to read",
+                        "See the transform ladder for the exact semantics.",
+                    )
+                ),
             }
         )
-    retron_scope_plot_entries.sort(key=lambda item: (item["Stage"], item["Plot"]))
-    retron_scope_plot_catalog_rows.sort(key=lambda row: (row["Stage"], row["Plot"]))
     retron_scope_plot_selector_options = build_label_value_options(
         retron_scope_plot_entries,
         label_key="Selector label",
         value_key="Plot id",
     )
-    retron_scope_plot_spec_map = {
-        str(spec.get("id", "")): spec for spec in retron_scope_plot_specs
-    }
 
     retron_scope_export_rows = []
     for retron_scope_export in list(retron_scope_workbench.exports):
@@ -223,11 +210,11 @@ def _(
     retron_scope_overview_panel = mo.vstack(
         [
             mo.md(
-                f"# Retron sponge screen review\n"
+                f"# Retron sponge review\n"
                 f"Experiment: `{retron_scope_exp_title}`\n\n"
-                "This notebook covers one retron sponge screen under the direct-ratio workflow. "
-                "Read the gist first, then inspect one plot at a time. Each view keeps the local "
-                "question, formula, figure, and scope-matched table together."
+                "Start with QC raw channels to decide whether the run is trustworthy. Then use "
+                "Sponge vs matched tetO to ask whether +IPTG moves the assay ratio beyond the same-sensor "
+                "tetO control, and whether that movement is already present before stress or emerges after stress."
             ),
             mo.ui.tabs(
                 {
@@ -274,9 +261,9 @@ def _(
                     "Transforms": mo.vstack(
                         [
                             mo.md(
-                                "### Ingest and transform path\n"
-                                "The figure views reuse compiled outputs. Follow this ladder when "
-                                "you need to trace a plotted value back to the assay math."
+                                "### Math ladder\n"
+                                "Use this when you need to trace a plotted value back to the assay math. "
+                                "It is reference material, not the default review path."
                             ),
                             mo.ui.table(
                                 retron_transform_ladder_rows(),
@@ -291,13 +278,13 @@ def _(
                     "Plot map": mo.vstack(
                         [
                             mo.md(
-                                "### Compiled plot views and exports\n"
-                                "Use this map when you want to know which plot families and assay "
-                                "exports are available before you start reviewing figures."
+                                "### Available plots and exports\n"
+                                "Use this map when you need to see what the notebook can show before you "
+                                "start reviewing figures."
                             ),
                             mo.ui.tabs(
                                 {
-                                    "Plot views": mo.ui.table(
+                                    "Views": mo.ui.table(
                                         retron_scope_plot_catalog_rows,
                                         **retron_table_kwargs(
                                             page_size=min(8, len(retron_scope_plot_catalog_rows)),
@@ -357,7 +344,7 @@ def _(mo, retron_scope_plot_selector_options):
         mo.ui.dropdown(
             options=retron_scope_plot_selector_options,
             value=next(iter(retron_scope_plot_selector_options), None),
-            label="Plot view",
+            label="Assay view",
             full_width=True,
         )
         if retron_scope_plot_labels
@@ -433,7 +420,7 @@ def _(build_label_value_options, mo, retron_figure_option_rows, retron_scope_plo
         mo.ui.dropdown(
             options=retron_scope_figure_options,
             value=next(iter(retron_scope_figure_options), None),
-            label="Figure scope",
+            label="Figure",
             full_width=True,
         )
         if len(retron_scope_figure_options) > 1
@@ -633,7 +620,7 @@ def _(
         else:
             if retron_scope_figure_selector is not None:
                 retron_scope_review_blocks.append(
-                    mo.md(f"Figure scope: {retron_figure_label(retron_scope_selected_filename or '')}")
+                    mo.md(f"Figure: {retron_figure_label(retron_scope_selected_filename or '')}")
                 )
             if retron_scope_selected_figure is not None:
                 retron_scope_review_blocks.append(retron_scope_selected_figure)
@@ -643,12 +630,11 @@ def _(
                 mo.callout(
                     mo.vstack(
                         [
-                            mo.md(retron_scope_plot_result.title),
-                            mo.md(f"Stage: {retron_scope_plot_result.stage}"),
-                            mo.md(f"Use this view for: {retron_scope_contextual_copy['question']}"),
-                            mo.md(f"Computed from: `{retron_scope_contextual_copy['math']}`"),
-                            mo.md(f"Interpretation: {retron_scope_contextual_copy['meaning']}"),
-                            mo.md(f"Source table: `{retron_scope_plot_result.source_record}`"),
+                            mo.md(f"### {retron_scope_plot_result.title}"),
+                            mo.md(f"**Question**\n{retron_scope_contextual_copy['question']}"),
+                            mo.md(f"**Formula**\n```text\n{retron_scope_contextual_copy['math']}\n```"),
+                            mo.md(f"**Interpretation**\n{retron_scope_contextual_copy['meaning']}"),
+                            mo.md(f"**Data**\n`{retron_scope_plot_result.source_record}`"),
                         ],
                         gap=0.08,
                     ),
@@ -661,7 +647,7 @@ def _(
                 mo.ui.table(
                     retron_scope_supporting_table_preview,
                     **retron_table_kwargs(
-                        page_size=12,
+                        page_size=8,
                         max_height=420,
                     ),
                 )

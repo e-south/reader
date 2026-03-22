@@ -160,16 +160,16 @@ def test_retron_notebook_scaffold_surfaces_plot_portfolio_and_semantic_focus(tmp
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
-    assert "Retron sponge screen review" in content
+    assert "Retron sponge review" in content
     assert 'app = marimo.App(width="medium")' in content
     assert "What this notebook contains" not in content
     assert "Assay contract" in content
     assert "Plot map" in content
     assert "Transforms" in content
     assert "retron_figure_coverage_rows" in content
-    assert "Compiled plot views and exports" in content
+    assert "Available plots and exports" in content
     assert '"Analysis exports"' in content
-    assert 'label="Plot view"' in content
+    assert 'label="Assay view"' in content
     assert "retron_scope_control_items" in content
     assert "mo.hstack(" in content
     assert "baseline_shifted_kinetics" in content
@@ -200,19 +200,19 @@ def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(t
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
-    assert "Retron sponge aggregate review" in content
+    assert "Retron sponge review set" in content
     assert 'app = marimo.App(width="medium")' in content
     assert "What this notebook contains" not in content
     assert "Source experiments" in content
     assert "Workflow map" in content
     assert "Aggregate views" in content
     assert "Source experiment" in content
-    assert "Source plot" in content
+    assert "Source assay view" in content
     assert "retron_source_control_panel = mo.hstack" in content
     assert "retron_aggregate_control_panel = mo.hstack" in content
     assert "retron_source_selector_rows(retron_aggregate_bundle)" in content
     assert "wrap=False" in content
-    assert 'label="Cross-sensor score"' in content
+    assert 'label="Aggregate evidence family"' in content
     assert 'label="Fingerprint sponge"' in content
     assert content.count("full_width=False") >= 5
     assert "load_retron_source_surface" in content

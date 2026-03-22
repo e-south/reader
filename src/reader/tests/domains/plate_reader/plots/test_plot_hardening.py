@@ -613,20 +613,26 @@ def test_retron_trace_uses_single_shared_xlabel_and_non_overlapping_title_layers
 
     assert len(figures) == 1
     figure = figures[0].fig
-    assert figure._supxlabel is not None
-    assert figure._supxlabel.get_text() == "Time from stress addition (h)"
-    assert all(axis.get_xlabel() == "" for axis in figure.axes)
+    assert figure._supxlabel is None
+    assert all(axis.get_xlabel() == "Time from stress addition (h)" for axis in figure.axes)
     assert figure._suptitle is not None
     assert figure._suptitle.get_text() == "Control burden panel · spyP"
-    assert [axis.title.get_text() for axis in figure.axes[:2]] == ["H2O", "3% EtOH"]
+    assert [axis.title.get_text() for axis in figure.axes] == [
+        "R · H2O",
+        "R · 3% EtOH",
+        "mu · H2O",
+        "mu · 3% EtOH",
+    ]
     assert figure.axes[0].get_ylim() == pytest.approx(figure.axes[1].get_ylim())
     assert figure.axes[2].get_ylim() == pytest.approx(figure.axes[3].get_ylim())
     assert figure.axes[0].get_ylim()[0] <= 0.0 <= figure.axes[0].get_ylim()[1]
     assert any(np.allclose(line.get_ydata(), [0.0, 0.0]) for line in figure.axes[0].lines)
     stress_text = next(text for text in figure.axes[0].texts if text.get_text() == "Stress addition")
     assert stress_text.get_va() == "bottom"
-    assert any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.axes[0].texts)
-    assert any("mu(t)=d ln(OD600) / dt" in text.get_text() for text in figure.axes[2].texts)
+    assert figure.axes[0].get_ylabel() == "log2(YFP/CFP)"
+    assert figure.axes[2].get_ylabel() == "d ln(OD600) / dt"
+    assert not any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.axes[0].texts)
+    assert not any("mu(t)=d ln(OD600) / dt" in text.get_text() for text in figure.axes[2].texts)
     assert figure.axes[0].get_box_aspect() == pytest.approx(1.0)
     assert not any("Dashed line = stress addition" in text.get_text() for text in figure.texts)
 
@@ -638,9 +644,6 @@ def test_retron_trace_uses_single_shared_xlabel_and_non_overlapping_title_layers
     legend = figure.legends[0]
     legend_bbox = legend.get_window_extent(renderer)
     assert not any(legend_bbox.overlaps(axis.get_window_extent(renderer)) for axis in figure.axes)
-    assert figure._supxlabel is not None
-    xlabel_bbox = figure._supxlabel.get_window_extent(renderer)
-    assert legend_bbox.y1 < xlabel_bbox.y0
     horizontal_gap = figure.axes[1].get_position().x0 - figure.axes[0].get_position().x1
     vertical_gap = figure.axes[0].get_position().y0 - figure.axes[2].get_position().y1
     assert horizontal_gap < 0.20
@@ -745,8 +748,10 @@ def test_retron_stress_modulation_consolidates_sensors_on_one_axis() -> None:
         "spyP\nCpxR",
     ]
     assert len(axes[0].patches) == 8
-    assert any("M_AUC = AUC[M(t)]" in text.get_text() for text in figure.texts)
-    assert any("first 4.0 h after stress addition" in text.get_text() for text in figure.texts)
+    assert any("AUC of the stress-specific gain" in text.get_text() for text in figure.texts)
+    assert any(
+        "Post-stress summary covers the first 4.0 h after stress addition" in text.get_text() for text in figure.texts
+    )
     plt.close(figure)
 
 
@@ -821,19 +826,75 @@ def test_retron_library_heatmaps_render_as_single_shared_row() -> None:
     y_offsets = [axis.get_position().y0 for axis in axes]
     assert max(y_offsets) - min(y_offsets) < 0.02
     assert [axis.get_title() for axis in axes] == [
-        "Absolute on-target score\n(S_abs_AUC)\nS_abs_AUC = O_abs_AUC /\n|G_sensor|",
-        "Post-stress incremental\nscore (S_AUC)\nS_AUC = O_AUC /\n|G_sensor|",
-        "Preload shift\n(P_pre)\nP_pre = delta_IPTG[R_pre\n- R_pre,tetO]",
+        "Total effect\nS_abs_AUC = O_abs_AUC /\n|G_sensor|",
+        "Post-stress\nS_AUC = O_AUC /\n|G_sensor|",
+        "Preload\nP_pre = delta_IPTG[R_pre\n- R_pre,tetO]",
     ]
     assert any(label.get_visible() for label in axes[0].get_yticklabels())
     assert all(not label.get_visible() for label in axes[1].get_yticklabels())
     assert all(not label.get_visible() for label in axes[2].get_yticklabels())
+    assert any(
+        "Relevant-stress summary of total effect, post-stress movement, and preload" in text.get_text()
+        for text in figure.texts
+    )
+    assert any(
+        "Post-stress summary covers the first 4.0 h after stress addition" in text.get_text() for text in figure.texts
+    )
     x_tick_sizes = {label.get_fontsize() for axis in axes for label in axis.get_xticklabels() if label.get_text()}
     y_tick_sizes = {label.get_fontsize() for label in axes[0].get_yticklabels() if label.get_text()}
     annotation_sizes = {text.get_fontsize() for axis in axes for text in axis.texts if text.get_text()}
     assert x_tick_sizes == {9.0}
     assert y_tick_sizes == {10.0}
     assert annotation_sizes == {8.5}
+    plt.close(figure)
+
+
+def test_retron_library_heatmaps_show_explicit_no_data_panel_for_missing_metric() -> None:
+    summary_rows = []
+    for sensor, stress in (("spyP", "3% EtOH"), ("soxSp", "15 µM PMS")):
+        for sponge, family, base in (("CpxR", "mono", 0.35), ("BaeR-SoxR", "bi", -0.22)):
+            summary_rows.extend(
+                [
+                    {
+                        "sensor": sensor,
+                        "sponge": sponge,
+                        "metric": "S_abs_AUC",
+                        "stress_condition": stress,
+                        "value": base + 0.22,
+                        "relevant_sensor_pair": True,
+                        "is_relevant_stress": True,
+                        "sponge_family_size": family,
+                    },
+                    {
+                        "sensor": sensor,
+                        "sponge": sponge,
+                        "metric": "S_AUC",
+                        "stress_condition": stress,
+                        "value": base + 0.18,
+                        "relevant_sensor_pair": True,
+                        "is_relevant_stress": True,
+                        "sponge_family_size": family,
+                    },
+                ]
+            )
+    summary = pd.DataFrame(summary_rows)
+
+    figures = plot_retron_sponge_summary(
+        summary=summary,
+        trace=None,
+        output_dir=None,
+        view="heatmap",
+        title="Library heatmaps",
+        filename="library_heatmaps",
+        palette_book=None,
+        control_name="tetO",
+        fig_kwargs={},
+    )
+
+    figure = figures[0].fig
+    no_data_axes = [axis for axis in figure.axes if any(text.get_text() == "No data" for text in axis.texts)]
+    assert len(no_data_axes) == 1
+    assert not no_data_axes[0].axison
     plt.close(figure)
 
 
@@ -912,7 +973,15 @@ def test_retron_pareto_tick_labels_use_compact_font() -> None:
     axis = figures[0].fig.axes[0]
     x_tick_sizes = {label.get_fontsize() for label in axis.get_xticklabels() if label.get_text()}
     y_tick_sizes = {label.get_fontsize() for label in axis.get_yticklabels() if label.get_text()}
-    assert any("S_abs_AUC = O_abs_AUC / |G_sensor|" in text.get_text() for text in figures[0].fig.texts)
+    legend = axis.get_legend()
+    assert any(
+        "Expected-direction total effect scaled by the native sensor range" in text.get_text()
+        for text in figures[0].fig.texts
+    )
+    assert axis.get_xlabel() == "Mean on-target effect across relevant sensors (S_abs_AUC)"
+    assert axis.get_ylabel() == "Mean burden penalty (-D_growth_AUC)"
+    assert legend is not None
+    assert {text.get_text() for text in legend.get_texts()} == {"mono", "bi"}
     assert x_tick_sizes == {7.0}
     assert y_tick_sizes == {7.0}
     plt.close(figures[0].fig)
@@ -972,11 +1041,11 @@ def test_retron_induced_effect_trace_derives_confidence_band_from_c_replicates()
     assert len(axis.collections) >= 1
     assert len(axis.patches) == 1
     assert axis.patches[0].get_alpha() == pytest.approx(0.14)
-    assert any("D(t)=mean C(+IPTG)-mean C(-IPTG)" in text.get_text() for text in figure.texts)
+    assert any("New post-stress movement after preload is removed" in text.get_text() for text in figure.texts)
     assert not any("first 1.0 h after stress addition" in text.get_text() for text in figure.texts)
     assert not any("Dashed line = stress addition" in text.get_text() for text in figure.texts)
-    sidecar_titles = [current.get_title() for current in axis.child_axes if current.get_visible()]
-    assert "D_AUC" in sidecar_titles
+    assert axis.get_title() == "spyP · CpxR"
+    assert not any(current.get_visible() for current in axis.child_axes)
     plt.close(figure)
 
 
@@ -1036,11 +1105,11 @@ def test_retron_absolute_effect_trace_derives_confidence_band_from_r_replicates(
     assert len(axis.collections) >= 1
     assert len(axis.patches) == 1
     assert axis.patches[0].get_alpha() == pytest.approx(0.14)
-    assert any("D_abs(t)=delta_IPTG[R-R_tetO,matched]" in text.get_text() for text in figure.texts)
+    assert any("Total +IPTG effect beyond matched tetO over time" in text.get_text() for text in figure.texts)
     assert not any("first 4.0 h after stress addition" in text.get_text() for text in figure.texts)
     assert not any("Dashed line = stress addition" in text.get_text() for text in figure.texts)
-    sidecar_titles = [current.get_title() for current in axis.child_axes if current.get_visible()]
-    assert "D_abs_AUC" in sidecar_titles
+    assert axis.get_title() == "sulAp · LexA"
+    assert not any(current.get_visible() for current in axis.child_axes)
     plt.close(figure)
 
 
@@ -1084,7 +1153,7 @@ def test_retron_matched_control_trace_can_facet_by_sponge() -> None:
     assert len(figure.legends) == 1
     legend_labels = [text.get_text() for text in figure.legends[0].texts]
     assert legend_labels == ["H2O, -IPTG", "H2O, +IPTG", "15 µM PMS, -IPTG", "15 µM PMS, +IPTG"]
-    assert any("C(t)=B(t)-B_tetO,matched(t)" in text.get_text() for text in figure.texts)
+    assert any("Deviation from the matched tetO control over time" in text.get_text() for text in figure.texts)
     assert axes[0].get_xlim()[1] == pytest.approx(4.0)
     plt.close(figure)
 
@@ -1146,6 +1215,14 @@ def test_retron_control_anchored_decomposition_renders_full_time_matched_traces(
                             "is_relevant_stress": is_relevant_stress,
                             "relevant_sensor_pair": not control_flag,
                             "configured_max_post_stress_hours": 4.0,
+                            "matched_control_key": f"plate-1::sulAp::{stress_condition}",
+                            "summary_window_start_h": 0.0,
+                            "summary_window_end_h": 4.0,
+                            "summary_window_duration_h": 4.0,
+                            "pre_stress_read_count": 1,
+                            "post_stress_read_count": 2,
+                            "matched_group_sample_count": 3,
+                            "stress_addition_gap_h": 0.5,
                         }
                     )
                     rows.append(
@@ -1164,6 +1241,14 @@ def test_retron_control_anchored_decomposition_renders_full_time_matched_traces(
                             "is_relevant_stress": is_relevant_stress,
                             "relevant_sensor_pair": not control_flag,
                             "configured_max_post_stress_hours": 4.0,
+                            "matched_control_key": f"plate-1::sulAp::{stress_condition}",
+                            "summary_window_start_h": 0.0,
+                            "summary_window_end_h": 4.0,
+                            "summary_window_duration_h": 4.0,
+                            "pre_stress_read_count": 1,
+                            "post_stress_read_count": 2,
+                            "matched_group_sample_count": 3,
+                            "stress_addition_gap_h": 0.5,
                         }
                     )
     trace = pd.DataFrame(rows)
@@ -1232,7 +1317,7 @@ def test_retron_control_anchored_decomposition_renders_full_time_matched_traces(
         trace=trace,
         output_dir=None,
         view="decomposition",
-        title="Decision cards",
+        title="Sponge vs matched tetO",
         filename="control_anchored_decomposition",
         palette_book=None,
         control_name="tetO",
@@ -1240,27 +1325,46 @@ def test_retron_control_anchored_decomposition_renders_full_time_matched_traces(
     )
 
     figure = figures[0].fig
-    relevant_axis, h2o_axis, summary_axis = figure.axes[:3]
-    assert relevant_axis.get_xlabel() == ""
-    assert relevant_axis.get_ylabel() == "log2(YFP/CFP) (R)"
+    h2o_axis, relevant_axis = figure.axes[:2]
+    summary_axes = figure.axes[2:]
+    assert len(figure.axes) == 5
+    assert relevant_axis.get_xlabel() == "Time from stress addition (h)"
+    assert h2o_axis.get_xlabel() == "Time from stress addition (h)"
+    assert relevant_axis.get_ylabel() == "Reporter ratio R(t)"
+    assert h2o_axis.get_ylabel() == "Reporter ratio R(t)"
     assert any("Stress addition" in text.get_text() for text in relevant_axis.texts)
     assert len(relevant_axis.patches) == 1
     assert relevant_axis.patches[0].get_alpha() == pytest.approx(0.14)
     assert len(h2o_axis.patches) == 1
-    assert "H2O context" in h2o_axis.get_title()
+    assert h2o_axis.get_title() == "sulAp · LexA · H2O"
+    assert relevant_axis.get_title() == "sulAp · LexA · 100 nM ciprofloxacin"
+    assert "\n" not in relevant_axis.get_title()
+    assert "\n" not in h2o_axis.get_title()
     legend = relevant_axis.get_legend()
     assert legend is not None
+    assert h2o_axis.get_legend() is None
     legend_labels = [text.get_text() for text in legend.texts]
     assert legend_labels == ["Sample -IPTG", "Sample +IPTG", "tetO -IPTG", "tetO +IPTG"]
-    assert any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.texts)
+    assert not any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.texts)
+    assert not any("D_abs_AUC=AUC_window[D_abs(t)]" in text.get_text() for text in figure.texts)
+    assert len(summary_axes) == 3
+    assert [axis.get_title(loc="left") for axis in summary_axes] == [
+        "Preload shift",
+        "Total effect beyond matched tetO",
+        "Post-stress increment",
+    ]
+    assert [axis.get_xlabel() for axis in summary_axes] == [
+        "log2 ratio",
+        "log2 ratio x h",
+        "log2 ratio x h",
+    ]
+    assert [axis.get_ylabel() for axis in summary_axes] == ["State", "State", "State"]
+    assert [tick.get_text() for tick in summary_axes[0].get_yticklabels()] == ["-IPTG", "+IPTG", "ΔIPTG"]
+    assert all(len(axis.collections) >= 2 for axis in summary_axes)
     assert any(
-        "compare preload, total effect, post-stress increment, and burden together" in text.get_text()
+        "Matched-tetO reporter-ratio traces with preload and post-stress summaries" in text.get_text()
         for text in figure.texts
     )
-    summary_labels = [label.get_text() for label in summary_axis.get_yticklabels()]
-    assert summary_labels == ["Preload shift", "Total effect", "Post-stress increment", "Growth burden"]
-    assert summary_axis.get_xlabel() == "Window summary"
-    assert summary_axis.texts
     plt.close(figure)
 
 
@@ -1285,7 +1389,152 @@ def test_retron_decomposition_requires_trace_input() -> None:
             trace=None,
             output_dir=None,
             view="decomposition",
-            title="Decision cards",
+            title="Sponge vs matched tetO",
+            filename="control_anchored_decomposition",
+            palette_book=None,
+            control_name="tetO",
+            fig_kwargs={},
+        )
+
+
+def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_is_still_recoverable() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "time_from_stress": 0.0,
+                "metric": "R",
+                "value": 1.0,
+                "IPTG": "-IPTG",
+                "replicate_id": "r1",
+                "in_pre_window": True,
+                "in_primary_post_stress": True,
+                "is_relevant_stress": True,
+                "relevant_sensor_pair": True,
+            }
+        ]
+    )
+    summary = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "P_pre",
+                "value": 0.1,
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_abs_AUC",
+                "value": 0.2,
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_AUC",
+                "value": 0.1,
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_growth_AUC",
+                "value": -0.1,
+            },
+        ]
+    )
+
+    figures = plot_retron_sponge_summary(
+        summary=summary,
+        trace=trace,
+        output_dir=None,
+        view="decomposition",
+        title="Sponge vs matched tetO",
+        filename="control_anchored_decomposition",
+        palette_book=None,
+        control_name="tetO",
+        fig_kwargs={},
+    )
+
+    figure = figures[0].fig
+    assert len(figure.axes) == 5
+    assert figure.axes[0].get_xlabel() == "Time from stress addition (h)"
+    plt.close(figure)
+
+
+def test_retron_decomposition_rejects_missing_required_decision_metrics() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": sponge,
+                "stress_condition": "100 nM ciprofloxacin",
+                "time_from_stress": time_value,
+                "metric": "R",
+                "value": value,
+                "IPTG": iptg,
+                "replicate_id": "r1",
+                "in_pre_window": time_value == 0.0,
+                "in_primary_post_stress": True,
+                "is_relevant_stress": sponge != "tetO",
+                "relevant_sensor_pair": sponge != "tetO",
+                "matched_control_key": "plate-1::sulAp::100 nM ciprofloxacin",
+                "summary_window_start_h": 0.0,
+                "summary_window_end_h": 4.0,
+                "summary_window_duration_h": 4.0,
+                "pre_stress_read_count": 1,
+                "post_stress_read_count": 2,
+                "matched_group_sample_count": 1,
+                "stress_addition_gap_h": 0.5,
+            }
+            for sponge, iptg, value in (
+                ("LexA", "-IPTG", 1.0),
+                ("LexA", "+IPTG", 1.2),
+                ("tetO", "-IPTG", 0.8),
+                ("tetO", "+IPTG", 0.9),
+            )
+            for time_value in (0.0, 4.0)
+        ]
+    )
+    summary = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "P_pre",
+                "value": 0.1,
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_abs_AUC",
+                "value": 0.2,
+            },
+        ]
+    )
+
+    with pytest.raises(ValueError, match="missing required matched-tetO summary metrics"):
+        plot_retron_sponge_summary(
+            summary=summary,
+            trace=trace,
+            output_dir=None,
+            view="decomposition",
+            title="Sponge vs matched tetO",
             filename="control_anchored_decomposition",
             palette_book=None,
             control_name="tetO",
@@ -1359,8 +1608,10 @@ def test_retron_interaction_summary_uses_trace_replicates_and_renders_subplots()
         "3% EtOH\n-IPTG",
         "3% EtOH\n+IPTG",
     ]
-    assert any("C_AUC = AUC[C(t)]" in text.get_text() for text in figure.texts)
-    assert any("first 1.0 h after stress addition" in text.get_text() for text in figure.texts)
+    assert any("AUC of the matched tetO deviation trace" in text.get_text() for text in figure.texts)
+    assert any(
+        "Post-stress summary covers the first 1.0 h after stress addition" in text.get_text() for text in figure.texts
+    )
     plt.close(figure)
 
 
@@ -1445,5 +1696,30 @@ def test_retron_pareto_rejects_missing_burden_metric() -> None:
             filename="pareto_ranking",
             palette_book=None,
             control_name="tetO",
+            fig_kwargs={},
+        )
+
+
+def test_retron_summary_rejects_unknown_view() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "S_abs_AUC",
+                "value": 0.40,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="unsupported view 'unknown'"):
+        plot_retron_sponge_summary(
+            summary=summary,
+            trace=None,
+            output_dir=None,
+            view="unknown",
+            title="Unknown view",
+            filename=None,
+            palette_book=None,
             fig_kwargs={},
         )

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
+import reader.workbench.notebooks.retron_review as retron_review_mod
 from reader.contracts import builtin_contract_catalog
 from reader.domains.plate_reader.plots.common import annotate_points_smart
 from reader.tests.support import base_reader_config, write_config
@@ -28,7 +29,10 @@ from reader.workbench.notebooks.retron_review import (
     render_retron_aggregate_plot_cached,
     render_retron_experiment_plot,
     render_retron_experiment_plot_cached,
+    retron_aggregate_plot_rows,
+    retron_experiment_plot_rows,
     retron_figure_coverage_rows,
+    retron_plot_guide_rows,
     retron_plot_rendered_files,
     retron_source_selector_rows,
     retron_source_surface_overview_rows,
@@ -207,6 +211,263 @@ def test_retron_review_bundle_loads_manifest_and_builds_cross_run_frames(tmp_pat
     assert float(quad_sox["expected_best_single"]) == pytest.approx(0.30)
     assert float(quad_sox["expected_sum"]) == pytest.approx(0.50)
     assert float(quad_sox["observed"]) == pytest.approx(0.48)
+
+
+def test_retron_review_bundle_upgrades_legacy_absolute_metrics_for_aggregate_review(tmp_path: Path) -> None:
+    legacy_summary = _write_csv(
+        tmp_path / "exports" / "legacy_summary.csv",
+        [
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "stress_condition": "3% EtOH",
+                "IPTG": pd.NA,
+                "metric": "D_abs_AUC",
+                "value": -0.12,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "genotype_id": pd.NA,
+                "stress_condition": "3% EtOH",
+                "IPTG": pd.NA,
+                "metric": "G_sensor",
+                "value": 2.0,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ],
+    )
+    legacy_trace = _write_csv(tmp_path / "exports" / "legacy_trace.csv", [{"metric": "D", "value": 0.1}])
+    manifest_path = tmp_path / "review_manifest.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "relevant_stress_map": {"spyP": "3% EtOH"},
+                "sensor_target_map": {"spyP": ["CpxR"]},
+                "sources": [
+                    {
+                        "label": "legacy",
+                        "experiment_id": "legacy_family",
+                        "summary": str(legacy_summary.relative_to(tmp_path)),
+                        "trace": str(legacy_trace.relative_to(tmp_path)),
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    bundle = load_retron_review_bundle(manifest_path)
+    o_abs_rows = bundle.summary_df[
+        (bundle.summary_df["sensor"] == "spyP")
+        & (bundle.summary_df["sponge"] == "CpxR")
+        & (bundle.summary_df["metric"] == "O_abs_AUC")
+    ]
+    s_abs_rows = bundle.summary_df[
+        (bundle.summary_df["sensor"] == "spyP")
+        & (bundle.summary_df["sponge"] == "CpxR")
+        & (bundle.summary_df["metric"] == "S_abs_AUC")
+    ]
+
+    assert len(o_abs_rows) == 1
+    assert len(s_abs_rows) == 1
+    assert float(o_abs_rows.iloc[0]["value"]) == pytest.approx(0.12)
+    assert float(s_abs_rows.iloc[0]["value"]) == pytest.approx(0.06)
+    assert bool(s_abs_rows.iloc[0]["scaling_available"]) is True
+    assert float(s_abs_rows.iloc[0]["scale_reference_abs_g_sensor"]) == pytest.approx(2.0)
+    assert float(s_abs_rows.iloc[0]["scale_min_abs_g_sensor"]) == pytest.approx(0.1)
+
+    result = render_retron_aggregate_plot(
+        "specificity_matrix",
+        summary_df=bundle.summary_df,
+        sensor_target_map={"spyP": ("CpxR",)},
+        score_metric="O_abs_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert result.figure is not None
+    assert not result.supporting_table.empty
+    assert float(result.supporting_table.loc[0, "CpxR"]) == pytest.approx(0.12)
+    plt.close(result.figure)
+
+
+def test_load_retron_source_semantic_datasets_upgrades_legacy_trace_contract(tmp_path: Path) -> None:
+    summary_path = _write_csv(
+        tmp_path / "exports" / "summary.csv",
+        [
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "stress_condition": "3% EtOH",
+                "IPTG": pd.NA,
+                "metric": "D_abs_AUC",
+                "value": -0.12,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "stress_condition": "3% EtOH",
+                "IPTG": "+IPTG",
+                "metric": "R_pre",
+                "value": -3.7,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "stress_condition": "3% EtOH",
+                "IPTG": "-IPTG",
+                "metric": "R_pre",
+                "value": -3.9,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "genotype_id": "spyP/tetO",
+                "stress_condition": "3% EtOH",
+                "IPTG": "+IPTG",
+                "metric": "R_pre",
+                "value": -3.8,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "plate_id": "plate_a",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "genotype_id": "spyP/tetO",
+                "stress_condition": "3% EtOH",
+                "IPTG": "-IPTG",
+                "metric": "R_pre",
+                "value": -4.0,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ],
+    )
+    trace_path = _write_csv(
+        tmp_path / "exports" / "trace.csv",
+        [
+            {
+                "plate_id": "plate_a",
+                "acquisition_segment_id": "seg0",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "replicate_id": "A1",
+                "stress_condition": "3% EtOH",
+                "IPTG": "-IPTG",
+                "time": 0.0,
+                "time_from_stress": -1.0,
+                "metric": "R",
+                "value": 0.2,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+                "matched_tetO_group": "plate_a::spyP::3% EtOH::-IPTG",
+                "in_pre_window": True,
+                "in_primary_post_stress": False,
+                "in_endpoint_window": False,
+                "configured_max_post_stress_hours": 4.0,
+            },
+            {
+                "plate_id": "plate_a",
+                "acquisition_segment_id": "seg1",
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "genotype_id": "spyP/CpxR",
+                "replicate_id": "A1",
+                "stress_condition": "3% EtOH",
+                "IPTG": "+IPTG",
+                "time": 1.5,
+                "time_from_stress": 0.5,
+                "metric": "R",
+                "value": 0.4,
+                "expected_decoy_sign": -1,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+                "matched_tetO_group": "plate_a::spyP::3% EtOH::+IPTG",
+                "in_pre_window": False,
+                "in_primary_post_stress": True,
+                "in_endpoint_window": True,
+                "configured_max_post_stress_hours": 4.0,
+            },
+        ],
+    )
+    source = RetronReviewSource(
+        label="legacy",
+        experiment_id="legacy_source",
+        experiment_root=None,
+        config_path=None,
+        summary_path=summary_path,
+        trace_path=trace_path,
+    )
+
+    datasets = retron_review_mod.load_retron_source_semantic_datasets(
+        source,
+        record_ids=("semantic_metrics/summary", "semantic_metrics/trace"),
+    )
+    summary = datasets["semantic_metrics/summary"]
+    trace = datasets["semantic_metrics/trace"]
+    preload_rows = summary[
+        (summary["sensor"] == "spyP") & (summary["sponge"] == "CpxR") & (summary["metric"] == "P_pre")
+    ]
+
+    assert len(preload_rows) == 1
+    assert float(preload_rows.iloc[0]["value"]) == pytest.approx(0.0)
+    assert "matched_control_key" in trace.columns
+    assert "summary_window_start_h" in trace.columns
+    assert "summary_window_end_h" in trace.columns
+    assert "summary_window_duration_h" in trace.columns
+    assert "pre_stress_read_count" in trace.columns
+    assert "post_stress_read_count" in trace.columns
+    assert "matched_group_sample_count" in trace.columns
+    assert "stress_addition_gap_h" in trace.columns
+    assert set(trace["matched_control_key"].astype(str)) == {"plate_a::spyP::3% EtOH"}
+    assert float(trace["summary_window_start_h"].dropna().iloc[0]) == pytest.approx(0.5)
+    assert float(trace["summary_window_end_h"].dropna().iloc[0]) == pytest.approx(0.5)
+    assert float(trace["summary_window_duration_h"].dropna().iloc[0]) == pytest.approx(0.0)
+    assert float(trace["pre_stress_read_count"].dropna().iloc[0]) == pytest.approx(1.0)
+    assert float(trace["post_stress_read_count"].dropna().iloc[0]) == pytest.approx(1.0)
+    assert float(trace["matched_group_sample_count"].dropna().iloc[0]) == pytest.approx(1.0)
+    assert float(trace["stress_addition_gap_h"].dropna().iloc[0]) == pytest.approx(1.5)
 
 
 def test_retron_review_bundle_fails_fast_when_source_exports_are_missing(tmp_path: Path) -> None:
@@ -499,10 +760,12 @@ def test_load_retron_source_surface_reads_scoped_plot_catalog_and_record_paths(t
     assert not any(row["Plot id"] == "stress_modulation_scores" for row in surface.plot_catalog_rows)
     assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_selector_rows)
     assert not any(row["Plot id"] == "pareto_ranking" for row in surface.plot_catalog_rows)
-    assert selector_labels["raw_kinetics"] == "QC traces"
-    assert selector_labels["induced_effect_kinetics"] == "[D] IPTG-state effect"
-    assert selector_labels["absolute_effect_kinetics"] == "[D_abs] Absolute matched-control effect"
-    assert selector_labels["control_anchored_decomposition"] == "[R/P_pre/D_abs] Decision cards"
+    assert surface.plot_selector_rows[0]["Plot id"] == "raw_kinetics"
+    assert selector_labels["raw_kinetics"] == "QC raw channels"
+    assert selector_labels["control_burden_panel"] == "Advanced QC / burden"
+    assert selector_labels["induced_effect_kinetics"] == "Post-stress increment over time"
+    assert selector_labels["absolute_effect_kinetics"] == "Total effect beyond matched tetO over time"
+    assert selector_labels["control_anchored_decomposition"] == "Sponge vs matched tetO"
     assert any(record_id == "semantic_metrics/trace" for record_id, _ in surface.record_paths)
     assert any(record_id == "ratio_yfp_od600/df" for record_id, _ in surface.record_paths)
     assert overview_rows[0] == {"Field": "Source label", "Value": "mono"}
@@ -517,6 +780,24 @@ def test_retron_plot_rendered_files_accepts_legacy_raw_kinetics_prefix(tmp_path:
     matches = retron_plot_rendered_files(plots_dir, plot_id="raw_kinetics", plugin="plot/time_series")
 
     assert matches == ["ts_spyP_tetO.pdf"]
+
+
+def test_retron_experiment_plot_rows_prioritize_matched_teto_summary() -> None:
+    rows = retron_experiment_plot_rows(
+        [
+            {"id": "raw_kinetics", "with": {"title": "Raw kinetics"}},
+            {"id": "absolute_effect_kinetics", "with": {"title": "Absolute effect"}},
+            {"id": "control_anchored_decomposition", "with": {"title": "Sponge vs matched tetO"}},
+        ]
+    )
+
+    assert [row["Plot id"] for row in rows] == [
+        "raw_kinetics",
+        "control_anchored_decomposition",
+        "absolute_effect_kinetics",
+    ]
+    assert rows[0]["Selector label"] == "QC raw channels"
+    assert rows[1]["Selector label"] == "Sponge vs matched tetO"
 
 
 def test_render_retron_experiment_plot_reuses_canonical_trace_renderer() -> None:
@@ -612,6 +893,29 @@ def test_contextualize_retron_plot_copy_replaces_generic_relevant_stress_text() 
     assert contextual["meaning"] == "Compares 3% EtOH against H2O for the selected sensor."
 
 
+def test_retron_plot_guide_rows_share_registered_experiment_plot_copy() -> None:
+    rows = retron_plot_guide_rows(["control_anchored_decomposition"])
+
+    assert rows == [
+        {
+            "Stage": "2. Assay kinetics",
+            "Plot": "Sponge vs matched tetO",
+            "Plot id": "control_anchored_decomposition",
+            "Math / transform": (
+                "R(t)=log2(YFP/CFP)\n"
+                "P_pre=delta_IPTG[R_pre-R_pre,tetO,matched]\n"
+                "D_abs_AUC=AUC_window[D_abs(t)]\n"
+                "D_AUC=AUC_window[D(t)]"
+            ),
+            "Source record": "semantic_metrics/trace",
+            "How to read": (
+                "Primary assay summary. Relevant-stress and H2O reporter-ratio traces show whether the sponge moves "
+                "beyond matched tetO and whether that signal comes from preload, post-stress change, or both."
+            ),
+        }
+    ]
+
+
 def test_render_retron_experiment_plot_uses_explicit_iptg_state_wording_for_d_metric() -> None:
     rows: list[dict[str, object]] = []
     for time_value in (0.0, 1.0):
@@ -663,8 +967,10 @@ def test_render_retron_experiment_plot_uses_explicit_iptg_state_wording_for_d_me
     result = render_retron_experiment_plot(plot_spec, datasets={"semantic_metrics/trace": trace})
 
     assert result.title == "IPTG-state effect kinetics"
-    assert "baseline shift and tetO matching" in result.question
-    assert "incremental effects over the displayed trace window" in result.meaning
+    assert "new movement appears after stress" in result.question
+    assert result.meaning == (
+        "Mechanistic view of the post-stress increment after preload removal, not the full IPTG-dependent effect."
+    )
     assert set(result.supporting_table["metric"]) == {"D"}
     plt.close(result.figures[0].fig)
 
@@ -674,6 +980,244 @@ def test_render_retron_experiment_plot_rejects_unknown_plugin() -> None:
 
     with pytest.raises(ValueError, match="unsupported notebook plot plugin"):
         render_retron_experiment_plot(plot_spec, datasets={})
+
+
+def test_render_retron_experiment_plot_rejects_missing_required_record_binding() -> None:
+    plot_spec = {
+        "id": "matched_control_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {},
+        "with": {"metrics": ["C"]},
+    }
+
+    with pytest.raises(ValueError, match="missing a record binding for 'trace'"):
+        render_retron_experiment_plot(plot_spec, datasets={})
+
+
+def test_render_retron_experiment_plot_rejects_non_mapping_with_field() -> None:
+    plot_spec = {
+        "id": "matched_control_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {"trace": {"record": "semantic_metrics/trace"}},
+        "with": ["not", "a", "mapping"],
+    }
+
+    with pytest.raises(ValueError, match=r"field 'with' must be a mapping"):
+        render_retron_experiment_plot(plot_spec, datasets={})
+
+
+def test_render_retron_experiment_plot_rejects_non_mapping_read_binding() -> None:
+    plot_spec = {
+        "id": "matched_control_kinetics",
+        "plugin": "plot/retron_trace",
+        "reads": {"trace": "semantic_metrics/trace"},
+        "with": {"metrics": ["C"]},
+    }
+
+    with pytest.raises(ValueError, match=r"field 'reads.trace' must be a mapping"):
+        render_retron_experiment_plot(plot_spec, datasets={})
+
+
+def test_summary_supporting_table_uses_absolute_metric_family_for_heatmap_views() -> None:
+    summary = pd.DataFrame(
+        [
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "S_abs_AUC", "value": 0.8},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "S_AUC", "value": 0.4},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "P_pre", "value": 0.1},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "M_AUC", "value": 0.2},
+        ]
+    )
+
+    table = retron_review_mod._summary_supporting_table(
+        summary,
+        view="heatmap",
+        metric="M_AUC",
+        burden_metric="D_growth_AUC",
+    )
+
+    assert set(table["metric"]) == {"S_abs_AUC", "S_AUC", "P_pre"}
+
+
+def test_summary_supporting_table_uses_configured_burden_metric_for_pareto_views() -> None:
+    summary = pd.DataFrame(
+        [
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "S_abs_AUC", "value": 0.8},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "custom_burden", "value": 0.2},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "L_pre", "value": 0.1},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "P_pre", "value": 0.05},
+            {"sensor": "spyP", "sponge": "CpxR", "metric": "D_growth_AUC", "value": 0.3},
+        ]
+    )
+
+    table = retron_review_mod._summary_supporting_table(
+        summary,
+        view="pareto",
+        metric="S_abs_AUC",
+        burden_metric="custom_burden",
+    )
+
+    assert set(table["metric"]) == {"S_abs_AUC", "custom_burden", "L_pre", "P_pre"}
+
+
+def test_summary_plot_config_defaults_pareto_burden_to_construct_specific_metric() -> None:
+    config = retron_review_mod._summary_plot_config(
+        plot_spec={"id": "pareto_ranking", "with": {}},
+        with_cfg={},
+    )
+
+    assert config.burden_metric == "D_growth_AUC"
+
+
+def test_render_retron_source_plot_cached_loads_overflow_context_for_qc_views(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = RetronReviewSource(
+        label="mono",
+        experiment_id="exp_retron_source_surface",
+        experiment_root=None,
+        config_path=None,
+        summary_path=Path("summary.csv"),
+        trace_path=Path("trace.csv"),
+    )
+    surface = retron_review_mod.RetronReviewSourceSurface(
+        experiment_title="Source surface test",
+        protocol_id="plate_reader/retron_sponge_screen",
+        plot_specs=(
+            {
+                "id": "raw_kinetics",
+                "plugin": "plot/time_series",
+                "reads": {"df": {"record": "ratio_yfp_od600/df"}},
+                "with": {},
+            },
+        ),
+        plot_selector_rows=(),
+        plot_catalog_rows=(),
+        record_paths=(
+            ("ratio_yfp_od600/df", "/tmp/ratio.parquet"),
+            ("overflow/df", "/tmp/overflow.parquet"),
+        ),
+    )
+    loaded_paths: list[str] = []
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(retron_review_mod, "load_retron_source_surface", lambda _: surface)
+    monkeypatch.setattr(
+        retron_review_mod,
+        "load_cached_parquet_frame",
+        lambda path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
+    )
+    monkeypatch.setattr(
+        retron_review_mod,
+        "render_retron_experiment_plot_cached",
+        lambda plot_spec, *, datasets: captured.update({"plot_spec": plot_spec, "datasets": datasets}) or "ok",
+    )
+
+    result = retron_review_mod.render_retron_source_plot_cached(source, plot_id="raw_kinetics")
+
+    assert result == "ok"
+    assert captured["plot_spec"]["id"] == "raw_kinetics"
+    assert set(captured["datasets"]) == {"ratio_yfp_od600/df", "overflow/df"}
+    assert loaded_paths == ["/tmp/ratio.parquet", "/tmp/overflow.parquet"]
+
+
+def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_views(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = RetronReviewSource(
+        label="mono",
+        experiment_id="exp_retron_source_surface",
+        experiment_root=None,
+        config_path=None,
+        summary_path=Path("summary.csv"),
+        trace_path=Path("trace.csv"),
+    )
+    surface = retron_review_mod.RetronReviewSourceSurface(
+        experiment_title="Source surface test",
+        protocol_id="plate_reader/retron_sponge_screen",
+        plot_specs=(
+            {
+                "id": "control_anchored_decomposition",
+                "plugin": "plot/retron_summary",
+                "reads": {
+                    "summary": {"record": "semantic_metrics/summary"},
+                    "trace": {"record": "semantic_metrics/trace"},
+                },
+                "with": {"view": "decomposition", "metric": "D_abs_AUC", "control_name": "tetO"},
+            },
+        ),
+        plot_selector_rows=(),
+        plot_catalog_rows=(),
+        record_paths=(
+            ("semantic_metrics/summary", "/tmp/stale_summary.parquet"),
+            ("semantic_metrics/trace", "/tmp/stale_trace.parquet"),
+        ),
+    )
+    loaded_paths: list[str] = []
+    captured: dict[str, object] = {}
+    semantic_datasets = {
+        "semantic_metrics/summary": pd.DataFrame({"metric": ["D_abs_AUC"], "value": [0.1]}),
+        "semantic_metrics/trace": pd.DataFrame({"metric": ["R"], "value": [0.2]}),
+    }
+
+    monkeypatch.setattr(retron_review_mod, "load_retron_source_surface", lambda _: surface)
+    monkeypatch.setattr(
+        retron_review_mod,
+        "load_retron_source_semantic_datasets",
+        lambda source, *, record_ids=None: {
+            record_id: semantic_datasets[record_id] for record_id in (record_ids or tuple(semantic_datasets))
+        },
+    )
+    monkeypatch.setattr(
+        retron_review_mod,
+        "load_cached_parquet_frame",
+        lambda path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
+    )
+    monkeypatch.setattr(
+        retron_review_mod,
+        "render_retron_experiment_plot_cached",
+        lambda plot_spec, *, datasets: captured.update({"plot_spec": plot_spec, "datasets": datasets}) or "ok",
+    )
+
+    result = retron_review_mod.render_retron_source_plot_cached(
+        source,
+        plot_id="control_anchored_decomposition",
+    )
+
+    assert result == "ok"
+    assert captured["plot_spec"]["id"] == "control_anchored_decomposition"
+    assert captured["datasets"] == semantic_datasets
+    assert loaded_paths == []
+
+
+def test_render_retron_source_plot_cached_rejects_missing_dataframe_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = RetronReviewSource(
+        label="mono",
+        experiment_id="exp_retron_source_surface",
+        experiment_root=None,
+        config_path=None,
+        summary_path=Path("summary.csv"),
+        trace_path=Path("trace.csv"),
+    )
+    surface = retron_review_mod.RetronReviewSourceSurface(
+        experiment_title="Source surface test",
+        protocol_id="plate_reader/retron_sponge_screen",
+        plot_specs=(
+            {
+                "id": "raw_kinetics",
+                "plugin": "plot/time_series",
+                "reads": {"df": {"record": "ratio_yfp_od600/df"}},
+                "with": {},
+            },
+        ),
+        plot_selector_rows=(),
+        plot_catalog_rows=(),
+        record_paths=(),
+    )
+
+    monkeypatch.setattr(retron_review_mod, "load_retron_source_surface", lambda _: surface)
+
+    with pytest.raises(ValueError, match="Missing dataframe record `ratio_yfp_od600/df`"):
+        retron_review_mod.render_retron_source_plot_cached(source, plot_id="raw_kinetics")
 
 
 def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_frame() -> None:
@@ -700,20 +1244,73 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
                             "relevant_sensor_pair": not control_flag,
                             "in_primary_post_stress": True,
                             "configured_max_post_stress_hours": 4.0,
+                            "matched_control_key": "plate-1::sulAp::100 nM ciprofloxacin",
+                            "summary_window_start_h": 0.0,
+                            "summary_window_end_h": 4.0,
+                            "summary_window_duration_h": 4.0,
+                            "pre_stress_read_count": 1,
+                            "post_stress_read_count": 2,
+                            "matched_group_sample_count": 2,
+                            "stress_addition_gap_h": 0.5,
                         }
                     )
     trace = pd.DataFrame(rows)
     summary = pd.DataFrame(
         [
             {
+                "plate_id": "plate-1",
                 "sensor": "sulAp",
                 "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "P_pre",
+                "value": 0.12,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
                 "metric": "D_abs_AUC",
                 "value": 0.42,
                 "relevant_sensor_pair": True,
                 "is_relevant_stress": True,
                 "sponge_family_size": "mono",
-            }
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_AUC",
+                "value": 0.30,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "D_growth_AUC",
+                "value": -0.08,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            },
+            {
+                "sensor": "sulAp",
+                "sponge": "tetO",
+                "stress_condition": "100 nM ciprofloxacin",
+                "metric": "G_sensor",
+                "value": 0.60,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
         ]
     )
     plot_spec = {
@@ -726,7 +1323,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
         "with": {
             "view": "decomposition",
             "metric": "D_abs_AUC",
-            "title": "Decision cards",
+            "title": "Sponge vs matched tetO",
             "filename": "control_anchored_decomposition",
             "control_name": "tetO",
             "relevant_only": True,
@@ -738,19 +1335,80 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
         datasets={"semantic_metrics/summary": summary, "semantic_metrics/trace": trace},
     )
 
-    assert result.title == "Decision cards"
+    assert result.title == "Sponge vs matched tetO"
     assert "matched tetO" in result.question
-    assert "primary decision surface" in result.meaning
+    assert result.math.startswith("R(t)=log2(YFP/CFP)")
+    assert result.meaning.startswith("Primary assay summary.")
     assert {
-        "sample_minus_auc",
-        "sample_plus_auc",
-        "delta_real_auc",
-        "control_minus_auc",
-        "control_plus_auc",
-        "delta_teto_auc",
-        "delta_net_auc",
+        "panel_role",
+        "primary_stress",
+        "matched_control_key",
+        "matched_group_sample_count",
+        "summary_window_duration_h",
+        "stress_addition_gap_h",
+        "summary_metric",
+        "summary_label",
+        "estimate",
+        "lower",
+        "upper",
+        "units",
     } <= set(result.supporting_table.columns)
+    assert "sample_minus_auc" not in result.supporting_table.columns
+    assert set(result.supporting_table["summary_metric"]) == {
+        "P_pre",
+        "D_abs_AUC",
+        "D_AUC",
+        "D_growth_AUC",
+    }
     plt.close(result.figures[0].fig)
+
+
+def test_render_retron_experiment_plot_rejects_stale_decision_card_trace_contract() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": "sulAp",
+                "sponge": "LexA",
+                "stress_condition": "100 nM ciprofloxacin",
+                "time_from_stress": 0.0,
+                "metric": "R",
+                "value": 0.9,
+                "IPTG": "-IPTG",
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+            }
+        ]
+    )
+    summary = pd.DataFrame(
+        [
+            {"sensor": "sulAp", "sponge": "LexA", "metric": "P_pre", "value": 0.1},
+            {"sensor": "sulAp", "sponge": "LexA", "metric": "D_abs_AUC", "value": 0.3},
+            {"sensor": "sulAp", "sponge": "LexA", "metric": "D_AUC", "value": 0.2},
+            {"sensor": "sulAp", "sponge": "LexA", "metric": "D_growth_AUC", "value": -0.05},
+            {"sensor": "sulAp", "sponge": "tetO", "metric": "G_sensor", "value": 0.4},
+        ]
+    )
+    plot_spec = {
+        "id": "control_anchored_decomposition",
+        "plugin": "plot/retron_summary",
+        "reads": {
+            "summary": {"record": "semantic_metrics/summary"},
+            "trace": {"record": "semantic_metrics/trace"},
+        },
+        "with": {
+            "view": "decomposition",
+            "metric": "D_abs_AUC",
+            "control_name": "tetO",
+            "relevant_only": True,
+        },
+    }
+
+    with pytest.raises(ValueError, match="requires refreshed semantic trace records"):
+        render_retron_experiment_plot(
+            plot_spec,
+            datasets={"semantic_metrics/summary": summary, "semantic_metrics/trace": trace},
+        )
 
 
 def test_render_retron_experiment_plot_uses_descriptive_time_series_axis_labels() -> None:
@@ -839,7 +1497,7 @@ def test_render_retron_experiment_plot_uses_descriptive_time_series_axis_labels(
 
     result = render_retron_experiment_plot(plot_spec, datasets={"ratio_yfp_od600/df": tidy})
 
-    assert result.title == "QC traces"
+    assert result.title == "QC raw channels"
     assert len(result.figures) == 1
     axis_labels = [axis.get_ylabel() for axis in result.figures[0].fig.axes if axis.get_visible()]
     assert axis_labels == ["OD600", "YFP", "CFP"]
@@ -1052,12 +1710,44 @@ def test_render_retron_aggregate_plot_returns_specificity_matrix_bundle() -> Non
 
     assert result.title == "Target activity matrix"
     assert result.figure is not None
-    assert "tested on-target sensor arms" in result.question
+    assert "strongest total effect in the expected direction" in result.question
+    assert "score(sensor,sponge)=mean_source[O_abs_AUC or S_abs_AUC]" in result.math
+    assert "without implying exhaustive off-target specificity coverage" in result.meaning
     assert result.figure.get_facecolor()[:3] == pytest.approx((1.0, 1.0, 1.0))
     assert result.figure.axes[0].get_xlabel() == "Sponge design"
+    assert result.figure.axes[0].get_title() == "Relevant-stress target activity matrix"
     assert result.figure.axes[0].get_ylabel() == ""
+    assert result.figure.axes[1].get_ylabel() == "Scaled expected-direction increment"
     assert not result.supporting_table.empty
+    assert result.supporting_table_title == "Relevant-stress on-target matrix behind the heatmap"
     plt.close(result.figure)
+
+
+def test_render_retron_aggregate_plot_rejects_unavailable_primary_metric() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "sensor": "spyP",
+                "sponge": "CpxR",
+                "metric": "O_AUC",
+                "value": 0.40,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="aggregate score metric 'O_abs_AUC' is unavailable"):
+        render_retron_aggregate_plot(
+            "specificity_matrix",
+            summary_df=summary,
+            sensor_target_map={"spyP": ("CpxR", "BaeR")},
+            score_metric="O_abs_AUC",
+            architecture_x="irrelevant_motif_count",
+            expected_mode="expected_sum",
+            fingerprint_sponge=None,
+        )
 
 
 def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
@@ -1134,11 +1824,23 @@ def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
     assert result.figure is not None
     assert not result.supporting_table.empty
     assert set(result.supporting_table["sponge"]) == {"CpxR", "SoxR-SoxS"}
+    assert "x=mean[O_abs_AUC or S_abs_AUC]" in result.math
+    assert "y=mean[-D_growth_AUC]" in result.math
+    assert "total effect, burden, and leakiness in view" in result.meaning
+    assert result.supporting_table_title == "Aggregate on-target, burden, and leakiness table for candidate ranking"
     x_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_xticklabels() if label.get_text()}
     y_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_yticklabels() if label.get_text()}
+    legend = result.figure.axes[0].get_legend()
+    assert legend is not None
+    assert {text.get_text() for text in legend.get_texts()} == {"mono", "bi"}
     assert x_tick_sizes == {7.0}
     assert y_tick_sizes == {7.0}
     plt.close(result.figure)
+
+
+def test_retron_aggregate_plot_rows_reject_unknown_plot_id() -> None:
+    with pytest.raises(ValueError, match="unknown aggregate plot id"):
+        retron_aggregate_plot_rows(["unknown_plot"])
 
 
 def test_build_fingerprint_frame_preserves_source_replicates_and_matched_teto_rows() -> None:
@@ -1396,6 +2098,7 @@ def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> No
     assert len(axis.collections) >= 4
     legend = axis.get_legend()
     assert legend is not None
+    assert any("Bars show source means" in text.get_text() for text in result.figure.texts)
     assert {text.get_text() for text in legend.get_texts()} == {"Selected sponge", "tetO reference"}
     plt.close(result.figure)
 
