@@ -1396,7 +1396,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "control_burden_panel":
         defaults = {
             "metrics": ["R", "mu"],
-            "title": "Control burden panel",
+            "title": "tetO burden check",
             "filename": "control_burden_panel",
             "control_name": control_name,
             "include_control": True,
@@ -1413,7 +1413,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "baseline_shifted_kinetics":
         defaults = {
             "metrics": ["B"],
-            "title": "Baseline-shifted kinetics",
+            "title": "Advanced: shift from pre-stress state",
             "filename": "baseline_shifted_kinetics",
             "control_name": control_name,
             "include_control": True,
@@ -1428,7 +1428,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "matched_control_kinetics":
         defaults = {
             "metrics": ["C"],
-            "title": "Matched-control-normalized kinetics",
+            "title": "Advanced: matched-control deviation",
             "filename": "matched_control_kinetics",
             "control_name": control_name,
             "relevant_only": True,
@@ -1444,7 +1444,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "induced_effect_kinetics":
         defaults = {
             "metrics": ["D"],
-            "title": "IPTG-state effect kinetics",
+            "title": "Post-stress increment over time",
             "filename": "induced_effect_kinetics",
             "control_name": control_name,
             "relevant_only": True,
@@ -1460,7 +1460,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "absolute_effect_kinetics":
         defaults = {
             "metrics": ["D_abs"],
-            "title": "Absolute matched-control effect kinetics",
+            "title": "Total effect beyond matched tetO over time",
             "filename": "absolute_effect_kinetics",
             "control_name": control_name,
             "relevant_only": True,
@@ -1477,7 +1477,7 @@ def _plate_reader_retron_plot_output(
         defaults = {
             "view": "decomposition",
             "metric": "D_abs_AUC",
-            "title": "Decision cards",
+            "title": "Sponge vs matched tetO",
             "filename": "control_anchored_decomposition",
             "control_name": control_name,
             "no_stress_label": no_stress_label,

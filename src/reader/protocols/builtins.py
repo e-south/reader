@@ -1196,19 +1196,19 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="induced_effect_kinetics",
         kind="kinetics",
-        summary="Per-arm IPTG-state effect trajectories after matched-control normalization, paired with a compact D_AUC sidecar.",
+        summary="Per-arm post-stress increment trajectories after matched-control normalization, paired with a compact D_AUC sidecar.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="absolute_effect_kinetics",
         kind="kinetics",
-        summary="Per-arm absolute matched-control IPTG-state effect that preserves pre-stress preload differences, paired with a compact D_abs_AUC sidecar.",
+        summary="Per-arm total effect beyond matched tetO that preserves pre-stress preload differences, paired with a compact D_abs_AUC sidecar.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="control_anchored_decomposition",
         kind="summary",
-        summary="Per-pair decision cards that combine relevant-stress traces, H2O context, and preload/total/increment/burden summaries.",
+        summary="Per-pair sponge-versus-matched-tetO assay summary with relevant-stress traces, H2O context, and preload/total/increment/burden summaries.",
         primary=True,
     ),
     ProtocolFigureSpec(

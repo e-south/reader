@@ -4,6 +4,7 @@ import logging
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from reader.plugins.transform.retron_sponge_metrics import RetronSpongeMetrics, RetronSpongeMetricsCfg
 
@@ -491,3 +492,143 @@ def test_retron_sponge_metrics_respects_post_stress_time_cap() -> None:
 
     assert not capped_rows["in_primary_post_stress"].any()
     assert uncapped_rows["in_primary_post_stress"].all()
+
+
+def test_retron_sponge_metrics_encodes_window_and_matching_metadata() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df()}, cfg)
+    trace = outputs["trace"]
+    summary = outputs["summary"]
+
+    relevant_trace = trace[
+        (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["metric"] == "R")
+    ]
+    relevant_summary = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "D_abs_AUC")
+    ]
+
+    assert {
+        "matched_control_key",
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+    } <= set(trace.columns)
+    assert {
+        "matched_control_key",
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_addition_gap_h",
+    } <= set(summary.columns)
+    assert set(relevant_trace["matched_control_key"]) == {"plate::spyP::3% EtOH"}
+    assert set(relevant_summary["matched_control_key"]) == {"plate::spyP::3% EtOH"}
+    assert set(relevant_trace["summary_window_start_h"]) == {0.5}
+    assert set(relevant_trace["summary_window_end_h"]) == {1.5}
+    assert set(relevant_summary["summary_window_duration_h"]) == {1.0}
+    assert set(relevant_summary["pre_stress_read_count"]) == {3.0}
+    assert set(relevant_summary["post_stress_read_count"]) == {3.0}
+    assert set(relevant_summary["matched_group_sample_count"]) == {2.0}
+    assert set(relevant_summary["stress_addition_gap_h"]) == {1.0}
+
+
+def test_retron_sponge_metrics_preserves_d_abs_additive_contracts() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df()}, cfg)
+    trace = outputs["trace"]
+    summary = outputs["summary"]
+
+    d_trace = trace[
+        (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["metric"] == "D")
+    ].sort_values("time_from_stress")
+    d_abs_trace = trace[
+        (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["metric"] == "D_abs")
+    ].sort_values("time_from_stress")
+    p_pre = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "P_pre")
+    ]["value"].iloc[0]
+    d_auc = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "D_AUC")
+    ]["value"].iloc[0]
+    d_abs_auc = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "D_abs_AUC")
+    ]["value"].iloc[0]
+    window_duration = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "D_abs_AUC")
+    ]["summary_window_duration_h"].iloc[0]
+
+    pointwise_delta = d_abs_trace["value"].reset_index(drop=True) - d_trace["value"].reset_index(drop=True)
+
+    assert all(value == pytest.approx(p_pre) for value in pointwise_delta)
+    assert d_abs_auc == pytest.approx(d_auc + p_pre * window_duration)
+
+
+def test_retron_sponge_metrics_flags_unstable_scaled_metrics() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+        min_abs_g_sensor=0.1,
+    )
+    df = _input_df()
+    mask = (
+        (df["design_id_alias"] == "spyP/tetO")
+        & (df["treatment_alias"] == "-IPTG/+stress")
+        & (df["channel"] == "YFP/CFP")
+        & (df["time"] >= 2.0)
+    )
+    df.loc[mask, "value"] = 1.00
+
+    outputs = plugin.run(_ctx(), {"df": df}, cfg)
+    summary = outputs["summary"]
+
+    scaled_row = summary[
+        (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+        & (summary["metric"] == "S_abs_AUC")
+    ].iloc[0]
+
+    assert pd.isna(scaled_row["value"])
+    assert bool(scaled_row["scaling_available"]) is False
+    assert scaled_row["warning_flag"] == "unstable_scaled_metric"
+    assert scaled_row["scale_min_abs_g_sensor"] == pytest.approx(0.1)

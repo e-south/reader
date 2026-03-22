@@ -52,6 +52,7 @@ class RetronSpongeMetricsCfg(PluginConfig):
     relevant_stress_map: dict[str, str] = Field(default_factory=dict)
     sensor_target_map: dict[str, list[str]] = Field(default_factory=dict)
     expected_sign_map: dict[str, int] = Field(default_factory=dict)
+    min_abs_g_sensor: float = Field(default=0.1, ge=0.0)
 
 
 class RetronSpongeMetrics(Plugin):

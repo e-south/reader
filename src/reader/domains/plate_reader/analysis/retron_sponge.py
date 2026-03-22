@@ -25,11 +25,20 @@ _TRACE_TABLE_COLUMNS = [
     "is_relevant_stress",
     "relevant_sensor_pair",
     "sponge_family_size",
+    "matched_control_key",
     "matched_tetO_group",
     "in_pre_window",
     "in_primary_post_stress",
     "in_endpoint_window",
     "configured_max_post_stress_hours",
+    "summary_window_start_h",
+    "summary_window_end_h",
+    "summary_window_duration_h",
+    "pre_stress_read_count",
+    "post_stress_read_count",
+    "matched_group_sample_count",
+    "stress_time_zero_h",
+    "stress_addition_gap_h",
 ]
 _SUMMARY_TABLE_COLUMNS = [
     "plate_id",
@@ -44,6 +53,19 @@ _SUMMARY_TABLE_COLUMNS = [
     "is_relevant_stress",
     "relevant_sensor_pair",
     "sponge_family_size",
+    "matched_control_key",
+    "summary_window_start_h",
+    "summary_window_end_h",
+    "summary_window_duration_h",
+    "pre_stress_read_count",
+    "post_stress_read_count",
+    "matched_group_sample_count",
+    "stress_time_zero_h",
+    "stress_addition_gap_h",
+    "scaling_available",
+    "warning_flag",
+    "scale_reference_abs_g_sensor",
+    "scale_min_abs_g_sensor",
 ]
 
 
@@ -196,6 +218,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
         control_od_endpoint=control_od_endpoint,
         relevant_stress_map=relevant_stress_map,
         control_name=str(cfg.control_name),
+        min_abs_g_sensor=float(cfg.min_abs_g_sensor),
     )
     return trace, summary
 
@@ -222,6 +245,17 @@ def _annotate_analysis_windows(ctx, *, wide: pd.DataFrame, cfg) -> pd.DataFrame:
     out["configured_max_post_stress_hours"] = (
         np.nan if cfg.max_post_stress_hours is None else float(cfg.max_post_stress_hours)
     )
+    out["matched_control_key"] = out.apply(
+        lambda row: f"{row['plate_id']}::{row['sensor']}::{row['stress_condition']}",
+        axis=1,
+    )
+    out["summary_window_start_h"] = np.nan
+    out["summary_window_end_h"] = np.nan
+    out["summary_window_duration_h"] = np.nan
+    out["pre_stress_read_count"] = np.nan
+    out["post_stress_read_count"] = np.nan
+    out["matched_group_sample_count"] = np.nan
+    out["stress_addition_gap_h"] = np.nan
 
     time_zero_by_plate = _stress_time_zero_by_plate(ctx, wide=out, cfg=cfg)
     out["stress_time_zero_h"] = out["plate_id"].map(time_zero_by_plate).astype(float)
@@ -235,6 +269,7 @@ def _annotate_analysis_windows(ctx, *, wide: pd.DataFrame, cfg) -> pd.DataFrame:
     )
     out["time_from_stress"] = out["time"].astype(float) - out["stress_time_zero_h"].astype(float)
     out["B"] = out["R"] - out["R_pre"]
+    _annotate_scope_metadata(out, time_zero_by_plate=time_zero_by_plate)
     return out
 
 
@@ -319,6 +354,99 @@ def _annotate_primary_windows(
                 f"need {endpoint_reads} timepoints, found {len(endpoint_times)}"
             )
         wide.loc[post_mask & wide["time"].isin(endpoint_times), "in_endpoint_window"] = True
+
+
+def _annotate_scope_metadata(
+    wide: pd.DataFrame,
+    *,
+    time_zero_by_plate: Mapping[str, float],
+) -> None:
+    stress_gap_by_plate = _stress_addition_gap_by_plate(wide, time_zero_by_plate=time_zero_by_plate)
+    wide["stress_addition_gap_h"] = wide["plate_id"].map(stress_gap_by_plate).astype(float)
+
+    scope_columns = ["plate_id", "sensor", "sponge", "stress_condition"]
+    rows: list[dict[str, Any]] = []
+    for keys, group in wide.groupby(scope_columns, dropna=False, sort=False):
+        plate_id, sensor, sponge, stress_condition = keys
+        post = group[group["in_primary_post_stress"].fillna(False)].copy()
+        time_from_stress = pd.to_numeric(post["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+        finite = time_from_stress[np.isfinite(time_from_stress)]
+        if finite.size == 0:
+            start_h = end_h = duration_h = np.nan
+        else:
+            start_h = float(finite.min())
+            end_h = float(finite.max())
+            duration_h = float(end_h - start_h)
+        rows.append(
+            {
+                "plate_id": plate_id,
+                "sensor": sensor,
+                "sponge": sponge,
+                "stress_condition": stress_condition,
+                "summary_window_start_h": start_h,
+                "summary_window_end_h": end_h,
+                "summary_window_duration_h": duration_h,
+                "pre_stress_read_count": _median_flagged_unique_time_count(group, flag_column="in_pre_window"),
+                "post_stress_read_count": _median_flagged_unique_time_count(
+                    group,
+                    flag_column="in_primary_post_stress",
+                ),
+                "matched_group_sample_count": int(group["replicate_id"].astype(str).nunique()),
+                "stress_time_zero_h": float(time_zero_by_plate[str(plate_id)]),
+                "stress_addition_gap_h": float(stress_gap_by_plate[str(plate_id)]),
+            }
+        )
+    if not rows:
+        return
+    metadata = pd.DataFrame(rows)
+    out = wide.merge(metadata, on=scope_columns, how="left", validate="many_to_one", suffixes=("", "__meta"))
+    for column in (
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_time_zero_h",
+        "stress_addition_gap_h",
+    ):
+        meta_column = f"{column}__meta"
+        wide[column] = out[meta_column] if meta_column in out.columns else out[column]
+
+
+def _stress_addition_gap_by_plate(
+    wide: pd.DataFrame,
+    *,
+    time_zero_by_plate: Mapping[str, float],
+) -> dict[str, float]:
+    resolved: dict[str, float] = {}
+    for plate_id, group in wide.groupby("plate_id", dropna=False, sort=False):
+        time_zero = float(time_zero_by_plate[str(plate_id)])
+        times = np.sort(pd.unique(pd.to_numeric(group["time"], errors="coerce").dropna()))
+        pre = times[times < time_zero]
+        post = times[times > time_zero]
+        if len(pre) == 0 or len(post) == 0:
+            resolved[str(plate_id)] = float("nan")
+            continue
+        resolved[str(plate_id)] = float(post[0] - pre[-1])
+    return resolved
+
+
+def _median_flagged_unique_time_count(
+    frame: pd.DataFrame,
+    *,
+    flag_column: str,
+) -> float:
+    if frame.empty or flag_column not in frame.columns or "replicate_id" not in frame.columns:
+        return float("nan")
+    flagged = frame[frame[flag_column].fillna(False)].copy()
+    if flagged.empty:
+        return float("nan")
+    counts = flagged.groupby("replicate_id", dropna=False)["time"].nunique().to_numpy(dtype=float, copy=False)
+    finite = counts[np.isfinite(counts)]
+    if finite.size == 0:
+        return float("nan")
+    return float(np.median(finite))
 
 
 def _compute_matched_control_contrasts(wide: pd.DataFrame, *, control_name: str) -> pd.DataFrame:
@@ -810,9 +938,18 @@ def _state_metric_means(wide: pd.DataFrame, *, metric: str) -> pd.DataFrame:
             is_relevant_stress=("is_relevant_stress", "first"),
             relevant_sensor_pair=("relevant_sensor_pair", "first"),
             sponge_family_size=("sponge_family_size", "first"),
+            matched_control_key=("matched_control_key", "first"),
             time_from_stress=("time_from_stress", "first"),
             in_primary_post_stress=("in_primary_post_stress", "first"),
             in_endpoint_window=("in_endpoint_window", "first"),
+            summary_window_start_h=("summary_window_start_h", "first"),
+            summary_window_end_h=("summary_window_end_h", "first"),
+            summary_window_duration_h=("summary_window_duration_h", "first"),
+            pre_stress_read_count=("pre_stress_read_count", "first"),
+            post_stress_read_count=("post_stress_read_count", "first"),
+            matched_group_sample_count=("matched_group_sample_count", "first"),
+            stress_time_zero_h=("stress_time_zero_h", "first"),
+            stress_addition_gap_h=("stress_addition_gap_h", "first"),
         )
         .reset_index()
     )
@@ -844,8 +981,22 @@ def _difference_by_state(
         "in_primary_post_stress",
         "in_endpoint_window",
     ]
-    if "configured_max_post_stress_hours" in frame.columns:
-        index_columns.append("configured_max_post_stress_hours")
+    index_columns.extend(
+        column
+        for column in (
+            "configured_max_post_stress_hours",
+            "matched_control_key",
+            "summary_window_start_h",
+            "summary_window_end_h",
+            "summary_window_duration_h",
+            "pre_stress_read_count",
+            "post_stress_read_count",
+            "matched_group_sample_count",
+            "stress_time_zero_h",
+            "stress_addition_gap_h",
+        )
+        if column in frame.columns
+    )
     pivot = frame.pivot_table(index=index_columns, columns="IPTG", values=value_column, aggfunc="first").reset_index()
     if positive_state not in pivot.columns or negative_state not in pivot.columns:
         return pd.DataFrame(columns=[*index_columns, out_metric])
@@ -876,6 +1027,21 @@ def _summary_difference_by_state(
         "relevant_sensor_pair",
         "sponge_family_size",
     ]
+    index_columns.extend(
+        column
+        for column in (
+            "matched_control_key",
+            "summary_window_start_h",
+            "summary_window_end_h",
+            "summary_window_duration_h",
+            "pre_stress_read_count",
+            "post_stress_read_count",
+            "matched_group_sample_count",
+            "stress_time_zero_h",
+            "stress_addition_gap_h",
+        )
+        if column in frame.columns
+    )
     pivot = frame.pivot_table(index=index_columns, columns="IPTG", values=value_column, aggfunc="first").reset_index()
     if positive_state not in pivot.columns or negative_state not in pivot.columns:
         return pd.DataFrame(columns=[*index_columns, "value"])
@@ -970,11 +1136,20 @@ def _wide_trace_metric_rows(wide: pd.DataFrame, *, metrics: Iterable[str]) -> pd
         "is_relevant_stress",
         "relevant_sensor_pair",
         "sponge_family_size",
+        "matched_control_key",
         "matched_tetO_group",
         "in_pre_window",
         "in_primary_post_stress",
         "in_endpoint_window",
         "configured_max_post_stress_hours",
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_time_zero_h",
+        "stress_addition_gap_h",
     ]
     source = wide.copy()
     for column in [*id_columns, *metric_columns]:
@@ -984,6 +1159,17 @@ def _wide_trace_metric_rows(wide: pd.DataFrame, *, metrics: Iterable[str]) -> pd
     out["time"] = pd.to_numeric(out["time"], errors="coerce")
     out["time_from_stress"] = pd.to_numeric(out["time_from_stress"], errors="coerce")
     out["configured_max_post_stress_hours"] = pd.to_numeric(out["configured_max_post_stress_hours"], errors="coerce")
+    for column in (
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_time_zero_h",
+        "stress_addition_gap_h",
+    ):
+        out[column] = pd.to_numeric(out[column], errors="coerce")
     for metric in metric_columns:
         out[metric] = pd.to_numeric(out[metric], errors="coerce")
     return out.melt(
@@ -1010,9 +1196,18 @@ def _aggregate_trace_metric_rows(frame: pd.DataFrame, *, metrics: Iterable[str])
         "is_relevant_stress",
         "relevant_sensor_pair",
         "sponge_family_size",
+        "matched_control_key",
         "in_primary_post_stress",
         "in_endpoint_window",
         "configured_max_post_stress_hours",
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_time_zero_h",
+        "stress_addition_gap_h",
     ]
     source = frame.copy()
     for column in [*base_id_columns, *metric_columns]:
@@ -1022,11 +1217,22 @@ def _aggregate_trace_metric_rows(frame: pd.DataFrame, *, metrics: Iterable[str])
     out["acquisition_segment_id"] = pd.NA
     out["replicate_id"] = pd.NA
     out["IPTG"] = pd.NA
-    out["matched_tetO_group"] = pd.NA
+    out["matched_tetO_group"] = out.get("matched_control_key", pd.Series(pd.NA, index=out.index))
     out["in_pre_window"] = False
     out["time"] = pd.to_numeric(out["time"], errors="coerce")
     out["time_from_stress"] = pd.to_numeric(out["time_from_stress"], errors="coerce")
     out["configured_max_post_stress_hours"] = pd.to_numeric(out["configured_max_post_stress_hours"], errors="coerce")
+    for column in (
+        "summary_window_start_h",
+        "summary_window_end_h",
+        "summary_window_duration_h",
+        "pre_stress_read_count",
+        "post_stress_read_count",
+        "matched_group_sample_count",
+        "stress_time_zero_h",
+        "stress_addition_gap_h",
+    ):
+        out[column] = pd.to_numeric(out[column], errors="coerce")
     for metric in metric_columns:
         out[metric] = pd.to_numeric(out[metric], errors="coerce")
     return out.melt(
@@ -1045,11 +1251,20 @@ def _aggregate_trace_metric_rows(frame: pd.DataFrame, *, metrics: Iterable[str])
             "is_relevant_stress",
             "relevant_sensor_pair",
             "sponge_family_size",
+            "matched_control_key",
             "matched_tetO_group",
             "in_pre_window",
             "in_primary_post_stress",
             "in_endpoint_window",
             "configured_max_post_stress_hours",
+            "summary_window_start_h",
+            "summary_window_end_h",
+            "summary_window_duration_h",
+            "pre_stress_read_count",
+            "post_stress_read_count",
+            "matched_group_sample_count",
+            "stress_time_zero_h",
+            "stress_addition_gap_h",
         ],
         value_vars=list(metric_columns),
         var_name="metric",
@@ -1070,6 +1285,7 @@ def _build_summary_table(
     control_od_endpoint: pd.DataFrame,
     relevant_stress_map: Mapping[str, str],
     control_name: str,
+    min_abs_g_sensor: float,
 ) -> pd.DataFrame:
     frames = _preload_summary_frames(wide=wide, control_name=control_name)
     effect_frames, o_auc_rows, o_abs_auc_rows = _effect_summary_frames(
@@ -1098,6 +1314,7 @@ def _build_summary_table(
             o_auc_rows=o_auc_rows,
             o_abs_auc_rows=o_abs_auc_rows,
             g_sensor_rows=g_sensor_rows,
+            min_abs_g_sensor=min_abs_g_sensor,
         )
     )
 
@@ -1230,11 +1447,22 @@ def _scaled_effect_summary_frames(
     o_auc_rows: pd.DataFrame,
     o_abs_auc_rows: pd.DataFrame,
     g_sensor_rows: pd.DataFrame,
+    min_abs_g_sensor: float,
 ) -> list[pd.DataFrame]:
     g_sensor_lookup = {(row["plate_id"], row["sensor"]): row["value"] for _, row in g_sensor_rows.iterrows()}
     return [
-        _scaled_summary_rows(o_auc_rows, metric="S_AUC", g_sensor_lookup=g_sensor_lookup),
-        _scaled_summary_rows(o_abs_auc_rows, metric="S_abs_AUC", g_sensor_lookup=g_sensor_lookup),
+        _scaled_summary_rows(
+            o_auc_rows,
+            metric="S_AUC",
+            g_sensor_lookup=g_sensor_lookup,
+            min_abs_g_sensor=min_abs_g_sensor,
+        ),
+        _scaled_summary_rows(
+            o_abs_auc_rows,
+            metric="S_abs_AUC",
+            g_sensor_lookup=g_sensor_lookup,
+            min_abs_g_sensor=min_abs_g_sensor,
+        ),
     ]
 
 
@@ -1303,6 +1531,7 @@ def _scaled_summary_rows(
     *,
     metric: str,
     g_sensor_lookup: Mapping[tuple[object, object], object],
+    min_abs_g_sensor: float,
 ) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=_SUMMARY_TABLE_COLUMNS)
@@ -1311,13 +1540,25 @@ def _scaled_summary_rows(
         if not bool(row["is_relevant_stress"]):
             continue
         native = g_sensor_lookup.get((row["plate_id"], row["sensor"]))
-        scaled = (
-            np.nan
-            if native is None or not np.isfinite(native) or native == 0
-            else float(row["value"]) / abs(float(native))
-        )
         scaled_row = row.copy()
+        native_abs = np.nan if native is None or not np.isfinite(native) else abs(float(native))
+        if not np.isfinite(native_abs):
+            scaled = np.nan
+            scaling_available = False
+            warning_flag = "missing_G_sensor"
+        elif native_abs < float(min_abs_g_sensor):
+            scaled = np.nan
+            scaling_available = False
+            warning_flag = "unstable_scaled_metric"
+        else:
+            scaled = float(row["value"]) / native_abs
+            scaling_available = True
+            warning_flag = None
         scaled_row["value"] = scaled
+        scaled_row["scaling_available"] = scaling_available
+        scaled_row["warning_flag"] = warning_flag
+        scaled_row["scale_reference_abs_g_sensor"] = native_abs
+        scaled_row["scale_min_abs_g_sensor"] = float(min_abs_g_sensor)
         rows.append(scaled_row)
     if not rows:
         return pd.DataFrame(columns=_SUMMARY_TABLE_COLUMNS)
@@ -1345,6 +1586,19 @@ def _summary_row(
         "is_relevant_stress": row.get("is_relevant_stress"),
         "relevant_sensor_pair": row.get("relevant_sensor_pair"),
         "sponge_family_size": row.get("sponge_family_size"),
+        "matched_control_key": row.get("matched_control_key"),
+        "summary_window_start_h": row.get("summary_window_start_h"),
+        "summary_window_end_h": row.get("summary_window_end_h"),
+        "summary_window_duration_h": row.get("summary_window_duration_h"),
+        "pre_stress_read_count": row.get("pre_stress_read_count"),
+        "post_stress_read_count": row.get("post_stress_read_count"),
+        "matched_group_sample_count": row.get("matched_group_sample_count"),
+        "stress_time_zero_h": row.get("stress_time_zero_h"),
+        "stress_addition_gap_h": row.get("stress_addition_gap_h"),
+        "scaling_available": row.get("scaling_available"),
+        "warning_flag": row.get("warning_flag"),
+        "scale_reference_abs_g_sensor": row.get("scale_reference_abs_g_sensor"),
+        "scale_min_abs_g_sensor": row.get("scale_min_abs_g_sensor"),
     }
 
 
@@ -1375,6 +1629,15 @@ def _window_summaries(
             "is_relevant_stress": value["is_relevant_stress"],
             "relevant_sensor_pair": value["relevant_sensor_pair"],
             "sponge_family_size": value["sponge_family_size"],
+            "matched_control_key": value.get("matched_control_key"),
+            "summary_window_start_h": value.get("summary_window_start_h"),
+            "summary_window_end_h": value.get("summary_window_end_h"),
+            "summary_window_duration_h": value.get("summary_window_duration_h"),
+            "pre_stress_read_count": value.get("pre_stress_read_count"),
+            "post_stress_read_count": value.get("post_stress_read_count"),
+            "matched_group_sample_count": value.get("matched_group_sample_count"),
+            "stress_time_zero_h": value.get("stress_time_zero_h"),
+            "stress_addition_gap_h": value.get("stress_addition_gap_h"),
         }
         if any(metric.endswith("_AUC") for metric in metric_list):
             auc_mask = ordered["in_primary_post_stress"].astype(bool).to_numpy()
@@ -1438,6 +1701,15 @@ def _native_sensor_response(
                 "is_relevant_stress": True,
                 "relevant_sensor_pair": True,
                 "sponge_family_size": "control",
+                "matched_control_key": f"{plate_id}::{sensor}::{relevant_label}",
+                "summary_window_start_h": merged.get("summary_window_start_h_rel", pd.Series([np.nan])).iloc[0],
+                "summary_window_end_h": merged.get("summary_window_end_h_rel", pd.Series([np.nan])).iloc[0],
+                "summary_window_duration_h": merged.get("summary_window_duration_h_rel", pd.Series([np.nan])).iloc[0],
+                "pre_stress_read_count": merged.get("pre_stress_read_count_rel", pd.Series([np.nan])).iloc[0],
+                "post_stress_read_count": merged.get("post_stress_read_count_rel", pd.Series([np.nan])).iloc[0],
+                "matched_group_sample_count": merged.get("matched_group_sample_count_rel", pd.Series([np.nan])).iloc[0],
+                "stress_time_zero_h": merged.get("stress_time_zero_h_rel", pd.Series([np.nan])).iloc[0],
+                "stress_addition_gap_h": merged.get("stress_addition_gap_h_rel", pd.Series([np.nan])).iloc[0],
             }
         )
     return pd.DataFrame(rows)
