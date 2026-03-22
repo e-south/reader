@@ -15,11 +15,11 @@ def test_retron_presentation_renders_summary_text_with_window_notes() -> None:
                 "stress_condition": "3% EtOH",
                 "time": time_value,
                 "time_from_stress": time_value,
-                "configured_max_post_stress_hours": 4.0,
+                "configured_max_post_stress_hours": 12.0,
                 "in_primary_post_stress": True,
                 "in_endpoint_window": time_value >= 3.0,
             }
-            for time_value in (0.5, 3.0, 4.0)
+            for time_value in (0.5, 3.0, 12.0)
         ]
     )
 
@@ -30,7 +30,7 @@ def test_retron_presentation_renders_summary_text_with_window_notes() -> None:
 
     assert text == (
         "Endpoint of the matched tetO deviation trace; "
-        "Post-stress summary covers the first 4.0 h after stress addition; "
+        "Window first 12.0 h after stress addition; "
         "Endpoint uses the last 2 flagged reads inside the summary window"
     )
 
@@ -43,7 +43,7 @@ def test_retron_presentation_primary_window_span_prefers_configured_hours() -> N
                 "sensor": "spyP",
                 "stress_condition": "3% EtOH",
                 "time_from_stress": time_value,
-                "configured_max_post_stress_hours": 4.0,
+                "configured_max_post_stress_hours": 12.0,
                 "in_primary_post_stress": True,
             }
             for time_value in (0.25, 0.5, 1.0)
@@ -52,7 +52,7 @@ def test_retron_presentation_primary_window_span_prefers_configured_hours() -> N
 
     span = retron_presentation.primary_window_span_bounds(trace, stress_condition="3% EtOH")
 
-    assert span == pytest.approx((0.0, 4.0))
+    assert span == pytest.approx((0.0, 12.0))
 
 
 def test_retron_presentation_unknown_metric_fallbacks_are_explicit() -> None:
@@ -71,9 +71,14 @@ def test_retron_presentation_exposes_decision_card_metric_specs_in_review_order(
 
     assert [spec.metric for spec in specs] == ["P_pre", "D_abs_AUC", "D_AUC"]
     assert [spec.label for spec in specs] == [
-        "Preload shift",
-        "Total effect beyond matched tetO",
-        "Post-stress increment",
+        "Pre-stress shift",
+        "Total window effect",
+        "Post-stress effect",
+    ]
+    assert [spec.axis_label for spec in specs] == [
+        "Matched ratio shift",
+        "AUC[D_abs(t)]",
+        "AUC[D(t)]",
     ]
 
 

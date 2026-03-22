@@ -574,6 +574,72 @@ def test_time_series_plot_uses_actual_stress_names_in_retron_treatment_legend() 
     assert {text.get_text() for text in legend.get_texts()} == {"3% EtOH, -IPTG", "3% EtOH, +IPTG"}
 
 
+def test_time_series_plot_respects_compact_font_and_spacing_controls() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "design_id": "spyP/CpxR",
+                "time_from_stress": time_value,
+                "channel": channel,
+                "value": value,
+                "treatment": treatment,
+            }
+            for channel, base in (("OD600", 0.20), ("YFP", 120.0), ("CFP", 80.0), ("YFP/CFP", 1.4))
+            for treatment, offset in (("-IPTG/+stress", 0.0), ("+IPTG/+stress", 0.12))
+            for time_value, value in (
+                (0.0, base + offset),
+                (1.0, base + offset + 0.08),
+            )
+        ]
+    )
+
+    figures = plot_time_series(
+        df=df,
+        blanks=pd.DataFrame(columns=df.columns),
+        output_dir=None,
+        x="time_from_stress",
+        y=["OD600", "YFP", "CFP", "YFP/CFP"],
+        hue="treatment",
+        channels=None,
+        group_on="design_id",
+        pool_sets=None,
+        pool_match="exact",
+        fig_kwargs={
+            "figsize": [5.0, 5.0],
+            "axis_label_size": 9.0,
+            "tick_label_size": 7.0,
+            "legend_fontsize": 7.0,
+            "mean_marker_size": 28.0,
+            "line_width": 1.6,
+            "wspace": 0.12,
+            "hspace": 0.28,
+        },
+        add_sheet_line=False,
+        sheet_line_kwargs=None,
+        log_transform=False,
+        time_window=None,
+        palette_book=None,
+        legend_loc="upper left",
+        filename=None,
+        xlabel="Time from stress addition (h)",
+        ylabel_map=None,
+        hue_label_map=None,
+        shared_legend=True,
+    )
+
+    figure = figures[0].fig
+    axis = figure.axes[0]
+    assert axis.xaxis.label.get_fontsize() == pytest.approx(9.0)
+    assert axis.yaxis.label.get_fontsize() == pytest.approx(9.0)
+    assert axis.get_xticklabels()[0].get_fontsize() == pytest.approx(7.0)
+    assert figure.legends[0].get_texts()[0].get_fontsize() == pytest.approx(7.0)
+    horizontal_gap = figure.axes[1].get_position().x0 - figure.axes[0].get_position().x1
+    vertical_gap = figure.axes[0].get_position().y0 - figure.axes[2].get_position().y1
+    assert horizontal_gap < 0.16
+    assert vertical_gap < 0.18
+    plt.close(figure)
+
+
 def test_retron_trace_uses_single_shared_xlabel_and_non_overlapping_title_layers() -> None:
     trace = pd.DataFrame(
         [
@@ -618,19 +684,19 @@ def test_retron_trace_uses_single_shared_xlabel_and_non_overlapping_title_layers
     assert figure._suptitle is not None
     assert figure._suptitle.get_text() == "Control burden panel · spyP"
     assert [axis.title.get_text() for axis in figure.axes] == [
-        "R · H2O",
-        "R · 3% EtOH",
-        "mu · H2O",
-        "mu · 3% EtOH",
+        "H2O · Reporter ratio",
+        "H2O · Growth rate",
+        "3% EtOH · Reporter ratio",
+        "3% EtOH · Growth rate",
     ]
-    assert figure.axes[0].get_ylim() == pytest.approx(figure.axes[1].get_ylim())
-    assert figure.axes[2].get_ylim() == pytest.approx(figure.axes[3].get_ylim())
+    assert figure.axes[0].get_ylim() == pytest.approx(figure.axes[2].get_ylim())
+    assert figure.axes[1].get_ylim() == pytest.approx(figure.axes[3].get_ylim())
     assert figure.axes[0].get_ylim()[0] <= 0.0 <= figure.axes[0].get_ylim()[1]
     assert any(np.allclose(line.get_ydata(), [0.0, 0.0]) for line in figure.axes[0].lines)
     stress_text = next(text for text in figure.axes[0].texts if text.get_text() == "Stress addition")
     assert stress_text.get_va() == "bottom"
     assert figure.axes[0].get_ylabel() == "log2(YFP/CFP)"
-    assert figure.axes[2].get_ylabel() == "d ln(OD600) / dt"
+    assert figure.axes[1].get_ylabel() == "d ln(OD600) / dt"
     assert not any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.axes[0].texts)
     assert not any("mu(t)=d ln(OD600) / dt" in text.get_text() for text in figure.axes[2].texts)
     assert figure.axes[0].get_box_aspect() == pytest.approx(1.0)
@@ -749,9 +815,7 @@ def test_retron_stress_modulation_consolidates_sensors_on_one_axis() -> None:
     ]
     assert len(axes[0].patches) == 8
     assert any("AUC of the stress-specific gain" in text.get_text() for text in figure.texts)
-    assert any(
-        "Post-stress summary covers the first 4.0 h after stress addition" in text.get_text() for text in figure.texts
-    )
+    assert any("Window first 4.0 h after stress addition" in text.get_text() for text in figure.texts)
     plt.close(figure)
 
 
@@ -801,10 +865,13 @@ def test_retron_library_heatmaps_render_as_single_shared_row() -> None:
                 "sensor": sensor,
                 "stress_condition": stress,
                 "time_from_stress": time_value,
+                "configured_max_post_stress_hours": 12.0,
                 "in_primary_post_stress": True,
+                "summary_window_start_h": 0.0,
+                "summary_window_end_h": 12.0,
             }
             for sensor, stress in (("spyP", "3% EtOH"), ("soxSp", "15 µM PMS"))
-            for time_value in (0.0, 4.0)
+            for time_value in (0.0, 12.0)
         ]
     )
 
@@ -824,22 +891,20 @@ def test_retron_library_heatmaps_render_as_single_shared_row() -> None:
     axes = [axis for axis in figure.axes if axis.get_visible()]
     assert len(axes) == 3
     y_offsets = [axis.get_position().y0 for axis in axes]
-    assert max(y_offsets) - min(y_offsets) < 0.02
-    assert [axis.get_title() for axis in axes] == [
-        "Total effect\nS_abs_AUC = O_abs_AUC /\n|G_sensor|",
-        "Post-stress\nS_AUC = O_AUC /\n|G_sensor|",
-        "Preload\nP_pre = delta_IPTG[R_pre\n- R_pre,tetO]",
-    ]
+    assert max(y_offsets) - min(y_offsets) > 0.20
+    assert axes[0].get_title().startswith("Total effect:")
+    assert "S_abs_AUC = O_abs_AUC / |G_sensor|" in axes[0].get_title()
+    assert axes[1].get_title().startswith("Post-stress:")
+    assert "S_AUC = O_AUC / |G_sensor|" in axes[1].get_title()
+    assert axes[2].get_title().startswith("Preload:")
+    assert "P_pre = delta_IPTG[R_pre - R_pre,tetO,matched]" in axes[2].get_title()
     assert any(label.get_visible() for label in axes[0].get_yticklabels())
-    assert all(not label.get_visible() for label in axes[1].get_yticklabels())
-    assert all(not label.get_visible() for label in axes[2].get_yticklabels())
-    assert any(
-        "Relevant-stress summary of total effect, post-stress movement, and preload" in text.get_text()
-        for text in figure.texts
-    )
-    assert any(
-        "Post-stress summary covers the first 4.0 h after stress addition" in text.get_text() for text in figure.texts
-    )
+    assert any(label.get_visible() for label in axes[1].get_yticklabels())
+    assert any(label.get_visible() for label in axes[2].get_yticklabels())
+    assert all(float(axis.get_aspect()) == pytest.approx(1.0) for axis in axes)
+    assert any("Relevant-stress rows only" in text.get_text() for text in figure.texts)
+    assert any("0.0 to 12.0 h after stress addition" in text.get_text() for text in figure.texts)
+    assert any("pre-stress baseline" in text.get_text() for text in figure.texts)
     x_tick_sizes = {label.get_fontsize() for axis in axes for label in axis.get_xticklabels() if label.get_text()}
     y_tick_sizes = {label.get_fontsize() for label in axes[0].get_yticklabels() if label.get_text()}
     annotation_sizes = {text.get_fontsize() for axis in axes for text in axis.texts if text.get_text()}
@@ -978,8 +1043,8 @@ def test_retron_pareto_tick_labels_use_compact_font() -> None:
         "Expected-direction total effect scaled by the native sensor range" in text.get_text()
         for text in figures[0].fig.texts
     )
-    assert axis.get_xlabel() == "Mean on-target effect across relevant sensors (S_abs_AUC)"
-    assert axis.get_ylabel() == "Mean burden penalty (-D_growth_AUC)"
+    assert axis.get_xlabel() == "Mean scaled total effect"
+    assert axis.get_ylabel() == "Mean burden penalty"
     assert legend is not None
     assert {text.get_text() for text in legend.get_texts()} == {"mono", "bi"}
     assert x_tick_sizes == {7.0}
@@ -1041,7 +1106,7 @@ def test_retron_induced_effect_trace_derives_confidence_band_from_c_replicates()
     assert len(axis.collections) >= 1
     assert len(axis.patches) == 1
     assert axis.patches[0].get_alpha() == pytest.approx(0.14)
-    assert any("New post-stress movement after preload is removed" in text.get_text() for text in figure.texts)
+    assert any("D(t) = mean C(+IPTG) - mean C(-IPTG)" in text.get_text() for text in figure.texts)
     assert not any("first 1.0 h after stress addition" in text.get_text() for text in figure.texts)
     assert not any("Dashed line = stress addition" in text.get_text() for text in figure.texts)
     assert axis.get_title() == "spyP · CpxR"
@@ -1105,11 +1170,65 @@ def test_retron_absolute_effect_trace_derives_confidence_band_from_r_replicates(
     assert len(axis.collections) >= 1
     assert len(axis.patches) == 1
     assert axis.patches[0].get_alpha() == pytest.approx(0.14)
-    assert any("Total +IPTG effect beyond matched tetO over time" in text.get_text() for text in figure.texts)
+    assert any("D_abs(t) = delta_IPTG[R - R_tetO,matched]" in text.get_text() for text in figure.texts)
     assert not any("first 4.0 h after stress addition" in text.get_text() for text in figure.texts)
     assert not any("Dashed line = stress addition" in text.get_text() for text in figure.texts)
     assert axis.get_title() == "sulAp · LexA"
     assert not any(current.get_visible() for current in axis.child_axes)
+    plt.close(figure)
+
+
+def test_retron_faceted_effect_trace_keeps_tick_labels_on_every_panel_with_shared_axis_titles() -> None:
+    trace = pd.DataFrame(
+        [
+            {
+                "sensor": sensor,
+                "sponge": sponge,
+                "stress_condition": stress,
+                "time_from_stress": time_value,
+                "metric": "D",
+                "value": value,
+                "IPTG": pd.NA,
+                "in_primary_post_stress": time_value >= 0.0,
+                "is_relevant_stress": stress != "H2O",
+                "relevant_sensor_pair": True,
+                "configured_max_post_stress_hours": 4.0,
+            }
+            for sensor, sponge, stress, time_value, value in (
+                ("spyP", "CpxR", "H2O", 0.0, 0.05),
+                ("spyP", "CpxR", "H2O", 1.0, 0.08),
+                ("spyP", "CpxR", "3% EtOH", 0.0, -0.22),
+                ("spyP", "CpxR", "3% EtOH", 1.0, -0.31),
+                ("sulAp", "LexA", "H2O", 0.0, 0.14),
+                ("sulAp", "LexA", "H2O", 1.0, 0.18),
+                ("sulAp", "LexA", "100 nM ciprofloxacin", 0.0, 0.32),
+                ("sulAp", "LexA", "100 nM ciprofloxacin", 1.0, 0.37),
+            )
+        ]
+    )
+
+    figures = plot_retron_sponge_trace(
+        trace=trace,
+        output_dir=None,
+        metrics=["D"],
+        title="Post-stress increment over time",
+        filename="induced_effect_kinetics",
+        palette_book=None,
+        relevant_only=True,
+        panel_by="sponge",
+    )
+
+    figure = figures[0].fig
+    axes = [axis for axis in figure.axes if axis.get_visible()]
+    assert len(axes) == 2
+    assert figure._supxlabel is not None
+    assert figure._supxlabel.get_text() == "Time from stress addition (h)"
+    assert figure._supylabel is not None
+    assert figure._supylabel.get_text() == "D(t) = mean[C(+IPTG)] - mean[C(-IPTG)]"
+    assert any(label.get_visible() and label.get_text() for label in axes[0].get_xticklabels())
+    assert any(label.get_visible() and label.get_text() for label in axes[1].get_xticklabels())
+    assert any(label.get_visible() and label.get_text() for label in axes[0].get_yticklabels())
+    assert any(label.get_visible() and label.get_text() for label in axes[1].get_yticklabels())
     plt.close(figure)
 
 
@@ -1325,46 +1444,173 @@ def test_retron_control_anchored_decomposition_renders_full_time_matched_traces(
     )
 
     figure = figures[0].fig
-    h2o_axis, relevant_axis = figure.axes[:2]
-    summary_axes = figure.axes[2:]
-    assert len(figure.axes) == 5
+    label_axes = [axis for axis in figure.axes if not axis.axison]
+    assert len(label_axes) == 1
+    label_axis = label_axes[0]
+    assert [text.get_text() for text in label_axis.texts] == ["LexA / sulAp"]
+    h2o_axis = next(axis for axis in figure.axes if axis.axison and axis.get_title() == "H2O")
+    relevant_axis = next(axis for axis in figure.axes if axis.axison and axis.get_title() == "100 nM ciprofloxacin")
+    summary_axes = [
+        axis
+        for axis in figure.axes
+        if axis.axison and axis.get_xlabel() in {"Matched ratio shift", "AUC[D_abs(t)]", "AUC[D(t)]"}
+    ]
+    assert len(figure.axes) == 6
     assert relevant_axis.get_xlabel() == "Time from stress addition (h)"
     assert h2o_axis.get_xlabel() == "Time from stress addition (h)"
-    assert relevant_axis.get_ylabel() == "Reporter ratio R(t)"
+    assert relevant_axis.get_ylabel() == ""
     assert h2o_axis.get_ylabel() == "Reporter ratio R(t)"
     assert any("Stress addition" in text.get_text() for text in relevant_axis.texts)
     assert len(relevant_axis.patches) == 1
     assert relevant_axis.patches[0].get_alpha() == pytest.approx(0.14)
     assert len(h2o_axis.patches) == 1
-    assert h2o_axis.get_title() == "sulAp · LexA · H2O"
-    assert relevant_axis.get_title() == "sulAp · LexA · 100 nM ciprofloxacin"
+    assert h2o_axis.get_title() == "H2O"
+    assert relevant_axis.get_title() == "100 nM ciprofloxacin"
     assert "\n" not in relevant_axis.get_title()
     assert "\n" not in h2o_axis.get_title()
-    legend = relevant_axis.get_legend()
+    legend = h2o_axis.get_legend()
     assert legend is not None
-    assert h2o_axis.get_legend() is None
+    assert relevant_axis.get_legend() is None
     legend_labels = [text.get_text() for text in legend.texts]
     assert legend_labels == ["Sample -IPTG", "Sample +IPTG", "tetO -IPTG", "tetO +IPTG"]
     assert not any("R(t)=log2(YFP/CFP)" in text.get_text() for text in figure.texts)
     assert not any("D_abs_AUC=AUC_window[D_abs(t)]" in text.get_text() for text in figure.texts)
-    assert len(summary_axes) == 3
-    assert [axis.get_title(loc="left") for axis in summary_axes] == [
-        "Preload shift",
-        "Total effect beyond matched tetO",
-        "Post-stress increment",
+    assert [axis.get_title() for axis in summary_axes] == [
+        "Pre-stress shift (R_pre; last pre-stress reads)",
+        "Total window effect (0.0 to 4.0 h)",
+        "Post-stress effect (0.0 to 4.0 h)",
     ]
     assert [axis.get_xlabel() for axis in summary_axes] == [
-        "log2 ratio",
-        "log2 ratio x h",
-        "log2 ratio x h",
+        "Matched ratio shift",
+        "AUC[D_abs(t)]",
+        "AUC[D(t)]",
     ]
-    assert [axis.get_ylabel() for axis in summary_axes] == ["State", "State", "State"]
+    assert [axis.get_ylabel() for axis in summary_axes] == ["", "", ""]
     assert [tick.get_text() for tick in summary_axes[0].get_yticklabels()] == ["-IPTG", "+IPTG", "ΔIPTG"]
-    assert all(len(axis.collections) >= 2 for axis in summary_axes)
-    assert any(
-        "Matched-tetO reporter-ratio traces with preload and post-stress summaries" in text.get_text()
-        for text in figure.texts
+    assert [tick.get_text() for tick in summary_axes[1].get_yticklabels()] == ["-IPTG", "+IPTG", "ΔIPTG"]
+    assert [tick.get_text() for tick in summary_axes[2].get_yticklabels()] == ["-IPTG", "+IPTG", "ΔIPTG"]
+    assert all(len(axis.collections) >= 1 for axis in summary_axes)
+    assert h2o_axis.get_position().width == pytest.approx(relevant_axis.get_position().width, rel=1e-3)
+    assert abs(summary_axes[0].get_position().y0 - h2o_axis.get_position().y0) < 0.03
+    assert summary_axes[0].get_position().y0 >= h2o_axis.get_position().y0
+    assert summary_axes[0].get_position().height == pytest.approx(h2o_axis.get_position().height, rel=0.12)
+    assert not any("Window 0.0 to 4.0 h after stress addition" in text.get_text() for text in figure.texts)
+    assert label_axis.get_position().x1 < h2o_axis.get_position().x0
+    assert summary_axes[0].get_position().x0 > relevant_axis.get_position().x1
+    plt.close(figure)
+
+
+def test_retron_decomposition_shares_summary_x_limits_by_metric_across_rows() -> None:
+    rows: list[dict[str, object]] = []
+    row_specs = (
+        ("sulAp", "LexA", "100 nM ciprofloxacin", 0.85, 1.30, 0.72, 0.92),
+        ("spyP", "CpxR", "3% EtOH", 0.15, 1.90, 0.05, 0.40),
     )
+    for sensor, sponge, stress_condition, sample_minus, sample_plus, control_minus, control_plus in row_specs:
+        for current_sponge, control_flag, minus_values, plus_values in (
+            (sponge, False, (sample_minus, sample_minus + 0.03), (sample_plus, sample_plus + 0.05)),
+            ("tetO", True, (control_minus, control_minus + 0.02), (control_plus, control_plus + 0.03)),
+        ):
+            for iptg, values in (("-IPTG", minus_values), ("+IPTG", plus_values)):
+                for idx, value in enumerate(values, start=1):
+                    for time_value in (0.0, 12.0):
+                        rows.append(
+                            {
+                                "plate_id": "plate-1",
+                                "sensor": sensor,
+                                "sponge": current_sponge,
+                                "stress_condition": stress_condition,
+                                "time_from_stress": time_value,
+                                "metric": "R",
+                                "value": value + (0.12 if time_value > 0 else 0.0),
+                                "IPTG": iptg,
+                                "replicate_id": f"{sensor}-r{idx}",
+                                "in_pre_window": time_value == 0.0,
+                                "in_primary_post_stress": True,
+                                "is_relevant_stress": not control_flag,
+                                "relevant_sensor_pair": not control_flag,
+                                "configured_max_post_stress_hours": 12.0,
+                                "matched_control_key": f"plate-1::{sensor}::{stress_condition}",
+                                "summary_window_start_h": 0.0,
+                                "summary_window_end_h": 12.0,
+                                "summary_window_duration_h": 12.0,
+                                "pre_stress_read_count": 1,
+                                "post_stress_read_count": 2,
+                                "matched_group_sample_count": 2,
+                                "stress_addition_gap_h": 0.5,
+                            }
+                        )
+    trace = pd.DataFrame(rows)
+    summary = pd.DataFrame(
+        [
+            {
+                "plate_id": "plate-1",
+                "sensor": sensor,
+                "sponge": sponge,
+                "stress_condition": stress_condition,
+                "metric": metric,
+                "value": value,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "mono",
+            }
+            for sensor, sponge, stress_condition, p_pre, d_abs_auc, d_auc in (
+                ("sulAp", "LexA", "100 nM ciprofloxacin", 0.21, 0.42, 0.18),
+                ("spyP", "CpxR", "3% EtOH", 0.03, 1.25, 0.92),
+            )
+            for metric, value in (
+                ("P_pre", p_pre),
+                ("D_abs_AUC", d_abs_auc),
+                ("D_AUC", d_auc),
+                ("D_growth_AUC", -0.05),
+            )
+        ]
+        + [
+            {
+                "plate_id": "plate-1",
+                "sensor": sensor,
+                "sponge": "tetO",
+                "stress_condition": stress_condition,
+                "metric": "G_sensor",
+                "value": 0.60,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            }
+            for sensor, stress_condition in (
+                ("sulAp", "100 nM ciprofloxacin"),
+                ("spyP", "3% EtOH"),
+            )
+        ]
+    )
+
+    figures = plot_retron_sponge_summary(
+        summary=summary,
+        trace=trace,
+        output_dir=None,
+        view="decomposition",
+        title="Sponge vs matched tetO",
+        filename="control_anchored_decomposition",
+        palette_book=None,
+        control_name="tetO",
+        fig_kwargs={},
+    )
+
+    figure = figures[0].fig
+    summary_axes = [
+        axis
+        for axis in figure.axes
+        if axis.axison and axis.get_xlabel() in {"Matched ratio shift", "AUC[D_abs(t)]", "AUC[D(t)]"}
+    ]
+    assert len(summary_axes) == 6
+    axes_by_xlabel: dict[str, list[object]] = {}
+    for axis in summary_axes:
+        axes_by_xlabel.setdefault(axis.get_xlabel(), []).append(axis)
+    assert set(axes_by_xlabel) == {"Matched ratio shift", "AUC[D_abs(t)]", "AUC[D(t)]"}
+    for axes_for_metric in axes_by_xlabel.values():
+        assert len(axes_for_metric) == 2
+        left, right = axes_for_metric
+        assert left.get_xlim() == pytest.approx(right.get_xlim())
     plt.close(figure)
 
 
@@ -1467,8 +1713,9 @@ def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_i
     )
 
     figure = figures[0].fig
-    assert len(figure.axes) == 5
-    assert figure.axes[0].get_xlabel() == "Time from stress addition (h)"
+    assert len(figure.axes) == 6
+    visible_axes = [axis for axis in figure.axes if axis.axison]
+    assert visible_axes[0].get_xlabel() == "Time from stress addition (h)"
     plt.close(figure)
 
 
@@ -1609,9 +1856,7 @@ def test_retron_interaction_summary_uses_trace_replicates_and_renders_subplots()
         "3% EtOH\n+IPTG",
     ]
     assert any("AUC of the matched tetO deviation trace" in text.get_text() for text in figure.texts)
-    assert any(
-        "Post-stress summary covers the first 1.0 h after stress addition" in text.get_text() for text in figure.texts
-    )
+    assert any("Window first 1.0 h after stress addition" in text.get_text() for text in figure.texts)
     plt.close(figure)
 
 

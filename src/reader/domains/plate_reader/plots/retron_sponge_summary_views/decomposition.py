@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import use_style
 
@@ -62,13 +63,20 @@ class _DecisionCardTraceLinePayload:
 
 @dataclass(frozen=True)
 class _DecisionCardSummaryItemPayload:
+    metric: str
+    title: str
     label: str
     units: str
+    axis_label: str
     point_color: str
     minus_values: tuple[float, ...]
     plus_values: tuple[float, ...]
     minus_mean: float | None
+    minus_lower: float | None
+    minus_upper: float | None
     plus_mean: float | None
+    plus_lower: float | None
+    plus_upper: float | None
     contrast_mean: float | None
     contrast_lower: float | None
     contrast_upper: float | None
@@ -128,11 +136,11 @@ _DECISION_CARD_TRACE_AXIS_POLICY = _DecisionCardTraceAxisPolicy(
     grid_color="#d9d9d9",
     grid_linewidth=0.6,
     grid_alpha=0.45,
-    tick_size=8.0,
+    tick_size=7.8,
     ylabel="Reporter ratio R(t)",
-    ylabel_fontsize=11.0,
+    ylabel_fontsize=10.0,
     legend_loc="upper left",
-    legend_fontsize=7.0,
+    legend_fontsize=6.8,
     box_aspect_with_ylabel=1.0,
     box_aspect_without_ylabel=1.0,
 )
@@ -140,20 +148,20 @@ _DECISION_CARD_TRACE_AXIS_POLICY = _DecisionCardTraceAxisPolicy(
 _DECISION_CARD_SUMMARY_AXIS_POLICY = _DecisionCardSummaryAxisPolicy(
     header_facecolor="#f7f7f7",
     header_edgecolor="#d0d0d0",
-    header_fontsize=7.8,
+    header_fontsize=8.1,
     header_line_spacing=1.18,
-    zero_line_color="#777777",
+    zero_line_color="#9e9e9e",
     zero_line_linewidth=1.0,
     zero_line_linestyle=":",
-    tick_size=8.0,
+    tick_size=7.8,
     grid_color="#d9d9d9",
     grid_linewidth=0.6,
-    grid_alpha=0.55,
-    label_fontsize=8.4,
-    xlabel_fontsize=7.3,
-    ylabel_fontsize=7.4,
-    ytick_fontsize=7.0,
-    box_aspect=0.92,
+    grid_alpha=0.45,
+    label_fontsize=9.6,
+    xlabel_fontsize=8.8,
+    ylabel_fontsize=8.8,
+    ytick_fontsize=7.8,
+    box_aspect=1.0,
 )
 
 
@@ -686,6 +694,7 @@ def _decision_card_support_row(
             label="Burden penalty",
             color="#D55E00",
             units="growth delta x h",
+            axis_label="AUC[d ln(OD600) / dt]",
             display_multiplier=-1.0,
         ),
         mean=raw_mean,
@@ -864,15 +873,15 @@ def _safe_difference(left: object, right: object) -> float:
 
 def _decomposition_figure_policy(*, row_count: int) -> _SummaryFigurePolicy:
     return _SummaryFigurePolicy(
-        default_figsize=(12.2, max(5.2, 4.55 * row_count)),
-        title_y=0.988,
-        subtitle_y=0.952,
+        default_figsize=(13.0, max(4.8, 3.35 * row_count)),
+        title_y=0.984,
+        subtitle_y=0.948,
         adjust=_SummarySubplotPolicy(
-            top=0.89,
+            top=0.93,
             bottom=0.08,
-            left=0.07,
-            right=0.985,
-            hspace=0.24,
+            left=0.065,
+            right=0.99,
+            hspace=0.18,
             wspace=0.10,
         ),
     )
@@ -913,7 +922,6 @@ def _plot_retron_decomposition(
     row_payloads: list[_DecisionCardRowPayload] = []
     for sensor in _ordered(trace_frame["sensor"].astype(str).tolist()):
         sensor_df = trace_frame[trace_frame["sensor"].astype(str) == sensor].copy()
-        sensor_trace = trace[trace["sensor"].astype(str) == sensor].copy()
         sensor_r_trace = r_trace[r_trace["sensor"].astype(str) == sensor].copy()
         for _, spec in _decision_card_row_specs(
             sensor_df[sensor_df["sponge"].astype(str) != str(control_name)]
@@ -921,7 +929,6 @@ def _plot_retron_decomposition(
             row_payloads.append(
                 _decision_card_row_payload(
                     row_idx=len(row_payloads),
-                    sensor_trace=sensor_trace,
                     sensor_r_trace=sensor_r_trace,
                     sensor=str(sensor),
                     sponge=str(spec["sponge"]),
@@ -933,10 +940,22 @@ def _plot_retron_decomposition(
             )
     if not row_payloads:
         return []
+    row_payloads = _apply_shared_summary_x_limits(row_payloads)
     policy = _decomposition_figure_policy(row_count=len(row_payloads))
+    display_post_stress_hours = pd.to_numeric(
+        pd.Series([fig_kwargs.get("display_post_stress_hours")]),
+        errors="coerce",
+    ).iloc[0]
+    if not np.isfinite(display_post_stress_hours) or display_post_stress_hours <= 0.0:
+        span = retron_presentation.primary_window_span_bounds(trace, stress_condition=None)
+        display_post_stress_hours = (
+            float(span[1])
+            if span is not None and np.isfinite(span[1]) and span[1] > 0.0
+            else float(DEFAULT_PRIMARY_POST_STRESS_HOURS)
+        )
     display_bounds = trace_display_bounds(
         trace,
-        max_post_stress_hours=float(fig_kwargs.get("display_post_stress_hours", 4.0)),
+        max_post_stress_hours=float(display_post_stress_hours),
     )
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
         figsize = fig_kwargs.get("figsize", policy.default_figsize)
@@ -948,7 +967,7 @@ def _plot_retron_decomposition(
             right=policy.adjust.right,
             top=policy.adjust.top,
             bottom=policy.adjust.bottom,
-            hspace=0.42,
+            hspace=0.16,
         )
         for row_payload in row_payloads:
             _render_decision_card_row(
@@ -1220,7 +1239,6 @@ def _decision_card_row_payloads(
 def _decision_card_row_payload(
     *,
     row_idx: int,
-    sensor_trace: pd.DataFrame,
     sensor_r_trace: pd.DataFrame,
     sensor: str,
     sponge: str,
@@ -1280,6 +1298,7 @@ def _decision_card_row_payload(
         ),
         summary_strip=_decision_card_summary_strip_payload(
             support_row=support_row,
+            panel_trace=relevant_sample,
         ),
     )
 
@@ -1296,12 +1315,12 @@ def _decision_card_panel_payload(
     no_stress_label: str,
 ) -> _DecisionCardPanelPayload:
     panel_trace = pd.concat([sample_panel, control_panel], ignore_index=True)
-    title = _decision_card_panel_title(sensor=sensor, sponge=sponge, stress_condition=stress_condition)
+    title = _decision_card_panel_title(stress_condition=stress_condition)
     return _DecisionCardPanelPayload(
         stress_condition=stress_condition,
         title=title,
-        show_ylabel=True,
-        show_legend=stress_condition != no_stress_label and row_idx == 0,
+        show_ylabel=stress_condition == no_stress_label,
+        show_legend=stress_condition == no_stress_label and row_idx == 0,
         panel_trace=panel_trace,
         line_payloads=_decision_card_line_payloads(
             sample_panel=sample_panel,
@@ -1311,12 +1330,8 @@ def _decision_card_panel_payload(
     )
 
 
-def _decision_card_panel_title(*, sensor: str, sponge: str, stress_condition: str) -> str:
-    sensor_text = str(sensor).strip()
-    sponge_text = str(sponge).strip()
-    stress_text = str(stress_condition).strip()
-    parts = [part for part in (sensor_text, sponge_text, stress_text) if part]
-    return " · ".join(parts)
+def _decision_card_panel_title(*, stress_condition: str) -> str:
+    return str(stress_condition).strip()
 
 
 def _decision_card_line_payloads(
@@ -1370,10 +1385,15 @@ def _decision_card_line_payloads(
 def _decision_card_summary_strip_payload(
     *,
     support_row: Mapping[str, object],
+    panel_trace: pd.DataFrame,
 ) -> _DecisionCardSummaryStripPayload:
     return _DecisionCardSummaryStripPayload(
         items=tuple(
-            _decision_card_summary_item(spec=spec, support_row=support_row)
+            _decision_card_summary_item(
+                spec=spec,
+                support_row=support_row,
+                panel_trace=panel_trace,
+            )
             for spec in retron_presentation.decision_card_metric_specs()
         )
     )
@@ -1383,14 +1403,15 @@ def _decision_card_summary_item(
     *,
     spec: retron_presentation.DecisionCardMetricSpec,
     support_row: Mapping[str, object],
+    panel_trace: pd.DataFrame,
 ) -> _DecisionCardSummaryItemPayload:
     minus_values = _support_tuple_values(support_row.get(f"{spec.metric}_minus_values"))
     plus_values = _support_tuple_values(support_row.get(f"{spec.metric}_plus_values"))
+    minus_mean, minus_lower, minus_upper = _summary_strip_state_interval(minus_values)
+    plus_mean, plus_lower, plus_upper = _summary_strip_state_interval(plus_values)
     contrast_mean = _support_float(support_row.get(f"{spec.metric}_mean"))
     contrast_lower = _support_float(support_row.get(f"{spec.metric}_lower"))
     contrast_upper = _support_float(support_row.get(f"{spec.metric}_upper"))
-    minus_mean = _support_float(support_row.get(f"{spec.metric}_minus_mean"))
-    plus_mean = _support_float(support_row.get(f"{spec.metric}_plus_mean"))
     finite = np.asarray([*minus_values, *plus_values, contrast_mean, contrast_lower, contrast_upper], dtype=float)
     finite = finite[np.isfinite(finite)]
     limits = shared_numeric_limits(
@@ -1400,13 +1421,25 @@ def _decision_card_summary_item(
         min_span=0.10,
     )
     return _DecisionCardSummaryItemPayload(
+        metric=spec.metric,
+        title=retron_presentation.decision_card_metric_title(
+            spec.metric,
+            trace=panel_trace,
+            summary_window_start_h=_support_float(support_row.get("summary_window_start_h")),
+            summary_window_end_h=_support_float(support_row.get("summary_window_end_h")),
+        ),
         label=spec.label,
         units=spec.units,
+        axis_label=spec.axis_label,
         point_color=spec.color,
         minus_values=tuple(float(value) for value in minus_values if np.isfinite(value)),
         plus_values=tuple(float(value) for value in plus_values if np.isfinite(value)),
         minus_mean=minus_mean,
+        minus_lower=minus_lower,
+        minus_upper=minus_upper,
         plus_mean=plus_mean,
+        plus_lower=plus_lower,
+        plus_upper=plus_upper,
         contrast_mean=contrast_mean,
         contrast_lower=contrast_lower,
         contrast_upper=contrast_upper,
@@ -1598,12 +1631,68 @@ def _summary_strip_contrast_interval(
     return float(mean), float(lower), float(upper)
 
 
+def _summary_strip_state_interval(values: np.ndarray) -> tuple[float | None, float | None, float | None]:
+    if values.size == 0:
+        return None, None, None
+    if values.size == 1:
+        value = float(values[0])
+        return value, value, value
+    mean, lower, upper = bootstrap_mean_interval(
+        values,
+        ci=95.0,
+        ci_boot=200,
+        rng=np.random.default_rng(0),
+    )
+    return float(mean), float(lower), float(upper)
+
+
 def _finite_mean(values: np.ndarray) -> float | None:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if finite.size == 0:
         return None
     return float(finite.mean())
+
+
+def _apply_shared_summary_x_limits(
+    row_payloads: Sequence[_DecisionCardRowPayload],
+) -> list[_DecisionCardRowPayload]:
+    metric_limits: dict[str, tuple[float, float]] = {}
+    for metric in (spec.metric for spec in retron_presentation.decision_card_metric_specs()):
+        values: list[float] = []
+        for row_payload in row_payloads:
+            for item in row_payload.summary_strip.items:
+                if item.metric != metric:
+                    continue
+                values.extend(item.minus_values)
+                values.extend(item.plus_values)
+                for value in (
+                    item.minus_mean,
+                    item.minus_lower,
+                    item.minus_upper,
+                    item.plus_mean,
+                    item.plus_lower,
+                    item.plus_upper,
+                    item.contrast_mean,
+                    item.contrast_lower,
+                    item.contrast_upper,
+                ):
+                    if value is not None and np.isfinite(value):
+                        values.append(float(value))
+        metric_limits[metric] = shared_numeric_limits(
+            np.asarray(values if values else [0.0], dtype=float),
+            center=0.0,
+            pad_fraction=0.12,
+            min_span=0.10,
+        )
+    updated_rows: list[_DecisionCardRowPayload] = []
+    for row_payload in row_payloads:
+        updated_items = tuple(
+            replace(item, x_limits=metric_limits.get(item.metric, item.x_limits))
+            for item in row_payload.summary_strip.items
+        )
+        updated_rows.append(replace(row_payload, summary_strip=replace(row_payload.summary_strip, items=updated_items)))
+    return updated_rows
 
 
 def _render_decision_card_row(
@@ -1613,9 +1702,11 @@ def _render_decision_card_row(
     row: _DecisionCardRowPayload,
     display_bounds: tuple[float, float] | None,
 ) -> None:
-    grid = row_spec.subgridspec(2, 1, height_ratios=(3.2, 1.5), hspace=0.20)
-    trace_grid = grid[0].subgridspec(1, 2, width_ratios=(0.92, 1.08), wspace=0.18)
-    summary_grid = grid[1].subgridspec(1, len(row.summary_strip.items), wspace=0.34)
+    group_grid = row_spec.subgridspec(1, 3, width_ratios=(0.82, 2.15, 3.0), wspace=0.16)
+    label_ax = figure.add_subplot(group_grid[0, 0])
+    _render_decision_card_row_label(ax=label_ax, row=row)
+    trace_grid = group_grid[0, 1].subgridspec(1, 2, wspace=0.10)
+    summary_grid = group_grid[0, 2].subgridspec(1, 3, wspace=0.14)
     h2o_ax = figure.add_subplot(trace_grid[0, 0])
     relevant_ax = figure.add_subplot(trace_grid[0, 1], sharex=h2o_ax, sharey=h2o_ax)
     _plot_decision_card_trace_axis(
@@ -1630,11 +1721,38 @@ def _render_decision_card_row(
         panel_limits=row.panel_limits,
         display_bounds=display_bounds,
     )
-    for idx, item in enumerate(row.summary_strip.items):
+    for item, col_idx in zip(row.summary_strip.items, (0, 1, 2), strict=False):
         _render_decision_card_metric_axis(
-            ax=figure.add_subplot(summary_grid[0, idx]),
+            ax=figure.add_subplot(summary_grid[0, col_idx]),
             item=item,
         )
+
+
+def _render_decision_card_row_label(
+    *,
+    ax: plt.Axes,
+    row: _DecisionCardRowPayload,
+) -> None:
+    ax.set_axis_off()
+    ax.text(
+        0.02,
+        0.5,
+        f"{row.sponge} / {row.sensor}",
+        ha="left",
+        va="center",
+        fontsize=10.6,
+        fontweight="bold",
+        color="#222222",
+        transform=ax.transAxes,
+    )
+    ax.plot(
+        [0.98, 0.98],
+        [0.12, 0.88],
+        color="#d2d2d2",
+        linewidth=1.0,
+        transform=ax.transAxes,
+        clip_on=False,
+    )
 
 
 def _plot_decision_card_trace_axis(
@@ -1716,12 +1834,15 @@ def _decorate_decision_card_trace_axis(
     if display_bounds is not None:
         ax.set_xlim(display_bounds)
     if panel.title:
-        ax.set_title(panel.title, pad=6, fontsize=10, fontweight="normal")
-    ax.set_xlabel("Time from stress addition (h)", fontsize=9.4)
+        ax.set_title(panel.title, pad=5, fontsize=9.6, fontweight="normal")
+    ax.set_xlabel("Time from stress addition (h)", fontsize=8.9)
     ax.set_ylabel(
-        _DECISION_CARD_TRACE_AXIS_POLICY.ylabel,
+        _DECISION_CARD_TRACE_AXIS_POLICY.ylabel if panel.show_ylabel else "",
         fontsize=_DECISION_CARD_TRACE_AXIS_POLICY.ylabel_fontsize,
     )
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.9)
+        spine.set_alpha(0.70)
     if panel.show_legend and legend_handles:
         ax.legend(
             frameon=False,
@@ -1750,8 +1871,8 @@ def _render_decision_card_metric_axis(
         zorder=1,
     )
     ax.set_xlim(item.x_limits)
-    ax.set_xlabel(item.units, fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.xlabel_fontsize)
-    ax.set_ylabel("State", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ylabel_fontsize)
+    ax.set_xlabel(item.axis_label, fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.xlabel_fontsize)
+    ax.set_ylabel("", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ylabel_fontsize)
     ax.set_yticks([0.0, 1.0, 2.0])
     ax.set_yticklabels(["-IPTG", "+IPTG", "ΔIPTG"])
     ax.tick_params(axis="x", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.tick_size)
@@ -1762,31 +1883,46 @@ def _render_decision_card_metric_axis(
         linewidth=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_linewidth,
         alpha=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_alpha,
     )
-    ax.set_title(item.label, loc="left", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.label_fontsize, pad=2)
+    ax.set_title(
+        item.title,
+        loc="center",
+        fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.label_fontsize,
+        pad=5,
+        fontweight="normal",
+    )
     _render_metric_state_points(ax=ax, values=item.minus_values, y_base=0.0, color="#8c8c8c")
     _render_metric_state_points(ax=ax, values=item.plus_values, y_base=1.0, color=item.point_color)
-    _render_metric_state_mean(ax=ax, value=item.minus_mean, y_base=0.0, color="#5f5f5f")
-    _render_metric_state_mean(ax=ax, value=item.plus_mean, y_base=1.0, color=item.point_color)
+    _render_metric_state_estimate(
+        ax=ax,
+        value=item.minus_mean,
+        lower=item.minus_lower,
+        upper=item.minus_upper,
+        y_base=0.0,
+        color="#5f5f5f",
+    )
+    _render_metric_state_estimate(
+        ax=ax,
+        value=item.plus_mean,
+        lower=item.plus_lower,
+        upper=item.plus_upper,
+        y_base=1.0,
+        color=item.point_color,
+    )
     if item.contrast_mean is None or not np.isfinite(item.contrast_mean):
         ax.text(0.5, 0.5, "NA", transform=ax.transAxes, ha="center", va="center", fontsize=8.0, color="#777777")
     else:
-        lower = (
-            item.contrast_lower
-            if item.contrast_lower is not None and np.isfinite(item.contrast_lower)
-            else item.contrast_mean
+        _render_metric_state_estimate(
+            ax=ax,
+            value=item.contrast_mean,
+            lower=item.contrast_lower,
+            upper=item.contrast_upper,
+            y_base=2.0,
+            color=item.point_color,
         )
-        upper = (
-            item.contrast_upper
-            if item.contrast_upper is not None and np.isfinite(item.contrast_upper)
-            else item.contrast_mean
-        )
-        ax.hlines(y=2.0, xmin=lower, xmax=upper, color="#222222", linewidth=2.4, alpha=0.95, zorder=2)
-        ax.scatter(item.contrast_mean, 2.0, s=46, color="#222222", edgecolor="white", linewidth=0.6, zorder=3)
     ax.set_ylim(-0.5, 2.5)
-    for spine_name in ("top", "right"):
-        ax.spines[spine_name].set_visible(False)
-    ax.spines["left"].set_alpha(0.25)
-    ax.spines["bottom"].set_alpha(0.35)
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.9)
+        spine.set_alpha(0.70)
     with suppress(Exception):
         ax.set_box_aspect(_DECISION_CARD_SUMMARY_AXIS_POLICY.box_aspect)
 
@@ -1827,22 +1963,34 @@ def _render_metric_state_points(
     )
 
 
-def _render_metric_state_mean(
+def _render_metric_state_estimate(
     *,
     ax: plt.Axes,
     value: float | None,
+    lower: float | None,
+    upper: float | None,
     y_base: float,
     color: str,
 ) -> None:
     if value is None or not np.isfinite(value):
         return
-    ax.scatter(
-        [float(value)],
+    estimate = float(value)
+    low = estimate if lower is None or not np.isfinite(lower) else float(lower)
+    high = estimate if upper is None or not np.isfinite(upper) else float(upper)
+    xerr = np.asarray([[max(0.0, estimate - low)], [max(0.0, high - estimate)]], dtype=float)
+    ax.errorbar(
+        [estimate],
         [float(y_base)],
-        s=42,
-        color="white",
-        edgecolor=color,
-        linewidth=1.3,
+        xerr=xerr,
+        fmt="o",
+        markersize=6.8,
+        markerfacecolor="white",
+        markeredgecolor=color,
+        markeredgewidth=1.2,
+        ecolor=color,
+        elinewidth=1.2,
+        capsize=3.0,
+        capthick=1.0,
         zorder=3.0,
     )
 

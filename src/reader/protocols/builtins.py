@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import cache
 
+from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 
 from .compiler import (
@@ -1593,7 +1594,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
                     "before both AUC and endpoint summaries are computed.",
                     kind="number",
                     allow_none=True,
-                    default=4.0,
+                    default=DEFAULT_PRIMARY_POST_STRESS_HOURS,
                 ),
                 _field(
                     "pre_reads", "Number of pre-stress reads used for the baseline window.", kind="integer", default=3

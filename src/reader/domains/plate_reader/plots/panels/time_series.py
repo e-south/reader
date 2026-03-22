@@ -118,6 +118,12 @@ def draw_time_series_panel(
     legend_label_map: Mapping[str, str] | None = None,
     marked_time: float | None = None,
     marked_time_kwargs: dict | None = None,
+    line_width: float = 1.8,
+    mean_marker_size: float = 36.0,
+    replicate_marker_size: float = 18.0,
+    axis_label_size: float = 10.0,
+    tick_label_size: float = 8.0,
+    legend_fontsize: float = 8.0,
 ) -> None:
     ax.grid(False)
     ax.yaxis.grid(True, which="major")
@@ -129,7 +135,7 @@ def draw_time_series_panel(
             ax.scatter(
                 rr[x_col],
                 rr["value"],
-                s=18,
+                s=replicate_marker_size,
                 alpha=replicate_alpha,
                 zorder=3,
                 linewidths=0.0,
@@ -167,14 +173,14 @@ def draw_time_series_panel(
                 segment_df[x_col],
                 segment_df["mean"],
                 color=color_map[hue],
-                linewidth=1.8,
+                linewidth=line_width,
                 alpha=line_alpha,
                 zorder=1.5,
             )
             ax.scatter(
                 segment_df[x_col],
                 segment_df["mean"],
-                s=36,
+                s=mean_marker_size,
                 zorder=2.5,
                 marker=marker_map[hue],
                 alpha=mean_marker_alpha,
@@ -195,8 +201,10 @@ def draw_time_series_panel(
         ax.axvline(float(marked_time), **style)
 
     _maybe_log(ax, log_y)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel, fontsize=axis_label_size)
+    ax.set_ylabel(ylabel, fontsize=axis_label_size)
+    ax.tick_params(axis="x", labelsize=tick_label_size)
+    ax.tick_params(axis="y", labelsize=tick_label_size)
 
     if show_legend:
         handles = [
@@ -207,10 +215,10 @@ def draw_time_series_panel(
                 marker=marker_map[hue],
                 markersize=7,
                 linestyle="-",
-                linewidth=1.8,
+                linewidth=line_width,
                 alpha=mean_marker_alpha,
                 label=(str(legend_label_map.get(str(hue), hue)) if legend_label_map is not None else str(hue)),
             )
             for hue in hue_levels
         ]
-        ax.legend(handles=handles, loc=legend_loc, title=None, frameon=False)
+        ax.legend(handles=handles, loc=legend_loc, title=None, frameon=False, fontsize=legend_fontsize)

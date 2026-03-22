@@ -1366,6 +1366,21 @@ def _plate_reader_retron_plot_output(
             "add_sheet_line": True,
             "shared_legend": True,
             "show_replicates": False,
+            "fig": {
+                "figsize": [4.9, 4.9],
+                "axis_label_size": 8.2,
+                "tick_label_size": 6.4,
+                "legend_fontsize": 6.2,
+                "mean_marker_size": 14.0,
+                "replicate_marker_size": 12.0,
+                "line_width": 1.5,
+                "top": 0.84,
+                "bottom": 0.12,
+                "left": 0.09,
+                "right": 0.98,
+                "wspace": 0.12,
+                "hspace": 0.36,
+            },
             "filename": "raw_kinetics",
         }
         return _step(
@@ -1385,6 +1400,21 @@ def _plate_reader_retron_plot_output(
             "add_sheet_line": True,
             "shared_legend": True,
             "show_replicates": False,
+            "fig": {
+                "figsize": [4.9, 4.9],
+                "axis_label_size": 8.1,
+                "tick_label_size": 6.4,
+                "legend_fontsize": 6.2,
+                "mean_marker_size": 14.0,
+                "replicate_marker_size": 12.0,
+                "line_width": 1.5,
+                "top": 0.84,
+                "bottom": 0.12,
+                "left": 0.09,
+                "right": 0.98,
+                "wspace": 0.12,
+                "hspace": 0.36,
+            },
             "filename": "support_kinetics",
         }
         return _step(
@@ -1403,6 +1433,7 @@ def _plate_reader_retron_plot_output(
             "only_control": True,
             "stress_order": stress_order,
             "metric_label_map": control_metric_label_map,
+            "fig": {"figsize": [10.2, 3.2]},
         }
         return _step(
             id="control_burden_panel",
@@ -1477,7 +1508,7 @@ def _plate_reader_retron_plot_output(
         defaults = {
             "view": "decomposition",
             "metric": "D_abs_AUC",
-            "title": "Sponge vs matched tetO",
+            "title": "Reporter-ratio shifts by IPTG state against matched tetO",
             "filename": "control_anchored_decomposition",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
@@ -1509,7 +1540,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "library_heatmaps":
         defaults = {
             "view": "heatmap",
-            "title": "Absolute-effect library heatmaps",
+            "title": "Library heatmaps",
             "filename": "library_heatmaps",
             "control_name": control_name,
             "no_stress_label": no_stress_label,
@@ -1540,7 +1571,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "pareto_ranking":
         defaults = {
             "view": "pareto",
-            "title": "Absolute-effect Pareto ranking",
+            "title": "Pareto ranking",
             "filename": "pareto_ranking",
             "control_name": control_name,
             "no_stress_label": no_stress_label,

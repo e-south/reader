@@ -155,11 +155,11 @@ def _set_figure_header(
         fig.text(
             0.5,
             subtitle_y,
-            _wrap_plot_text(subtitle_text, width=96),
+            _wrap_plot_text(subtitle_text, width=108),
             ha="center",
             va="top",
             color="#333333",
-            fontsize=8.5,
+            fontsize=10.4,
         )
 
 
@@ -168,7 +168,7 @@ def _set_figure_title(fig, *, title: str, context: str | None = None, y: float =
     context_text = str(context or "").strip()
     if context_text:
         figure_title = f"{figure_title} · {context_text}"
-    fig.suptitle(_wrap_plot_text(figure_title, width=86), y=y, x=0.5, ha="center", fontweight="normal", fontsize=14)
+    fig.suptitle(_wrap_plot_text(figure_title, width=86), y=y, x=0.5, ha="center", fontweight="normal", fontsize=14.4)
 
 
 def _wrap_plot_text(text: str, *, width: int) -> str:

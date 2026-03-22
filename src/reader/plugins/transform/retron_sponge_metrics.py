@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from reader.domains.plate_reader.analysis import compute_retron_sponge_metrics
+from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 
@@ -44,7 +45,7 @@ class RetronSpongeMetricsCfg(PluginConfig):
     no_stress_label: str = "H2O"
     stress_time_zero_policy: Literal["explicit", "largest_gap_midpoint"] = "largest_gap_midpoint"
     stress_time_zero_h: float | None = None
-    max_post_stress_hours: float | None = Field(default=4.0, gt=0)
+    max_post_stress_hours: float | None = Field(default=DEFAULT_PRIMARY_POST_STRESS_HOURS, gt=0)
     pre_reads: int = 3
     endpoint_reads: int = 3
     states: SpongeStatesCfg = Field(default_factory=SpongeStatesCfg)

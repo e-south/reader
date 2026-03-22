@@ -122,6 +122,12 @@ def plot_time_series(
     line_alpha = float((fig_kwargs or {}).get("line_alpha", 0.85))
     mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
     replicate_alpha = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
+    axis_label_size = float((fig_kwargs or {}).get("axis_label_size", 10.0))
+    tick_label_size = float((fig_kwargs or {}).get("tick_label_size", 8.0))
+    legend_fontsize = float((fig_kwargs or {}).get("legend_fontsize", 8.0))
+    mean_marker_size = float((fig_kwargs or {}).get("mean_marker_size", 36.0))
+    replicate_marker_size = float((fig_kwargs or {}).get("replicate_marker_size", 18.0))
+    line_width = float((fig_kwargs or {}).get("line_width", 1.8))
 
     require_columns(df, [xcol, "channel", "value"], where="time_series")
 
@@ -228,10 +234,11 @@ def plot_time_series(
         rows, cols = best_subplot_grid(len(y_feats))
 
         with use_style(rc=(fig_kwargs or {}).get("rc"), color_cycle=colors):
+            custom_figsize = (fig_kwargs or {}).get("figsize")
             fig, axes = plt.subplots(
                 rows,
                 cols,
-                figsize=(cols * 5, rows * 5),
+                figsize=tuple(custom_figsize) if custom_figsize is not None else (cols * 5, rows * 5),
                 constrained_layout=False,
             )
             axes = np.atleast_1d(axes).ravel()
@@ -288,6 +295,12 @@ def plot_time_series(
                     legend_loc=legend_loc,
                     show_legend=(idx == 0 and not shared_legend),
                     legend_label_map=legend_label_map,
+                    line_width=line_width,
+                    mean_marker_size=mean_marker_size,
+                    replicate_marker_size=replicate_marker_size,
+                    axis_label_size=axis_label_size,
+                    tick_label_size=tick_label_size,
+                    legend_fontsize=legend_fontsize,
                 )
                 with suppress(Exception):
                     ax.set_box_aspect(1.0)
@@ -318,17 +331,25 @@ def plot_time_series(
                     ncol=max(1, min(4, len(handles))),
                     frameon=False,
                     title=None,
+                    fontsize=legend_fontsize,
                 )
                 fig.subplots_adjust(
-                    top=0.82,
-                    bottom=0.10,
-                    left=0.08,
-                    right=0.98,
-                    wspace=0.22,
-                    hspace=0.24,
+                    top=float((fig_kwargs or {}).get("top", 0.82)),
+                    bottom=float((fig_kwargs or {}).get("bottom", 0.10)),
+                    left=float((fig_kwargs or {}).get("left", 0.08)),
+                    right=float((fig_kwargs or {}).get("right", 0.98)),
+                    wspace=float((fig_kwargs or {}).get("wspace", 0.22)),
+                    hspace=float((fig_kwargs or {}).get("hspace", 0.24)),
                 )
             else:
-                fig.subplots_adjust(top=0.92, bottom=0.10, left=0.08, right=0.98, wspace=0.22, hspace=0.24)
+                fig.subplots_adjust(
+                    top=float((fig_kwargs or {}).get("top", 0.92)),
+                    bottom=float((fig_kwargs or {}).get("bottom", 0.10)),
+                    left=float((fig_kwargs or {}).get("left", 0.08)),
+                    right=float((fig_kwargs or {}).get("right", 0.98)),
+                    wspace=float((fig_kwargs or {}).get("wspace", 0.22)),
+                    hspace=float((fig_kwargs or {}).get("hspace", 0.24)),
+                )
 
             # Allow file type override via fig.ext ("pdf" | "png" | "svg", etc.)
             group_tag = None

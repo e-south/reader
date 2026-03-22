@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
 
@@ -125,11 +126,14 @@ def plot_retron_sponge_trace(
 
     sensors = _ordered(df["sensor"].tolist())
     figures: list[PlotFigure] = []
-    display_post_stress_hours = float(fig_kwargs.get("display_post_stress_hours", 4.0))
     for sensor in sensors:
         sensor_df = df[df["sensor"].astype(str) == sensor].copy()
         sensor_full_trace = full_df[full_df["sensor"].astype(str) == sensor].copy()
         stresses = _preferred_stresses(sensor_df["stress_condition"], stress_order=stress_order)
+        display_post_stress_hours = _resolved_display_post_stress_hours(
+            trace=sensor_full_trace,
+            fig_kwargs=fig_kwargs,
+        )
         if only_control:
             figures.extend(
                 _plot_control_trace_compact(
@@ -216,6 +220,20 @@ def _validated_trace_panel_mode(panel_by: str) -> str:
     if panel_mode not in {"stress", "sponge"}:
         raise ValueError("retron_sponge_trace: panel_by supports only 'stress' or 'sponge'")
     return panel_mode
+
+
+def _resolved_display_post_stress_hours(
+    *,
+    trace: pd.DataFrame | None,
+    fig_kwargs: Mapping[str, object],
+) -> float:
+    explicit = pd.to_numeric(pd.Series([fig_kwargs.get("display_post_stress_hours")]), errors="coerce").iloc[0]
+    if np.isfinite(explicit) and explicit > 0.0:
+        return float(explicit)
+    span = retron_presentation.primary_window_span_bounds(trace, stress_condition=None)
+    if span is not None and np.isfinite(span[1]) and span[1] > 0.0:
+        return float(span[1])
+    return float(DEFAULT_PRIMARY_POST_STRESS_HOURS)
 
 
 def _filtered_retron_trace_frame(
@@ -378,31 +396,31 @@ def _add_trace_figure_legend(
 
 def _faceted_trace_figure_policy(*, rows: int, cols: int) -> _TraceFigurePolicy:
     return _TraceFigurePolicy(
-        default_figsize=(cols * 4.2, rows * 4.05),
+        default_figsize=(cols * 3.95, rows * 3.95),
         sharex=True,
         sharey=True,
-        xlabel_y=0.08,
+        xlabel_y=0.036,
         title_y=0.988,
-        subtitle_y=0.936,
+        subtitle_y=0.948,
         adjust_without_legend=_TraceSubplotPolicy(
-            top=0.82,
-            bottom=0.13,
-            left=0.11,
-            right=0.98,
-            hspace=0.22,
-            wspace=0.14,
+            top=0.86,
+            bottom=0.10,
+            left=0.09,
+            right=0.99,
+            hspace=0.18,
+            wspace=0.02,
         ),
         adjust_with_legend=_TraceSubplotPolicy(
-            top=0.82,
-            bottom=0.20,
-            left=0.11,
-            right=0.98,
-            hspace=0.22,
-            wspace=0.14,
+            top=0.86,
+            bottom=0.12,
+            left=0.09,
+            right=0.99,
+            hspace=0.18,
+            wspace=0.02,
         ),
         legend=_TraceLegendPolicy(
             loc="lower center",
-            bbox_to_anchor=(0.5, 0.008),
+            bbox_to_anchor=(0.5, 0.02),
             ncol_limit=4,
         ),
     )
@@ -443,24 +461,24 @@ def _grid_trace_figure_policy(*, rows: int, cols: int, only_control: bool) -> _T
         default_figsize=(cols * 4.15, rows * 4.0),
         sharex=True,
         sharey="row",
-        xlabel_y=0.02,
+        xlabel_y=0.028,
         title_y=0.988,
-        subtitle_y=0.936,
+        subtitle_y=0.942,
         adjust_without_legend=_TraceSubplotPolicy(
-            top=0.78,
-            bottom=0.16,
-            left=0.12,
-            right=0.98,
-            hspace=0.32,
-            wspace=0.18,
+            top=0.80,
+            bottom=0.14,
+            left=0.10,
+            right=0.985,
+            hspace=0.26,
+            wspace=0.10,
         ),
         adjust_with_legend=_TraceSubplotPolicy(
-            top=0.78,
-            bottom=0.16,
-            left=0.12,
+            top=0.80,
+            bottom=0.14,
+            left=0.10,
             right=0.80,
-            hspace=0.32,
-            wspace=0.18,
+            hspace=0.26,
+            wspace=0.10,
         ),
         legend=_TraceLegendPolicy(
             loc="center left",
@@ -516,7 +534,7 @@ def _finalize_trace_figure(
         title_y=float(fig_kwargs.get("suptitle_y", policy.title_y)),
         subtitle_y=float(fig_kwargs.get("subtitle_y", policy.subtitle_y)),
     )
-    fig.supxlabel("Time from stress addition (h)", y=policy.xlabel_y, fontsize=13)
+    fig.supxlabel("Time from stress addition (h)", y=policy.xlabel_y, fontsize=13.5)
     if legend_handles and policy.legend is not None:
         _add_trace_figure_legend(
             fig,
@@ -587,10 +605,10 @@ def _plot_trace_sensor_faceted_by_sponge(
                 _wrap_hyphenated_label(str(sponge), max_parts_per_line=2),
                 pad=6,
                 fontweight="normal",
-                fontsize=10,
+                fontsize=10.6,
             )
-            axis.tick_params(axis="x", labelsize=8)
-            axis.tick_params(axis="y", labelsize=8)
+            axis.tick_params(axis="x", labelsize=8.6)
+            axis.tick_params(axis="y", labelsize=8.6)
             _set_trace_axis_box_aspect(axis)
         for axis in axes_flat[len(sponge_levels) :]:
             axis.set_visible(False)
@@ -610,7 +628,7 @@ def _plot_trace_sensor_faceted_by_sponge(
                 if idx % cols == 0:
                     axis.set_ylabel(
                         retron_presentation.metric_axis_label(metric, metric_label_map=metric_label_map),
-                        fontsize=13,
+                        fontsize=13.2,
                     )
                 else:
                     axis.set_ylabel("")
@@ -711,9 +729,9 @@ def _plot_trace_all_sensors_faceted_by_pair(
                 trace=pair_metric,
                 stress_condition=None,
             )
-            axis.set_title(f"{sensor} · {sponge}", pad=6, fontweight="normal", fontsize=10)
-            axis.tick_params(axis="x", labelsize=8)
-            axis.tick_params(axis="y", labelsize=8)
+            axis.set_title(f"{sensor} · {sponge}", pad=6, fontweight="normal", fontsize=10.6)
+            axis.tick_params(axis="x", labelsize=8.6)
+            axis.tick_params(axis="y", labelsize=8.6)
             _set_trace_axis_box_aspect(axis)
         for axis in axes_flat[len(pair_specs) :]:
             axis.set_visible(False)
@@ -726,17 +744,12 @@ def _plot_trace_all_sensors_faceted_by_pair(
         )
         if bounds is not None:
             y_limits, display_bounds = bounds
-            for idx, axis in enumerate(axes_flat):
+            for axis in axes_flat:
                 if not axis.get_visible():
                     continue
                 _apply_trace_axis_bounds(axis, y_limits=y_limits, display_bounds=display_bounds)
-                if idx % cols == 0:
-                    axis.set_ylabel(
-                        retron_presentation.metric_axis_label(selected_metric, metric_label_map=metric_label_map),
-                        fontsize=13,
-                    )
-                else:
-                    axis.set_ylabel("")
+                axis.set_ylabel("")
+                axis.tick_params(labelbottom=True, labelleft=True)
         _finalize_trace_figure(
             fig,
             legend_handles=legend_handles,
@@ -745,6 +758,11 @@ def _plot_trace_all_sensors_faceted_by_pair(
             title=title,
             sensor="all sensors",
             subtitle=retron_presentation.trace_text_spec(selected_metric).figure_subtitle(),
+        )
+        fig.supylabel(
+            retron_presentation.metric_axis_label(selected_metric, metric_label_map=metric_label_map),
+            x=0.04,
+            fontsize=13.2,
         )
         return emit_plot_figure(
             fig=fig,
@@ -868,10 +886,10 @@ def _plot_control_trace_compact(
     fig_kwargs: Mapping[str, object],
     display_post_stress_hours: float,
 ) -> list[PlotFigure]:
-    column_specs = [(metric, stress) for metric in selected_metrics for stress in stresses]
+    column_specs = [(stress, metric) for stress in stresses for metric in selected_metrics]
     if not column_specs:
         return []
-    figsize = fig_kwargs.get("figsize", (max(8.4, 3.1 * len(column_specs)), 3.6))
+    figsize = fig_kwargs.get("figsize", (max(7.8, 2.55 * len(column_specs)), 3.15))
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
         fig, axes = plt.subplots(
             1,
@@ -885,7 +903,7 @@ def _plot_control_trace_compact(
         axes_flat = axes.ravel()
         legend_handles: dict[str, object] = {}
         control_name = str(sensor_df["sponge"].astype(str).iloc[0]) if not sensor_df.empty else "tetO"
-        for axis, (metric, stress) in zip(axes_flat, column_specs, strict=False):
+        for axis, (stress, metric) in zip(axes_flat, column_specs, strict=False):
             metric_df = sensor_df[
                 (sensor_df["metric"].astype(str) == str(metric))
                 & (sensor_df["stress_condition"].astype(str) == str(stress))
@@ -915,7 +933,11 @@ def _plot_control_trace_compact(
                 trace=sensor_full_trace,
                 stress_condition=str(stress),
             )
-            axis.set_title(f"{metric} · {str(stress)}", pad=6, fontsize=10, fontweight="normal")
+            metric_title = {
+                "R": "Reporter ratio",
+                "mu": "Growth rate",
+            }.get(str(metric), retron_presentation.metric_axis_label(str(metric), metric_label_map=metric_label_map))
+            axis.set_title(f"{str(stress)} · {metric_title}", pad=6, fontsize=10, fontweight="normal")
             axis.set_ylabel(
                 retron_presentation.metric_axis_label(str(metric), metric_label_map=metric_label_map),
                 fontsize=10.5,
@@ -947,7 +969,7 @@ def _plot_control_trace_compact(
                 frameon=False,
                 title=None,
             )
-        fig.subplots_adjust(top=0.80, bottom=0.20, left=0.08, right=0.98, wspace=0.42)
+        fig.subplots_adjust(top=0.80, bottom=0.23, left=0.08, right=0.98, wspace=0.30)
         return emit_plot_figure(
             fig=fig,
             filename=f"{filename or _slug(title)}__sensor={_slug(sensor)}",

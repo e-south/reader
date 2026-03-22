@@ -88,14 +88,14 @@ def render_pareto_view(request: _RetronSummaryPlotRequest) -> list[PlotFigure]:
 
 def _pareto_figure_policy() -> _SummaryFigurePolicy:
     return _SummaryFigurePolicy(
-        default_figsize=(8.5, 5.5),
+        default_figsize=(7.2, 5.1),
         title_y=0.98,
         subtitle_y=0.942,
         adjust=_SummarySubplotPolicy(
             top=0.88,
             bottom=0.11,
             left=0.12,
-            right=0.80,
+            right=0.78,
             hspace=0.0,
             wspace=0.0,
         ),
@@ -197,8 +197,8 @@ def _pareto_figure_payload(
         points=points,
         family_levels=tuple(family_levels),
         color_map=color_map,
-        x_label=f"Mean on-target effect across relevant sensors ({metric})",
-        y_label=retron_presentation.burden_axis_label(burden_metric),
+        x_label=f"Mean {_aggregate_score_axis_label(metric)}",
+        y_label="Mean burden penalty",
     )
 
 
@@ -326,3 +326,13 @@ def _pareto_legend_handles(
         )
         for level in payload.family_levels
     ]
+
+
+def _aggregate_score_axis_label(metric: str) -> str:
+    labels = {
+        "O_abs_AUC": "total effect",
+        "S_abs_AUC": "scaled total effect",
+        "O_AUC": "post-stress increment",
+        "S_AUC": "scaled increment",
+    }
+    return labels.get(str(metric), retron_presentation.summary_metric_label(metric))

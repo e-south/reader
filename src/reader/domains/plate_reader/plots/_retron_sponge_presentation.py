@@ -32,6 +32,7 @@ class DecisionCardMetricSpec:
     label: str
     color: str
     units: str
+    axis_label: str
     display_multiplier: float = 1.0
 
 
@@ -50,8 +51,8 @@ class MetricSemantics:
 _METRIC_AXIS_LABELS = {
     "B": "Shift from the pre-stress state",
     "C": "Matched tetO deviation",
-    "D": "New post-stress increment",
-    "D_abs": "Total effect beyond matched tetO",
+    "D": "D(t) = mean[C(+IPTG)] - mean[C(-IPTG)]",
+    "D_abs": "D_abs(t) = ΔIPTG[R(t) - R_tetO,matched(t)]",
     "D_growth": "Construct-specific growth burden",
     "M": "Stress-gated effect",
     "O": "Expected-direction post-stress increment",
@@ -95,11 +96,11 @@ _TRACE_TEXT_SPECS = {
     ),
     "D": TraceTextSpec(
         formula="D(t)=mean C(+IPTG)-mean C(-IPTG)",
-        subtitle="New post-stress movement after preload is removed",
+        subtitle="D(t) = mean C(+IPTG) - mean C(-IPTG)",
     ),
     "D_abs": TraceTextSpec(
         formula="D_abs(t)=delta_IPTG[R-R_tetO,matched]",
-        subtitle="Total +IPTG effect beyond matched tetO over time",
+        subtitle="D_abs(t) = delta_IPTG[R - R_tetO,matched]",
     ),
     "D_growth": TraceTextSpec(
         formula="D_growth(t)=delta_IPTG[mu-mu_tetO,matched]",
@@ -162,28 +163,36 @@ _SUMMARY_METRIC_TEXT_SPECS = {
 }
 
 LIBRARY_HEATMAP_TEXT_SPEC = SummaryTextSpec(
-    lead="Relevant-stress summary of total effect, post-stress movement, and preload",
+    lead="Relevant-stress rows only; preload uses the pre-stress baseline",
     include_primary_window_note=True,
 )
 
 DECOMPOSITION_TEXT_SPEC = SummaryTextSpec(
-    lead="Matched-tetO reporter-ratio traces with preload and post-stress summaries",
-    include_primary_window_note=True,
+    lead=None,
+    include_primary_window_note=False,
 )
 
 _DECISION_CARD_METRIC_SPECS = (
-    DecisionCardMetricSpec(metric="P_pre", label="Preload shift", color="#6f6f6f", units="log2 ratio"),
+    DecisionCardMetricSpec(
+        metric="P_pre",
+        label="Pre-stress shift",
+        color="#6f6f6f",
+        units="log2 ratio",
+        axis_label="Matched ratio shift",
+    ),
     DecisionCardMetricSpec(
         metric="D_abs_AUC",
-        label="Total effect beyond matched tetO",
+        label="Total window effect",
         color="#0072B2",
         units="log2 ratio x h",
+        axis_label="AUC[D_abs(t)]",
     ),
     DecisionCardMetricSpec(
         metric="D_AUC",
-        label="Post-stress increment",
+        label="Post-stress effect",
         color="#56B4E9",
         units="log2 ratio x h",
+        axis_label="AUC[D(t)]",
     ),
 )
 
@@ -327,11 +336,11 @@ def primary_window_compact_note_from_trace(trace: pd.DataFrame | None) -> str:
     if explicit_span is not None:
         start_h, end_h = explicit_span
         if np.isclose(start_h, end_h):
-            return f"Post-stress summary uses the flagged read at {end_h:.1f} h"
-        return f"Post-stress summary window: {start_h:.1f} to {end_h:.1f} h after stress addition"
+            return f"Window uses the flagged read at {end_h:.1f} h"
+        return f"Window {start_h:.1f} to {end_h:.1f} h after stress addition"
     configured = _configured_primary_window_hours(trace)
     if configured is not None:
-        return f"Post-stress summary covers the first {configured:.1f} h after stress addition"
+        return f"Window first {configured:.1f} h after stress addition"
     required = {"time_from_stress", "in_primary_post_stress"}
     if not required.issubset(trace.columns):
         return ""
@@ -342,7 +351,11 @@ def primary_window_compact_note_from_trace(trace: pd.DataFrame | None) -> str:
     finite = maxima[np.isfinite(maxima)]
     if finite.size == 0:
         return ""
-    return f"Post-stress summary covers the first {float(finite.max()):.1f} h after stress addition"
+    return f"Window first {float(finite.max()):.1f} h after stress addition"
+
+
+def window_span_text(start_h: float, end_h: float) -> str:
+    return f"{float(start_h):.1f} to {float(end_h):.1f} h"
 
 
 def primary_window_span_bounds(
@@ -385,6 +398,56 @@ def burden_axis_label(metric: str) -> str:
     if str(metric) == "T_finalOD":
         return "Mean tetO endpoint burden (T_finalOD)"
     return f"Burden summary ({metric})"
+
+
+def pre_window_span_bounds(trace: pd.DataFrame | None) -> tuple[float, float] | None:
+    if trace is None or trace.empty:
+        return None
+    required = {"time_from_stress", "in_pre_window"}
+    if not required.issubset(trace.columns):
+        return None
+    pre = trace[trace["in_pre_window"].fillna(False)].copy()
+    if pre.empty:
+        return None
+    values = pd.to_numeric(pre["time_from_stress"], errors="coerce").dropna().to_numpy(dtype=float)
+    if values.size == 0:
+        return None
+    return float(values.min()), float(values.max())
+
+
+def decision_card_metric_title(
+    metric: str,
+    *,
+    trace: pd.DataFrame | None = None,
+    summary_window_start_h: float | None = None,
+    summary_window_end_h: float | None = None,
+) -> str:
+    metric_id = str(metric)
+    if metric_id == "P_pre":
+        pre_span = pre_window_span_bounds(trace)
+        if pre_span is not None and not np.isclose(pre_span[0], pre_span[1]):
+            return f"Pre-stress shift ({window_span_text(*pre_span)})"
+        return "Pre-stress shift (R_pre; last pre-stress reads)"
+    if metric_id in {"D_abs_AUC", "D_AUC"}:
+        start_h = pd.to_numeric(pd.Series([summary_window_start_h]), errors="coerce").iloc[0]
+        end_h = pd.to_numeric(pd.Series([summary_window_end_h]), errors="coerce").iloc[0]
+        if np.isfinite(start_h) and np.isfinite(end_h):
+            label = "Total window effect" if metric_id == "D_abs_AUC" else "Post-stress effect"
+            return f"{label} ({window_span_text(float(start_h), float(end_h))})"
+    return {
+        "P_pre": "Pre-stress shift",
+        "D_abs_AUC": "Total window effect",
+        "D_AUC": "Post-stress effect",
+    }.get(metric_id, summary_metric_label(metric_id))
+
+
+def library_heatmap_subtitle(trace: pd.DataFrame | None) -> str:
+    span = primary_window_span_bounds(trace, stress_condition=None)
+    if span is None:
+        window_text = "AUC summaries use the primary post-stress window."
+    else:
+        window_text = f"AUC summaries use {window_span_text(*span)} after stress addition."
+    return f"Relevant-stress rows only; {window_text} Preload uses the pre-stress baseline."
 
 
 def endpoint_window_note_from_trace(trace: pd.DataFrame | None) -> str:

@@ -339,7 +339,7 @@ def test_retron_sponge_metrics_cfg_defaults_match_protocol_surface() -> None:
     assert cfg.plate_column is None
     assert cfg.stress_time_zero_policy == "largest_gap_midpoint"
     assert cfg.stress_time_zero_h is None
-    assert cfg.max_post_stress_hours == 4.0
+    assert cfg.max_post_stress_hours == 12.0
 
 
 def test_retron_sponge_metrics_absolute_companion_preserves_preload_sensitive_signal() -> None:

@@ -18,11 +18,11 @@ from .shared import (
     _pivot_summary,
     _require_relevant_sensor_pair,
     _RetronSummaryPlotRequest,
-    _set_axis_title,
     _slug,
     _SummaryFigurePolicy,
     _SummarySubplotPolicy,
     _wrap_hyphenated_label,
+    _wrap_plot_text,
 )
 
 
@@ -80,7 +80,7 @@ _LIBRARY_HEATMAP_PANELS: tuple[_HeatmapPanelSpec, ...] = (
     _HeatmapPanelSpec(
         metric="P_pre",
         title="Preload",
-        formula="P_pre = delta_IPTG[R_pre - R_pre,tetO]",
+        formula="P_pre = delta_IPTG[R_pre - R_pre,tetO,matched]",
         scale_group="delta",
     ),
 )
@@ -92,7 +92,7 @@ _LIBRARY_HEATMAP_AXIS_POLICY = _LibraryHeatmapAxisPolicy(
     annotation_fontsize=8.5,
     linewidths=0.4,
     linecolor="#f0f0f0",
-    title_pad=8.0,
+    title_pad=6.0,
     xtick_labelsize=9.0,
     xtick_pad=1.0,
     ytick_labelsize=10.0,
@@ -117,24 +117,24 @@ def render_library_heatmap_view(request: _RetronSummaryPlotRequest) -> list[Plot
 def _library_heatmap_figure_policy(*, max_rows: int, max_cols: int) -> _SummaryFigurePolicy:
     return _SummaryFigurePolicy(
         default_figsize=(
-            max(13.0, 2.8 * len(_LIBRARY_HEATMAP_PANELS) + 0.58 * max_cols * len(_LIBRARY_HEATMAP_PANELS)),
-            max(3.8, 2.2 + 0.34 * max_rows),
+            max(8.6, 4.2 + 0.62 * max_cols),
+            max(9.0, 6.4 + 0.46 * max_rows),
         ),
-        title_y=0.988,
-        subtitle_y=0.940,
+        title_y=0.986,
+        subtitle_y=0.952,
         xlabel="Sponge",
-        xlabel_y=0.03,
+        xlabel_y=0.02,
         xlabel_fontsize=13.0,
         ylabel="Sensor",
         ylabel_x=0.02,
         ylabel_fontsize=13.0,
         adjust=_SummarySubplotPolicy(
-            top=0.78,
-            bottom=0.18,
-            left=0.10,
+            top=0.89,
+            bottom=0.09,
+            left=0.13,
             right=0.99,
-            hspace=0.12,
-            wspace=0.03,
+            hspace=0.34,
+            wspace=0.04,
         ),
     )
 
@@ -160,8 +160,8 @@ def _plot_retron_library_heatmaps(
     policy = _library_heatmap_figure_policy(max_rows=figure_payload.max_rows, max_cols=figure_payload.max_cols)
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
         fig, axes = _new_summary_grid_figure(
-            rows=1,
-            cols=len(figure_payload.panel_payloads),
+            rows=len(figure_payload.panel_payloads),
+            cols=1,
             policy=policy,
             fig_kwargs=fig_kwargs,
             sharey=True,
@@ -178,10 +178,7 @@ def _plot_retron_library_heatmaps(
             policy=policy,
             fig_kwargs=fig_kwargs,
             title=title,
-            subtitle=retron_presentation.render_summary_text(
-                retron_presentation.LIBRARY_HEATMAP_TEXT_SPEC,
-                trace=trace,
-            ),
+            subtitle=retron_presentation.library_heatmap_subtitle(trace),
         )
         return emit_plot_figure(
             fig=fig,
@@ -266,7 +263,7 @@ def _render_library_heatmap(
         annot=True,
         fmt=policy.annotation_format,
         cbar=False,
-        square=False,
+        square=True,
         linewidths=policy.linewidths,
         linecolor=policy.linecolor,
         annot_kws={"fontsize": policy.annotation_fontsize},
@@ -282,7 +279,12 @@ def _decorate_library_heatmap_axis(
     panel_index: int,
     policy: _LibraryHeatmapAxisPolicy,
 ) -> None:
-    _set_axis_title(ax, f"{payload.spec.title}\n{payload.spec.formula}", pad=policy.title_pad)
+    ax.set_title(
+        _wrap_plot_text(f"{payload.spec.title}: {payload.spec.formula}", width=56),
+        pad=policy.title_pad,
+        fontweight="normal",
+        fontsize=10,
+    )
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_xticklabels(
@@ -294,7 +296,4 @@ def _decorate_library_heatmap_axis(
     ax.tick_params(axis="x", labelrotation=0, labelsize=policy.xtick_labelsize, pad=policy.xtick_pad)
     for label in ax.get_xticklabels():
         label.set_ha("center")
-    if panel_index > 0:
-        ax.tick_params(axis="y", labelleft=False)
-        return
     ax.tick_params(axis="y", labelrotation=0, labelsize=policy.ytick_labelsize)
