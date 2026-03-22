@@ -205,7 +205,9 @@ def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(t
     assert "What this notebook contains" not in content
     assert "Source experiments" in content
     assert "Workflow map" in content
-    assert "Aggregate views" in content
+    assert 'label="Review surface"' in content
+    assert '"Aggregate view": "Aggregate view"' in content
+    assert '"Source experiment view": "Source experiment view"' in content
     assert "Source experiment" in content
     assert "Source assay view" in content
     assert "retron_source_control_panel = mo.hstack" in content
@@ -213,7 +215,8 @@ def test_retron_aggregate_notebook_scaffold_surfaces_cross_run_review_sections(t
     assert "retron_source_selector_rows(retron_aggregate_bundle)" in content
     assert "wrap=False" in content
     assert 'label="Aggregate evidence family"' in content
-    assert 'label="Fingerprint sponge"' in content
+    assert 'label="Fingerprint sponge"' not in content
+    assert "retron_master_surface_selector" not in content
     assert content.count("full_width=False") >= 5
     assert "load_retron_source_surface" in content
     assert "retron_figure_coverage_rows" in content

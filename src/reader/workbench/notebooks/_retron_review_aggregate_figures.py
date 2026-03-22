@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import textwrap
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -12,7 +11,7 @@ import pandas as pd
 import seaborn as sns
 
 from reader.domains.plate_reader.plots import _retron_sponge_presentation as retron_presentation
-from reader.domains.plate_reader.plots.common import annotate_points_smart, shared_numeric_limits
+from reader.domains.plate_reader.plots.common import annotate_points_smart, best_subplot_grid, shared_numeric_limits
 
 _FAMILY_COLOR_MAP = {
     "mono": "#0072B2",
@@ -53,6 +52,15 @@ class _AggregateParetoFigurePayload:
 class _SensorScatterFigurePolicy:
     height: float
     point_size: float
+    annotation_fontsize: float = 7.2
+    annotation_max_parts_per_line: int = 2
+    figure_width_per_sensor: float = 4.3
+    left: float = 0.09
+    right: float = 0.88
+    top: float = 0.88
+    bottom: float = 0.16
+    wspace: float = 0.12
+    legend_anchor_x: float = 0.94
     add_horizontal_zero: bool = False
     add_identity_line: bool = False
     equal_aspect: bool = False
@@ -184,7 +192,7 @@ def build_architecture_figure(
         y_limits=y_limits,
         policy=_architecture_sensor_scatter_policy(),
         xlabel=_architecture_axis_label(architecture_x),
-        ylabel=_metric_axis_label(score_metric),
+        ylabel=_aggregate_score_axis_label(score_metric),
     )
 
 
@@ -221,7 +229,7 @@ def build_expected_vs_observed_figure(
         y_limits=combined_limits,
         policy=_expected_vs_observed_sensor_scatter_policy(),
         xlabel=_expected_axis_label(expected_mode, score_metric=score_metric),
-        ylabel=f"Observed multifunction score ({score_metric})",
+        ylabel=f"Observed multifunction score ({_aggregate_score_axis_label(score_metric)})",
     )
 
 
@@ -232,35 +240,38 @@ def build_fingerprint_figure(
 ) -> Any | None:
     if fingerprint_df.empty:
         return None
-    payload = _fingerprint_figure_payload(fingerprint_df)
-    figure_policy = _fingerprint_figure_policy(payload=payload)
+    selected_sponges = sorted(
+        fingerprint_df["selected_sponge"].dropna().astype(str).unique().tolist(),
+        key=str,
+    )
+    global_limits = shared_numeric_limits(
+        fingerprint_df["value"].to_numpy(dtype=float, copy=False),
+        center=0.0,
+        pad_fraction=0.12,
+        min_span=0.10,
+    )
+    payloads = [
+        _fingerprint_figure_payload(
+            fingerprint_df[fingerprint_df["selected_sponge"].astype(str) == selected_sponge].copy(),
+            y_limits=global_limits,
+        )
+        for selected_sponge in selected_sponges
+    ]
     axis_policy = _fingerprint_axis_policy(score_metric)
-    figure, axis = _new_single_axis_figure(policy=figure_policy)
-    _plot_fingerprint_bars(
-        axis,
-        stats=payload.stats,
-        sensor_levels=payload.sensor_levels,
-        comparison_order=payload.comparison_order,
-        x_positions=payload.x_positions,
-        offsets=payload.offsets,
-        width=payload.width,
-        comparison_colors=payload.comparison_colors,
-        edge_colors=payload.edge_colors,
-    )
-    _plot_fingerprint_points(
-        axis,
+    if len(payloads) == 1:
+        payload = payloads[0]
+        figure_policy = _fingerprint_figure_policy(payload=payload, subtitle=_fingerprint_support_text(fingerprint_df))
+        figure, axis = _new_single_axis_figure(policy=figure_policy)
+        _plot_fingerprint_subplot(axis=axis, payload=payload, subplot_df=fingerprint_df)
+        _decorate_fingerprint_axis(axis, payload=payload, policy=axis_policy)
+        _apply_single_axis_legend(axis, policy=_fingerprint_legend_policy())
+        _finalize_single_axis_figure(figure, policy=figure_policy)
+        return figure
+    return _build_fingerprint_grid_figure(
         fingerprint_df=fingerprint_df,
-        sensor_levels=payload.sensor_levels,
-        comparison_order=payload.comparison_order,
-        x_positions=payload.x_positions,
-        offsets=payload.offsets,
-        point_facecolors=payload.point_facecolors,
-        edge_colors=payload.edge_colors,
+        payloads=payloads,
+        axis_policy=axis_policy,
     )
-    _decorate_fingerprint_axis(axis, payload=payload, policy=axis_policy)
-    _apply_single_axis_legend(axis, policy=_fingerprint_legend_policy())
-    _finalize_single_axis_figure(figure, policy=figure_policy)
-    return figure
 
 
 def _aggregate_pareto_figure_payload(pareto_df: pd.DataFrame) -> _AggregateParetoFigurePayload:
@@ -313,7 +324,11 @@ def _aggregate_pareto_legend_handles(payload: _AggregateParetoFigurePayload) -> 
     ]
 
 
-def _fingerprint_figure_payload(fingerprint_df: pd.DataFrame) -> _FingerprintFigurePayload:
+def _fingerprint_figure_payload(
+    fingerprint_df: pd.DataFrame,
+    *,
+    y_limits: tuple[float, float] | None = None,
+) -> _FingerprintFigurePayload:
     sensor_levels = tuple(sorted(fingerprint_df["sensor"].dropna().astype(str).unique().tolist()))
     comparison_order = tuple(_fingerprint_comparison_order(fingerprint_df))
     comparison_colors, edge_colors, point_facecolors = _fingerprint_comparison_styles()
@@ -329,7 +344,8 @@ def _fingerprint_figure_payload(fingerprint_df: pd.DataFrame) -> _FingerprintFig
         sensor_levels=sensor_levels,
         comparison_order=comparison_order,
         stats=_fingerprint_group_stats(fingerprint_df),
-        y_limits=shared_numeric_limits(
+        y_limits=y_limits
+        or shared_numeric_limits(
             fingerprint_df["value"].to_numpy(dtype=float, copy=False),
             center=0.0,
             pad_fraction=0.12,
@@ -380,11 +396,34 @@ def _decorate_fingerprint_axis(
     axis.set_xticks([payload.x_positions[sensor] for sensor in payload.sensor_levels])
     axis.set_xticklabels(payload.sensor_levels)
     _style_single_axis(axis, policy=policy)
-    axis.set_title(
-        _wrap_hyphenated_plot_label(payload.selected_sponge, max_parts_per_line=2),
-        pad=10,
-        fontweight="normal",
-        fontsize=11,
+
+
+def _plot_fingerprint_subplot(
+    *,
+    axis: Any,
+    payload: _FingerprintFigurePayload,
+    subplot_df: pd.DataFrame,
+) -> None:
+    _plot_fingerprint_bars(
+        axis,
+        stats=payload.stats,
+        sensor_levels=payload.sensor_levels,
+        comparison_order=payload.comparison_order,
+        x_positions=payload.x_positions,
+        offsets=payload.offsets,
+        width=payload.width,
+        comparison_colors=payload.comparison_colors,
+        edge_colors=payload.edge_colors,
+    )
+    _plot_fingerprint_points(
+        axis,
+        fingerprint_df=subplot_df,
+        sensor_levels=payload.sensor_levels,
+        comparison_order=payload.comparison_order,
+        x_positions=payload.x_positions,
+        offsets=payload.offsets,
+        point_facecolors=payload.point_facecolors,
+        edge_colors=payload.edge_colors,
     )
 
 
@@ -541,8 +580,8 @@ def _specificity_matrix_figure_policy(score_metric: str) -> _MatrixHeatmapFigure
 
 def _aggregate_pareto_axis_policy(*, score_metric: str, burden_metric: str) -> _SingleAxisAxisPolicy:
     return _SingleAxisAxisPolicy(
-        xlabel=f"Mean on-target effect ({score_metric})",
-        ylabel=retron_presentation.burden_axis_label(burden_metric),
+        xlabel=f"Mean {_aggregate_score_axis_label(score_metric)}",
+        ylabel="Mean burden penalty",
         x_tick_size=7.0,
         y_tick_size=7.0,
     )
@@ -550,14 +589,14 @@ def _aggregate_pareto_axis_policy(*, score_metric: str, burden_metric: str) -> _
 
 def _aggregate_pareto_figure_policy() -> _SingleAxisFigurePolicy:
     return _SingleAxisFigurePolicy(
-        figsize=(8.2, 6.0),
+        figsize=(6.4, 4.8),
         suptitle="Aggregate pareto ranking",
         suptitle_y=0.97,
         subtitle="Absolute expected-direction effect versus burden penalty across the review set; point size encodes |L_pre|.",
         subtitle_y=0.93,
         bottom=0.12,
         left=0.12,
-        right=0.79,
+        right=0.78,
         top=0.85,
     )
 
@@ -570,38 +609,111 @@ def _fingerprint_axis_policy(score_metric: str) -> _SingleAxisAxisPolicy:
     return _SingleAxisAxisPolicy(
         xlabel="Relevant sensor arm",
         ylabel=_metric_axis_label(score_metric),
-        x_tick_size=9.0,
-        y_tick_size=8.0,
+        x_tick_size=9.6,
+        y_tick_size=8.8,
         grid_axis="y",
     )
 
 
-def _fingerprint_figure_policy(*, payload: _FingerprintFigurePayload) -> _SingleAxisFigurePolicy:
+def _fingerprint_figure_policy(*, payload: _FingerprintFigurePayload, subtitle: str) -> _SingleAxisFigurePolicy:
     return _SingleAxisFigurePolicy(
-        figsize=(max(6.4, 2.0 + 1.55 * len(payload.sensor_levels)), 4.9),
-        suptitle="Sponge fingerprint",
+        figsize=(max(6.2, 2.0 + 1.42 * len(payload.sensor_levels)), 4.45),
+        suptitle=f"Relevant sensor arms · {payload.selected_sponge}",
         suptitle_y=0.97,
-        subtitle=_fingerprint_support_text(max_sources=payload.max_sources),
-        subtitle_y=0.92,
+        subtitle=subtitle,
+        subtitle_y=0.925,
+        left=0.10,
+        right=0.86,
+        top=0.82,
+        bottom=0.17,
     )
 
 
 def _fingerprint_legend_policy() -> _SingleAxisLegendPolicy:
-    return _SingleAxisLegendPolicy(loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    return _SingleAxisLegendPolicy(loc="upper left", bbox_to_anchor=(1.00, 1.0))
+
+
+def _build_fingerprint_grid_figure(
+    *,
+    fingerprint_df: pd.DataFrame,
+    payloads: Sequence[_FingerprintFigurePayload],
+    axis_policy: _SingleAxisAxisPolicy,
+) -> Any:
+    rows, cols = best_subplot_grid(len(payloads))
+    figure, axes = plt.subplots(
+        rows,
+        cols,
+        figsize=(max(7.6, 3.8 * cols), max(4.1, 3.45 * rows)),
+        constrained_layout=False,
+        squeeze=False,
+        sharey=True,
+    )
+    axes_flat = axes.ravel()
+    for axis, payload in zip(axes_flat, payloads, strict=False):
+        subplot_df = fingerprint_df[fingerprint_df["selected_sponge"].astype(str) == payload.selected_sponge].copy()
+        _plot_fingerprint_subplot(axis=axis, payload=payload, subplot_df=subplot_df)
+        _decorate_fingerprint_axis(axis, payload=payload, policy=axis_policy)
+        axis.set_xlabel("")
+        axis.set_ylabel("")
+        axis.set_title(str(payload.selected_sponge), pad=6, fontsize=10, fontweight="normal")
+    for axis in axes_flat[len(payloads) :]:
+        axis.set_visible(False)
+    legend_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            marker="s",
+            color="w",
+            label=group,
+            markerfacecolor=payloads[0].comparison_colors.get(group, "#4c72b0"),
+            markeredgecolor=payloads[0].edge_colors.get(group, "#222222"),
+            markersize=7,
+        )
+        for group in payloads[0].comparison_order
+    ]
+    figure.legend(
+        legend_handles,
+        [handle.get_label() for handle in legend_handles],
+        frameon=False,
+        loc="center left",
+        bbox_to_anchor=(0.93, 0.5),
+        borderaxespad=0.0,
+        title=None,
+    )
+    figure.suptitle("Relevant sensor arms by sponge", y=0.975, fontsize=13, fontweight="normal")
+    figure.text(
+        0.5,
+        0.935,
+        _fingerprint_support_text(fingerprint_df),
+        ha="center",
+        va="top",
+        fontsize=9.4,
+        color="#333333",
+    )
+    figure.supxlabel(axis_policy.xlabel, y=0.08)
+    figure.supylabel(axis_policy.ylabel, x=0.03)
+    figure.subplots_adjust(left=0.10, right=0.88, top=0.84, bottom=0.17, hspace=0.30, wspace=0.20)
+    return figure
 
 
 def _architecture_sensor_scatter_policy() -> _SensorScatterFigurePolicy:
     return _SensorScatterFigurePolicy(
-        height=4.9,
-        point_size=88,
+        height=4.55,
+        point_size=82,
+        annotation_fontsize=7.1,
+        right=0.89,
+        legend_anchor_x=0.93,
         add_horizontal_zero=True,
     )
 
 
 def _expected_vs_observed_sensor_scatter_policy() -> _SensorScatterFigurePolicy:
     return _SensorScatterFigurePolicy(
-        height=5.1,
-        point_size=92,
+        height=4.65,
+        point_size=84,
+        annotation_fontsize=7.1,
+        right=0.89,
+        legend_anchor_x=0.93,
         add_identity_line=True,
         equal_aspect=True,
     )
@@ -612,11 +724,15 @@ def _family_palette(frame: pd.DataFrame) -> dict[str, str]:
     return {level: _FAMILY_COLOR_MAP.get(level, _FAMILY_COLOR_MAP["other"]) for level in family_levels}
 
 
-def _sensor_subplot_figure(*, sensors: Sequence[str], height: float) -> tuple[Any, Any]:
+def _sensor_subplot_figure(
+    *,
+    sensors: Sequence[str],
+    policy: _SensorScatterFigurePolicy,
+) -> tuple[Any, Any]:
     return plt.subplots(
         1,
         len(sensors),
-        figsize=(4.9 * len(sensors), height),
+        figsize=(policy.figure_width_per_sensor * len(sensors), policy.height),
         constrained_layout=False,
         squeeze=False,
         sharex=True,
@@ -637,7 +753,7 @@ def _build_sensor_scatter_figure(
     xlabel: str,
     ylabel: str,
 ) -> Any:
-    figure, axes = _sensor_subplot_figure(sensors=sensors, height=policy.height)
+    figure, axes = _sensor_subplot_figure(sensors=sensors, policy=policy)
     for axis, sensor in zip(axes[0], sensors, strict=True):
         sensor_df = frame[frame["sensor"].astype(str) == sensor].copy()
         _plot_sensor_family_scatter(
@@ -647,6 +763,8 @@ def _build_sensor_scatter_figure(
             y_column=y_column,
             palette=palette,
             point_size=policy.point_size,
+            annotation_fontsize=policy.annotation_fontsize,
+            annotation_max_parts_per_line=policy.annotation_max_parts_per_line,
         )
         _decorate_sensor_scatter_axis(
             axis,
@@ -655,7 +773,7 @@ def _build_sensor_scatter_figure(
             y_limits=y_limits,
             policy=policy,
         )
-    _finalize_sensor_scatter_figure(figure, axes[0], xlabel=xlabel, ylabel=ylabel)
+    _finalize_sensor_scatter_figure(figure, axes[0], xlabel=xlabel, ylabel=ylabel, policy=policy)
     return figure
 
 
@@ -694,6 +812,8 @@ def _plot_sensor_family_scatter(
     y_column: str,
     palette: Mapping[str, str],
     point_size: float,
+    annotation_fontsize: float,
+    annotation_max_parts_per_line: int,
 ) -> None:
     sns.scatterplot(
         data=sensor_df,
@@ -710,9 +830,13 @@ def _plot_sensor_family_scatter(
         ax=axis,
         points=[(float(row[x_column]), float(row[y_column])) for _, row in sensor_df.iterrows()],
         labels=[
-            _wrap_hyphenated_plot_label(str(row["sponge"]), max_parts_per_line=2) for _, row in sensor_df.iterrows()
+            _wrap_hyphenated_plot_label(
+                str(row["sponge"]),
+                max_parts_per_line=annotation_max_parts_per_line,
+            )
+            for _, row in sensor_df.iterrows()
         ],
-        text_kwargs={"fontsize": 8},
+        text_kwargs={"fontsize": annotation_fontsize},
     )
 
 
@@ -722,6 +846,7 @@ def _finalize_sensor_scatter_figure(
     *,
     xlabel: str,
     ylabel: str,
+    policy: _SensorScatterFigurePolicy,
 ) -> None:
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
@@ -730,7 +855,7 @@ def _finalize_sensor_scatter_figure(
             labels,
             frameon=False,
             loc="center left",
-            bbox_to_anchor=(0.98, 0.5),
+            bbox_to_anchor=(policy.legend_anchor_x, 0.5),
             ncol=1,
             title=None,
         )
@@ -742,7 +867,13 @@ def _finalize_sensor_scatter_figure(
             axis.set_box_aspect(1.0)
     figure.supxlabel(xlabel, y=0.09)
     figure.supylabel(ylabel, x=0.02)
-    figure.subplots_adjust(bottom=0.17, left=0.10, right=0.86, top=0.90, wspace=0.20)
+    figure.subplots_adjust(
+        bottom=policy.bottom,
+        left=policy.left,
+        right=policy.right,
+        top=policy.top,
+        wspace=policy.wspace,
+    )
 
 
 def _fingerprint_comparison_order(fingerprint_df: pd.DataFrame) -> list[str]:
@@ -855,20 +986,37 @@ def _plot_fingerprint_points(
                 )
 
 
-def _fingerprint_support_text(*, max_sources: int) -> str:
-    message = (
-        "Bars show source means; points show source-level estimates against matched tetO."
-        if max_sources > 1
-        else "Bars and points show the single available source estimate against matched tetO."
+def _fingerprint_support_text(fingerprint_df: pd.DataFrame) -> str:
+    window_note = _fingerprint_window_note(fingerprint_df)
+    source_count = (
+        fingerprint_df.groupby(["selected_sponge", "sensor", "comparison_group"], dropna=False)["value"].size().max()
     )
-    return _wrap_plot_label(message, width=110)
+    evidence_note = (
+        "Matched-tetO-referenced effect across intended sensor arms. Bars show source means; "
+        "points show source-level estimates."
+        if pd.notna(source_count) and int(source_count) > 1
+        else "Matched-tetO-referenced effect across intended sensor arms. Points show the source-level estimate."
+    )
+    if window_note:
+        return f"{window_note}; {evidence_note}"
+    return evidence_note
 
 
-def _wrap_plot_label(text: str, *, width: int) -> str:
-    value = str(text or "").strip()
-    if not value or len(value) <= width:
-        return value
-    return textwrap.fill(value, width=width, break_long_words=False, break_on_hyphens=False)
+def _fingerprint_window_note(fingerprint_df: pd.DataFrame) -> str:
+    if not {"summary_window_start_h", "summary_window_end_h"}.issubset(fingerprint_df.columns):
+        return ""
+    window_pairs = (
+        fingerprint_df[["summary_window_start_h", "summary_window_end_h"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values(["summary_window_start_h", "summary_window_end_h"], kind="stable")
+    )
+    if window_pairs.empty or len(window_pairs.index) != 1:
+        return ""
+    row = window_pairs.iloc[0]
+    start_h = float(row["summary_window_start_h"])
+    end_h = float(row["summary_window_end_h"])
+    return f"Relevant-stress primary window: {start_h:.1f} to {end_h:.1f} h after stress addition"
 
 
 def _wrap_hyphenated_plot_label(text: str, *, max_parts_per_line: int = 2) -> str:
@@ -888,14 +1036,24 @@ def _metric_axis_label(metric: str) -> str:
 
 def _architecture_axis_label(architecture_x: str) -> str:
     if str(architecture_x) == "irrelevant_motif_count":
-        return "Extra non-cognate motifs (irrelevant_motif_count)"
-    return "Total motifs in the sponge design (motif_count)"
+        return "Extra non-cognate motifs"
+    return "Total motifs"
 
 
 def _expected_axis_label(expected_mode: str, *, score_metric: str) -> str:
     if str(expected_mode) == "expected_best_single":
-        return f"Best mono baseline ({score_metric})"
-    return f"Sum of mono baselines ({score_metric})"
+        return f"Best mono baseline ({_aggregate_score_axis_label(score_metric)})"
+    return f"Sum of mono baselines ({_aggregate_score_axis_label(score_metric)})"
+
+
+def _aggregate_score_axis_label(metric: str) -> str:
+    labels = {
+        "O_abs_AUC": "total effect",
+        "S_abs_AUC": "scaled total effect",
+        "O_AUC": "post-stress increment",
+        "S_AUC": "scaled increment",
+    }
+    return labels.get(str(metric), _metric_axis_label(metric))
 
 
 def _ordered_text(values: list[str]) -> list[str]:

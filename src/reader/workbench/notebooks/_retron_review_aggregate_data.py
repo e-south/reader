@@ -11,6 +11,9 @@ _FINGERPRINT_FRAME_COLUMNS = [
     "selected_sponge",
     "sensor",
     "stress_condition",
+    "summary_window_start_h",
+    "summary_window_end_h",
+    "summary_window_duration_h",
     "source_experiment_id",
     "source_label",
     "comparison_group",
@@ -112,31 +115,41 @@ def build_fingerprint_frame(
     )
     if not available:
         return pd.DataFrame(columns=_FINGERPRINT_FRAME_COLUMNS)
-    selected_sponge = _select_fingerprint_sponge(available, fingerprint_sponge=fingerprint_sponge)
-    sample_rows = _group_fingerprint_rows(sample_rows[sample_rows["sponge"] == selected_sponge].copy())
-    if sample_rows.empty:
+    selected_sponges = (
+        [_select_fingerprint_sponge(available, fingerprint_sponge=fingerprint_sponge)]
+        if fingerprint_sponge is not None
+        else list(available)
+    )
+    frames: list[pd.DataFrame] = []
+    for selected_sponge in selected_sponges:
+        selected_rows = _group_fingerprint_rows(sample_rows[sample_rows["sponge"] == selected_sponge].copy())
+        if selected_rows.empty:
+            continue
+        control_rows = _group_fingerprint_rows(
+            frame[
+                (frame["metric"] == str(score_metric))
+                & frame["is_relevant_stress"].fillna(False)
+                & (frame["sponge"] == str(control_name))
+                & frame["sensor"].isin(selected_rows["sensor"].astype(str))
+            ].copy()
+        ).rename(
+            columns={
+                "value": "control_value",
+                "sponge": "control_sponge",
+                "sponge_family_size": "control_family_size",
+            }
+        )
+        paired_rows = _pair_fingerprint_rows(selected_rows, control_rows)
+        frames.append(
+            _build_fingerprint_long_frame(
+                paired_rows,
+                selected_sponge=selected_sponge,
+                control_name=control_name,
+            )
+        )
+    if not frames:
         return pd.DataFrame(columns=_FINGERPRINT_FRAME_COLUMNS)
-    control_rows = _group_fingerprint_rows(
-        frame[
-            (frame["metric"] == str(score_metric))
-            & frame["is_relevant_stress"].fillna(False)
-            & (frame["sponge"] == str(control_name))
-            & frame["sensor"].isin(sample_rows["sensor"].astype(str))
-        ].copy()
-    ).rename(
-        columns={
-            "value": "control_value",
-            "sponge": "control_sponge",
-            "sponge_family_size": "control_family_size",
-        }
-    )
-    paired_rows = _pair_fingerprint_rows(sample_rows, control_rows)
-    out = _build_fingerprint_long_frame(
-        paired_rows,
-        selected_sponge=selected_sponge,
-        control_name=control_name,
-    )
-    return _sorted_fingerprint_frame(out)
+    return _sorted_fingerprint_frame(pd.concat(frames, ignore_index=True))
 
 
 def available_multifunctional_sponges(summary_df: pd.DataFrame) -> list[str]:
@@ -320,6 +333,9 @@ def _group_fingerprint_rows(frame: pd.DataFrame) -> pd.DataFrame:
             "source_label",
             "sensor",
             "stress_condition",
+            "summary_window_start_h",
+            "summary_window_end_h",
+            "summary_window_duration_h",
             "sponge",
             "sponge_family_size",
         )
@@ -350,6 +366,9 @@ def _build_fingerprint_long_frame(
     has_source_experiment_id = "source_experiment_id" in paired_rows.columns
     has_source_label = "source_label" in paired_rows.columns
     has_stress_condition = "stress_condition" in paired_rows.columns
+    has_window_start = "summary_window_start_h" in paired_rows.columns
+    has_window_end = "summary_window_end_h" in paired_rows.columns
+    has_window_duration = "summary_window_duration_h" in paired_rows.columns
     has_sample_family_size = "sponge_family_size" in paired_rows.columns
     has_control_sponge = "control_sponge" in paired_rows.columns
     has_control_family_size = "control_family_size" in paired_rows.columns
@@ -357,12 +376,18 @@ def _build_fingerprint_long_frame(
         source_experiment_id = row.source_experiment_id if has_source_experiment_id else pd.NA
         source_label = row.source_label if has_source_label else pd.NA
         stress_condition = row.stress_condition if has_stress_condition else pd.NA
+        summary_window_start_h = row.summary_window_start_h if has_window_start else pd.NA
+        summary_window_end_h = row.summary_window_end_h if has_window_end else pd.NA
+        summary_window_duration_h = row.summary_window_duration_h if has_window_duration else pd.NA
         sensor = str(row.sensor)
         long_rows.append(
             {
                 "selected_sponge": selected_sponge,
                 "sensor": sensor,
                 "stress_condition": stress_condition,
+                "summary_window_start_h": summary_window_start_h,
+                "summary_window_end_h": summary_window_end_h,
+                "summary_window_duration_h": summary_window_duration_h,
                 "source_experiment_id": source_experiment_id,
                 "source_label": source_label,
                 "comparison_group": "Selected sponge",
@@ -378,6 +403,9 @@ def _build_fingerprint_long_frame(
                     "selected_sponge": selected_sponge,
                     "sensor": sensor,
                     "stress_condition": stress_condition,
+                    "summary_window_start_h": summary_window_start_h,
+                    "summary_window_end_h": summary_window_end_h,
+                    "summary_window_duration_h": summary_window_duration_h,
                     "source_experiment_id": source_experiment_id,
                     "source_label": source_label,
                     "comparison_group": "tetO reference",
@@ -393,13 +421,27 @@ def _sorted_fingerprint_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
     out = frame.copy()
+    sponge_order = sorted(
+        out["selected_sponge"].dropna().astype(str).unique(), key=retron_review_shared.sponge_sort_key
+    )
+    sponge_order_map = {sponge: idx for idx, sponge in enumerate(sponge_order)}
     sensor_order = sorted(out["sensor"].dropna().astype(str).unique())
     sensor_order_map = {sensor: idx for idx, sensor in enumerate(sensor_order)}
+    out["__selected_sponge_order"] = out["selected_sponge"].map(sponge_order_map)
     out["__sensor_order"] = out["sensor"].map(sensor_order_map)
     out["__group_order"] = out["comparison_group"].map({"tetO reference": 0, "Selected sponge": 1}).fillna(99)
-    order = ["__sensor_order", "__group_order", "source_experiment_id", "source_label", "sponge"]
+    order = [
+        "__selected_sponge_order",
+        "__sensor_order",
+        "__group_order",
+        "source_experiment_id",
+        "source_label",
+        "sponge",
+    ]
     return (
-        out.sort_values(order, kind="stable").drop(columns=["__sensor_order", "__group_order"]).reset_index(drop=True)
+        out.sort_values(order, kind="stable")
+        .drop(columns=["__selected_sponge_order", "__sensor_order", "__group_order"])
+        .reset_index(drop=True)
     )
 
 

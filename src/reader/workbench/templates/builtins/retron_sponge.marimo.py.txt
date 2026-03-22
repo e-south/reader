@@ -212,9 +212,9 @@ def _(
             mo.md(
                 f"# Retron sponge review\n"
                 f"Experiment: `{retron_scope_exp_title}`\n\n"
-                "Start with QC raw channels to decide whether the run is trustworthy. Then use "
-                "Sponge vs matched tetO to ask whether +IPTG moves the assay ratio beyond the same-sensor "
-                "tetO control, and whether that movement is already present before stress or emerges after stress."
+                "Start with QC raw channels to decide whether the wells are clean enough to trust. "
+                "Then use Sponge vs matched tetO to ask whether +IPTG shifts the assay ratio beyond the same-sensor "
+                "tetO control, and whether that shift is already present before stress or only appears afterward."
             ),
             mo.ui.tabs(
                 {

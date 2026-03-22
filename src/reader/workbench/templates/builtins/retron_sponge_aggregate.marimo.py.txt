@@ -12,7 +12,6 @@ def _():
 
     from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.notebooks.retron_review import (
-        available_multifunctional_sponges,
         build_label_value_options,
         contextualize_retron_plot_copy,
         dataframe_to_csv_bytes,
@@ -39,7 +38,6 @@ def _():
 
     return (
         Path,
-        available_multifunctional_sponges,
         build_label_value_options,
         contextualize_retron_plot_copy,
         dataframe_to_csv_bytes,
@@ -194,10 +192,10 @@ def _(
             mo.md(
                 f"# Retron sponge review set\n"
                 f"Experiment: `{retron_aggregate_exp_title}`\n\n"
-                "Use the aggregate panels to rank across experiments, then drill back to the source "
-                "sponge-versus-matched-tetO summary when you need the raw traces and within-run context. "
-                "The aggregate path opens on the absolute expected-direction score before the incremental "
-                "views."
+                "Start here when you want to compare constructs across source experiments. "
+                "These panels summarize the relevant-stress assay window across the review set. "
+                "Choose the source experiment view below when you need the QC context, the matched tetO comparison, "
+                "or the experiment-local traces behind one result."
             ),
             mo.ui.tabs(
                 {
@@ -311,7 +309,21 @@ def _(retron_aggregate_overview_panel):
 
 
 @app.cell(hide_code=True)
-def _(available_multifunctional_sponges, mo, retron_aggregate_bundle, retron_aggregate_plot_selector_options):
+def _(mo):
+    retron_review_surface_selector = mo.ui.dropdown(
+        options={
+            "Aggregate view": "Aggregate view",
+            "Source experiment view": "Source experiment view",
+        },
+        value="Aggregate view",
+        label="Review surface",
+        full_width=False,
+    )
+    return (retron_review_surface_selector,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_aggregate_plot_selector_options):
     retron_aggregate_plot_selector = mo.ui.dropdown(
         options=retron_aggregate_plot_selector_options,
         value=next(iter(retron_aggregate_plot_selector_options), None),
@@ -336,23 +348,9 @@ def _(available_multifunctional_sponges, mo, retron_aggregate_bundle, retron_agg
         label="Expected multi-site baseline",
         full_width=False,
     )
-    retron_aggregate_fingerprint_options = {
-        sponge: sponge for sponge in available_multifunctional_sponges(retron_aggregate_bundle.summary_df)
-    }
-    retron_aggregate_fingerprint_selector = (
-        mo.ui.dropdown(
-            options=retron_aggregate_fingerprint_options,
-            value=next(iter(retron_aggregate_fingerprint_options), None),
-            label="Fingerprint sponge",
-            full_width=False,
-        )
-        if retron_aggregate_fingerprint_options
-        else None
-    )
     return (
         retron_aggregate_architecture_selector,
         retron_aggregate_expected_selector,
-        retron_aggregate_fingerprint_selector,
         retron_aggregate_plot_selector,
         retron_aggregate_score_selector,
     )
@@ -362,7 +360,6 @@ def _(available_multifunctional_sponges, mo, retron_aggregate_bundle, retron_agg
 def _(
     retron_aggregate_architecture_selector,
     retron_aggregate_expected_selector,
-    retron_aggregate_fingerprint_selector,
     retron_aggregate_plot_selector,
 ):
     retron_aggregate_selected_plot_id = retron_aggregate_plot_selector.value
@@ -371,8 +368,6 @@ def _(
         retron_aggregate_specific_controls.append(retron_aggregate_architecture_selector)
     elif retron_aggregate_selected_plot_id == "expected_vs_observed":
         retron_aggregate_specific_controls.append(retron_aggregate_expected_selector)
-    elif retron_aggregate_selected_plot_id == "sponge_fingerprint":
-        retron_aggregate_specific_controls.append(retron_aggregate_fingerprint_selector)
     return retron_aggregate_selected_plot_id, retron_aggregate_specific_controls
 
 
@@ -402,7 +397,6 @@ def _(
     retron_aggregate_architecture_selector,
     retron_aggregate_bundle,
     retron_aggregate_expected_selector,
-    retron_aggregate_fingerprint_selector,
     retron_aggregate_score_selector,
     retron_aggregate_selected_plot_id,
     try_render_retron_aggregate_plot_cached,
@@ -414,9 +408,7 @@ def _(
         score_metric=retron_aggregate_score_selector.value,
         architecture_x=retron_aggregate_architecture_selector.value,
         expected_mode=retron_aggregate_expected_selector.value,
-        fingerprint_sponge=(
-            retron_aggregate_fingerprint_selector.value if retron_aggregate_fingerprint_selector is not None else None
-        ),
+        fingerprint_sponge=None,
     )
     return retron_aggregate_result, retron_aggregate_result_error, retron_aggregate_selected_plot_id
 
@@ -609,11 +601,16 @@ def _(build_label_value_options, mo, retron_aggregate_bundle, retron_source_sele
 
 
 @app.cell(hide_code=True)
-def _(load_retron_source_surface, retron_aggregate_bundle, retron_source_selector):
+def _(
+    load_retron_source_surface,
+    retron_aggregate_bundle,
+    retron_review_surface_selector,
+    retron_source_selector,
+):
     retron_source_selected_source = None
     retron_source_surface = None
     retron_source_surface_error = None
-    if retron_source_selector.value is not None:
+    if retron_review_surface_selector.value == "Source experiment view" and retron_source_selector.value is not None:
         retron_source_selected_source = retron_aggregate_bundle.sources[int(retron_source_selector.value)]
         try:
             retron_source_surface = load_retron_source_surface(retron_source_selected_source)
@@ -1042,36 +1039,35 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    retron_master_surface_selector = mo.ui.radio(
-        options=[
-            "Aggregate views",
-            "Source experiments",
-        ],
-        value="Aggregate views",
-        inline=True,
-        label="Review surface",
-    )
-    return (retron_master_surface_selector,)
-
-
-@app.cell(hide_code=True)
 def _(
     mo,
     retron_aggregate_review_panel,
-    retron_master_surface_selector,
     retron_source_review_panel,
+    retron_review_surface_selector,
 ):
+    retron_selected_review_panel = (
+        mo.vstack(
+            [
+                mo.md("## Aggregate view"),
+                retron_aggregate_review_panel,
+            ],
+            gap=0.35,
+        )
+        if retron_review_surface_selector.value == "Aggregate view"
+        else mo.vstack(
+            [
+                mo.md("## Source experiment view"),
+                retron_source_review_panel,
+            ],
+            gap=0.35,
+        )
+    )
     retron_master_review_panel = mo.vstack(
         [
-            retron_master_surface_selector,
-            (
-                retron_aggregate_review_panel
-                if retron_master_surface_selector.value == "Aggregate views"
-                else retron_source_review_panel
-            ),
+            retron_review_surface_selector,
+            retron_selected_review_panel,
         ],
-        gap=0.45,
+        gap=0.35,
     )
     return (retron_master_review_panel,)
 

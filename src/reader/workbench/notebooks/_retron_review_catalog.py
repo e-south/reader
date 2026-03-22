@@ -51,7 +51,10 @@ _RETRON_SOURCE_SELECTOR_PRESENTATIONS = {
     "bi": SourceSelectorPresentation(display_label="bi"),
     "tri": SourceSelectorPresentation(display_label="tri"),
     "quad": SourceSelectorPresentation(display_label="tetra"),
+    "tetra": SourceSelectorPresentation(display_label="tetra"),
     "control": SourceSelectorPresentation(display_label="control"),
+    "lexA_cpxr_baer_bi": SourceSelectorPresentation(display_label="bi · LexA/CpxR/BaeR"),
+    "sox_bi": SourceSelectorPresentation(display_label="bi · Sox family"),
 }
 
 _RETRON_EXPERIMENT_PLOT_GUIDES = {
@@ -136,11 +139,11 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         selector_title="Total effect beyond matched tetO over time",
     ),
     "control_anchored_decomposition": ExperimentPlotGuideMetadata(
-        title="Sponge vs matched tetO",
+        title="Reporter-ratio shifts by IPTG state against matched tetO",
         stage="2. Assay kinetics",
         question=(
-            "Does +IPTG move the sponge beyond matched tetO, and does that signal come from preload, "
-            "post-stress movement, or both?"
+            "Does +IPTG shift the reporter ratio away from the matched tetO control, and is that shift already "
+            "present before stress or does it emerge after stress?"
         ),
         math=(
             "R(t)=log2(YFP/CFP)\n"
@@ -150,8 +153,8 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         ),
         record="semantic_metrics/trace",
         meaning=(
-            "Primary assay summary. Relevant-stress and H2O reporter-ratio traces show whether the sponge moves beyond "
-            "matched tetO and whether that signal comes from preload, post-stress change, or both."
+            "Primary assay readout. Each row keeps the raw reporter-ratio traces beside preload, total effect, "
+            "and post-stress summaries so the matched tetO comparison stays tied to the signal the wells produced."
         ),
         display_order=20,
         selector_title="Sponge vs matched tetO",
@@ -170,13 +173,18 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         title="Library heatmaps",
         stage="3. Ranking and overview",
         question=(
-            "Across the library, which pairs have strong total effect, which are mostly post-stress, and which are preload-heavy?"
+            "Across the library, which designs carry their signal in total matched-tetO effect, in the post-stress "
+            "increment, or in preload before stress?"
         ),
-        math="Relevant-stress heatmaps over S_abs_AUC, S_AUC, and P_pre.",
+        math=(
+            "Total effect: S_abs_AUC = O_abs_AUC / |G_sensor|\n"
+            "Post-stress: S_AUC = O_AUC / |G_sensor|\n"
+            "Preload: P_pre = delta_IPTG[R_pre - R_pre,tetO,matched]"
+        ),
         record="semantic_metrics/summary",
         meaning=(
-            "Lead with the absolute score to answer whether a sponge works at all, then use the incremental and "
-            "preload panels to separate stress-gated hits from preload-driven hits."
+            "These panels summarize the relevant-stress rows. The AUC panels come from the primary post-stress "
+            "window, while preload shows the matched-control offset that was already present before the stress pulse."
         ),
         display_order=50,
         selector_title="Library heatmaps",
@@ -566,18 +574,19 @@ RETRON_AGGREGATE_PLOT_CATALOG = {
     ),
     "sponge_fingerprint": AggregatePlotCatalogEntry(
         guide=AggregatePlotGuideMetadata(
-            title="Sponge fingerprint",
-            question="For one multi-functional sponge, which intended sensor arms are strong and which are weak?",
-            math="score(sensor)=O_abs_AUC, S_abs_AUC, O_AUC, or S_AUC for the selected sponge, shown beside matched tetO references",
+            title="Relevant sensor arms by sponge",
+            question="Across the multifunctional sponges, which intended sensor arms are strong and which are weak?",
+            math=(
+                "score(sensor,sponge)=O_abs_AUC, S_abs_AUC, O_AUC, or S_AUC at the relevant stress, "
+                "shown beside matched tetO references"
+            ),
             meaning=(
-                "Shows whether a multi-functional sponge is balanced across its intended sensor arms and how far "
+                "Shows whether each multifunctional sponge is balanced across its intended sensor arms and how far "
                 "each arm moves away from the matched tetO baseline."
             ),
             display_order=50,
         ),
-        supporting_table_title=(
-            "Relevant-sensor score table for the selected multifunctional sponge and its source-matched tetO references"
-        ),
+        supporting_table_title="Relevant-sensor score table for multifunctional sponges and their source-matched tetO references",
     ),
 }
 
@@ -658,7 +667,8 @@ def source_selector_presentation(*, label: str, experiment_id: str) -> SourceSel
     normalized = str(label).strip()
     if normalized in _RETRON_SOURCE_SELECTOR_PRESENTATIONS:
         return _RETRON_SOURCE_SELECTOR_PRESENTATIONS[normalized]
-    return SourceSelectorPresentation(display_label=normalized or str(experiment_id))
+    humanized = normalized.replace("_", " ")
+    return SourceSelectorPresentation(display_label=humanized or str(experiment_id))
 
 
 def _copy_rows(rows: tuple[dict[str, str], ...]) -> list[dict[str, str]]:

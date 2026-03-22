@@ -41,13 +41,23 @@ def filter_supporting_table_for_figure(table: pd.DataFrame, *, filename: str | N
     return frame.reset_index(drop=True)
 
 
-def retron_notebook_table_preview(table: pd.DataFrame | None, *, max_rows: int = 500) -> pd.DataFrame | None:
+def retron_notebook_table_preview(
+    table: pd.DataFrame | None,
+    *,
+    max_rows: int = 500,
+    max_bytes: int = 350_000,
+) -> pd.DataFrame | None:
     if table is None:
         return None
     frame = table.reset_index(drop=True)
-    if max_rows <= 0 or len(frame) <= max_rows:
+    if max_rows > 0 and len(frame) > max_rows:
+        frame = frame.head(max_rows).copy()
+    if max_bytes <= 0 or frame.empty:
         return frame
-    return frame.head(max_rows).copy()
+    preview = frame
+    while len(preview) > 1 and _dataframe_csv_bytes(preview) > max_bytes:
+        preview = preview.head(max(1, len(preview) // 2)).copy()
+    return preview
 
 
 def figure_to_download_bytes(figure: Any, *, fmt: str) -> bytes:
@@ -135,3 +145,7 @@ def _scope_token(filename: str, *, key: str) -> str | None:
         return None
     token = value.split(marker, 1)[1]
     return token.strip() or None
+
+
+def _dataframe_csv_bytes(df: pd.DataFrame) -> int:
+    return len(df.to_csv(index=False).encode("utf-8"))

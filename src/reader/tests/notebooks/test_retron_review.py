@@ -32,6 +32,7 @@ from reader.workbench.notebooks.retron_review import (
     retron_aggregate_plot_rows,
     retron_experiment_plot_rows,
     retron_figure_coverage_rows,
+    retron_notebook_table_preview,
     retron_plot_guide_rows,
     retron_plot_rendered_files,
     retron_source_selector_rows,
@@ -211,6 +212,21 @@ def test_retron_review_bundle_loads_manifest_and_builds_cross_run_frames(tmp_pat
     assert float(quad_sox["expected_best_single"]) == pytest.approx(0.30)
     assert float(quad_sox["expected_sum"]) == pytest.approx(0.50)
     assert float(quad_sox["observed"]) == pytest.approx(0.48)
+
+
+def test_retron_notebook_table_preview_respects_byte_budget() -> None:
+    frame = pd.DataFrame(
+        {
+            "sensor": ["spyP"] * 40,
+            "details": ["x" * 20_000] * 40,
+        }
+    )
+
+    preview = retron_notebook_table_preview(frame, max_rows=40, max_bytes=150_000)
+
+    assert preview is not None
+    assert 1 <= len(preview) < len(frame)
+    assert len(preview.to_csv(index=False).encode("utf-8")) <= 150_000
 
 
 def test_retron_review_bundle_upgrades_legacy_absolute_metrics_for_aggregate_review(tmp_path: Path) -> None:
@@ -623,6 +639,43 @@ def test_retron_source_selector_rows_only_expand_duplicate_labels() -> None:
     ]
 
 
+def test_retron_source_selector_rows_humanize_known_review_manifest_labels() -> None:
+    dummy_summary = Path("outputs/exports/retron/semantic_summary.csv")
+    dummy_trace = Path("outputs/exports/retron/semantic_trace.csv")
+    bundle = RetronReviewBundle(
+        manifest_path=Path("inputs/review_manifest.yaml"),
+        sources=(
+            RetronReviewSource(
+                label="lexA_cpxr_baer_bi",
+                experiment_id="exp_bi",
+                experiment_root=None,
+                config_path=None,
+                summary_path=dummy_summary,
+                trace_path=dummy_trace,
+            ),
+            RetronReviewSource(
+                label="sox_bi",
+                experiment_id="exp_sox",
+                experiment_root=None,
+                config_path=None,
+                summary_path=dummy_summary,
+                trace_path=dummy_trace,
+            ),
+        ),
+        summary_df=pd.DataFrame(),
+        trace_df=pd.DataFrame(),
+        relevant_stress_map={},
+        sensor_target_map={},
+    )
+
+    rows = retron_source_selector_rows(bundle)
+
+    assert rows == [
+        {"Selector label": "bi · LexA/CpxR/BaeR", "Index": 0},
+        {"Selector label": "bi · Sox family", "Index": 1},
+    ]
+
+
 def test_retron_figure_coverage_rows_call_out_cross_run_and_follow_on_views() -> None:
     coverage = retron_figure_coverage_rows()
     by_figure = {row["Figure"]: row for row in coverage}
@@ -787,7 +840,10 @@ def test_retron_experiment_plot_rows_prioritize_matched_teto_summary() -> None:
         [
             {"id": "raw_kinetics", "with": {"title": "Raw kinetics"}},
             {"id": "absolute_effect_kinetics", "with": {"title": "Absolute effect"}},
-            {"id": "control_anchored_decomposition", "with": {"title": "Sponge vs matched tetO"}},
+            {
+                "id": "control_anchored_decomposition",
+                "with": {"title": "Reporter-ratio shifts by IPTG state against matched tetO"},
+            },
         ]
     )
 
@@ -899,7 +955,7 @@ def test_retron_plot_guide_rows_share_registered_experiment_plot_copy() -> None:
     assert rows == [
         {
             "Stage": "2. Assay kinetics",
-            "Plot": "Sponge vs matched tetO",
+            "Plot": "Reporter-ratio shifts by IPTG state against matched tetO",
             "Plot id": "control_anchored_decomposition",
             "Math / transform": (
                 "R(t)=log2(YFP/CFP)\n"
@@ -909,8 +965,8 @@ def test_retron_plot_guide_rows_share_registered_experiment_plot_copy() -> None:
             ),
             "Source record": "semantic_metrics/trace",
             "How to read": (
-                "Primary assay summary. Relevant-stress and H2O reporter-ratio traces show whether the sponge moves "
-                "beyond matched tetO and whether that signal comes from preload, post-stress change, or both."
+                "Primary assay readout. Each row keeps the raw reporter-ratio traces beside preload, total effect, "
+                "and post-stress summaries so the matched tetO comparison stays tied to the signal the wells produced."
             ),
         }
     ]
@@ -1338,7 +1394,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
     assert result.title == "Sponge vs matched tetO"
     assert "matched tetO" in result.question
     assert result.math.startswith("R(t)=log2(YFP/CFP)")
-    assert result.meaning.startswith("Primary assay summary.")
+    assert result.meaning.startswith("Primary assay readout.")
     assert {
         "panel_role",
         "primary_stress",
@@ -1835,6 +1891,8 @@ def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
     assert {text.get_text() for text in legend.get_texts()} == {"mono", "bi"}
     assert x_tick_sizes == {7.0}
     assert y_tick_sizes == {7.0}
+    assert result.figure.axes[0].get_xlabel() == "Mean scaled increment"
+    assert result.figure.axes[0].get_ylabel() == "Mean burden penalty"
     plt.close(result.figure)
 
 
@@ -1952,6 +2010,66 @@ def test_build_fingerprint_frame_preserves_source_replicates_and_matched_teto_ro
     assert set(frame["sensor"]) == {"spyP", "sulAp"}
     assert frame["selected_sponge"].tolist() == ["CpxR-LexA"] * len(frame)
     assert len(frame) == 8
+
+
+def test_build_fingerprint_frame_without_requested_sponge_includes_all_multifunctional_sponges() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "bi",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "tri",
+                "sensor": "soxSp",
+                "sponge": "BaeR-LexA-SoxR",
+                "stress_condition": "15 µM PMS",
+                "metric": "S_AUC",
+                "value": 0.31,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "tri",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "bi",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "tri",
+                "sensor": "soxSp",
+                "sponge": "tetO",
+                "stress_condition": "15 µM PMS",
+                "metric": "S_AUC",
+                "value": -0.03,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ]
+    )
+
+    frame = build_fingerprint_frame(summary, score_metric="S_AUC", fingerprint_sponge=None)
+
+    assert set(frame["selected_sponge"]) == {"CpxR-LexA", "BaeR-LexA-SoxR"}
+    assert set(frame["comparison_group"]) == {"Selected sponge", "tetO reference"}
 
 
 def test_build_fingerprint_frame_rejects_unknown_requested_sponge() -> None:
@@ -2088,18 +2206,96 @@ def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> No
         fingerprint_sponge="CpxR-LexA",
     )
 
-    assert result.title == "Sponge fingerprint"
+    assert result.title == "Relevant sensor arms by sponge"
     assert result.figure is not None
     assert set(result.supporting_table["comparison_group"]) == {"Selected sponge", "tetO reference"}
     axis = result.figure.axes[0]
-    assert axis.get_title() == "CpxR-LexA"
+    assert axis.get_title() == ""
     assert [label.get_text() for label in axis.get_xticklabels()] == ["spyP", "sulAp"]
     assert len(axis.patches) == 4
     assert len(axis.collections) >= 4
     legend = axis.get_legend()
     assert legend is not None
-    assert any("Bars show source means" in text.get_text() for text in result.figure.texts)
+    assert result.figure._suptitle is not None
+    assert result.figure._suptitle.get_text() == "Relevant sensor arms · CpxR-LexA"
+    assert any(
+        "Matched-tetO-referenced effect across intended sensor arms" in text.get_text() for text in result.figure.texts
+    )
+    assert any("source means" in text.get_text() for text in result.figure.texts)
     assert {text.get_text() for text in legend.get_texts()} == {"Selected sponge", "tetO reference"}
+    plt.close(result.figure)
+
+
+def test_render_retron_aggregate_plot_can_facet_all_multifunctional_sponges_in_one_figure() -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "bi",
+                "sensor": "spyP",
+                "sponge": "CpxR-LexA",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.42,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "bi",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "tri",
+                "sensor": "soxSp",
+                "sponge": "BaeR-LexA-SoxR",
+                "stress_condition": "15 µM PMS",
+                "metric": "S_AUC",
+                "value": 0.31,
+                "relevant_sensor_pair": True,
+                "is_relevant_stress": True,
+                "sponge_family_size": "tri",
+            },
+            {
+                "source_experiment_id": "exp_a",
+                "source_label": "bi",
+                "sensor": "spyP",
+                "sponge": "tetO",
+                "stress_condition": "3% EtOH",
+                "metric": "S_AUC",
+                "value": 0.01,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+            {
+                "source_experiment_id": "exp_b",
+                "source_label": "tri",
+                "sensor": "soxSp",
+                "sponge": "tetO",
+                "stress_condition": "15 µM PMS",
+                "metric": "S_AUC",
+                "value": -0.03,
+                "relevant_sensor_pair": False,
+                "is_relevant_stress": True,
+                "sponge_family_size": "control",
+            },
+        ]
+    )
+
+    result = render_retron_aggregate_plot(
+        "sponge_fingerprint",
+        summary_df=summary,
+        sensor_target_map={"spyP": ("CpxR", "BaeR"), "soxSp": ("SoxR", "SoxS")},
+        score_metric="S_AUC",
+        architecture_x="irrelevant_motif_count",
+        expected_mode="expected_sum",
+        fingerprint_sponge=None,
+    )
+
+    assert result.figure is not None
+    assert result.figure._suptitle is not None
+    assert result.figure._suptitle.get_text() == "Relevant sensor arms by sponge"
+    visible_axes = [axis for axis in result.figure.axes if axis.get_visible()]
+    assert len(visible_axes) >= 2
+    assert {axis.get_title() for axis in visible_axes[:2]} == {"CpxR-LexA", "BaeR-LexA-SoxR"}
     plt.close(result.figure)
 
 
@@ -2189,6 +2385,12 @@ def test_render_retron_aggregate_architecture_plot_uses_shared_subplot_limits() 
     axes = [axis for axis in result.figure.axes if axis.get_visible()]
     assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
     assert axes[0].get_ylim() == pytest.approx(axes[1].get_ylim())
+    assert result.figure._supxlabel.get_text() == "Extra non-cognate motifs"
+    assert result.figure._supylabel.get_text() == "scaled increment"
+    assert result.figure.legends
+    architecture_legend = result.figure.legends[0]
+    architecture_anchor = architecture_legend.get_bbox_to_anchor().transformed(result.figure.transFigure.inverted())
+    assert architecture_anchor.x0 < 0.96
     plt.close(result.figure)
 
 
@@ -2266,6 +2468,12 @@ def test_render_retron_aggregate_expected_vs_observed_uses_shared_square_limits(
     axes = [axis for axis in result.figure.axes if axis.get_visible()]
     assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
     assert axes[0].get_xlim() == pytest.approx(axes[0].get_ylim())
+    assert result.figure._supxlabel.get_text() == "Best mono baseline (scaled increment)"
+    assert result.figure._supylabel.get_text() == "Observed multifunction score (scaled increment)"
+    assert result.figure.legends
+    expected_legend = result.figure.legends[0]
+    expected_anchor = expected_legend.get_bbox_to_anchor().transformed(result.figure.transFigure.inverted())
+    assert expected_anchor.x0 < 0.96
     plt.close(result.figure)
 
 
