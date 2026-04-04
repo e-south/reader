@@ -13,9 +13,15 @@ from reader.workbench import resolve_workbench
 from reader.workbench.engine import run_spec
 from reader.workbench.records import RecordStore
 
+pytestmark = pytest.mark.integration
+
 
 def _stage_experiment(tmp_path: Path, rel_dir: str) -> Path:
     source = REPO_ROOT / "experiments" / rel_dir
+    if not source.exists():
+        pytest.skip(f"Experiment fixture missing from checkout: {source}")
+    if not (source / "inputs").exists():
+        pytest.skip(f"Experiment inputs missing from checkout: {source / 'inputs'}")
     target = tmp_path / source.name
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "config.yaml", target / "config.yaml")
@@ -45,7 +51,6 @@ def _run(
     )
 
 
-@pytest.mark.integration
 @pytest.mark.fleet
 @pytest.mark.parametrize("config_path", END_TO_END_RUNNABLE_CONFIGS, ids=repo_rel)
 def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path: Path) -> None:

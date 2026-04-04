@@ -101,7 +101,7 @@ addopts = [
   "--strict-markers",
   "-ra",
   "-m",
-  "not fleet",
+  "not integration and not fleet",
 ]
 
 markers = [

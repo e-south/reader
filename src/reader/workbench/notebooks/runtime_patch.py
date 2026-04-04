@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import importlib
 from typing import Final
+from urllib.parse import quote
 
 _PATCH_SENTINEL: Final[str] = "_reader_service_worker_patch_installed"
 
 
 def _build_safe_service_worker_script(file_key: str) -> str:
-    output_utils = importlib.import_module("marimo._output.utils")
-    notebook_id = output_utils.uri_encode_component(file_key)
+    notebook_id = quote(file_key, safe="")
     return f"""
         if ('serviceWorker' in navigator) {{
             const notebookId = '{notebook_id}';

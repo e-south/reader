@@ -72,7 +72,7 @@ def test_ls_compact_name_column(monkeypatch, tmp_path: Path) -> None:
     assert max_line <= 80
 
 
-def test_ls_excludes_template_dirs_by_default(monkeypatch, tmp_path: Path) -> None:
+def test_ls_excludes_template_dirs_by_default(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     year_dir = exp_root / "2025" / "real_exp"
     template_dir = exp_root / "template"
@@ -81,13 +81,12 @@ def test_ls_excludes_template_dirs_by_default(monkeypatch, tmp_path: Path) -> No
     write_config(year_dir / "config.yaml", _base_config())
     write_config(template_dir / "config.yaml", _base_config())
 
-    test_console = Console(width=80, record=True, theme=cli.THEME, force_terminal=True)
-    monkeypatch.setattr(cli.shared, "console", test_console)
-    cli.ls(root=str(exp_root), include_scaffolds=False)
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--format", "json"])
 
-    output = test_console.export_text()
-    assert "real_exp" in output
-    assert "template" not in output
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [item["name"] for item in payload["experiments"]] == ["real_exp"]
 
 
 def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) -> None:

@@ -30,12 +30,16 @@ def runtime():
     return builtin_runtime()
 
 
-RETRON_SPONGE_CONFIGS = (
-    "experiments/2026/20260313_mono_functional_sponges/config.yaml",
-    "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml",
-    "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml",
-    "experiments/2026/20260316_tri_functional_sponges/config.yaml",
-    "experiments/2026/20260317_tetra_functional_sponges/config.yaml",
+RETRON_SPONGE_CONFIGS = tuple(
+    relative_path
+    for relative_path in (
+        "experiments/2026/20260313_mono_functional_sponges/config.yaml",
+        "experiments/2026/20260314_bi_functional_lexA_cpxR_baeR_family_sponges/config.yaml",
+        "experiments/2026/20260315_bi_functional_sox_family_sponges/config.yaml",
+        "experiments/2026/20260316_tri_functional_sponges/config.yaml",
+        "experiments/2026/20260317_tetra_functional_sponges/config.yaml",
+    )
+    if (REPO_ROOT / relative_path).exists()
 )
 RETRON_SPONGE_FULL_PLOT_IDS = [
     "raw_kinetics",
@@ -49,6 +53,10 @@ RETRON_SPONGE_FULL_PLOT_IDS = [
     "pareto_ranking",
 ]
 CROSSTALK_CONFIG = "experiments/2025/20250620_sensor_panel_crosstalk/config.yaml"
+
+
+def _repo_inputs_available(config_path: Path) -> bool:
+    return (config_path.parent / "inputs").exists()
 
 
 @pytest.mark.parametrize("config_path", EXPERIMENT_CONFIGS, ids=lambda path: str(path.relative_to(REPO_ROOT)))
@@ -74,6 +82,9 @@ def test_repo_experiment_configs_file_preflight_matches_known_repo_state(config_
         if summary["status"] == "error":
             assert any(OPTIONAL_DEPENDENCY_BLOCKERS[rel] in item for item in summary["errors"])
         return
+
+    if not _repo_inputs_available(config_path):
+        pytest.skip(f"{rel}: repo checkout does not include experiment inputs")
 
     assert summary["status"] == "ok", f"{rel}: {summary['errors']}"
 
@@ -128,6 +139,8 @@ def test_repo_cli_inventory_details_matches_experiment_discovery() -> None:
 
 def test_crosstalk_repo_config_surfaces_both_heatmaps_via_cli() -> None:
     config_path = REPO_ROOT / CROSSTALK_CONFIG
+    if not config_path.exists():
+        pytest.skip(f"{CROSSTALK_CONFIG} is not present in this checkout")
     runner = CliRunner()
 
     result = runner.invoke(app, ["plot", str(config_path), "--list", "--format", "json"])
