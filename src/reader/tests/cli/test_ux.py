@@ -109,15 +109,34 @@ def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) ->
 
 def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
-    template_dir = exp_root / "template"
     year_dir = exp_root / "2025" / "real_exp"
+    template_dir = exp_root / "2025" / "_template_alpha"
     template_dir.mkdir(parents=True)
     year_dir.mkdir(parents=True)
     write_config(template_dir / "config.yaml", _base_config())
     write_config(year_dir / "config.yaml", _base_config())
 
     monkeypatch.chdir(tmp_path)
-    assert cli._infer_job_path("2") == (template_dir / "config.yaml").resolve()
+    assert cli._infer_job_path("1") == (template_dir / "config.yaml").resolve()
+    assert cli._infer_job_path("2") == (year_dir / "config.yaml").resolve()
+
+
+def test_ls_preserves_shared_numeric_indexes_when_scaffolds_are_hidden(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    year_dir = exp_root / "2025" / "real_exp"
+    template_dir = exp_root / "2025" / "_template_alpha"
+    template_dir.mkdir(parents=True)
+    year_dir.mkdir(parents=True)
+    write_config(template_dir / "config.yaml", _base_config())
+    write_config(year_dir / "config.yaml", _base_config())
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [item["name"] for item in payload["experiments"]] == ["real_exp"]
+    assert [item["index"] for item in payload["experiments"]] == [2]
 
 
 def test_ls_all_includes_template_dirs(monkeypatch, tmp_path: Path) -> None:

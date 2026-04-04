@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -229,6 +230,12 @@ def _input_df_explicit_semantics() -> pd.DataFrame:
     return df
 
 
+def _input_df_explicit_semantics_with_custom_no_stress(no_stress_label: str) -> pd.DataFrame:
+    df = _input_df_explicit_semantics()
+    df["stress_condition_id"] = df["stress_condition_id"].replace({"H2O": str(no_stress_label)})
+    return df
+
+
 def test_retron_sponge_metrics_plugin_emits_trace_and_summary_tables():
     plugin = RetronSpongeMetrics()
     cfg = RetronSpongeMetricsCfg(
@@ -281,6 +288,22 @@ def test_retron_sponge_metrics_plugin_emits_trace_and_summary_tables():
     assert o_auc > 0
     assert s_auc > 0
     assert abs(l_pre) < 1e-9
+
+
+def test_retron_sponge_metrics_does_not_emit_concat_future_warning() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        plugin.run(_ctx(), {"df": _input_df()}, cfg)
+
+    future_warnings = [warning for warning in caught if issubclass(warning.category, FutureWarning)]
+    assert future_warnings == []
 
 
 def test_retron_sponge_metrics_plugin_supports_single_reporter_profile():
@@ -462,6 +485,60 @@ def test_retron_sponge_metrics_plugin_accepts_explicit_semantic_columns():
 
     assert {"R_pre", "P_pre", "D_AUC", "O_AUC", "O_abs_AUC", "S_AUC", "S_abs_AUC"} <= set(summary["metric"])
     assert d_auc < 0
+
+
+def test_retron_sponge_metrics_uses_configured_no_stress_label_for_native_sensor_baseline() -> None:
+    plugin = RetronSpongeMetrics()
+    base_cfg = {
+        "stress_time_zero_h": 1.5,
+        "sensor_column": "sensor_id",
+        "sponge_column": "sponge_id",
+        "genotype_column": "genotype_id",
+        "stress_condition_column": "stress_condition_id",
+        "relevant_stress_column": "is_relevant_stress_flag",
+        "expected_sign_column": "expected_sign",
+        "relevant_sensor_pair_column": "is_relevant_pair",
+        "matched_control_group_column": "matched_control_group_id",
+        "sponge_family_size_column": "sponge_family",
+    }
+
+    default_summary = plugin.run(_ctx(), {"df": _input_df_explicit_semantics()}, RetronSpongeMetricsCfg(**base_cfg))[
+        "summary"
+    ]
+    custom_summary = plugin.run(
+        _ctx(),
+        {"df": _input_df_explicit_semantics_with_custom_no_stress("media-only")},
+        RetronSpongeMetricsCfg(**base_cfg, no_stress_label="media-only"),
+    )["summary"]
+
+    default_g_sensor = default_summary[
+        (default_summary["metric"] == "G_sensor")
+        & (default_summary["sensor"] == "spyP")
+        & (default_summary["stress_condition"] == "3% EtOH")
+    ].iloc[0]
+    custom_g_sensor = custom_summary[
+        (custom_summary["metric"] == "G_sensor")
+        & (custom_summary["sensor"] == "spyP")
+        & (custom_summary["stress_condition"] == "3% EtOH")
+    ].iloc[0]
+    custom_scaled = custom_summary[
+        (custom_summary["metric"] == "S_abs_AUC")
+        & (custom_summary["sensor"] == "spyP")
+        & (custom_summary["sponge"] == "CpxR")
+        & (custom_summary["stress_condition"] == "3% EtOH")
+    ].iloc[0]
+
+    assert custom_g_sensor["value"] == pytest.approx(default_g_sensor["value"])
+    assert custom_scaled["value"] == pytest.approx(
+        default_summary[
+            (default_summary["metric"] == "S_abs_AUC")
+            & (default_summary["sensor"] == "spyP")
+            & (default_summary["sponge"] == "CpxR")
+            & (default_summary["stress_condition"] == "3% EtOH")
+        ]["value"].iloc[0]
+    )
+    assert bool(custom_scaled["scaling_available"]) is True
+    assert pd.isna(custom_scaled["warning_flag"])
 
 
 def test_retron_sponge_metrics_respects_post_stress_time_cap() -> None:

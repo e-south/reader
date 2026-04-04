@@ -135,6 +135,14 @@ def find_jobs(root: Path, *, include_scaffolds: bool = False) -> list[Path]:
     return discover_experiment_configs(root, include_scaffolds=include_scaffolds)
 
 
+def indexed_jobs(root: Path, *, include_scaffolds: bool = False) -> list[tuple[int, Path]]:
+    all_jobs = find_jobs(root, include_scaffolds=True)
+    if include_scaffolds:
+        return list(enumerate(all_jobs, 1))
+    visible_jobs = set(find_jobs(root, include_scaffolds=False))
+    return [(idx, job) for idx, job in enumerate(all_jobs, 1) if job in visible_jobs]
+
+
 def find_year_jobs(year: str, root: Path) -> list[Path]:
     year_str = str(year).strip()
     if not year_str:
@@ -170,21 +178,26 @@ def infer_job_path(job: str | None) -> Path:
         if value.isdigit():
             idx = int(value)
             root_path = find_nearest_experiments_dir(Path.cwd())
-            jobs = find_jobs(root_path)
-            if not jobs:
+            jobs = indexed_jobs(root_path)
+            jobs_with_scaffolds = indexed_jobs(root_path, include_scaffolds=True)
+            if not jobs_with_scaffolds:
                 raise typer.BadParameter(f"No experiments found under {root_path}. Use '{reader_command('ls')}' first.")
-            if 1 <= idx <= len(jobs):
-                return jobs[idx - 1]
-            jobs_with_scaffolds = find_jobs(root_path, include_scaffolds=True)
-            if 1 <= idx <= len(jobs_with_scaffolds):
-                return jobs_with_scaffolds[idx - 1]
+            job_lookup = dict(jobs)
+            if idx in job_lookup:
+                return job_lookup[idx]
+            jobs_with_scaffolds_lookup = dict(jobs_with_scaffolds)
+            if idx in jobs_with_scaffolds_lookup:
+                return jobs_with_scaffolds_lookup[idx]
             scaffold_hint = ""
-            if len(jobs_with_scaffolds) > len(jobs):
+            if jobs_with_scaffolds != jobs:
                 scaffold_hint = (
-                    f" Default inventory valid: 1..{len(jobs)}; with '--all': 1..{len(jobs_with_scaffolds)}."
+                    " Default inventory valid: "
+                    f"{_format_index_span(index for index, _ in jobs)}; with '--all': "
+                    f"{_format_index_span(index for index, _ in jobs_with_scaffolds)}."
                 )
             raise typer.BadParameter(
-                f"Experiment index out of range: {idx} (valid: 1..{len(jobs)} under {root_path})."
+                f"Experiment index out of range: {idx} (valid: {_format_index_span(index for index, _ in jobs)}"
+                f" under {root_path})."
                 f"{scaffold_hint} Use '{reader_command('ls')}' to see the index numbers."
             )
         raise typer.BadParameter(
@@ -205,6 +218,17 @@ def infer_job_path(job: str | None) -> Path:
         "Run inside an experiment dir or pass a path to the config (or the experiment dir). "
         f"Tip: use '{reader_command('ls')}' to list experiments and pass its index."
     )
+
+
+def _format_index_span(indices) -> str:
+    values = [int(value) for value in indices]
+    if not values:
+        return "none"
+    if values == list(range(values[0], values[-1] + 1)):
+        if values[0] == values[-1]:
+            return str(values[0])
+        return f"{values[0]}..{values[-1]}"
+    return ", ".join(str(value) for value in values)
 
 
 def format_job_arg(job: str | None) -> str | None:
