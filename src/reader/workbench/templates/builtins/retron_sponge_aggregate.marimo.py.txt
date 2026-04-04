@@ -6,38 +6,67 @@ app = marimo.App(width="medium")
 
 @app.cell(hide_code=True)
 def _():
-    from pathlib import Path
-
-    import marimo as mo
-
-    from reader.workbench.notebooks.context import load_notebook_workbench_context
-    from reader.workbench.notebooks.retron_review import (
-        build_label_value_options,
-        contextualize_retron_plot_copy,
-        dataframe_to_csv_bytes,
-        download_safe_stem,
-        filter_supporting_table_for_figure,
-        figure_to_download_bytes,
-        load_retron_review_bundle,
-        load_retron_source_surface,
-        render_retron_source_plot_cached,
-        try_render_retron_aggregate_plot_cached,
-        retron_notebook_table_preview,
-        retron_aggregate_figure_rows,
-        retron_aggregate_plot_rows,
-        retron_assay_context_rows,
-        retron_figure_coverage_rows,
-        retron_figure_option_rows,
-        retron_sensor_context_rows,
-        retron_source_surface_overview_rows,
-        retron_source_selector_rows,
-        retron_table_kwargs,
-        retron_transform_ladder_rows,
-        source_rows,
+    Path = __import__("pathlib", fromlist=["Path"]).Path
+    mo = __import__("marimo")
+    context_module = __import__(
+        "reader.workbench.notebooks.context",
+        fromlist=["load_notebook_workbench_context"],
     )
-
+    retron_review_module = __import__(
+        "reader.workbench.notebooks.retron_review",
+        fromlist=[
+            "available_aggregate_score_metrics",
+            "build_label_value_options",
+            "contextualize_retron_plot_copy",
+            "dataframe_to_csv_bytes",
+            "download_safe_stem",
+            "figure_to_download_bytes",
+            "filter_supporting_table_for_figure",
+            "load_retron_review_bundle",
+            "load_retron_source_surface",
+            "render_retron_source_plot_cached",
+            "retron_aggregate_figure_rows",
+            "retron_aggregate_plot_rows",
+            "retron_assay_context_rows",
+            "retron_figure_coverage_rows",
+            "retron_figure_option_rows",
+            "retron_notebook_table_preview",
+            "retron_sensor_context_rows",
+            "retron_source_selector_rows",
+            "retron_source_surface_overview_rows",
+            "retron_table_kwargs",
+            "retron_transform_ladder_rows",
+            "source_rows",
+            "try_render_retron_aggregate_plot_cached",
+        ],
+    )
+    available_aggregate_score_metrics = retron_review_module.available_aggregate_score_metrics
+    build_label_value_options = retron_review_module.build_label_value_options
+    contextualize_retron_plot_copy = retron_review_module.contextualize_retron_plot_copy
+    dataframe_to_csv_bytes = retron_review_module.dataframe_to_csv_bytes
+    download_safe_stem = retron_review_module.download_safe_stem
+    figure_to_download_bytes = retron_review_module.figure_to_download_bytes
+    filter_supporting_table_for_figure = retron_review_module.filter_supporting_table_for_figure
+    load_notebook_workbench_context = context_module.load_notebook_workbench_context
+    load_retron_review_bundle = retron_review_module.load_retron_review_bundle
+    load_retron_source_surface = retron_review_module.load_retron_source_surface
+    render_retron_source_plot_cached = retron_review_module.render_retron_source_plot_cached
+    retron_aggregate_figure_rows = retron_review_module.retron_aggregate_figure_rows
+    retron_aggregate_plot_rows = retron_review_module.retron_aggregate_plot_rows
+    retron_assay_context_rows = retron_review_module.retron_assay_context_rows
+    retron_figure_coverage_rows = retron_review_module.retron_figure_coverage_rows
+    retron_figure_option_rows = retron_review_module.retron_figure_option_rows
+    retron_notebook_table_preview = retron_review_module.retron_notebook_table_preview
+    retron_sensor_context_rows = retron_review_module.retron_sensor_context_rows
+    retron_source_selector_rows = retron_review_module.retron_source_selector_rows
+    retron_source_surface_overview_rows = retron_review_module.retron_source_surface_overview_rows
+    retron_table_kwargs = retron_review_module.retron_table_kwargs
+    retron_transform_ladder_rows = retron_review_module.retron_transform_ladder_rows
+    source_rows = retron_review_module.source_rows
+    try_render_retron_aggregate_plot_cached = retron_review_module.try_render_retron_aggregate_plot_cached
     return (
         Path,
+        available_aggregate_score_metrics,
         build_label_value_options,
         contextualize_retron_plot_copy,
         dataframe_to_csv_bytes,
@@ -94,8 +123,8 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(retron_aggregate_style):
-    retron_aggregate_style
+def _(mo, retron_aggregate_style):
+    mo.output.replace(retron_aggregate_style)
 
 
 @app.cell(hide_code=True)
@@ -304,8 +333,8 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(retron_aggregate_overview_panel):
-    retron_aggregate_overview_panel
+def _(mo, retron_aggregate_overview_panel):
+    mo.output.replace(retron_aggregate_overview_panel)
 
 
 @app.cell(hide_code=True)
@@ -323,7 +352,8 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo, retron_aggregate_plot_selector_options):
+def _(available_aggregate_score_metrics, mo, retron_aggregate_bundle, retron_aggregate_plot_selector_options):
+    retron_aggregate_score_options = list(available_aggregate_score_metrics(retron_aggregate_bundle.summary_df))
     retron_aggregate_plot_selector = mo.ui.dropdown(
         options=retron_aggregate_plot_selector_options,
         value=next(iter(retron_aggregate_plot_selector_options), None),
@@ -331,8 +361,8 @@ def _(mo, retron_aggregate_plot_selector_options):
         full_width=False,
     )
     retron_aggregate_score_selector = mo.ui.dropdown(
-        options=["O_abs_AUC", "S_abs_AUC", "O_AUC", "S_AUC"],
-        value="O_abs_AUC",
+        options=retron_aggregate_score_options,
+        value=(retron_aggregate_score_options[0] if retron_aggregate_score_options else None),
         label="Aggregate evidence family",
         full_width=False,
     )
@@ -401,15 +431,23 @@ def _(
     retron_aggregate_selected_plot_id,
     try_render_retron_aggregate_plot_cached,
 ):
-    retron_aggregate_result, retron_aggregate_result_error = try_render_retron_aggregate_plot_cached(
-        retron_aggregate_selected_plot_id,
-        summary_df=retron_aggregate_bundle.summary_df,
-        sensor_target_map=retron_aggregate_bundle.sensor_target_map,
-        score_metric=retron_aggregate_score_selector.value,
-        architecture_x=retron_aggregate_architecture_selector.value,
-        expected_mode=retron_aggregate_expected_selector.value,
-        fingerprint_sponge=None,
-    )
+    if retron_aggregate_score_selector.value is None:
+        retron_aggregate_result = None
+        retron_aggregate_result_error = (
+            "retron_review: no expected-direction positive-area aggregate metrics are available in the loaded "
+            "semantic summary exports. Re-run the source experiments referenced by the review manifest, then reopen "
+            "the aggregate notebook."
+        )
+    else:
+        retron_aggregate_result, retron_aggregate_result_error = try_render_retron_aggregate_plot_cached(
+            retron_aggregate_selected_plot_id,
+            summary_df=retron_aggregate_bundle.summary_df,
+            sensor_target_map=retron_aggregate_bundle.sensor_target_map,
+            score_metric=retron_aggregate_score_selector.value,
+            architecture_x=retron_aggregate_architecture_selector.value,
+            expected_mode=retron_aggregate_expected_selector.value,
+            fingerprint_sponge=None,
+        )
     return retron_aggregate_result, retron_aggregate_result_error, retron_aggregate_selected_plot_id
 
 
@@ -1073,8 +1111,8 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(retron_master_review_panel):
-    retron_master_review_panel
+def _(mo, retron_master_review_panel):
+    mo.output.replace(retron_master_review_panel)
 
 
 if __name__ == "__main__":

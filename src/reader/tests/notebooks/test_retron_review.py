@@ -11,9 +11,11 @@ import reader.workbench.notebooks.retron_review as retron_review_mod
 from reader.contracts import builtin_contract_catalog
 from reader.domains.plate_reader.plots.common import annotate_points_smart
 from reader.tests.support import base_reader_config, write_config
+from reader.workbench.notebooks import _retron_review_notebook_ui as retron_review_notebook_ui
 from reader.workbench.notebooks.retron_review import (
     RetronReviewBundle,
     RetronReviewSource,
+    available_aggregate_score_metrics,
     build_architecture_frame,
     build_expected_vs_observed_frame,
     build_fingerprint_frame,
@@ -229,7 +231,9 @@ def test_retron_notebook_table_preview_respects_byte_budget() -> None:
     assert len(preview.to_csv(index=False).encode("utf-8")) <= 150_000
 
 
-def test_retron_review_bundle_upgrades_legacy_absolute_metrics_for_aggregate_review(tmp_path: Path) -> None:
+def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_for_aggregate_review(
+    tmp_path: Path,
+) -> None:
     legacy_summary = _write_csv(
         tmp_path / "exports" / "legacy_summary.csv",
         [
@@ -296,28 +300,19 @@ def test_retron_review_bundle_upgrades_legacy_absolute_metrics_for_aggregate_rev
         & (bundle.summary_df["metric"] == "S_abs_AUC")
     ]
 
-    assert len(o_abs_rows) == 1
-    assert len(s_abs_rows) == 1
-    assert float(o_abs_rows.iloc[0]["value"]) == pytest.approx(0.12)
-    assert float(s_abs_rows.iloc[0]["value"]) == pytest.approx(0.06)
-    assert bool(s_abs_rows.iloc[0]["scaling_available"]) is True
-    assert float(s_abs_rows.iloc[0]["scale_reference_abs_g_sensor"]) == pytest.approx(2.0)
-    assert float(s_abs_rows.iloc[0]["scale_min_abs_g_sensor"]) == pytest.approx(0.1)
+    assert o_abs_rows.empty
+    assert s_abs_rows.empty
 
-    result = render_retron_aggregate_plot(
-        "specificity_matrix",
-        summary_df=bundle.summary_df,
-        sensor_target_map={"spyP": ("CpxR",)},
-        score_metric="O_abs_AUC",
-        architecture_x="irrelevant_motif_count",
-        expected_mode="expected_sum",
-        fingerprint_sponge=None,
-    )
-
-    assert result.figure is not None
-    assert not result.supporting_table.empty
-    assert float(result.supporting_table.loc[0, "CpxR"]) == pytest.approx(0.12)
-    plt.close(result.figure)
+    with pytest.raises(ValueError, match="aggregate score metric 'O_abs_AUC' is unavailable"):
+        render_retron_aggregate_plot(
+            "specificity_matrix",
+            summary_df=bundle.summary_df,
+            sensor_target_map={"spyP": ("CpxR",)},
+            score_metric="O_abs_AUC",
+            architecture_x="irrelevant_motif_count",
+            expected_mode="expected_sum",
+            fingerprint_sponge=None,
+        )
 
 
 def test_load_retron_source_semantic_datasets_upgrades_legacy_trace_contract(tmp_path: Path) -> None:
@@ -960,13 +955,16 @@ def test_retron_plot_guide_rows_share_registered_experiment_plot_copy() -> None:
             "Math / transform": (
                 "R(t)=log2(YFP/CFP)\n"
                 "P_pre=delta_IPTG[R_pre-R_pre,tetO,matched]\n"
-                "D_abs_AUC=AUC_window[D_abs(t)]\n"
-                "D_AUC=AUC_window[D(t)]"
+                "State area(IPTG)=∫_window max(expected_sign·C_state(t), 0) dt\n"
+                "ΔIPTG state area = state area(+IPTG) - state area(-IPTG)"
             ),
             "Source record": "semantic_metrics/trace",
             "How to read": (
-                "Primary assay readout. Each row keeps the raw reporter-ratio traces beside preload, total effect, "
-                "and post-stress summaries so the matched tetO comparison stays tied to the signal the wells produced."
+                "Main source view. Each row shows the raw ratio traces for the sponge and its matched tetO control. "
+                "The pre-stress summary is the matched-tetO baseline ΔR before stress. The post-stress summary "
+                "measures how much expected-direction signal each IPTG state accumulates during the scoring window, "
+                "then reports the +IPTG minus -IPTG difference. That summary is for reading one experiment, not for "
+                "cross-run ranking."
             ),
         }
     ]
@@ -1025,7 +1023,8 @@ def test_render_retron_experiment_plot_uses_explicit_iptg_state_wording_for_d_me
     assert result.title == "IPTG-state effect kinetics"
     assert "new movement appears after stress" in result.question
     assert result.meaning == (
-        "Mechanistic view of the post-stress increment after preload removal, not the full IPTG-dependent effect."
+        "Mechanistic view of the new post-stress increment after preload removal. The trace stays signed, but the "
+        "compact score keeps only expected-direction positive area, so wrong-direction segments do not earn credit."
     )
     assert set(result.supporting_table["metric"]) == {"D"}
     plt.close(result.figures[0].fig)
@@ -1196,7 +1195,7 @@ def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_vi
                     "summary": {"record": "semantic_metrics/summary"},
                     "trace": {"record": "semantic_metrics/trace"},
                 },
-                "with": {"view": "decomposition", "metric": "D_abs_AUC", "control_name": "tetO"},
+                "with": {"view": "decomposition", "metric": "O_AUC", "control_name": "tetO"},
             },
         ),
         plot_selector_rows=(),
@@ -1209,7 +1208,7 @@ def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_vi
     loaded_paths: list[str] = []
     captured: dict[str, object] = {}
     semantic_datasets = {
-        "semantic_metrics/summary": pd.DataFrame({"metric": ["D_abs_AUC"], "value": [0.1]}),
+        "semantic_metrics/summary": pd.DataFrame({"metric": ["O_AUC"], "value": [0.1]}),
         "semantic_metrics/trace": pd.DataFrame({"metric": ["R"], "value": [0.2]}),
     }
 
@@ -1308,6 +1307,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
                             "post_stress_read_count": 2,
                             "matched_group_sample_count": 2,
                             "stress_addition_gap_h": 0.5,
+                            "expected_decoy_sign": 1,
                         }
                     )
     trace = pd.DataFrame(rows)
@@ -1340,7 +1340,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
                 "sensor": "sulAp",
                 "sponge": "LexA",
                 "stress_condition": "100 nM ciprofloxacin",
-                "metric": "D_AUC",
+                "metric": "O_AUC",
                 "value": 0.30,
                 "relevant_sensor_pair": True,
                 "is_relevant_stress": True,
@@ -1378,7 +1378,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
         },
         "with": {
             "view": "decomposition",
-            "metric": "D_abs_AUC",
+            "metric": "O_AUC",
             "title": "Sponge vs matched tetO",
             "filename": "control_anchored_decomposition",
             "control_name": "tetO",
@@ -1394,7 +1394,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
     assert result.title == "Sponge vs matched tetO"
     assert "matched tetO" in result.question
     assert result.math.startswith("R(t)=log2(YFP/CFP)")
-    assert result.meaning.startswith("Primary assay readout.")
+    assert result.meaning.startswith("Main source view.")
     assert {
         "panel_role",
         "primary_stress",
@@ -1412,8 +1412,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
     assert "sample_minus_auc" not in result.supporting_table.columns
     assert set(result.supporting_table["summary_metric"]) == {
         "P_pre",
-        "D_abs_AUC",
-        "D_AUC",
+        "O_state_AUC",
         "D_growth_AUC",
     }
     plt.close(result.figures[0].fig)
@@ -1440,7 +1439,7 @@ def test_render_retron_experiment_plot_rejects_stale_decision_card_trace_contrac
         [
             {"sensor": "sulAp", "sponge": "LexA", "metric": "P_pre", "value": 0.1},
             {"sensor": "sulAp", "sponge": "LexA", "metric": "D_abs_AUC", "value": 0.3},
-            {"sensor": "sulAp", "sponge": "LexA", "metric": "D_AUC", "value": 0.2},
+            {"sensor": "sulAp", "sponge": "LexA", "metric": "O_AUC", "value": 0.2},
             {"sensor": "sulAp", "sponge": "LexA", "metric": "D_growth_AUC", "value": -0.05},
             {"sensor": "sulAp", "sponge": "tetO", "metric": "G_sensor", "value": 0.4},
         ]
@@ -1454,7 +1453,7 @@ def test_render_retron_experiment_plot_rejects_stale_decision_card_trace_contrac
         },
         "with": {
             "view": "decomposition",
-            "metric": "D_abs_AUC",
+            "metric": "O_AUC",
             "control_name": "tetO",
             "relevant_only": True,
         },
@@ -1766,14 +1765,14 @@ def test_render_retron_aggregate_plot_returns_specificity_matrix_bundle() -> Non
 
     assert result.title == "Target activity matrix"
     assert result.figure is not None
-    assert "strongest total effect in the expected direction" in result.question
+    assert "largest expected-direction total area" in result.question
     assert "score(sensor,sponge)=mean_source[O_abs_AUC or S_abs_AUC]" in result.math
     assert "without implying exhaustive off-target specificity coverage" in result.meaning
     assert result.figure.get_facecolor()[:3] == pytest.approx((1.0, 1.0, 1.0))
     assert result.figure.axes[0].get_xlabel() == "Sponge design"
     assert result.figure.axes[0].get_title() == "Relevant-stress target activity matrix"
     assert result.figure.axes[0].get_ylabel() == ""
-    assert result.figure.axes[1].get_ylabel() == "Scaled expected-direction increment"
+    assert result.figure.axes[1].get_ylabel() == "Scaled expected-direction post-stress area"
     assert not result.supporting_table.empty
     assert result.supporting_table_title == "Relevant-stress on-target matrix behind the heatmap"
     plt.close(result.figure)
@@ -1804,6 +1803,20 @@ def test_render_retron_aggregate_plot_rejects_unavailable_primary_metric() -> No
             expected_mode="expected_sum",
             fingerprint_sponge=None,
         )
+
+
+def test_available_aggregate_score_metrics_only_exposes_positive_area_metrics_in_priority_order() -> None:
+    summary = pd.DataFrame(
+        [
+            {"metric": "D_abs_AUC", "value": 1.0},
+            {"metric": "O_AUC", "value": 0.4},
+            {"metric": "S_AUC", "value": 0.2},
+            {"metric": "D_AUC", "value": 0.1},
+        ]
+    )
+
+    assert available_aggregate_score_metrics(summary) == ("O_AUC", "S_AUC")
+    assert available_aggregate_score_metrics(pd.DataFrame({"metric": ["D_abs_AUC"]})) == ()
 
 
 def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
@@ -1882,8 +1895,12 @@ def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
     assert set(result.supporting_table["sponge"]) == {"CpxR", "SoxR-SoxS"}
     assert "x=mean[O_abs_AUC or S_abs_AUC]" in result.math
     assert "y=mean[-D_growth_AUC]" in result.math
-    assert "total effect, burden, and leakiness in view" in result.meaning
+    assert "expected-direction total area, burden, and leakiness in view" in result.meaning
     assert result.supporting_table_title == "Aggregate on-target, burden, and leakiness table for candidate ranking"
+    assert any(
+        "Expected-direction total area versus burden penalty across the review set" in text.get_text()
+        for text in result.figure.texts
+    )
     x_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_xticklabels() if label.get_text()}
     y_tick_sizes = {label.get_fontsize() for label in result.figure.axes[0].get_yticklabels() if label.get_text()}
     legend = result.figure.axes[0].get_legend()
@@ -1891,7 +1908,7 @@ def test_render_retron_aggregate_plot_returns_pareto_bundle() -> None:
     assert {text.get_text() for text in legend.get_texts()} == {"mono", "bi"}
     assert x_tick_sizes == {7.0}
     assert y_tick_sizes == {7.0}
-    assert result.figure.axes[0].get_xlabel() == "Mean scaled increment"
+    assert result.figure.axes[0].get_xlabel() == "Mean scaled expected-direction post-stress area"
     assert result.figure.axes[0].get_ylabel() == "Mean burden penalty"
     plt.close(result.figure)
 
@@ -2219,7 +2236,8 @@ def test_render_retron_aggregate_plot_returns_grouped_fingerprint_bundle() -> No
     assert result.figure._suptitle is not None
     assert result.figure._suptitle.get_text() == "Relevant sensor arms · CpxR-LexA"
     assert any(
-        "Matched-tetO-referenced effect across intended sensor arms" in text.get_text() for text in result.figure.texts
+        "Matched-tetO-referenced expected-direction area across intended sensor arms" in text.get_text()
+        for text in result.figure.texts
     )
     assert any("source means" in text.get_text() for text in result.figure.texts)
     assert {text.get_text() for text in legend.get_texts()} == {"Selected sponge", "tetO reference"}
@@ -2386,7 +2404,7 @@ def test_render_retron_aggregate_architecture_plot_uses_shared_subplot_limits() 
     assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
     assert axes[0].get_ylim() == pytest.approx(axes[1].get_ylim())
     assert result.figure._supxlabel.get_text() == "Extra non-cognate motifs"
-    assert result.figure._supylabel.get_text() == "scaled increment"
+    assert result.figure._supylabel.get_text() == "scaled expected-direction post-stress area"
     assert result.figure.legends
     architecture_legend = result.figure.legends[0]
     architecture_anchor = architecture_legend.get_bbox_to_anchor().transformed(result.figure.transFigure.inverted())
@@ -2468,8 +2486,11 @@ def test_render_retron_aggregate_expected_vs_observed_uses_shared_square_limits(
     axes = [axis for axis in result.figure.axes if axis.get_visible()]
     assert axes[0].get_xlim() == pytest.approx(axes[1].get_xlim())
     assert axes[0].get_xlim() == pytest.approx(axes[0].get_ylim())
-    assert result.figure._supxlabel.get_text() == "Best mono baseline (scaled increment)"
-    assert result.figure._supylabel.get_text() == "Observed multifunction score (scaled increment)"
+    assert result.figure._supxlabel.get_text() == "Best mono baseline (scaled expected-direction post-stress area)"
+    assert (
+        result.figure._supylabel.get_text()
+        == "Observed multifunction score (scaled expected-direction post-stress area)"
+    )
     assert result.figure.legends
     expected_legend = result.figure.legends[0]
     expected_anchor = expected_legend.get_bbox_to_anchor().transformed(result.figure.transFigure.inverted())
@@ -2598,4 +2619,19 @@ def test_annotate_points_smart_spreads_labels_for_overlapping_points() -> None:
 
     positions = [tuple(map(float, annotation.get_position())) for annotation in annotations]
     assert len(set(positions)) == len(positions)
+    plt.close(figure)
+
+
+def test_style_notebook_figure_preserves_smaller_legend_font_sizes() -> None:
+    figure, axis = plt.subplots()
+    axis.plot([0.0, 1.0], [0.0, 1.0], label="trace")
+    legend = axis.legend(fontsize=5.0, title="Legend")
+    legend.get_title().set_fontsize(5.0)
+
+    styled = retron_review_notebook_ui.style_notebook_figure(figure)
+
+    styled_legend = styled.axes[0].get_legend()
+    assert styled_legend is not None
+    assert styled_legend.get_texts()[0].get_fontsize() == pytest.approx(5.0)
+    assert styled_legend.get_title().get_fontsize() == pytest.approx(5.0)
     plt.close(figure)

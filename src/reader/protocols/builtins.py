@@ -1197,19 +1197,19 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="induced_effect_kinetics",
         kind="kinetics",
-        summary="Per-arm post-stress increment trajectories after matched-control normalization, paired with a compact D_AUC sidecar.",
+        summary="Per-arm post-stress increment trajectories after matched-control normalization, paired with a compact expected-direction positive-area score.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="absolute_effect_kinetics",
         kind="kinetics",
-        summary="Per-arm total effect beyond matched tetO that preserves pre-stress preload differences, paired with a compact D_abs_AUC sidecar.",
+        summary="Per-arm matched-tetO separation trajectories that preserve pre-stress preload differences, paired with a compact expected-direction total-area score.",
         primary=True,
     ),
     ProtocolFigureSpec(
         id="control_anchored_decomposition",
         kind="summary",
-        summary="Per-pair sponge-versus-matched-tetO assay summary with relevant-stress traces, H2O context, and preload/total/increment/burden summaries.",
+        summary="Per-pair sponge-versus-matched-tetO assay summary with relevant-stress traces, H2O context, pre-stress ΔR, and expected-direction state-area summaries.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1221,7 +1221,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="library_heatmaps",
         kind="summary",
-        summary="Library-wide heatmaps over absolute effect, post-stress increment, and preload shift.",
+        summary="Library-wide heatmaps over expected-direction total area, expected-direction post-stress area, and preload shift.",
         primary=True,
     ),
     ProtocolFigureSpec(
@@ -1233,7 +1233,7 @@ _RETRON_SPONGE_FIGURES = (
     ProtocolFigureSpec(
         id="pareto_ranking",
         kind="summary",
-        summary="Pareto-style ranking of absolute on-target effect against burden and leakiness.",
+        summary="Pareto-style ranking of expected-direction total area against burden and leakiness.",
         primary=True,
     ),
 )
@@ -2004,7 +2004,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="O",
             stage="ranking",
-            summary="Sign-corrected IPTG-state effect.",
+            summary="Expected-direction-aligned IPTG-state effect.",
             formula="expected_decoy_sign * D",
             depends_on=("D",),
             value_space="delta_log2_ratio",
@@ -2015,15 +2015,15 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="O_AUC",
             stage="ranking",
-            summary="AUC of the sign-corrected IPTG-state effect.",
-            formula="AUC(O over primary_post_stress)",
+            summary="Positive-area integral of the expected-direction-aligned IPTG-state effect.",
+            formula="∫ max(O, 0) dt over primary_post_stress",
             depends_on=("O", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),
         ),
         ProtocolMetricSpec(
             id="O_abs",
             stage="ranking",
-            summary="Sign-corrected absolute matched-control IPTG-state effect.",
+            summary="Expected-direction-aligned absolute matched-control IPTG-state effect.",
             formula="expected_decoy_sign * D_abs",
             depends_on=("D_abs",),
             value_space="delta_log2_ratio",
@@ -2034,8 +2034,8 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="O_abs_AUC",
             stage="ranking",
-            summary="AUC of the sign-corrected absolute matched-control IPTG-state effect.",
-            formula="AUC(O_abs over primary_post_stress)",
+            summary="Positive-area integral of the expected-direction-aligned absolute matched-control IPTG-state effect.",
+            formula="∫ max(O_abs, 0) dt over primary_post_stress",
             depends_on=("O_abs", "primary_post_stress"),
             profiles=("yfp_cfp", "single_reporter"),
         ),
@@ -2050,7 +2050,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="S_AUC",
             stage="ranking",
-            summary="Cross-sensor scaled effect size relative to the native sensor response.",
+            summary="Cross-sensor scaled expected-direction post-stress area relative to the native sensor response.",
             formula="O_AUC / abs(G_sensor)",
             depends_on=("O_AUC", "G_sensor"),
             profiles=("yfp_cfp", "single_reporter"),
@@ -2058,7 +2058,7 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         ProtocolMetricSpec(
             id="S_abs_AUC",
             stage="ranking",
-            summary="Cross-sensor scaled absolute effect size relative to the native sensor response.",
+            summary="Cross-sensor scaled expected-direction total area relative to the native sensor response.",
             formula="O_abs_AUC / abs(G_sensor)",
             depends_on=("O_abs_AUC", "G_sensor"),
             profiles=("yfp_cfp", "single_reporter"),
@@ -2140,8 +2140,8 @@ _PLATE_READER_RETRON_SPONGE_PROTOCOL = ProtocolDescriptor(
         primary_metric="O_abs_AUC",
         direction="higher_is_better",
         penalties=("T_ratio_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
-        supporting_metrics=("S_abs_AUC", "P_pre", "D_AUC", "M_AUC"),
-        summary="Rank hits by sign-corrected absolute AUC, then inspect preload, post-stress increment, burden, and leakiness.",
+        supporting_metrics=("S_abs_AUC", "P_pre", "O_AUC", "M_AUC"),
+        summary="Rank hits by expected-direction total area, then inspect preload, expected-direction post-stress area, burden, and leakiness.",
         profiles=("yfp_cfp", "single_reporter"),
     ),
     execution=ProtocolExecutionPlan(

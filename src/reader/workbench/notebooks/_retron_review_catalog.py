@@ -118,10 +118,14 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         title="Post-stress increment over time",
         stage="2. Assay kinetics",
         question="After removing preload, how much new movement appears after stress in +IPTG relative to -IPTG?",
-        math="D(t)=mean(C +IPTG)-mean(C -IPTG) within each sensor and stress state.",
+        math=(
+            "D(t)=mean(C +IPTG)-mean(C -IPTG) within each sensor and stress state.\n"
+            "O_AUC=∫_window max(expected_sign·D(t), 0) dt."
+        ),
         record="semantic_metrics/trace",
         meaning=(
-            "Mechanistic view of the post-stress increment after preload removal, not the full IPTG-dependent effect."
+            "Mechanistic view of the new post-stress increment after preload removal. The trace stays signed, but the "
+            "compact score keeps only expected-direction positive area, so wrong-direction segments do not earn credit."
         ),
         display_order=40,
         selector_title="Post-stress increment over time",
@@ -130,10 +134,14 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         title="Total effect beyond matched tetO over time",
         stage="2. Assay kinetics",
         question="Across the run, does +IPTG move the sponge beyond what matched tetO induction already does?",
-        math="D_abs(t)=mean(R-R_tetO,matched)(+IPTG)-mean(R-R_tetO,matched)(-IPTG) within each sensor and stress state.",
+        math=(
+            "D_abs(t)=mean(R-R_tetO,matched)(+IPTG)-mean(R-R_tetO,matched)(-IPTG) within each sensor and stress state.\n"
+            "O_abs_AUC=∫_window max(expected_sign·D_abs(t), 0) dt."
+        ),
         record="semantic_metrics/trace",
         meaning=(
-            "Main kinetic evidence after QC. It keeps strict matched-tetO comparison while preserving preload that D(t) intentionally removes."
+            "Main kinetic evidence after QC. The trace stays signed, but the scalar score aligns each sensor to the "
+            "expected biological direction and integrates only positive area, so sign flips do not cancel expected signal."
         ),
         display_order=30,
         selector_title="Total effect beyond matched tetO over time",
@@ -148,13 +156,15 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         math=(
             "R(t)=log2(YFP/CFP)\n"
             "P_pre=delta_IPTG[R_pre-R_pre,tetO,matched]\n"
-            "D_abs_AUC=AUC_window[D_abs(t)]\n"
-            "D_AUC=AUC_window[D(t)]"
+            "State area(IPTG)=∫_window max(expected_sign·C_state(t), 0) dt\n"
+            "ΔIPTG state area = state area(+IPTG) - state area(-IPTG)"
         ),
         record="semantic_metrics/trace",
         meaning=(
-            "Primary assay readout. Each row keeps the raw reporter-ratio traces beside preload, total effect, "
-            "and post-stress summaries so the matched tetO comparison stays tied to the signal the wells produced."
+            "Main source view. Each row shows the raw ratio traces for the sponge and its matched tetO control. "
+            "The pre-stress summary is the matched-tetO baseline ΔR before stress. The post-stress summary measures "
+            "how much expected-direction signal each IPTG state accumulates during the scoring window, then reports "
+            "the +IPTG minus -IPTG difference. That summary is for reading one experiment, not for cross-run ranking."
         ),
         display_order=20,
         selector_title="Sponge vs matched tetO",
@@ -173,12 +183,12 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
         title="Library heatmaps",
         stage="3. Ranking and overview",
         question=(
-            "Across the library, which designs carry their signal in total matched-tetO effect, in the post-stress "
-            "increment, or in preload before stress?"
+            "Across the library, which designs carry their signal in total matched-tetO area, in post-stress area, "
+            "or in preload before stress?"
         ),
         math=(
-            "Total effect: S_abs_AUC = O_abs_AUC / |G_sensor|\n"
-            "Post-stress: S_AUC = O_AUC / |G_sensor|\n"
+            "Total area: S_abs_AUC = O_abs_AUC / |G_sensor|\n"
+            "Post-stress area: S_AUC = O_AUC / |G_sensor|\n"
             "Preload: P_pre = delta_IPTG[R_pre - R_pre,tetO,matched]"
         ),
         record="semantic_metrics/summary",
@@ -202,13 +212,13 @@ _RETRON_EXPERIMENT_PLOT_GUIDES = {
     "pareto_ranking": ExperimentPlotGuideMetadata(
         title="Pareto ranking",
         stage="3. Ranking and overview",
-        question="Which candidates balance strong absolute on-target effect with low burden and low leakiness?",
+        question="Which candidates balance strong expected-direction total area with low burden and low leakiness?",
         math=(
-            "Absolute on-target score S_abs_AUC versus construct-specific burden (D_growth_AUC by default), "
+            "Expected-direction total-area score S_abs_AUC versus construct-specific burden (D_growth_AUC by default), "
             "with |L_pre| encoded as point size."
         ),
         record="semantic_metrics/summary",
-        meaning="Balances total effect against burden and leakiness when you need to rank candidates.",
+        meaning="Balances expected-direction total area against burden and leakiness when you need to rank candidates.",
         display_order=120,
         selector_title="Pareto ranking",
     ),
@@ -240,8 +250,8 @@ _RETRON_ASSAY_CONTEXT = (
     {
         "Topic": "Primary score",
         "Details": (
-            "Read the assay in this order: observed reporter ratio, preload shift, total effect beyond matched tetO, "
-            "post-stress increment, burden, then cross-sensor ranking."
+            "Read the assay in this order: observed reporter ratio, pre-stress shift, expected-direction total area, "
+            "expected-direction post-stress area, burden, then cross-sensor ranking."
         ),
     },
     {
@@ -299,18 +309,22 @@ _RETRON_TRANSFORM_LADDER = (
     {
         "Step": "IPTG-state effect",
         "Formula": "D(t)=mean(C +IPTG)-mean(C -IPTG)",
-        "Output": "trace metric D; summary D_AUC and D_END",
+        "Output": "trace metric D; summary D_AUC, O_AUC, and D_END",
         "Meaning": (
-            "Compares +IPTG and -IPTG after matched-control normalization. Because IPTG is present from the start, "
-            "this is the new post-stress increment after preload removal, not the full IPTG effect."
+            "Compares +IPTG and -IPTG after matched-control normalization. D(t)=0 is the null line. Because IPTG "
+            "is present from the start, this is the new post-stress increment after preload removal, not the full "
+            "IPTG effect. O_AUC aligns sensors to the expected biological direction and integrates only positive area, "
+            "so wrong-direction segments do not earn credit and sign flips do not cancel the expected effect."
         ),
     },
     {
         "Step": "Absolute matched-control effect",
         "Formula": "D_abs(t)=mean(R-R_tetO,matched)(+IPTG)-mean(R-R_tetO,matched)(-IPTG)",
-        "Output": "trace metric D_abs; summary D_abs_AUC and D_abs_END",
+        "Output": "trace metric D_abs; summary D_abs_AUC, O_abs_AUC, and D_abs_END",
         "Meaning": (
-            "Keeps same-sensor tetO subtraction but preserves preload that D(t) intentionally removes. This is the "
+            "Keeps same-sensor tetO subtraction but preserves preload that D(t) intentionally removes. D_abs(t)=0 "
+            "means no net induced separation beyond matched tetO. O_abs_AUC aligns sensors to the expected biological "
+            "direction and integrates only positive area, so sign flips do not cancel expected signal. This is the "
             "main within-sensor evidence for whether a sponge works at all."
         ),
     },
@@ -324,13 +338,13 @@ _RETRON_TRANSFORM_LADDER = (
         "Step": "Sign correction",
         "Formula": "O(t)=expected_decoy_sign * D(t)",
         "Output": "trace metric O; summary O_AUC",
-        "Meaning": "Makes stronger expected effects point in the same direction across sensors.",
+        "Meaning": "Makes stronger expected effects point in the same direction across sensors before positive-area integration.",
     },
     {
         "Step": "Absolute sign correction",
         "Formula": "O_abs(t)=expected_decoy_sign * D_abs(t)",
         "Output": "trace metric O_abs; summary O_abs_AUC",
-        "Meaning": "Keeps preload-sensitive total effects aligned in the expected direction across sensors.",
+        "Meaning": "Keeps preload-sensitive total matched-tetO separation aligned in the expected direction across sensors before positive-area integration.",
     },
     {
         "Step": "Cross-sensor scaling",
@@ -442,7 +456,7 @@ _RETRON_FIGURE_COVERAGE = (
         "Scope": "Per experiment",
         "Surface": "induced_effect_kinetics",
         "Coverage": "Exact compiled plot",
-        "Math": "D(t)=mean(C +IPTG)-mean(C -IPTG).",
+        "Math": "D(t)=mean(C +IPTG)-mean(C -IPTG); O_AUC=∫_window max(expected_sign·D(t), 0) dt is the expected-direction positive-area score.",
     },
     {
         "Figure": "Figure 9 — Sponge vs matched tetO",
@@ -451,7 +465,7 @@ _RETRON_FIGURE_COVERAGE = (
         "Coverage": "Exact compiled plot",
         "Math": (
             "Relevant-stress and H2O R(t) traces for the selected sponge and matched tetO under +/-IPTG, with "
-            "replicate-preserving preload, total-effect, and post-stress summaries beneath the trace grid."
+            "replicate-preserving pre-stress and expected-direction post-stress area summaries beneath the trace grid."
         ),
     },
     {
@@ -532,7 +546,7 @@ RETRON_AGGREGATE_PLOT_CATALOG = {
     "specificity_matrix": AggregatePlotCatalogEntry(
         guide=AggregatePlotGuideMetadata(
             title="Target activity matrix",
-            question="Across the tested on-target sensor arms, which designs have the strongest total effect in the expected direction?",
+            question="Across the tested on-target sensor arms, which designs accumulate the largest expected-direction total area?",
             math="score(sensor,sponge)=mean_source[O_abs_AUC or S_abs_AUC] at the sensor-matched stress",
             meaning=(
                 "Shows how mono, bi, tri, and quad sponges distribute activity across the sensor arms they were "
@@ -547,7 +561,7 @@ RETRON_AGGREGATE_PLOT_CATALOG = {
             title="Pareto ranking",
             question="Which sponge designs stay strong after burden and leakiness are considered across the review set?",
             math=("x=mean[O_abs_AUC or S_abs_AUC]; y=mean[-D_growth_AUC]; size=mean[abs(L_pre)]"),
-            meaning="Ranks candidates across the full review set while keeping total effect, burden, and leakiness in view.",
+            meaning="Ranks candidates across the full review set while keeping expected-direction total area, burden, and leakiness in view.",
             display_order=20,
         ),
         supporting_table_title="Aggregate on-target, burden, and leakiness table for candidate ranking",
@@ -555,9 +569,9 @@ RETRON_AGGREGATE_PLOT_CATALOG = {
     "architecture_plot": AggregatePlotCatalogEntry(
         guide=AggregatePlotGuideMetadata(
             title="Architecture plot",
-            question="Does adding extra motifs preserve, dilute, or redistribute the intended sponge effect?",
+            question="Does adding extra motifs preserve, dilute, or redistribute the intended sponge area?",
             math="x=motif_count or irrelevant_motif_count; y=O_abs_AUC, S_abs_AUC, O_AUC, or S_AUC at the sensor-matched stress",
-            meaning="Tests whether extra motifs preserve, dilute, or redistribute the relevant sponge arm.",
+            meaning="Tests whether extra motifs preserve, dilute, or redistribute the relevant expected-direction area.",
             display_order=30,
         ),
         supporting_table_title="Architecture score table behind the sensor-faceted scatter plots",
@@ -575,14 +589,14 @@ RETRON_AGGREGATE_PLOT_CATALOG = {
     "sponge_fingerprint": AggregatePlotCatalogEntry(
         guide=AggregatePlotGuideMetadata(
             title="Relevant sensor arms by sponge",
-            question="Across the multifunctional sponges, which intended sensor arms are strong and which are weak?",
+            question="Across the multifunctional sponges, which intended sensor arms accumulate strong expected-direction area and which stay weak?",
             math=(
                 "score(sensor,sponge)=O_abs_AUC, S_abs_AUC, O_AUC, or S_AUC at the relevant stress, "
                 "shown beside matched tetO references"
             ),
             meaning=(
-                "Shows whether each multifunctional sponge is balanced across its intended sensor arms and how far "
-                "each arm moves away from the matched tetO baseline."
+                "Shows whether each multifunctional sponge is balanced across its intended sensor arms and how much "
+                "expected-direction area each arm accumulates away from matched tetO."
             ),
             display_order=50,
         ),

@@ -592,7 +592,7 @@ def _aggregate_pareto_figure_policy() -> _SingleAxisFigurePolicy:
         figsize=(6.4, 4.8),
         suptitle="Aggregate pareto ranking",
         suptitle_y=0.97,
-        subtitle="Absolute expected-direction effect versus burden penalty across the review set; point size encodes |L_pre|.",
+        subtitle="Expected-direction total area versus burden penalty across the review set; point size encodes |L_pre|.",
         subtitle_y=0.93,
         bottom=0.12,
         left=0.12,
@@ -992,10 +992,10 @@ def _fingerprint_support_text(fingerprint_df: pd.DataFrame) -> str:
         fingerprint_df.groupby(["selected_sponge", "sensor", "comparison_group"], dropna=False)["value"].size().max()
     )
     evidence_note = (
-        "Matched-tetO-referenced effect across intended sensor arms. Bars show source means; "
+        "Matched-tetO-referenced expected-direction area across intended sensor arms. Bars show source means; "
         "points show source-level estimates."
         if pd.notna(source_count) and int(source_count) > 1
-        else "Matched-tetO-referenced effect across intended sensor arms. Points show the source-level estimate."
+        else "Matched-tetO-referenced expected-direction area across intended sensor arms. Points show the source-level estimate."
     )
     if window_note:
         return f"{window_note}; {evidence_note}"
@@ -1048,10 +1048,10 @@ def _expected_axis_label(expected_mode: str, *, score_metric: str) -> str:
 
 def _aggregate_score_axis_label(metric: str) -> str:
     labels = {
-        "O_abs_AUC": "total effect",
-        "S_abs_AUC": "scaled total effect",
-        "O_AUC": "post-stress increment",
-        "S_AUC": "scaled increment",
+        "O_abs_AUC": "expected-direction total area",
+        "S_abs_AUC": "scaled expected-direction total area",
+        "O_AUC": "expected-direction post-stress area",
+        "S_AUC": "scaled expected-direction post-stress area",
     }
     return labels.get(str(metric), _metric_axis_label(metric))
 

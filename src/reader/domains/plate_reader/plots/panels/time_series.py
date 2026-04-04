@@ -124,6 +124,7 @@ def draw_time_series_panel(
     axis_label_size: float = 10.0,
     tick_label_size: float = 8.0,
     legend_fontsize: float = 8.0,
+    legend_marker_size: float = 7.0,
 ) -> None:
     ax.grid(False)
     ax.yaxis.grid(True, which="major")
@@ -213,7 +214,7 @@ def draw_time_series_panel(
                 [0],
                 color=color_map[hue],
                 marker=marker_map[hue],
-                markersize=7,
+                markersize=legend_marker_size,
                 linestyle="-",
                 linewidth=line_width,
                 alpha=mean_marker_alpha,

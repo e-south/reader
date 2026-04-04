@@ -71,6 +71,7 @@ class _DecisionCardSummaryItemPayload:
     point_color: str
     minus_values: tuple[float, ...]
     plus_values: tuple[float, ...]
+    contrast_values: tuple[float, ...]
     minus_mean: float | None
     minus_lower: float | None
     minus_upper: float | None
@@ -634,8 +635,9 @@ def _decision_card_support_row(
     for spec in retron_presentation.decision_card_metric_specs():
         minus_values = np.asarray([], dtype=float)
         plus_values = np.asarray([], dtype=float)
-        with suppress(ValueError):
-            minus_values, plus_values = _summary_strip_metric_values(
+        contrast_values = np.asarray([], dtype=float)
+        try:
+            minus_series, plus_series = _summary_strip_metric_series(
                 metric=spec.metric,
                 sensor_trace=sensor_trace,
                 sensor=sensor,
@@ -644,9 +646,16 @@ def _decision_card_support_row(
                 sample_panel=sample_panel,
                 control_panel=control_panel,
             )
+            minus_values = minus_series.to_numpy(dtype=float, copy=False)
+            plus_values = plus_series.to_numpy(dtype=float, copy=False)
+            contrast_values = _paired_contrast_values(plus_series=plus_series, minus_series=minus_series)
+        except ValueError as exc:
+            if "expected_decoy_sign" in str(exc):
+                raise
         contrast_mean, contrast_lower, contrast_upper = _summary_strip_contrast_interval(
             plus_values=plus_values,
             minus_values=minus_values,
+            contrast_values=contrast_values,
         )
         if contrast_mean is None:
             summary_record = _summary_metric_interval(
@@ -669,6 +678,9 @@ def _decision_card_support_row(
         record[f"{spec.metric}_units"] = spec.units
         record[f"{spec.metric}_minus_values"] = tuple(float(value) for value in minus_values if np.isfinite(value))
         record[f"{spec.metric}_plus_values"] = tuple(float(value) for value in plus_values if np.isfinite(value))
+        record[f"{spec.metric}_contrast_values"] = tuple(
+            float(value) for value in contrast_values if np.isfinite(value)
+        )
         record[f"{spec.metric}_minus_n"] = int(len(minus_values))
         record[f"{spec.metric}_plus_n"] = int(len(plus_values))
         record[f"{spec.metric}_minus_mean"] = _finite_mean(minus_values)
@@ -873,15 +885,15 @@ def _safe_difference(left: object, right: object) -> float:
 
 def _decomposition_figure_policy(*, row_count: int) -> _SummaryFigurePolicy:
     return _SummaryFigurePolicy(
-        default_figsize=(13.0, max(4.8, 3.35 * row_count)),
-        title_y=0.984,
-        subtitle_y=0.948,
+        default_figsize=(13.8, max(5.1, 3.70 * row_count)),
+        title_y=0.982,
+        subtitle_y=0.956,
         adjust=_SummarySubplotPolicy(
-            top=0.93,
-            bottom=0.08,
-            left=0.065,
-            right=0.99,
-            hspace=0.18,
+            top=0.905,
+            bottom=0.09,
+            left=0.05,
+            right=0.96,
+            hspace=0.30,
             wspace=0.10,
         ),
     )
@@ -967,7 +979,7 @@ def _plot_retron_decomposition(
             right=policy.adjust.right,
             top=policy.adjust.top,
             bottom=policy.adjust.bottom,
-            hspace=0.16,
+            hspace=policy.adjust.hspace,
         )
         for row_payload in row_payloads:
             _render_decision_card_row(
@@ -975,6 +987,7 @@ def _plot_retron_decomposition(
                 row_spec=outer[row_payload.row_idx],
                 row=row_payload,
                 display_bounds=display_bounds,
+                show_x_axis_labels=True,
             )
         _finalize_summary_figure(
             fig,
@@ -1320,7 +1333,7 @@ def _decision_card_panel_payload(
         stress_condition=stress_condition,
         title=title,
         show_ylabel=stress_condition == no_stress_label,
-        show_legend=stress_condition == no_stress_label and row_idx == 0,
+        show_legend=stress_condition == no_stress_label,
         panel_trace=panel_trace,
         line_payloads=_decision_card_line_payloads(
             sample_panel=sample_panel,
@@ -1341,18 +1354,30 @@ def _decision_card_line_payloads(
     control_name: str,
 ) -> tuple[_DecisionCardTraceLinePayload, ...]:
     line_specs = (
-        ("sample-minus", "Sample -IPTG", sample_panel[sample_panel["IPTG"].astype(str) == "-IPTG"], "#1f77b4", "-"),
-        ("sample-plus", "Sample +IPTG", sample_panel[sample_panel["IPTG"].astype(str) == "+IPTG"], "#1f77b4", "--"),
+        (
+            "sample-minus",
+            "On-target sponge -IPTG",
+            sample_panel[sample_panel["IPTG"].astype(str) == "-IPTG"],
+            "#1f77b4",
+            "-",
+        ),
+        (
+            "sample-plus",
+            "On-target sponge +IPTG",
+            sample_panel[sample_panel["IPTG"].astype(str) == "+IPTG"],
+            "#1f77b4",
+            "--",
+        ),
         (
             "control-minus",
-            f"{control_name} -IPTG",
+            f"matched {control_name} -IPTG",
             control_panel[control_panel["IPTG"].astype(str) == "-IPTG"],
             "#8c8c8c",
             "-",
         ),
         (
             "control-plus",
-            f"{control_name} +IPTG",
+            f"matched {control_name} +IPTG",
             control_panel[control_panel["IPTG"].astype(str) == "+IPTG"],
             "#8c8c8c",
             "--",
@@ -1407,12 +1432,16 @@ def _decision_card_summary_item(
 ) -> _DecisionCardSummaryItemPayload:
     minus_values = _support_tuple_values(support_row.get(f"{spec.metric}_minus_values"))
     plus_values = _support_tuple_values(support_row.get(f"{spec.metric}_plus_values"))
+    contrast_values = _support_tuple_values(support_row.get(f"{spec.metric}_contrast_values"))
     minus_mean, minus_lower, minus_upper = _summary_strip_state_interval(minus_values)
     plus_mean, plus_lower, plus_upper = _summary_strip_state_interval(plus_values)
     contrast_mean = _support_float(support_row.get(f"{spec.metric}_mean"))
     contrast_lower = _support_float(support_row.get(f"{spec.metric}_lower"))
     contrast_upper = _support_float(support_row.get(f"{spec.metric}_upper"))
-    finite = np.asarray([*minus_values, *plus_values, contrast_mean, contrast_lower, contrast_upper], dtype=float)
+    finite = np.asarray(
+        [*minus_values, *plus_values, *contrast_values, contrast_mean, contrast_lower, contrast_upper],
+        dtype=float,
+    )
     finite = finite[np.isfinite(finite)]
     limits = shared_numeric_limits(
         finite if finite.size else np.array([0.0], dtype=float),
@@ -1434,6 +1463,7 @@ def _decision_card_summary_item(
         point_color=spec.color,
         minus_values=tuple(float(value) for value in minus_values if np.isfinite(value)),
         plus_values=tuple(float(value) for value in plus_values if np.isfinite(value)),
+        contrast_values=tuple(float(value) for value in contrast_values if np.isfinite(value)),
         minus_mean=minus_mean,
         minus_lower=minus_lower,
         minus_upper=minus_upper,
@@ -1467,7 +1497,7 @@ def _support_float(value: object) -> float | None:
     return None
 
 
-def _summary_strip_metric_values(
+def _summary_strip_metric_series(
     *,
     metric: str,
     sensor_trace: pd.DataFrame,
@@ -1476,39 +1506,37 @@ def _summary_strip_metric_values(
     stress: str,
     sample_panel: pd.DataFrame,
     control_panel: pd.DataFrame,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[pd.Series, pd.Series]:
     metric_id = str(metric)
     if metric_id == "P_pre":
-        return _preload_state_values(sample_panel=sample_panel, control_panel=control_panel)
-    if metric_id == "D_abs_AUC":
-        return _absolute_effect_state_auc_values(sample_panel=sample_panel, control_panel=control_panel)
-    if metric_id == "D_AUC":
-        return _matched_control_state_auc_values(
-            sensor_trace=sensor_trace,
+        return _preload_state_series(sample_panel=sample_panel, control_panel=control_panel)
+    if metric_id == "O_AUC":
+        return _expected_direction_positive_state_area_series(
+            sample_panel=sample_panel,
+            control_panel=control_panel,
             sensor=sensor,
             sponge=sponge,
             stress=stress,
-            metric="C",
         )
     raise ValueError(f"retron_decomposition: unsupported summary-strip metric {metric_id!r}")
 
 
-def _preload_state_values(
+def _preload_state_series(
     *,
     sample_panel: pd.DataFrame,
     control_panel: pd.DataFrame,
-) -> tuple[np.ndarray, np.ndarray]:
-    minus = _state_preload_values(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
-    plus = _state_preload_values(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
+) -> tuple[pd.Series, pd.Series]:
+    minus = _state_preload_series(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
+    plus = _state_preload_series(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
     return minus, plus
 
 
-def _state_preload_values(
+def _state_preload_series(
     *,
     sample_panel: pd.DataFrame,
     control_panel: pd.DataFrame,
     iptg: str,
-) -> np.ndarray:
+) -> pd.Series:
     sample = sample_panel[
         (sample_panel["IPTG"].astype(str) == str(iptg)) & sample_panel["in_pre_window"].fillna(False)
     ].copy()
@@ -1516,35 +1544,31 @@ def _state_preload_values(
         (control_panel["IPTG"].astype(str) == str(iptg)) & control_panel["in_pre_window"].fillna(False)
     ].copy()
     if sample.empty or control.empty or "replicate_id" not in sample.columns:
-        return np.asarray([], dtype=float)
-    sample_values = (
-        sample.groupby("replicate_id", dropna=False)["value"]
-        .mean()
-        .pipe(pd.to_numeric, errors="coerce")
-        .to_numpy(dtype=float)
-    )
+        return pd.Series(dtype=float)
+    sample_values = sample.groupby("replicate_id", dropna=False)["value"].mean().pipe(pd.to_numeric, errors="coerce")
     control_ref = pd.to_numeric(control["value"], errors="coerce").dropna().to_numpy(dtype=float)
     if control_ref.size == 0:
-        return np.asarray([], dtype=float)
-    return sample_values - float(control_ref.mean())
+        return pd.Series(dtype=float)
+    values = sample_values - float(control_ref.mean())
+    return values.dropna().astype(float).sort_index()
 
 
-def _absolute_effect_state_auc_values(
+def _absolute_effect_state_auc_series(
     *,
     sample_panel: pd.DataFrame,
     control_panel: pd.DataFrame,
-) -> tuple[np.ndarray, np.ndarray]:
-    minus = _state_adjusted_auc_values(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
-    plus = _state_adjusted_auc_values(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
+) -> tuple[pd.Series, pd.Series]:
+    minus = _state_adjusted_auc_series(sample_panel=sample_panel, control_panel=control_panel, iptg="-IPTG")
+    plus = _state_adjusted_auc_series(sample_panel=sample_panel, control_panel=control_panel, iptg="+IPTG")
     return minus, plus
 
 
-def _state_adjusted_auc_values(
+def _state_adjusted_auc_series(
     *,
     sample_panel: pd.DataFrame,
     control_panel: pd.DataFrame,
     iptg: str,
-) -> np.ndarray:
+) -> pd.Series:
     sample = sample_panel[
         (sample_panel["IPTG"].astype(str) == str(iptg)) & sample_panel["in_primary_post_stress"].fillna(False)
     ].copy()
@@ -1552,12 +1576,12 @@ def _state_adjusted_auc_values(
         (control_panel["IPTG"].astype(str) == str(iptg)) & control_panel["in_primary_post_stress"].fillna(False)
     ].copy()
     if sample.empty or control.empty or "replicate_id" not in sample.columns:
-        return np.asarray([], dtype=float)
+        return pd.Series(dtype=float)
     control_mean = (
         control.groupby("time_from_stress", dropna=False)["value"].mean().rename("control_value").reset_index()
     )
-    values: list[float] = []
-    for _, replicate in sample.groupby("replicate_id", dropna=False):
+    values: dict[object, float] = {}
+    for replicate_id, replicate in sample.groupby("replicate_id", dropna=False):
         ordered = replicate.sort_values("time_from_stress", kind="stable")
         aligned = ordered.merge(control_mean, on="time_from_stress", how="inner", validate="many_to_one")
         if aligned.empty:
@@ -1566,18 +1590,20 @@ def _state_adjusted_auc_values(
         adjusted = pd.to_numeric(aligned["value"], errors="coerce").to_numpy(dtype=float) - pd.to_numeric(
             aligned["control_value"], errors="coerce"
         ).to_numpy(dtype=float)
-        values.append(_auc(times, adjusted))
-    return np.asarray(values, dtype=float)
+        values[replicate_id] = _auc(times, adjusted)
+    if not values:
+        return pd.Series(dtype=float)
+    return pd.Series(values, dtype=float).dropna().sort_index()
 
 
-def _matched_control_state_auc_values(
+def _matched_control_state_auc_series(
     *,
     sensor_trace: pd.DataFrame,
     sensor: str,
     sponge: str,
     stress: str,
     metric: str,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[pd.Series, pd.Series]:
     frame = sensor_trace[
         (sensor_trace["sensor"].astype(str) == str(sensor))
         & (sensor_trace["sponge"].astype(str) == str(sponge))
@@ -1592,33 +1618,141 @@ def _matched_control_state_auc_values(
             f"metric={metric!r}, sensor={sensor!r}, sponge={sponge!r}, stress={stress!r}"
         )
     return (
-        _state_auc_values(frame=frame, iptg="-IPTG"),
-        _state_auc_values(frame=frame, iptg="+IPTG"),
+        _state_auc_series(frame=frame, iptg="-IPTG"),
+        _state_auc_series(frame=frame, iptg="+IPTG"),
     )
 
 
-def _state_auc_values(
+def _state_auc_series(
     *,
     frame: pd.DataFrame,
     iptg: str,
-) -> np.ndarray:
+) -> pd.Series:
     state = frame[frame["IPTG"].astype(str) == str(iptg)].copy()
     if state.empty or "replicate_id" not in state.columns:
-        return np.asarray([], dtype=float)
-    values: list[float] = []
-    for _, replicate in state.groupby("replicate_id", dropna=False):
+        return pd.Series(dtype=float)
+    values: dict[object, float] = {}
+    for replicate_id, replicate in state.groupby("replicate_id", dropna=False):
         ordered = replicate.sort_values("time_from_stress", kind="stable")
         times = pd.to_numeric(ordered["time_from_stress"], errors="coerce").to_numpy(dtype=float)
         metric_values = pd.to_numeric(ordered["value"], errors="coerce").to_numpy(dtype=float)
-        values.append(_auc(times, metric_values))
-    return np.asarray(values, dtype=float)
+        values[replicate_id] = _auc(times, metric_values)
+    if not values:
+        return pd.Series(dtype=float)
+    return pd.Series(values, dtype=float).dropna().sort_index()
+
+
+def _expected_direction_positive_state_area_series(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress: str,
+) -> tuple[pd.Series, pd.Series]:
+    return (
+        _state_expected_direction_positive_area_series(
+            sample_panel=sample_panel,
+            control_panel=control_panel,
+            sensor=sensor,
+            sponge=sponge,
+            stress=stress,
+            iptg="-IPTG",
+        ),
+        _state_expected_direction_positive_area_series(
+            sample_panel=sample_panel,
+            control_panel=control_panel,
+            sensor=sensor,
+            sponge=sponge,
+            stress=stress,
+            iptg="+IPTG",
+        ),
+    )
+
+
+def _state_expected_direction_positive_area_series(
+    *,
+    sample_panel: pd.DataFrame,
+    control_panel: pd.DataFrame,
+    sensor: str,
+    sponge: str,
+    stress: str,
+    iptg: str,
+) -> pd.Series:
+    sample = sample_panel[
+        (sample_panel["IPTG"].astype(str) == str(iptg)) & sample_panel["in_primary_post_stress"].fillna(False)
+    ].copy()
+    control = control_panel[
+        (control_panel["IPTG"].astype(str) == str(iptg)) & control_panel["in_primary_post_stress"].fillna(False)
+    ].copy()
+    if "expected_decoy_sign" not in sample.columns:
+        raise ValueError(
+            "retron_decomposition: semantic trace input is missing 'expected_decoy_sign', which is required for "
+            "expected-direction state-area summaries. Re-run the semantic metrics export before reopening the notebook."
+        )
+    if sample.empty or control.empty or "replicate_id" not in sample.columns:
+        raise ValueError(
+            "retron_decomposition: semantic trace input is missing replicate-level matched-control rows for "
+            f"expected-direction state-area summaries, sensor={sensor!r}, sponge={sponge!r}, stress={stress!r}, "
+            f"IPTG={iptg!r}"
+        )
+    control_mean = (
+        control.groupby("time_from_stress", dropna=False)["value"].mean().rename("control_value").reset_index()
+    )
+    values: dict[object, float] = {}
+    for replicate_id, replicate in sample.groupby("replicate_id", dropna=False):
+        ordered = replicate.sort_values("time_from_stress", kind="stable")
+        aligned = ordered.merge(control_mean, on="time_from_stress", how="inner", validate="many_to_one")
+        if aligned.empty:
+            continue
+        times = pd.to_numeric(aligned["time_from_stress"], errors="coerce").to_numpy(dtype=float)
+        metric_values = pd.to_numeric(aligned["value"], errors="coerce").to_numpy(dtype=float) - pd.to_numeric(
+            aligned["control_value"], errors="coerce"
+        ).to_numpy(dtype=float)
+        expected_sign = pd.to_numeric(ordered["expected_decoy_sign"], errors="coerce").dropna().to_numpy(dtype=float)
+        if expected_sign.size == 0:
+            raise ValueError(
+                "retron_decomposition: semantic trace input has no finite 'expected_decoy_sign' values for "
+                f"sensor={sensor!r}, sponge={sponge!r}, stress={stress!r}, IPTG={iptg!r}, "
+                f"replicate_id={replicate_id!r}"
+            )
+        aligned = float(expected_sign[0]) * metric_values
+        values[replicate_id] = _auc(times, np.maximum(aligned, 0.0))
+    if not values:
+        raise ValueError(
+            "retron_decomposition: semantic trace input could not align matched-control rows for "
+            f"expected-direction state-area summaries, sensor={sensor!r}, sponge={sponge!r}, stress={stress!r}, "
+            f"IPTG={iptg!r}"
+        )
+    return pd.Series(values, dtype=float).dropna().sort_index()
+
+
+def _paired_contrast_values(
+    *,
+    plus_series: pd.Series,
+    minus_series: pd.Series,
+) -> np.ndarray:
+    if plus_series.empty or minus_series.empty:
+        return np.asarray([], dtype=float)
+    paired = plus_series.rename("plus").to_frame().join(minus_series.rename("minus"), how="inner")
+    if paired.empty:
+        return np.asarray([], dtype=float)
+    contrast = pd.to_numeric(paired["plus"], errors="coerce") - pd.to_numeric(paired["minus"], errors="coerce")
+    finite = contrast.dropna().to_numpy(dtype=float, copy=False)
+    return np.asarray(finite, dtype=float)
 
 
 def _summary_strip_contrast_interval(
     *,
     plus_values: np.ndarray,
     minus_values: np.ndarray,
+    contrast_values: np.ndarray | None = None,
 ) -> tuple[float | None, float | None, float | None]:
+    if contrast_values is not None:
+        finite = np.asarray(contrast_values, dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size:
+            return _summary_strip_state_interval(finite)
     if plus_values.size == 0 or minus_values.size == 0:
         return None, None, None
     mean, lower, upper = bootstrap_linear_interval(
@@ -1666,6 +1800,7 @@ def _apply_shared_summary_x_limits(
                     continue
                 values.extend(item.minus_values)
                 values.extend(item.plus_values)
+                values.extend(item.contrast_values)
                 for value in (
                     item.minus_mean,
                     item.minus_lower,
@@ -1701,30 +1836,39 @@ def _render_decision_card_row(
     row_spec,
     row: _DecisionCardRowPayload,
     display_bounds: tuple[float, float] | None,
+    show_x_axis_labels: bool,
 ) -> None:
-    group_grid = row_spec.subgridspec(1, 3, width_ratios=(0.82, 2.15, 3.0), wspace=0.16)
+    summary_count = max(1, len(row.summary_strip.items))
+    plot_column_count = 2 + summary_count
+    group_grid = row_spec.subgridspec(
+        1,
+        plot_column_count + 1,
+        width_ratios=(0.82, *([1.0] * plot_column_count)),
+        wspace=0.18,
+    )
     label_ax = figure.add_subplot(group_grid[0, 0])
     _render_decision_card_row_label(ax=label_ax, row=row)
-    trace_grid = group_grid[0, 1].subgridspec(1, 2, wspace=0.10)
-    summary_grid = group_grid[0, 2].subgridspec(1, 3, wspace=0.14)
-    h2o_ax = figure.add_subplot(trace_grid[0, 0])
-    relevant_ax = figure.add_subplot(trace_grid[0, 1], sharex=h2o_ax, sharey=h2o_ax)
+    h2o_ax = figure.add_subplot(group_grid[0, 1])
+    relevant_ax = figure.add_subplot(group_grid[0, 2], sharex=h2o_ax, sharey=h2o_ax)
     _plot_decision_card_trace_axis(
         ax=h2o_ax,
         panel=row.h2o_panel,
         panel_limits=row.panel_limits,
         display_bounds=display_bounds,
+        show_x_axis_label=show_x_axis_labels,
     )
     _plot_decision_card_trace_axis(
         ax=relevant_ax,
         panel=row.relevant_panel,
         panel_limits=row.panel_limits,
         display_bounds=display_bounds,
+        show_x_axis_label=show_x_axis_labels,
     )
-    for item, col_idx in zip(row.summary_strip.items, (0, 1, 2), strict=False):
+    for col_idx, item in enumerate(row.summary_strip.items):
         _render_decision_card_metric_axis(
-            ax=figure.add_subplot(summary_grid[0, col_idx]),
+            ax=figure.add_subplot(group_grid[0, 3 + col_idx]),
             item=item,
+            show_x_axis_label=show_x_axis_labels,
         )
 
 
@@ -1735,23 +1879,16 @@ def _render_decision_card_row_label(
 ) -> None:
     ax.set_axis_off()
     ax.text(
-        0.02,
+        0.96,
         0.5,
-        f"{row.sponge} / {row.sensor}",
-        ha="left",
+        f"{row.sponge}\n{row.sensor}",
+        ha="right",
         va="center",
-        fontsize=10.6,
+        multialignment="right",
+        fontsize=10.2,
         fontweight="bold",
         color="#222222",
         transform=ax.transAxes,
-    )
-    ax.plot(
-        [0.98, 0.98],
-        [0.12, 0.88],
-        color="#d2d2d2",
-        linewidth=1.0,
-        transform=ax.transAxes,
-        clip_on=False,
     )
 
 
@@ -1761,6 +1898,7 @@ def _plot_decision_card_trace_axis(
     panel: _DecisionCardPanelPayload,
     panel_limits: tuple[float, float],
     display_bounds: tuple[float, float] | None,
+    show_x_axis_label: bool,
 ) -> None:
     legend_handles = _plot_decision_card_trace_lines(ax=ax, line_payloads=panel.line_payloads)
     _decorate_decision_card_trace_axis(
@@ -1769,6 +1907,7 @@ def _plot_decision_card_trace_axis(
         panel_limits=panel_limits,
         display_bounds=display_bounds,
         legend_handles=legend_handles,
+        show_x_axis_label=show_x_axis_label,
     )
 
 
@@ -1819,6 +1958,7 @@ def _decorate_decision_card_trace_axis(
     panel_limits: tuple[float, float],
     display_bounds: tuple[float, float] | None,
     legend_handles: Mapping[str, object],
+    show_x_axis_label: bool,
 ) -> None:
     annotate_primary_window(ax, panel.panel_trace, stress_condition=panel.stress_condition)
     annotate_stress_addition(ax)
@@ -1835,7 +1975,12 @@ def _decorate_decision_card_trace_axis(
         ax.set_xlim(display_bounds)
     if panel.title:
         ax.set_title(panel.title, pad=5, fontsize=9.6, fontweight="normal")
-    ax.set_xlabel("Time from stress addition (h)", fontsize=8.9)
+    if show_x_axis_label:
+        ax.set_xlabel("Time from stress addition (h)", fontsize=8.9)
+        ax.tick_params(axis="x", labelbottom=True)
+    else:
+        ax.set_xlabel("")
+        ax.tick_params(axis="x", labelbottom=False)
     ax.set_ylabel(
         _DECISION_CARD_TRACE_AXIS_POLICY.ylabel if panel.show_ylabel else "",
         fontsize=_DECISION_CARD_TRACE_AXIS_POLICY.ylabel_fontsize,
@@ -1862,6 +2007,7 @@ def _render_decision_card_metric_axis(
     *,
     ax: plt.Axes,
     item: _DecisionCardSummaryItemPayload,
+    show_x_axis_label: bool,
 ) -> None:
     ax.axvline(
         0.0,
@@ -1871,12 +2017,17 @@ def _render_decision_card_metric_axis(
         zorder=1,
     )
     ax.set_xlim(item.x_limits)
-    ax.set_xlabel(item.axis_label, fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.xlabel_fontsize)
+    if show_x_axis_label:
+        ax.set_xlabel(item.axis_label, fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.xlabel_fontsize)
+        ax.tick_params(axis="x", labelbottom=True)
+    else:
+        ax.set_xlabel("")
+        ax.tick_params(axis="x", labelbottom=False)
     ax.set_ylabel("", fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ylabel_fontsize)
     ax.set_yticks([0.0, 1.0, 2.0])
     ax.set_yticklabels(["-IPTG", "+IPTG", "ΔIPTG"])
     ax.tick_params(axis="x", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.tick_size)
-    ax.tick_params(axis="y", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ytick_fontsize)
+    ax.tick_params(axis="y", labelsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.ytick_fontsize, pad=1.5)
     ax.grid(
         axis="x",
         color=_DECISION_CARD_SUMMARY_AXIS_POLICY.grid_color,
@@ -1887,11 +2038,12 @@ def _render_decision_card_metric_axis(
         item.title,
         loc="center",
         fontsize=_DECISION_CARD_SUMMARY_AXIS_POLICY.label_fontsize,
-        pad=5,
+        pad=4,
         fontweight="normal",
     )
     _render_metric_state_points(ax=ax, values=item.minus_values, y_base=0.0, color="#8c8c8c")
     _render_metric_state_points(ax=ax, values=item.plus_values, y_base=1.0, color=item.point_color)
+    _render_metric_state_points(ax=ax, values=item.contrast_values, y_base=2.0, color=item.point_color)
     _render_metric_state_estimate(
         ax=ax,
         value=item.minus_mean,

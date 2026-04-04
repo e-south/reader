@@ -132,10 +132,10 @@ def _style_notebook_legend(legend: Any) -> None:
     for text in legend.get_texts():
         text.set_color("#111111")
         with suppress(Exception):
-            text.set_fontsize(8)
+            text.set_fontsize(min(float(text.get_fontsize()), 8.0))
     legend.get_title().set_color("#111111")
     with suppress(Exception):
-        legend.get_title().set_fontsize(8)
+        legend.get_title().set_fontsize(min(float(legend.get_title().get_fontsize()), 8.0))
 
 
 def _scope_token(filename: str, *, key: str) -> str | None:

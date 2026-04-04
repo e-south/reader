@@ -7,6 +7,7 @@ import pandas as pd
 
 from reader.workbench.notebooks import _retron_review_shared as retron_review_shared
 
+_ALLOWED_AGGREGATE_SCORE_METRICS = ("O_abs_AUC", "S_abs_AUC", "O_AUC", "S_AUC")
 _FINGERPRINT_FRAME_COLUMNS = [
     "selected_sponge",
     "sensor",
@@ -21,6 +22,13 @@ _FINGERPRINT_FRAME_COLUMNS = [
     "sponge_family_size",
     "value",
 ]
+
+
+def available_aggregate_score_metrics(summary_df: pd.DataFrame) -> tuple[str, ...]:
+    if "metric" not in summary_df.columns:
+        return ()
+    available = {str(value) for value in summary_df["metric"].dropna().astype(str)}
+    return tuple(metric for metric in _ALLOWED_AGGREGATE_SCORE_METRICS if metric in available)
 
 
 def build_specificity_matrix(
@@ -280,8 +288,9 @@ def _require_available_score_metric(frame: pd.DataFrame, *, score_metric: str) -
     raise ValueError(
         f"retron_review: aggregate score metric {score_metric!r} is unavailable in the loaded semantic summary "
         f"exports. Available metrics: {available_text}. This review bundle is likely backed by stale retron "
-        "summary exports. Re-run the source experiments referenced by the review manifest, then reopen the "
-        "aggregate notebook."
+        "summary exports. The positive-area aggregate metrics are not backfilled from legacy signed D_abs_* "
+        "exports because that would change the statistic. Re-run the source experiments referenced by the review "
+        "manifest, then reopen the aggregate notebook."
     )
 
 

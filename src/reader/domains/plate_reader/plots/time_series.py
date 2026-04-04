@@ -123,8 +123,10 @@ def plot_time_series(
     mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
     replicate_alpha = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
     axis_label_size = float((fig_kwargs or {}).get("axis_label_size", 10.0))
+    title_fontsize = float((fig_kwargs or {}).get("title_fontsize", axis_label_size))
     tick_label_size = float((fig_kwargs or {}).get("tick_label_size", 8.0))
     legend_fontsize = float((fig_kwargs or {}).get("legend_fontsize", 8.0))
+    legend_marker_size = float((fig_kwargs or {}).get("legend_marker_size", 7.0))
     mean_marker_size = float((fig_kwargs or {}).get("mean_marker_size", 36.0))
     replicate_marker_size = float((fig_kwargs or {}).get("replicate_marker_size", 18.0))
     line_width = float((fig_kwargs or {}).get("line_width", 1.8))
@@ -255,6 +257,7 @@ def plot_time_series(
                 fontweight="normal",
                 x=0.5,
                 ha="center",
+                fontsize=title_fontsize,
             )
 
             for idx, ch in enumerate(y_feats):
@@ -301,6 +304,7 @@ def plot_time_series(
                     axis_label_size=axis_label_size,
                     tick_label_size=tick_label_size,
                     legend_fontsize=legend_fontsize,
+                    legend_marker_size=legend_marker_size,
                 )
                 with suppress(Exception):
                     ax.set_box_aspect(1.0)
@@ -316,7 +320,7 @@ def plot_time_series(
                         [0],
                         color=color_map[hue],
                         marker=marker_map[hue],
-                        markersize=7,
+                        markersize=legend_marker_size,
                         linestyle="-",
                         linewidth=1.8,
                         alpha=mean_marker_alpha,

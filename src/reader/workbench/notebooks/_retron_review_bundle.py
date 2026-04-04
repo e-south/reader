@@ -846,28 +846,7 @@ def _upgrade_legacy_summary_metrics(
         target_metric="P_pre",
         control_name=control_name,
     )
-    upgraded = _append_expected_direction_metric(
-        upgraded,
-        source_metric="D_abs_AUC",
-        target_metric="O_abs_AUC",
-    )
-    upgraded = _append_expected_direction_metric(
-        upgraded,
-        source_metric="D_abs_END",
-        target_metric="O_abs_END",
-    )
-    upgraded = _append_scaled_metric(
-        upgraded,
-        source_metric="O_abs_AUC",
-        target_metric="S_abs_AUC",
-        min_abs_g_sensor=min_abs_g_sensor,
-    )
-    upgraded = _append_scaled_metric(
-        upgraded,
-        source_metric="O_abs_END",
-        target_metric="S_abs_END",
-        min_abs_g_sensor=min_abs_g_sensor,
-    )
+    del min_abs_g_sensor
     return upgraded
 
 

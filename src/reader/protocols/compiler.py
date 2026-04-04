@@ -1369,9 +1369,11 @@ def _plate_reader_retron_plot_output(
             "fig": {
                 "figsize": [4.9, 4.9],
                 "axis_label_size": 8.2,
+                "title_fontsize": 8.2,
                 "tick_label_size": 6.4,
-                "legend_fontsize": 6.2,
-                "mean_marker_size": 14.0,
+                "legend_fontsize": 5.4,
+                "legend_marker_size": 5.4,
+                "mean_marker_size": 10.0,
                 "replicate_marker_size": 12.0,
                 "line_width": 1.5,
                 "top": 0.84,
@@ -1507,7 +1509,7 @@ def _plate_reader_retron_plot_output(
     if output_id == "control_anchored_decomposition":
         defaults = {
             "view": "decomposition",
-            "metric": "D_abs_AUC",
+            "metric": "O_AUC",
             "title": "Reporter-ratio shifts by IPTG state against matched tetO",
             "filename": "control_anchored_decomposition",
             "control_name": control_name,

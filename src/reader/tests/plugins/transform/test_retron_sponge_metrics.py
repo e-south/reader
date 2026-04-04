@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 
+from reader.domains.plate_reader.analysis import retron_sponge as retron_analysis
 from reader.plugins.transform.retron_sponge_metrics import RetronSpongeMetrics, RetronSpongeMetricsCfg
 
 
@@ -599,6 +601,89 @@ def test_retron_sponge_metrics_preserves_d_abs_additive_contracts() -> None:
 
     assert all(value == pytest.approx(p_pre) for value in pointwise_delta)
     assert d_abs_auc == pytest.approx(d_auc + p_pre * window_duration)
+
+
+def test_retron_sponge_metrics_auc_is_signed_and_shift_invariant_for_negative_log_ratio_contrasts() -> None:
+    times = np.asarray([0.0, 1.0, 2.0], dtype=float)
+    improving_negative = np.asarray([-5.0, -3.0, -1.0], dtype=float)
+    flat_negative = np.asarray([-5.0, -5.0, -5.0], dtype=float)
+
+    improving_auc = retron_analysis._auc(times, improving_negative)
+    flat_auc = retron_analysis._auc(times, flat_negative)
+    shifted_auc = retron_analysis._auc(times + 7.5, improving_negative)
+
+    assert improving_auc == pytest.approx(-6.0)
+    assert flat_auc == pytest.approx(-10.0)
+    assert improving_auc > flat_auc
+    assert shifted_auc == pytest.approx(improving_auc)
+
+
+def test_retron_sponge_metrics_positive_auc_keeps_expected_direction_area_without_cancellation() -> None:
+    times = np.asarray([0.0, 1.0, 2.0], dtype=float)
+    sign_flipping = np.asarray([-2.0, 1.0, 2.0], dtype=float)
+    expected_direction_only = np.asarray([0.0, 1.0, 2.0], dtype=float)
+
+    positive_auc = retron_analysis._positive_auc(times, sign_flipping)
+    expected_auc = retron_analysis._positive_auc(times, expected_direction_only)
+
+    assert positive_auc == pytest.approx(2.0)
+    assert positive_auc == pytest.approx(expected_auc)
+
+
+def test_retron_sponge_metrics_expected_direction_summaries_use_positive_area_integrals() -> None:
+    plugin = RetronSpongeMetrics()
+    cfg = RetronSpongeMetricsCfg(
+        stress_time_zero_h=1.5,
+        relevant_stress_map={"spyP": "3% EtOH"},
+        sensor_target_map={"spyP": ["CpxR", "BaeR"]},
+    )
+
+    outputs = plugin.run(_ctx(), {"df": _input_df()}, cfg)
+    trace = outputs["trace"]
+    summary = outputs["summary"]
+
+    o_trace = trace[
+        (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["metric"] == "O")
+        & trace["in_primary_post_stress"].fillna(False)
+    ].sort_values("time")
+    o_abs_trace = trace[
+        (trace["sensor"] == "spyP")
+        & (trace["sponge"] == "CpxR")
+        & (trace["stress_condition"] == "3% EtOH")
+        & (trace["metric"] == "O_abs")
+        & trace["in_primary_post_stress"].fillna(False)
+    ].sort_values("time")
+
+    o_auc = summary[
+        (summary["metric"] == "O_AUC")
+        & (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+    ]["value"].iloc[0]
+    o_abs_auc = summary[
+        (summary["metric"] == "O_abs_AUC")
+        & (summary["sensor"] == "spyP")
+        & (summary["sponge"] == "CpxR")
+        & (summary["stress_condition"] == "3% EtOH")
+    ]["value"].iloc[0]
+
+    assert o_auc == pytest.approx(
+        retron_analysis._positive_auc(
+            pd.to_numeric(o_trace["time"], errors="coerce").to_numpy(dtype=float),
+            pd.to_numeric(o_trace["value"], errors="coerce").to_numpy(dtype=float),
+        )
+    )
+    assert o_abs_auc == pytest.approx(
+        retron_analysis._positive_auc(
+            pd.to_numeric(o_abs_trace["time"], errors="coerce").to_numpy(dtype=float),
+            pd.to_numeric(o_abs_trace["value"], errors="coerce").to_numpy(dtype=float),
+        )
+    )
+    assert o_auc >= 0
+    assert o_abs_auc >= 0
 
 
 def test_retron_sponge_metrics_flags_unstable_scaled_metrics() -> None:

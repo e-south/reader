@@ -67,13 +67,13 @@ class _LibraryHeatmapAxisPolicy:
 _LIBRARY_HEATMAP_PANELS: tuple[_HeatmapPanelSpec, ...] = (
     _HeatmapPanelSpec(
         metric="S_abs_AUC",
-        title="Total effect",
+        title="Total area",
         formula="S_abs_AUC = O_abs_AUC / |G_sensor|",
         scale_group="scaled",
     ),
     _HeatmapPanelSpec(
         metric="S_AUC",
-        title="Post-stress",
+        title="Post-stress area",
         formula="S_AUC = O_AUC / |G_sensor|",
         scale_group="scaled",
     ),

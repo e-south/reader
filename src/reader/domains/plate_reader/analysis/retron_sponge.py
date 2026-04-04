@@ -1385,6 +1385,7 @@ def _effect_summary_frames(
         source_column="O",
         summary_metric="O_AUC",
         iptg=None,
+        auc_reducer=_positive_auc,
     )
     frames.append(o_auc_frame)
 
@@ -1393,6 +1394,7 @@ def _effect_summary_frames(
         source_column="O_abs",
         summary_metric="O_abs_AUC",
         iptg=None,
+        auc_reducer=_positive_auc,
     )
     frames.append(o_abs_auc_frame)
 
@@ -1506,11 +1508,15 @@ def _window_summary_frame_from_column(
     sponge: str | None = None,
     genotype_id: str | None = None,
     iptg: str | None = "__use_row__",
+    auc_reducer=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if auc_reducer is None:
+        auc_reducer = _auc
     summary_rows = _window_summaries(
         _value_summary_source(frame, source_column=source_column),
         value_column="value",
         metrics=(summary_metric,),
+        auc_reducer=auc_reducer,
     )[summary_metric]
     return (
         _summary_rows_frame(summary_rows, metric=summary_metric, sponge=sponge, genotype_id=genotype_id, iptg=iptg),
@@ -1607,7 +1613,10 @@ def _window_summaries(
     *,
     value_column: str,
     metrics: Iterable[str],
+    auc_reducer=None,
 ) -> dict[str, pd.DataFrame]:
+    if auc_reducer is None:
+        auc_reducer = _auc
     if frame.empty:
         return {metric: pd.DataFrame() for metric in metrics}
     metric_list = tuple(metrics)
@@ -1642,7 +1651,7 @@ def _window_summaries(
         if any(metric.endswith("_AUC") for metric in metric_list):
             auc_mask = ordered["in_primary_post_stress"].astype(bool).to_numpy()
             base_auc = dict(base)
-            base_auc["value"] = _auc(times[auc_mask], values[auc_mask])
+            base_auc["value"] = auc_reducer(times[auc_mask], values[auc_mask])
             for metric in metric_list:
                 if metric.endswith("_AUC"):
                     by_group[metric].append(dict(base_auc))
@@ -1720,6 +1729,11 @@ def _auc(times: np.ndarray, values: np.ndarray) -> float:
     if valid.sum() < 2:
         return np.nan
     return float(np.trapezoid(values[valid], times[valid]))
+
+
+def _positive_auc(times: np.ndarray, values: np.ndarray) -> float:
+    rectified = np.maximum(np.asarray(values, dtype=float), 0.0)
+    return _auc(np.asarray(times, dtype=float), rectified)
 
 
 def _numeric_or_nan(value: Any) -> float:

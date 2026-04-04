@@ -329,7 +329,6 @@ def _decorate_trace_axis(
         ax.axhline(0.0, color="#777777", linewidth=1.0, linestyle=":")
     if retron_presentation.should_annotate_primary_window(metric):
         _annotate_primary_window(ax, trace, stress_condition=stress_condition)
-    ax.axvline(0.0, color="#9e9e9e", linewidth=0.9, linestyle="--", alpha=0.9, zorder=0.8)
 
 
 def _trace_axis_bounds(
@@ -412,16 +411,48 @@ def _faceted_trace_figure_policy(*, rows: int, cols: int) -> _TraceFigurePolicy:
         ),
         adjust_with_legend=_TraceSubplotPolicy(
             top=0.86,
-            bottom=0.12,
+            bottom=0.27,
             left=0.09,
             right=0.99,
             hspace=0.18,
             wspace=0.02,
         ),
         legend=_TraceLegendPolicy(
+            loc="lower left",
+            bbox_to_anchor=(0.015, 0.006),
+            ncol_limit=1,
+        ),
+    )
+
+
+def _faceted_effect_trace_figure_policy(*, rows: int, cols: int) -> _TraceFigurePolicy:
+    return _TraceFigurePolicy(
+        default_figsize=(cols * 4.05, rows * 4.10),
+        sharex=True,
+        sharey=True,
+        xlabel_y=0.036,
+        title_y=0.988,
+        subtitle_y=0.948,
+        adjust_without_legend=_TraceSubplotPolicy(
+            top=0.86,
+            bottom=0.14,
+            left=0.11,
+            right=0.99,
+            hspace=0.30,
+            wspace=0.10,
+        ),
+        adjust_with_legend=_TraceSubplotPolicy(
+            top=0.86,
+            bottom=0.185,
+            left=0.11,
+            right=0.99,
+            hspace=0.30,
+            wspace=0.10,
+        ),
+        legend=_TraceLegendPolicy(
             loc="lower center",
             bbox_to_anchor=(0.5, 0.02),
-            ncol_limit=4,
+            ncol_limit=6,
         ),
     )
 
@@ -525,6 +556,7 @@ def _finalize_trace_figure(
     title: str,
     sensor: str,
     subtitle: str,
+    include_shared_xlabel: bool = True,
 ) -> None:
     _set_figure_header(
         fig,
@@ -534,7 +566,8 @@ def _finalize_trace_figure(
         title_y=float(fig_kwargs.get("suptitle_y", policy.title_y)),
         subtitle_y=float(fig_kwargs.get("subtitle_y", policy.subtitle_y)),
     )
-    fig.supxlabel("Time from stress addition (h)", y=policy.xlabel_y, fontsize=13.5)
+    if include_shared_xlabel:
+        fig.supxlabel("Time from stress addition (h)", y=policy.xlabel_y, fontsize=13.5)
     if legend_handles and policy.legend is not None:
         _add_trace_figure_legend(
             fig,
@@ -691,7 +724,12 @@ def _plot_trace_all_sensors_faceted_by_pair(
     if not pair_specs:
         return []
     rows, cols = best_subplot_grid(len(pair_specs))
-    policy = _faceted_trace_figure_policy(rows=rows, cols=cols)
+    use_shared_axis_titles = selected_metric != "D_abs"
+    policy = (
+        _faceted_trace_figure_policy(rows=rows, cols=cols)
+        if use_shared_axis_titles
+        else _faceted_effect_trace_figure_policy(rows=rows, cols=cols)
+    )
     stresses = _preferred_stresses(trace_df["stress_condition"], stress_order=stress_order)
     stress_color_map = _level_color_map(stresses, palette_book=palette_book)
     with use_style(rc=fig_kwargs.get("rc"), color_cycle=None):
@@ -744,12 +782,21 @@ def _plot_trace_all_sensors_faceted_by_pair(
         )
         if bounds is not None:
             y_limits, display_bounds = bounds
-            for axis in axes_flat:
+            metric_ylabel = retron_presentation.compact_metric_axis_label(
+                selected_metric,
+                metric_label_map=metric_label_map,
+            )
+            for idx, axis in enumerate(axes_flat):
                 if not axis.get_visible():
                     continue
                 _apply_trace_axis_bounds(axis, y_limits=y_limits, display_bounds=display_bounds)
-                axis.set_ylabel("")
                 axis.tick_params(labelbottom=True, labelleft=True)
+                if use_shared_axis_titles:
+                    axis.set_ylabel("")
+                    axis.set_xlabel("")
+                    continue
+                axis.set_xlabel("Time from stress addition (h)", fontsize=10.2, labelpad=0.8)
+                axis.set_ylabel(metric_ylabel if idx % cols == 0 else "", fontsize=11.2, labelpad=3.0)
         _finalize_trace_figure(
             fig,
             legend_handles=legend_handles,
@@ -758,12 +805,14 @@ def _plot_trace_all_sensors_faceted_by_pair(
             title=title,
             sensor="all sensors",
             subtitle=retron_presentation.trace_text_spec(selected_metric).figure_subtitle(),
+            include_shared_xlabel=use_shared_axis_titles,
         )
-        fig.supylabel(
-            retron_presentation.metric_axis_label(selected_metric, metric_label_map=metric_label_map),
-            x=0.04,
-            fontsize=13.2,
-        )
+        if use_shared_axis_titles:
+            fig.supylabel(
+                retron_presentation.metric_axis_label(selected_metric, metric_label_map=metric_label_map),
+                x=0.04,
+                fontsize=13.2,
+            )
         return emit_plot_figure(
             fig=fig,
             filename=filename or _slug(title),
@@ -1088,6 +1137,7 @@ def _trace_window_summary_frame(
     *,
     metric: str,
     stress_order: Sequence[str],
+    positive_only: bool = False,
 ) -> pd.DataFrame:
     frame = trace[trace["metric"].astype(str) == str(metric)].copy() if "metric" in trace.columns else trace.copy()
     if "in_primary_post_stress" in frame.columns:
@@ -1105,6 +1155,8 @@ def _trace_window_summary_frame(
         ordered = group.sort_values("time_from_stress", kind="stable")
         times = pd.to_numeric(ordered["time_from_stress"], errors="coerce").to_numpy(dtype=float)
         values = pd.to_numeric(ordered["value"], errors="coerce").to_numpy(dtype=float)
+        if positive_only:
+            values = np.maximum(values, 0.0)
         record["auc_value"] = _auc(times, values)
         rows.append(record)
     out = pd.DataFrame(rows)
@@ -1130,10 +1182,16 @@ def _add_trace_summary_inset(
     stress_order: Sequence[str],
     stress_color_map: Mapping[str, str],
 ) -> None:
-    summary_metric = {"D": "D_AUC", "D_abs": "D_abs_AUC"}.get(str(metric))
+    summary_metric = {"D": "O_AUC", "D_abs": "O_abs_AUC"}.get(str(metric))
+    summary_trace_metric = {"D": "O", "D_abs": "O_abs"}.get(str(metric), str(metric))
     if not summary_metric:
         return
-    summary = _trace_window_summary_frame(trace, metric=metric, stress_order=stress_order)
+    summary = _trace_window_summary_frame(
+        trace,
+        metric=summary_trace_metric,
+        stress_order=stress_order,
+        positive_only=True,
+    )
     if summary.empty:
         return
     inset = ax.inset_axes([0.66, 0.08, 0.30, 0.30])

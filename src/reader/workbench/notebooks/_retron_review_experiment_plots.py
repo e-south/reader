@@ -169,9 +169,8 @@ _SUMMARY_SUPPORTING_TABLE_SPEC = _SupportingTableSpec(
 )
 
 _DECISION_CARD_METRIC_ROWS = (
-    ("P_pre", "Preload shift"),
-    ("D_abs_AUC", "Total effect beyond matched tetO"),
-    ("D_AUC", "Post-stress increment"),
+    ("P_pre", "Pre-stress contrast"),
+    ("O_AUC", "Expected-direction state area"),
     ("D_growth_AUC", "Burden penalty"),
 )
 
@@ -185,6 +184,7 @@ _DECOMPOSITION_TRACE_REQUIRED_COLUMNS = frozenset(
         "post_stress_read_count",
         "matched_group_sample_count",
         "stress_addition_gap_h",
+        "expected_decoy_sign",
     }
 )
 
@@ -456,7 +456,7 @@ def _validate_decomposition_summary_contract(
             "the dataframe records before reopening the notebook."
         )
     available = {str(value) for value in summary["metric"].dropna().astype(str)}
-    required = ("P_pre", "D_abs_AUC", "D_AUC", str(burden_metric), "G_sensor")
+    required = ("P_pre", "O_AUC", str(burden_metric), "G_sensor")
     missing = [metric for metric in required if metric not in available]
     if not missing:
         return
@@ -818,7 +818,7 @@ def _decision_card_supporting_table(frame: pd.DataFrame) -> pd.DataFrame:
             record = dict(base)
             record.update(
                 {
-                    "summary_metric": metric_id,
+                    "summary_metric": "O_state_AUC" if metric_id == "O_AUC" else metric_id,
                     "summary_label": label,
                     "estimate": estimate,
                     "lower": lower,

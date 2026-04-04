@@ -94,25 +94,30 @@ def annotate_primary_window(ax: plt.Axes, trace: pd.DataFrame, *, stress_conditi
     if span is None:
         return
     start, end = span
-    ax.axvspan(start, end, color="#f3b4b0", alpha=0.14, zorder=0.15, linewidth=0.0)
-
-
-def annotate_stress_addition(ax) -> None:
-    if any(text.get_text() == "Stress addition" for text in ax.texts):
-        return
-    x_limits = ax.get_xlim()
-    if len(x_limits) != 2 or not np.isfinite(x_limits).all() or not (x_limits[0] <= 0.0 <= x_limits[1]):
+    ax.axvspan(start, end, color="#f3b4b0", alpha=0.18, zorder=0.15, linewidth=0.0)
+    if any(text.get_text() == "Scoring window" for text in ax.texts):
         return
     ax.annotate(
-        "Stress addition",
-        xy=(0.0, 0.08),
+        "Scoring window",
+        xy=(start, 0.08),
         xycoords=ax.get_xaxis_transform(),
         xytext=(4, 0),
         textcoords="offset points",
         ha="left",
         va="bottom",
         fontsize=8,
-        color="#666666",
+        color="#7a5551",
         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.75, "pad": 0.25},
         zorder=3.5,
     )
+
+
+def annotate_stress_addition(ax) -> None:
+    x_limits = ax.get_xlim()
+    if len(x_limits) != 2 or not np.isfinite(x_limits).all() or not (x_limits[0] <= 0.0 <= x_limits[1]):
+        return
+    for line in ax.lines:
+        x_data = np.asarray(line.get_xdata(), dtype=float)
+        if x_data.size == 2 and np.allclose(x_data, [0.0, 0.0]):
+            return
+    ax.axvline(0.0, color="#8c8c8c", linewidth=0.95, linestyle="--", alpha=0.9, zorder=0.8)

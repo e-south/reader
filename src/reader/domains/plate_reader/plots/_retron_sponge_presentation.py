@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-TRACE_PRIMARY_WINDOW_METRICS = frozenset({"C", "D", "D_abs", "D_growth", "M", "O"})
+TRACE_PRIMARY_WINDOW_METRICS = frozenset({"C", "D", "D_abs", "D_growth", "M", "O", "O_abs"})
 TRACE_INSET_METRICS = frozenset()
 
 
@@ -55,10 +55,14 @@ _METRIC_AXIS_LABELS = {
     "D_abs": "D_abs(t) = ΔIPTG[R(t) - R_tetO,matched(t)]",
     "D_growth": "Construct-specific growth burden",
     "M": "Stress-gated effect",
-    "O": "Expected-direction post-stress increment",
-    "O_abs": "Expected-direction total effect",
+    "O": "Expected-direction-aligned post-stress increment",
+    "O_abs": "Expected-direction-aligned matched tetO separation",
     "R": "Observed reporter ratio log2(YFP/CFP)",
     "mu": "Instantaneous growth rate d ln(OD600) / dt",
+}
+
+_COMPACT_METRIC_AXIS_LABELS = {
+    "D_abs": "ΔIPTG ΔR vs matched tetO",
 }
 
 _SUMMARY_METRIC_LABELS = {
@@ -66,16 +70,16 @@ _SUMMARY_METRIC_LABELS = {
     "P_pre": "Preload shift",
     "C_AUC": "tetO-subtracted AUC",
     "C_END": "tetO-subtracted endpoint",
-    "D_AUC": "Post-stress increment AUC",
-    "D_abs_AUC": "Total effect beyond matched tetO AUC",
+    "D_AUC": "Signed post-stress increment AUC",
+    "D_abs_AUC": "Signed total effect beyond matched tetO AUC",
     "D_growth_AUC": "Growth burden AUC",
     "L_pre": "Pre-stress leakiness",
     "L_post_AUC": "Post-stress leakiness AUC",
     "M_AUC": "Stress-gated AUC",
-    "O_AUC": "Expected-direction increment AUC",
-    "O_abs_AUC": "Expected-direction total-effect AUC",
-    "S_AUC": "Scaled expected-direction increment",
-    "S_abs_AUC": "Scaled expected-direction total effect",
+    "O_AUC": "Expected-direction post-stress area",
+    "O_abs_AUC": "Expected-direction total area",
+    "S_AUC": "Scaled expected-direction post-stress area",
+    "S_abs_AUC": "Scaled expected-direction total area",
     "T_ratio_AUC": "tetO reporter burden AUC",
     "T_growth_AUC": "tetO growth burden AUC",
     "T_finalOD": "tetO endpoint burden",
@@ -136,11 +140,11 @@ _SUMMARY_METRIC_TEXT_SPECS = {
         include_endpoint_window_note=True,
     ),
     "D_AUC": SummaryTextSpec(
-        lead="AUC of the new post-stress increment after preload removal",
+        lead="Signed post-stress integral after preload removal in log2-ratio space",
         include_primary_window_note=True,
     ),
     "D_abs_AUC": SummaryTextSpec(
-        lead="AUC of the total effect beyond matched tetO across the post-stress window",
+        lead="Signed total post-stress integral beyond matched tetO in log2-ratio space",
         include_primary_window_note=True,
     ),
     "D_growth_AUC": SummaryTextSpec(
@@ -148,16 +152,20 @@ _SUMMARY_METRIC_TEXT_SPECS = {
         include_primary_window_note=True,
     ),
     "M_AUC": SummaryTextSpec(lead="AUC of the stress-specific gain", include_primary_window_note=True),
+    "O_AUC": SummaryTextSpec(
+        lead="Positive-area integral of the expected-direction post-stress ΔR after preload removal",
+        include_primary_window_note=True,
+    ),
     "O_abs_AUC": SummaryTextSpec(
-        lead="Expected-direction total effect across the post-stress window",
+        lead="Positive-area integral of the expected-direction matched-tetO ΔR over the post-stress window",
         include_primary_window_note=True,
     ),
     "S_AUC": SummaryTextSpec(
-        lead="Expected-direction post-stress increment scaled by the native sensor range",
+        lead="Expected-direction post-stress area scaled by the native sensor range",
         include_primary_window_note=True,
     ),
     "S_abs_AUC": SummaryTextSpec(
-        lead="Expected-direction total effect scaled by the native sensor range",
+        lead="Expected-direction total area scaled by the native sensor range",
         include_primary_window_note=True,
     ),
 }
@@ -175,24 +183,17 @@ DECOMPOSITION_TEXT_SPEC = SummaryTextSpec(
 _DECISION_CARD_METRIC_SPECS = (
     DecisionCardMetricSpec(
         metric="P_pre",
-        label="Pre-stress shift",
+        label="Pre-stress baseline ΔR",
         color="#6f6f6f",
         units="log2 ratio",
-        axis_label="Matched ratio shift",
+        axis_label="Baseline ΔR vs matched tetO",
     ),
     DecisionCardMetricSpec(
-        metric="D_abs_AUC",
-        label="Total window effect",
-        color="#0072B2",
-        units="log2 ratio x h",
-        axis_label="AUC[D_abs(t)]",
-    ),
-    DecisionCardMetricSpec(
-        metric="D_AUC",
-        label="Post-stress effect",
+        metric="O_AUC",
+        label="Expected-direction state area",
         color="#56B4E9",
         units="log2 ratio x h",
-        axis_label="AUC[D(t)]",
+        axis_label="Positive ∫ΔR dt vs matched tetO",
     ),
 )
 
@@ -249,21 +250,41 @@ _METRIC_SEMANTICS = {
     ),
     "O_abs_AUC": MetricSemantics(
         metric_id="O_abs_AUC",
-        user_label="Expected-direction total effect",
+        user_label="Expected-direction total area",
         role="ranking",
         scope="cross_sensor",
         units="log2 ratio x h",
-        sign_mode="expected_direction",
+        sign_mode="expected_direction_positive_area",
         default_summary_kind="AUC",
         show_by_default=True,
     ),
     "S_abs_AUC": MetricSemantics(
         metric_id="S_abs_AUC",
-        user_label="Scaled expected-direction total effect",
+        user_label="Scaled expected-direction total area",
         role="ranking",
         scope="cross_sensor",
         units="scaled effect",
-        sign_mode="expected_direction",
+        sign_mode="expected_direction_positive_area",
+        default_summary_kind="AUC",
+        show_by_default=True,
+    ),
+    "O_AUC": MetricSemantics(
+        metric_id="O_AUC",
+        user_label="Expected-direction post-stress area",
+        role="ranking",
+        scope="cross_sensor",
+        units="log2 ratio x h",
+        sign_mode="expected_direction_positive_area",
+        default_summary_kind="AUC",
+        show_by_default=True,
+    ),
+    "S_AUC": MetricSemantics(
+        metric_id="S_AUC",
+        user_label="Scaled expected-direction post-stress area",
+        role="ranking",
+        scope="cross_sensor",
+        units="scaled effect",
+        sign_mode="expected_direction_positive_area",
         default_summary_kind="AUC",
         show_by_default=True,
     ),
@@ -282,6 +303,12 @@ def metric_axis_label(metric: str, *, metric_label_map: Mapping[str, str] | None
     if metric_label_map and str(metric) in metric_label_map:
         return str(metric_label_map[str(metric)])
     return _METRIC_AXIS_LABELS.get(str(metric), f"Retron sponge metric ({metric})")
+
+
+def compact_metric_axis_label(metric: str, *, metric_label_map: Mapping[str, str] | None = None) -> str:
+    if metric_label_map and str(metric) in metric_label_map:
+        return str(metric_label_map[str(metric)])
+    return _COMPACT_METRIC_AXIS_LABELS.get(str(metric), metric_axis_label(metric, metric_label_map=metric_label_map))
 
 
 def summary_metric_label(metric: str) -> str:
@@ -426,18 +453,26 @@ def decision_card_metric_title(
     if metric_id == "P_pre":
         pre_span = pre_window_span_bounds(trace)
         if pre_span is not None and not np.isclose(pre_span[0], pre_span[1]):
-            return f"Pre-stress shift ({window_span_text(*pre_span)})"
-        return "Pre-stress shift (R_pre; last pre-stress reads)"
-    if metric_id in {"D_abs_AUC", "D_AUC"}:
+            return _multiline_metric_title("Pre-stress baseline ΔR", window_span_text(*pre_span))
+        return _multiline_metric_title("Pre-stress baseline ΔR", "R_pre; last pre-stress reads")
+    if metric_id in {"D_abs_AUC", "D_AUC", "O_AUC", "O_abs_AUC"}:
         start_h = pd.to_numeric(pd.Series([summary_window_start_h]), errors="coerce").iloc[0]
         end_h = pd.to_numeric(pd.Series([summary_window_end_h]), errors="coerce").iloc[0]
         if np.isfinite(start_h) and np.isfinite(end_h):
-            label = "Total window effect" if metric_id == "D_abs_AUC" else "Post-stress effect"
-            return f"{label} ({window_span_text(float(start_h), float(end_h))})"
+            label_map = {
+                "D_abs_AUC": "Total integrated contrast",
+                "D_AUC": "Post-stress integrated contrast",
+                "O_abs_AUC": "Expected-direction total area",
+                "O_AUC": "Expected-direction state area",
+            }
+            label = label_map[metric_id]
+            return _multiline_metric_title(label, window_span_text(float(start_h), float(end_h)))
     return {
-        "P_pre": "Pre-stress shift",
-        "D_abs_AUC": "Total window effect",
-        "D_AUC": "Post-stress effect",
+        "P_pre": "Pre-stress baseline ΔR",
+        "D_abs_AUC": "Total integrated contrast",
+        "D_AUC": "Post-stress integrated contrast",
+        "O_abs_AUC": "Expected-direction total area",
+        "O_AUC": "Expected-direction state area",
     }.get(metric_id, summary_metric_label(metric_id))
 
 
@@ -521,6 +556,10 @@ def _endpoint_time_count(frame: pd.DataFrame) -> int | None:
     if modes.empty:
         return int(counts.iloc[0])
     return int(modes.iloc[0])
+
+
+def _multiline_metric_title(label: str, detail: str) -> str:
+    return f"{str(label).strip()}\n({str(detail).strip()})"
 
 
 def _validate_presentation_catalog() -> None:

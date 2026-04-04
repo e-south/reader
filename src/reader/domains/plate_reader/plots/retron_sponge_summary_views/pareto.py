@@ -330,9 +330,9 @@ def _pareto_legend_handles(
 
 def _aggregate_score_axis_label(metric: str) -> str:
     labels = {
-        "O_abs_AUC": "total effect",
-        "S_abs_AUC": "scaled total effect",
-        "O_AUC": "post-stress increment",
-        "S_AUC": "scaled increment",
+        "O_abs_AUC": "expected-direction total area",
+        "S_abs_AUC": "scaled expected-direction total area",
+        "O_AUC": "expected-direction post-stress area",
+        "S_AUC": "scaled expected-direction post-stress area",
     }
     return labels.get(str(metric), retron_presentation.summary_metric_label(metric))
