@@ -103,3 +103,17 @@ jobs:
           name: default-suite
           fail_ci_if_error: false
           verbose: true
+
+  lint-test-build:
+    name: lint-test-build
+    runs-on: ubuntu-latest
+    needs: [quality, default-tests]
+    if: always()
+
+    steps:
+      - name: Mirror the legacy required status context
+        run: |
+          echo "quality=${{ needs.quality.result }}"
+          echo "default-tests=${{ needs.default-tests.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.default-tests.result }}" = "success"
