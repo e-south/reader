@@ -10,6 +10,7 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +28,10 @@ from reader.workbench.engine import build_next_steps
 from reader.workbench.ports import dataframe_input, file_bundle_output
 from reader.workbench.records import RecordStore
 from reader.workbench.registry import Plugin, PluginConfig, Registry
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
 def _tidy_df() -> pd.DataFrame:
@@ -176,7 +181,7 @@ def test_ls_readiness_requires_details(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--readiness"])
     assert result.exit_code != 0
-    assert "--readiness requires --details" in result.output
+    assert "--readiness requires --details" in _plain(result.output)
 
 
 def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:

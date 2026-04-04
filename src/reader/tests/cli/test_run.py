@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.cli import app
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
 def _run_config() -> dict:
@@ -53,4 +58,4 @@ def test_run_json_requires_dry_run(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["run", str(cfg), "--format", "json"])
     assert result.exit_code != 0
-    assert "only supported with --dry-run" in result.output
+    assert "only supported with --dry-run" in _plain(result.output)

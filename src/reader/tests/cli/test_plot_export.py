@@ -10,6 +10,7 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,10 @@ from reader.workbench import FileRef, RecordRef, resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.experiment import ResourceCatalog
 from reader.workbench.spec_overrides import apply_step_overrides, parse_input_overrides
+
+
+def _plain(text: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
 def _base_config() -> dict:
@@ -227,7 +232,7 @@ def test_plot_json_requires_list(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg), "--format", "json"])
     assert result.exit_code != 0
-    assert "only supported with --list" in result.output
+    assert "only supported with --list" in _plain(result.output)
 
 
 def test_plot_requires_records(tmp_path: Path) -> None:
@@ -375,7 +380,7 @@ def test_export_json_requires_list(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg), "--format", "json"])
     assert result.exit_code != 0
-    assert "only supported with --list" in result.output
+    assert "only supported with --list" in _plain(result.output)
 
 
 def test_validate_checks_files_by_default(tmp_path: Path) -> None:
