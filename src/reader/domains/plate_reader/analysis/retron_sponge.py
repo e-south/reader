@@ -218,6 +218,7 @@ def compute_retron_sponge_metrics(ctx, df: pd.DataFrame, cfg) -> tuple[pd.DataFr
         control_od_endpoint=control_od_endpoint,
         relevant_stress_map=relevant_stress_map,
         control_name=str(cfg.control_name),
+        no_stress_label=str(cfg.no_stress_label),
         min_abs_g_sensor=float(cfg.min_abs_g_sensor),
     )
     return trace, summary
@@ -1285,6 +1286,7 @@ def _build_summary_table(
     control_od_endpoint: pd.DataFrame,
     relevant_stress_map: Mapping[str, str],
     control_name: str,
+    no_stress_label: str,
     min_abs_g_sensor: float,
 ) -> pd.DataFrame:
     frames = _preload_summary_frames(wide=wide, control_name=control_name)
@@ -1305,7 +1307,12 @@ def _build_summary_table(
         )
     )
 
-    g_sensor_rows = _native_sensor_response(wide, relevant_stress_map=relevant_stress_map, control_name=control_name)
+    g_sensor_rows = _native_sensor_response(
+        wide,
+        relevant_stress_map=relevant_stress_map,
+        control_name=control_name,
+        no_stress_label=no_stress_label,
+    )
     frames.append(
         _summary_rows_frame(g_sensor_rows, metric="G_sensor", sponge=control_name, genotype_id=None, iptg=None)
     )
@@ -1321,7 +1328,15 @@ def _build_summary_table(
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
         return pd.DataFrame(columns=_SUMMARY_TABLE_COLUMNS)
-    return pd.concat(frames, ignore_index=True).loc[:, _SUMMARY_TABLE_COLUMNS]
+    return _concat_frames_preserving_na_schema(frames, columns=_SUMMARY_TABLE_COLUMNS)
+
+
+def _concat_frames_preserving_na_schema(frames: Iterable[pd.DataFrame], *, columns: Iterable[str]) -> pd.DataFrame:
+    column_list = list(columns)
+    cleaned_frames = [frame.dropna(axis="columns", how="all") for frame in frames if not frame.empty]
+    if not cleaned_frames:
+        return pd.DataFrame(columns=column_list)
+    return pd.concat(cleaned_frames, ignore_index=True).reindex(columns=column_list)
 
 
 def _preload_summary_frames(*, wide: pd.DataFrame, control_name: str) -> list[pd.DataFrame]:
@@ -1671,6 +1686,7 @@ def _native_sensor_response(
     *,
     relevant_stress_map: Mapping[str, str],
     control_name: str,
+    no_stress_label: str,
 ) -> pd.DataFrame:
     b_means = _state_metric_means(wide[wide["sponge"] == control_name], metric="B")
     baseline = b_means[b_means["IPTG"] == "-IPTG"]
@@ -1678,24 +1694,24 @@ def _native_sensor_response(
     for (plate_id, sensor), group in baseline.groupby(["plate_id", "sensor"], dropna=False):
         relevant_label = str(relevant_stress_map[str(sensor)])
         relevant = group[group["stress_condition"] == relevant_label].sort_values("time")
-        unstressed = group[group["stress_condition"] == "H2O"].sort_values("time")
+        unstressed = group[group["stress_condition"] == str(no_stress_label)].sort_values("time")
         if relevant.empty or unstressed.empty:
             continue
         merged = relevant.merge(
             unstressed,
             on=["plate_id", "sensor", "sponge", "genotype_id", "IPTG", "time"],
             how="inner",
-            suffixes=("_rel", "_h2o"),
+            suffixes=("_rel", "_base"),
             validate="one_to_one",
         )
         if merged.empty:
             continue
         values = pd.to_numeric(merged["value_rel"], errors="coerce") - pd.to_numeric(
-            merged["value_h2o"], errors="coerce"
+            merged["value_base"], errors="coerce"
         )
         mask = (
             merged["in_primary_post_stress_rel"].astype(bool).to_numpy()
-            & merged["in_primary_post_stress_h2o"].astype(bool).to_numpy()
+            & merged["in_primary_post_stress_base"].astype(bool).to_numpy()
         )
         rows.append(
             {

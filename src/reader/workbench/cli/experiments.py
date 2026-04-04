@@ -14,9 +14,9 @@ from . import shared
 from ._lazy import load as _load
 from .helpers import (
     append_journal,
-    find_jobs,
     find_nearest_experiments_dir,
     format_job_arg,
+    indexed_jobs,
     infer_job_path,
     load_job_models,
     resolve_pipeline_step_id,
@@ -94,7 +94,8 @@ def ls(
     )
     if not root_path.exists() or not root_path.is_dir():
         raise typer.BadParameter(f"Experiments root not found: {root_path}")
-    jobs = find_jobs(root_path, include_scaffolds=include_scaffolds)
+    job_inventory = indexed_jobs(root_path, include_scaffolds=include_scaffolds)
+    jobs = [job_path for _, job_path in job_inventory]
     inspection_common = _load("reader.workbench.inspection.common")
     inspection_inventory = _load("reader.workbench.inspection.inventory")
     inspection_readiness = _load("reader.workbench.inspection.readiness")
@@ -121,7 +122,7 @@ def ls(
 
     entries: list[dict[str, object]] = []
     runtime = _load("reader.runtime").builtin_runtime() if details else None
-    for idx, config_path in enumerate(jobs, 1):
+    for idx, config_path in job_inventory:
         entry: dict[str, object] = {
             "index": idx,
             "name": config_path.parent.name,
