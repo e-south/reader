@@ -1,156 +1,19 @@
-# reader
-[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
+[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/e-south/reader/graph/badge.svg)](https://codecov.io/gh/e-south/reader)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 
-`reader` is a workbench for analyzing experimental data and a library/CLI that provides supporting commands.
+![reader banner](assets/reader-banner.svg)
 
-
-### Contents
-
-1. [Overview](#overview)
-2. [Installation](#installation)
-3. [Quickstart](#quickstart)
-4. [More documentation](#more-documentation)
+`reader` is a toolkit for organizing experiment directories and running config-driven analysis pipelines over structured assay data. Each experiment has a clear working layout: raw inputs live in `inputs/`, optional notebooks live in `notebooks/`, generated results live in `outputs/`, and a `reader/v7` `config.yaml` describes what should be run.
 
 ---
 
-### Overview
+## Documentation
 
-1. Place raw data and metadata in an experiment directory.
-
-    ```bash
-    experiments/
-        <exp>/
-            config.yaml     # experiment config
-            inputs/         # raw files + metadata (e.g., metadata.xlsx)
-            outputs/        # pipeline outputs, plots, exports, notebooks
-    ```
-2. Run config-driven pipelines that process data and produce structured outputs.
-
-    ```bash
-    outputs/
-      reader.log      # run log
-      manifests/      # inventories what was produced
-      artifacts/      # pipeline outputs (dataframes + metadata)
-      plots/          # rendered figures (optional)
-      exports/        # exported files (optional)
-      notebooks/      # scaffolded marimo notebooks
-    ```
-
-3. Optionally generate plots and exports data.
-4. Use notebooks for exploratory data analysis.
-
----
-
-### Installation
-
-This repo is managed with [**uv**](https://docs.astral.sh/uv/):
-
-1. `pyproject.toml` declares dependencies (runtime + optional extras).
-2. `uv.lock` is the fully pinned dependency graph.
-3. `.venv/` is the project virtual environment.
-
-**Two key commands:**
-
-1. `uv sync` installs everything from the lockfile into .venv.
-2. `uv run <cmd>` runs commands inside the project environment without requiring `source .venv/bin/activate`.
-
-Install uv. (Below is for macOS/Linux, for other OSs see [here](https://docs.astral.sh/uv/getting-started/installation/).)
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# ensure your uv bin dir is on PATH
-```
-
-Clone repo
-
-```bash
-git clone https://github.com/e-south/reader.git
-cd reader
-```
-
-Create/sync the environment from the committed lockfile:
-
-```bash
-uv sync --locked
-```
-
-Sanity checks:
-
-```bash
-uv run python -c "import reader, pandas, pyarrow; print('ok')"
-```
-
-Dev tooling is opt-in via a dependency group.
-
-```bash
-uv sync --locked --group dev --group notebooks --group cytometry --extra dnadesign
-uv run ruff --version
-uv run ruff check .
-uv run pytest -q
-```
-
-**This project defines console scripts, which you can run via:**
-
-Option A: no `.venv` activation — use `uv run`
-
-```bash
-uv run reader --help
-uv run reader ls
-```
-
-Option B: traditional — activate `.venv`
-
-```bash
-source .venv/bin/activate
-reader --help
-reader ls
-deactivate
-```
-
----
-
-### Quickstart
-
-Try the guided walkthrough:
-
-```bash
-uv run reader demo
-```
-
-Create an experiment directory:
-
-```bash
-# From the reader root
-mkdir -p experiments/<year>/my_experiment/{inputs,outputs}
-```
-
-Design and run a pipeline via `config.yaml`:
-
-```bash
-uv run reader explain experiments/my_experiment/config.yaml
-uv run reader run     experiments/my_experiment/config.yaml   # pipeline (artifacts)
-```
-
-Generate plots/exports or scaffold a notebook:
-
-```bash
-uv run reader plot         experiments/my_experiment/config.yaml --list
-uv run reader export       experiments/my_experiment/config.yaml --list
-uv run reader notebook     experiments/my_experiment/config.yaml
-```
-
----
-
-### More documentation
-
-1. [Docs index](./docs/index.md)
-2. [CLI reference](./docs/core/cli.md)
-3. [Configuring pipelines](./docs/core/pipeline.md)
-4. [Notebooks](./docs/guides/notebooks.md)
-5. [Plugin development](./docs/core/plugins.md)
-6. [Spec / architecture](./docs/core/spec.md)
-7. [End-to-end demo](./docs/guides/demo.md)
-
----
-
-@e-south
+- [Documentation index](docs/README.md): complete map of user docs, reference docs, and maintainer docs.
+- [Getting started](docs/guides/getting_started.md): install `reader`, verify the environment, and inspect the first experiment.
+- [Preflight, run, verify](docs/guides/preflight_run_verify.md): deterministic path for inspecting, executing, and checking one experiment.
+- [Automation and JSON](docs/guides/automation.md): machine-readable discovery, inspection, and preflight surfaces.
+- [CLI reference](docs/core/cli.md): full command reference.
+- [Configuring `reader/v7`](docs/core/pipeline.md): the public authoring surface for experiment configs.
+- [Repo maintenance](docs/repo-maintenance.md): maintainer verification and CI lanes.

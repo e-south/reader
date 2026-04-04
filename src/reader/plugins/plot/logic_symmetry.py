@@ -9,22 +9,23 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
-from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.sinks import PlotFigure
+from reader.plugins.plot._shared import FigurePlotPlugin
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class LogicSymCfg(PluginConfig):
     response_channel: str
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
-    treatment_map: dict[str, str]
-    treatment_case_sensitive: bool = True
+    treatment_column: str | None = None
+    logic_map_ref: str
     aggregation: dict[str, Any] = Field(default_factory=dict)
     encodings: dict[str, Any] = Field(default_factory=dict)
     ideals_overlay: dict[str, Any] = Field(default_factory=dict)
@@ -35,24 +36,20 @@ class LogicSymCfg(PluginConfig):
     filename: str | None = None
 
 
-class LogicSymmetryPlot(Plugin):
-    key = "logic_symmetry"
-    category = "plot"
+class LogicSymmetryPlot(FigurePlotPlugin):
     ConfigModel = LogicSymCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # tidy+map helps ensure design_by & batch present; for leniency accept tidy.v1 in earlier range
-        return {"df": "tidy+map.v1"}
-
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "plate_reader.annotated.v1")}
 
     def render(self, ctx, inputs, cfg: LogicSymCfg) -> list[PlotFigure]:
+        if ctx.experiment is None:
+            raise ValueError("logic_symmetry requires experiment semantics in the run context")
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
+        from reader.domains.logic.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
 
+        logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],
@@ -60,8 +57,9 @@ class LogicSymmetryPlot(Plugin):
             response_channel=cfg.response_channel,
             design_by=cfg.design_by,
             batch_col=cfg.batch_col,
-            treatment_map=cfg.treatment_map,
-            treatment_case_sensitive=cfg.treatment_case_sensitive,
+            treatment_column=cfg.treatment_column or logic_map.column,
+            treatment_map=dict(logic_map.corners),
+            treatment_case_sensitive=logic_map.case_sensitive,
             aggregation=cfg.aggregation,
             encodings=cfg.encodings,
             ideals_overlay=cfg.ideals_overlay,
@@ -76,8 +74,3 @@ class LogicSymmetryPlot(Plugin):
         dpi = (cfg.output or {}).get("dpi", 300)
         base = cfg.filename or "logic_symmetry"
         return [PlotFigure(fig=result.fig, filename=base, ext=ext, dpi=dpi) for ext in formats]
-
-    def run(self, ctx, inputs, cfg: LogicSymCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}

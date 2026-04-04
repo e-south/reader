@@ -133,6 +133,10 @@ archived/
 !/experiments/template/
 !/experiments/template/**
 
+# Per-experiment command journals are local workbench logs, not source docs.
+/experiments/**/JOURNAL.md
+/experiments/**/journal.md
+
 # Docs are tracked (pipeline + plugins live here).
 !/docs/
 !/docs/**

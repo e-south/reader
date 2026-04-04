@@ -14,15 +14,12 @@ from typing import Literal
 
 import pandas as pd
 
-from reader.core.errors import ParseError
-from reader.core.registry import Plugin, PluginConfig
-from reader.io.discovery import (
-    DEFAULT_EXCLUDE,
-    DEFAULT_INCLUDE,
-    DEFAULT_ROOTS,
-    discover_files,
-)
-from reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
+from reader.domains.plate_reader.io.synergy_h1 import parse_kinetic_only, parse_snapshot_and_timeseries
+from reader.errors import ParseError
+from reader.plugins.ingest._discovery import discover_auto_input_files
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
+from reader.workbench.ports import dataframe_output, file_path_input
+from reader.workbench.registry import Plugin, PluginConfig, PreflightIssue
 
 
 class SynergyH1UnifiedCfg(PluginConfig):
@@ -57,53 +54,48 @@ class SynergyH1UnifiedCfg(PluginConfig):
 class SynergyH1(Plugin):
     """Unified Synergy H1 ingest (snapshot-only, kinetic-only, or mixed)."""
 
-    key = "synergy_h1"
-    category = "ingest"
     ConfigModel = SynergyH1UnifiedCfg
 
     @classmethod
-    def input_contracts(cls):
-        return {"raw?": "none"}  # file is optional; we can auto-discover
+    def input_ports(cls):
+        return {"raw": file_path_input("raw", optional=True)}
 
     @classmethod
-    def output_contracts(cls):
-        return {"df": "tidy.v1"}
+    def output_ports(cls):
+        return {"df": dataframe_output("df", "tidy.v1")}
+
+    @classmethod
+    def preflight_readiness(cls, *, exp_dir, cfg: SynergyH1UnifiedCfg, reads):
+        if "raw" in reads:
+            return ()
+        try:
+            discover_auto_input_files(
+                exp_dir=exp_dir,
+                auto_roots=cfg.auto_roots,
+                auto_include=cfg.auto_include,
+                auto_exclude=cfg.auto_exclude,
+                auto_recursive=cfg.auto_recursive,
+                auto_pick=cfg.auto_pick,
+                discovery_label="raw .xlsx files",
+                singular_label="workbook",
+            )
+        except ParseError as err:
+            return (PreflightIssue(kind="file", message=str(err)),)
+        return ()
 
     # ---------- helpers ----------
 
-    def _auto_pick_one(self, files: list[object], mode: str) -> object:
-        if mode == "single":
-            if len(files) != 1:
-                raise ParseError(
-                    "Auto-discovery expected exactly one workbook, found "
-                    f"{len(files)}:\n- "
-                    + "\n- ".join(str(p) for p in files)
-                    + "\nHint: set auto_pick: latest or auto_pick: merge, or pass reads.raw explicitly."
-                )
-            return files[0]
-        if mode == "latest":
-            return max(files, key=lambda p: p.stat().st_mtime)
-        raise ParseError(f"_auto_pick_one called with mode={mode!r}")
-
     def _discover(self, ctx, cfg: SynergyH1UnifiedCfg) -> list:
-        roots = cfg.auto_roots or list(DEFAULT_ROOTS)
-        files = discover_files(
-            ctx.exp_dir,
-            roots=roots,
-            include=cfg.auto_include,
-            exclude=cfg.auto_exclude,
-            recursive=cfg.auto_recursive,
+        return discover_auto_input_files(
+            exp_dir=ctx.exp_dir,
+            auto_roots=cfg.auto_roots,
+            auto_include=cfg.auto_include,
+            auto_exclude=cfg.auto_exclude,
+            auto_recursive=cfg.auto_recursive,
+            auto_pick=cfg.auto_pick,
+            discovery_label="raw .xlsx files",
+            singular_label="workbook",
         )
-        if not files:
-            raise ParseError(
-                f"No raw .xlsx discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude}).\n"
-                "Hint: put raw files under ./inputs (default), or set auto_roots / reads.raw explicitly."
-            )
-        if cfg.auto_pick in ("single", "latest"):
-            return [self._auto_pick_one(files, cfg.auto_pick)]
-        if cfg.auto_pick == "merge":
-            return files
-        raise ParseError(f"Unknown auto_pick mode {cfg.auto_pick!r} (expected: single|latest|merge)")
 
     def _log_file_overview(self, ctx, path, sheet_names: Sequence[str] | None):
         try:

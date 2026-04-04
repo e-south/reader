@@ -11,21 +11,20 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
-from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.sinks import PlotFigure
+from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class TSAndSnapCfg(PluginConfig):
     # grouping
-    group_on: str | None = None
-    pool_sets: str | list[dict[str, list[str]]] | None = None
-    pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
+    partition: PlotPartitionCfg = Field(default_factory=PlotPartitionCfg)
 
     # time series (left)
     ts_x: str = "time"
@@ -39,6 +38,8 @@ class TSAndSnapCfg(PluginConfig):
     ts_log_transform: bool | list[str] = False
     ts_ci: float = 95.0
     ts_ci_alpha: float = 0.15
+    ts_ci_boot: int = Field(default=100, ge=1)
+    ts_ci_seed: int = 0
     ts_show_replicates: bool = False
     ts_legend_loc: str = "upper right"
 
@@ -58,56 +59,25 @@ class TSAndSnapCfg(PluginConfig):
     filename: str | None = None
 
 
-class TSAndSnapPlot(Plugin):
-    key = "ts_and_snap"
-    category = "plot"
+class TSAndSnapPlot(FigurePlotPlugin):
     ConfigModel = TSAndSnapCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}  # blanks not required here
-
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     def render(self, ctx, inputs, cfg: TSAndSnapCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        from reader.lib.microplates.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.ts_and_snap import plot_ts_and_snap  # noqa: PLC0415
 
-        # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
-            if pool_sets is None:
-                return None
-            if isinstance(pool_sets, list):
-                return pool_sets
-            if isinstance(pool_sets, str):
-                ref = pool_sets.strip()
-                if ":" in ref:
-                    col, set_name = [s.strip() for s in ref.split(":", 1)]
-                else:
-                    if not group_on_col:
-                        raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
-                    col, set_name = str(group_on_col), ref
-                cat = (ctx.groupings or {}).get(col)
-                if not isinstance(cat, dict) or set_name not in cat:
-                    opts = ", ".join(sorted((cat or {}).keys())) if isinstance(cat, dict) else "—"
-                    raise ValueError(
-                        f"Unknown pool_sets reference '{ref}'. "
-                        "Define it under data.groupings.<column>.<set_name> in config. "
-                        f"(available for {col!r}: {opts})"
-                    )
-                return cat[set_name]
-            raise ValueError("pool_sets must be a list[...] or '<column>:<set>' string")
-
-        resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
+        partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 
         return plot_ts_and_snap(
             df=df,
             output_dir=None,
-            group_on=cfg.group_on,
-            pool_sets=resolved_pools,
-            pool_match=cfg.pool_match,
+            group_on=partition.group_by,
+            pool_sets=partition.collection_items,
+            pool_match=partition.match,
             # ts (left)
             ts_x=cfg.ts_x,
             ts_channel=cfg.ts_channel,
@@ -120,6 +90,8 @@ class TSAndSnapPlot(Plugin):
             ts_log_transform=cfg.ts_log_transform,
             ts_ci=cfg.ts_ci,
             ts_ci_alpha=cfg.ts_ci_alpha,
+            ts_ci_boot=cfg.ts_ci_boot,
+            ts_ci_seed=cfg.ts_ci_seed,
             ts_show_replicates=cfg.ts_show_replicates,
             ts_legend_loc=cfg.ts_legend_loc,
             # snap (right)
@@ -137,8 +109,3 @@ class TSAndSnapPlot(Plugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
         )
-
-    def run(self, ctx, inputs, cfg: TSAndSnapCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}

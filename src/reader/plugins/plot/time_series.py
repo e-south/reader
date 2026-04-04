@@ -9,23 +9,25 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.plot_sinks import PlotFigure, normalize_plot_figures, save_plot_figures
-from reader.core.registry import Plugin, PluginConfig
+from reader.plotting.sinks import PlotFigure
+from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
+from reader.workbench.ports import dataframe_input
+from reader.workbench.registry import PluginConfig
 
 
 class TimeSeriesCfg(PluginConfig):
     x: str = "time"
+    xlabel: str | None = None
     y: list[str] | None = None
+    ylabel_map: dict[str, str] = Field(default_factory=dict)
+    hue_label_map: dict[str, str] = Field(default_factory=dict)
     hue: str = "treatment"
-    group_on: str | None = None
-    pool_sets: str | list[dict[str, list[str]]] | None = None
-    pool_match: Literal["exact", "contains", "startswith", "endswith", "regex"] = "exact"
+    partition: PlotPartitionCfg = Field(default_factory=PlotPartitionCfg)
     fig: dict[str, Any] = Field(default_factory=dict)
     channels: list[str] | None = None
     add_sheet_line: bool = False
@@ -34,68 +36,46 @@ class TimeSeriesCfg(PluginConfig):
     time_window: list[float] | None = None
     ci: float = 95.0
     ci_alpha: float = 0.15
+    ci_boot: int = Field(default=100, ge=1)
+    ci_seed: int = 0
     legend_loc: str = "upper left"
     show_replicates: bool = False
+    shared_legend: bool = False
     filename: str | None = None
 
 
-class TimeSeriesPlot(Plugin):
-    key = "time_series"
-    category = "plot"
+class TimeSeriesPlot(FigurePlotPlugin):
     ConfigModel = TimeSeriesCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1", "blanks?": "tidy.v1"}  # '?' is human hint; engine passes only present keys
-
-    @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+    def input_ports(cls):
+        return {
+            "df": dataframe_input("df", "tidy.v1"),
+            "blanks": dataframe_input("blanks", "tidy.v1", optional=True),
+        }
 
     def render(self, ctx, inputs, cfg: TimeSeriesCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
         blanks = inputs.get("blanks", df.iloc[0:0].copy())
-        from reader.lib.microplates.time_series import plot_time_series  # noqa: PLC0415
+        from reader.domains.plate_reader.plots.time_series import plot_time_series  # noqa: PLC0415
 
-        # --- resolve pool_sets (inline list or "<column>:<set>" reference) ---
-        def _resolve_pool_sets_arg(pool_sets, group_on_col: str | None):
-            if pool_sets is None:
-                return None
-            if isinstance(pool_sets, list):
-                return pool_sets
-            if isinstance(pool_sets, str):
-                ref = pool_sets.strip()
-                if ":" in ref:
-                    col, set_name = [s.strip() for s in ref.split(":", 1)]
-                else:
-                    if not cfg.group_on:
-                        raise ValueError("pool_sets reference without group_on; use '<column>:<set>'")
-                    col, set_name = str(cfg.group_on), ref
-                cat = (ctx.groupings or {}).get(col)
-                if not isinstance(cat, dict) or set_name not in cat:
-                    opts = ", ".join(sorted((cat or {}).keys())) if isinstance(cat, dict) else "—"
-                    raise ValueError(
-                        f"Unknown pool_sets reference '{ref}'. "
-                        "Define it under data.groupings.<column>.<set_name> in config. "
-                        f"(available for {col!r}: {opts})"
-                    )
-                return cat[set_name]
-            raise ValueError("pool_sets must be a list[...] or '<column>:<set>' string")
-
-        resolved_pools = _resolve_pool_sets_arg(cfg.pool_sets, cfg.group_on)
+        partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 
         return plot_time_series(
             df=df,
             blanks=blanks,
             output_dir=None,
             x=cfg.x,
+            xlabel=cfg.xlabel,
             y=cfg.y,
+            ylabel_map=cfg.ylabel_map,
+            hue_label_map=cfg.hue_label_map,
             hue=cfg.hue,
             channels=cfg.channels,
             subplots=None,
-            group_on=cfg.group_on,
-            pool_sets=resolved_pools,
-            pool_match=cfg.pool_match,
+            group_on=partition.group_by,
+            pool_sets=partition.collection_items,
+            pool_match=partition.match,
             fig_kwargs=cfg.fig,
             add_sheet_line=cfg.add_sheet_line,
             sheet_line_kwargs=cfg.sheet_line_kwargs,
@@ -104,12 +84,10 @@ class TimeSeriesPlot(Plugin):
             palette_book=ctx.palette_book,
             ci=cfg.ci,
             ci_alpha=cfg.ci_alpha,
+            ci_boot=cfg.ci_boot,
+            ci_seed=cfg.ci_seed,
             legend_loc=cfg.legend_loc,
             show_replicates=cfg.show_replicates,
+            shared_legend=cfg.shared_legend,
             filename=cfg.filename,
         )
-
-    def run(self, ctx, inputs, cfg: TimeSeriesCfg):
-        figures = normalize_plot_figures(self.render(ctx, inputs, cfg), where=f"plot/{self.key}")
-        saved = save_plot_figures(figures, ctx.plots_dir)
-        return {"files": [str(p) for p in saved] if saved else None}

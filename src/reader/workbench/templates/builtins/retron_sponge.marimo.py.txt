@@ -1,0 +1,665 @@
+import marimo
+
+__generated_with = "0.19.1"
+app = marimo.App(width="medium")
+
+
+@app.cell(hide_code=True)
+def _():
+    from pathlib import Path
+
+    import marimo as mo
+
+    from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.workbench.notebooks.retron_review import (
+        build_label_value_options,
+        contextualize_retron_plot_copy,
+        dataframe_to_csv_bytes,
+        download_safe_stem,
+        retron_experiment_plot_rows,
+        figure_to_download_bytes,
+        filter_supporting_table_for_figure,
+        load_cached_parquet_frame,
+        load_retron_semantic_maps_from_config,
+        render_retron_experiment_plot_cached,
+        retron_notebook_table_preview,
+        retron_assay_context_rows,
+        retron_figure_coverage_rows,
+        retron_figure_label,
+        retron_figure_option_rows,
+        retron_plot_rendered_files,
+        retron_sensor_context_rows,
+        retron_visible_plot_specs,
+        retron_table_kwargs,
+        retron_transform_ladder_rows,
+    )
+    from reader.workbench.records import discover_dataframe_records
+
+    return (
+        Path,
+        build_label_value_options,
+        contextualize_retron_plot_copy,
+        dataframe_to_csv_bytes,
+        discover_dataframe_records,
+        download_safe_stem,
+        retron_experiment_plot_rows,
+        figure_to_download_bytes,
+        filter_supporting_table_for_figure,
+        load_cached_parquet_frame,
+        load_notebook_workbench_context,
+        load_retron_semantic_maps_from_config,
+        mo,
+        render_retron_experiment_plot_cached,
+        retron_notebook_table_preview,
+        retron_assay_context_rows,
+        retron_figure_coverage_rows,
+        retron_figure_label,
+        retron_figure_option_rows,
+        retron_plot_rendered_files,
+        retron_sensor_context_rows,
+        retron_visible_plot_specs,
+        retron_table_kwargs,
+        retron_transform_ladder_rows,
+    )
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    retron_scope_style = mo.Html(
+        "<style>\n"
+        "#App h1 {\n"
+        "  margin-bottom: 0.25rem !important;\n"
+        "  font-weight: 600 !important;\n"
+        "}\n"
+        "#App h2, #App h3, #App h4 {\n"
+        "  margin-bottom: 0.22rem !important;\n"
+        "  font-weight: 500 !important;\n"
+        "}\n"
+        "#App p {\n"
+        "  margin-top: 0.08rem !important;\n"
+        "  margin-bottom: 0.32rem !important;\n"
+        "}\n"
+        "#App h2 + p, #App h3 + p, #App h4 + p {\n"
+        "  margin-top: 0.08rem !important;\n"
+        "}\n"
+        "#App .mo-callout p {\n"
+        "  margin-top: 0.0rem !important;\n"
+        "  margin-bottom: 0.20rem !important;\n"
+        "}\n"
+        "</style>"
+    )
+    return (retron_scope_style,)
+
+
+@app.cell(hide_code=True)
+def _(retron_scope_style):
+    retron_scope_style
+
+
+@app.cell(hide_code=True)
+def _(Path, load_notebook_workbench_context):
+    retron_scope_context = load_notebook_workbench_context(Path(__file__).resolve())
+    retron_scope_decl = retron_scope_context.decl
+    retron_scope_workbench = retron_scope_context.workbench
+    retron_scope_outputs_dir = retron_scope_context.outputs_dir
+    retron_scope_plots_dir = retron_scope_context.plots_dir
+    retron_scope_exports_dir = retron_scope_context.exports_dir
+    retron_scope_config_path = retron_scope_context.config_path
+    retron_scope_exp_id = retron_scope_decl.experiment.id
+    retron_scope_exp_title = retron_scope_decl.experiment.title or retron_scope_exp_id
+    retron_scope_protocol_id = retron_scope_decl.experiment_semantics.protocol.id
+    return (
+        retron_scope_config_path,
+        retron_scope_decl,
+        retron_scope_exp_id,
+        retron_scope_exp_title,
+        retron_scope_exports_dir,
+        retron_scope_outputs_dir,
+        retron_scope_plots_dir,
+        retron_scope_protocol_id,
+        retron_scope_workbench,
+    )
+
+
+@app.cell(hide_code=True)
+def _(
+    build_label_value_options,
+    load_retron_semantic_maps_from_config,
+    mo,
+    retron_experiment_plot_rows,
+    retron_assay_context_rows,
+    retron_figure_coverage_rows,
+    retron_plot_rendered_files,
+    retron_scope_config_path,
+    retron_scope_decl,
+    retron_scope_exp_id,
+    retron_scope_exp_title,
+    retron_scope_exports_dir,
+    retron_scope_plots_dir,
+    retron_scope_protocol_id,
+    retron_scope_workbench,
+    retron_sensor_context_rows,
+    retron_visible_plot_specs,
+    retron_table_kwargs,
+    retron_transform_ladder_rows,
+):
+    retron_scope_plot_specs = retron_visible_plot_specs(__PLOT_SPECS__)
+    retron_scope_relevant_map, retron_scope_target_map = load_retron_semantic_maps_from_config(
+        retron_scope_config_path
+    )
+    retron_scope_plot_entries = retron_experiment_plot_rows(retron_scope_plot_specs)
+    retron_scope_plot_spec_map = {
+        str(spec.get("id", "")): spec for spec in retron_scope_plot_specs
+    }
+    retron_scope_plot_catalog_rows = []
+    for retron_scope_entry in retron_scope_plot_entries:
+        retron_scope_plot_id = str(retron_scope_entry["Plot id"])
+        retron_scope_spec = retron_scope_plot_spec_map[retron_scope_plot_id]
+        _retron_scope_rendered_files = retron_plot_rendered_files(
+            retron_scope_plots_dir,
+            plot_id=retron_scope_plot_id,
+            plugin=str(retron_scope_spec.get("plugin", "")),
+        )
+        retron_scope_plot_catalog_rows.append(
+            {
+                "Stage": str(retron_scope_entry["Stage"]),
+                "Plot": str(retron_scope_entry["Plot"]),
+                "Plot id": retron_scope_plot_id,
+                "Rendered": "yes" if _retron_scope_rendered_files else "no",
+                "Math / transform": str(
+                    retron_scope_entry.get(
+                        "Math / transform",
+                        "Interpret against the direct-ratio matched-control workflow.",
+                    )
+                ),
+                "How to read": str(
+                    retron_scope_entry.get(
+                        "How to read",
+                        "See the transform ladder for the exact semantics.",
+                    )
+                ),
+            }
+        )
+    retron_scope_plot_selector_options = build_label_value_options(
+        retron_scope_plot_entries,
+        label_key="Selector label",
+        value_key="Plot id",
+    )
+
+    retron_scope_export_rows = []
+    for retron_scope_export in list(retron_scope_workbench.exports):
+        retron_scope_export_path = str((retron_scope_export.with_ or {}).get("path", ""))
+        retron_scope_export_rows.append(
+            {
+                "Export id": retron_scope_export.id,
+                "Plugin": retron_scope_export.plugin,
+                "Path": retron_scope_export_path or "configured by plugin",
+                "Rendered": "yes"
+                if retron_scope_export_path and (retron_scope_exports_dir / retron_scope_export_path).exists()
+                else "no",
+            }
+        )
+
+    retron_scope_overview_rows = [
+        {"Field": "Experiment id", "Value": retron_scope_exp_id},
+        {"Field": "Protocol", "Value": retron_scope_protocol_id},
+        {"Field": "Configured notebook", "Value": retron_scope_decl.notebooks.specs[0].template},
+        {"Field": "Compiled plot views", "Value": str(len(retron_scope_plot_catalog_rows))},
+        {"Field": "Analysis exports", "Value": str(len(retron_scope_export_rows))},
+    ]
+    retron_scope_overview_panel = mo.vstack(
+        [
+            mo.md(
+                f"# Retron sponge review\n"
+                f"Experiment: `{retron_scope_exp_title}`\n\n"
+                "Start with QC raw channels to decide whether the wells are clean enough to trust. "
+                "Then use Sponge vs matched tetO to ask whether +IPTG shifts the assay ratio beyond the same-sensor "
+                "tetO control, and whether that shift is already present before stress or only appears afterward."
+            ),
+            mo.ui.tabs(
+                {
+                    "Gist": mo.vstack(
+                        [
+                            mo.ui.table(
+                                retron_scope_overview_rows,
+                                **retron_table_kwargs(
+                                    page_size=len(retron_scope_overview_rows),
+                                    pagination=False,
+                                ),
+                            ),
+                        ]
+                    ),
+                    "Assay contract": mo.vstack(
+                        [
+                            mo.md(
+                                "### Fixed assay rules\n"
+                                "The same-sensor tetO match is fixed by plate, stress state, IPTG "
+                                "state, and timepoint. Do not reinterpret that rule later."
+                            ),
+                            mo.ui.table(
+                                retron_assay_context_rows(),
+                                **retron_table_kwargs(
+                                    page_size=len(retron_assay_context_rows()),
+                                    pagination=False,
+                                    wrapped_columns=["Details"],
+                                ),
+                            ),
+                            mo.md("### Sensor-to-stress and motif map"),
+                            mo.ui.table(
+                                retron_sensor_context_rows(
+                                    retron_scope_relevant_map,
+                                    retron_scope_target_map,
+                                ),
+                                **retron_table_kwargs(
+                                    page_size=max(1, len(retron_scope_relevant_map)),
+                                    pagination=False,
+                                    wrapped_columns=["Relevant stress", "Relevant motifs"],
+                                ),
+                            ),
+                        ]
+                    ),
+                    "Transforms": mo.vstack(
+                        [
+                            mo.md(
+                                "### Math ladder\n"
+                                "Use this when you need to trace a plotted value back to the assay math. "
+                                "It is reference material, not the default review path."
+                            ),
+                            mo.ui.table(
+                                retron_transform_ladder_rows(),
+                                **retron_table_kwargs(
+                                    page_size=12,
+                                    wrapped_columns=["Formula", "Meaning"],
+                                    max_height=360,
+                                ),
+                            ),
+                        ]
+                    ),
+                    "Plot map": mo.vstack(
+                        [
+                            mo.md(
+                                "### Available plots and exports\n"
+                                "Use this map when you need to see what the notebook can show before you "
+                                "start reviewing figures."
+                            ),
+                            mo.ui.tabs(
+                                {
+                                    "Views": mo.ui.table(
+                                        retron_scope_plot_catalog_rows,
+                                        **retron_table_kwargs(
+                                            page_size=min(8, len(retron_scope_plot_catalog_rows)),
+                                            wrapped_columns=["Math / transform", "How to read"],
+                                            max_height=360,
+                                        ),
+                                    ),
+                                    "Exports": (
+                                        mo.ui.table(
+                                            retron_scope_export_rows,
+                                            **retron_table_kwargs(
+                                                page_size=len(retron_scope_export_rows),
+                                                pagination=False,
+                                                wrapped_columns=["Path"],
+                                            ),
+                                        )
+                                        if retron_scope_export_rows
+                                        else mo.md("No export specs are selected for this experiment.")
+                                    ),
+                                }
+                            ),
+                        ]
+                    ),
+                }
+            ),
+        ],
+        gap=0.5,
+    )
+    return (
+        retron_scope_plot_catalog_rows,
+        retron_scope_plot_selector_options,
+        retron_scope_plot_spec_map,
+        retron_scope_overview_panel,
+    )
+
+
+@app.cell(hide_code=True)
+def _(retron_scope_overview_panel):
+    retron_scope_overview_panel
+
+
+@app.cell(hide_code=True)
+def _(discover_dataframe_records, retron_scope_outputs_dir):
+    retron_scope_record_info, _retron_scope_record_labels, _retron_scope_record_note, _retron_scope_record_warning = (
+        discover_dataframe_records(
+            retron_scope_outputs_dir,
+            allow_scan=__ALLOW_RECORD_SCAN__,
+        )
+    )
+    return (retron_scope_record_info,)
+
+
+@app.cell(hide_code=True)
+def _(mo, retron_scope_plot_selector_options):
+    retron_scope_plot_labels = list(retron_scope_plot_selector_options)
+    retron_scope_plot_selector = (
+        mo.ui.dropdown(
+            options=retron_scope_plot_selector_options,
+            value=next(iter(retron_scope_plot_selector_options), None),
+            label="Assay view",
+            full_width=True,
+        )
+        if retron_scope_plot_labels
+        else None
+    )
+    return retron_scope_plot_labels, retron_scope_plot_selector
+
+
+@app.cell(hide_code=True)
+def _(load_cached_parquet_frame, retron_scope_plot_selector, retron_scope_plot_spec_map, retron_scope_record_info):
+    retron_scope_selected_spec = (
+        retron_scope_plot_spec_map.get(retron_scope_plot_selector.value)
+        if retron_scope_plot_selector is not None
+        else None
+    )
+    retron_scope_plot_datasets = {}
+    retron_scope_plot_dataset_errors = []
+    if retron_scope_selected_spec is not None:
+        retron_scope_records_by_id = {
+            str(retron_scope_info.get("record_id")): retron_scope_info
+            for retron_scope_info in retron_scope_record_info.values()
+        }
+        for retron_scope_ref in dict(retron_scope_selected_spec.get("reads") or {}).values():
+            _retron_scope_record_id = str((retron_scope_ref or {}).get("record", "")).strip()
+            if not _retron_scope_record_id or _retron_scope_record_id in retron_scope_plot_datasets:
+                continue
+            retron_scope_record_meta = retron_scope_records_by_id.get(_retron_scope_record_id)
+            if retron_scope_record_meta is None:
+                retron_scope_plot_dataset_errors.append(
+                    f"Missing dataframe record `{_retron_scope_record_id}` for the selected plot."
+                )
+                continue
+            try:
+                retron_scope_plot_datasets[_retron_scope_record_id] = load_cached_parquet_frame(
+                    retron_scope_record_meta["path"]
+                )
+            except Exception as retron_scope_exc:
+                retron_scope_plot_dataset_errors.append(
+                    f"Failed to load `{_retron_scope_record_id}`: {retron_scope_exc}"
+                )
+    return retron_scope_plot_dataset_errors, retron_scope_plot_datasets, retron_scope_selected_spec
+
+
+@app.cell(hide_code=True)
+def _(render_retron_experiment_plot_cached, retron_scope_plot_dataset_errors, retron_scope_plot_datasets, retron_scope_selected_spec):
+    retron_scope_plot_error = None
+    retron_scope_plot_result = None
+    if retron_scope_selected_spec is not None and not retron_scope_plot_dataset_errors:
+        try:
+            retron_scope_plot_result = render_retron_experiment_plot_cached(
+                retron_scope_selected_spec,
+                datasets=retron_scope_plot_datasets,
+            )
+        except Exception as retron_scope_exc:
+            retron_scope_plot_error = str(retron_scope_exc)
+    return retron_scope_plot_error, retron_scope_plot_result
+
+
+@app.cell(hide_code=True)
+def _(build_label_value_options, mo, retron_figure_option_rows, retron_scope_plot_result):
+    retron_scope_figure_option_rows = (
+        retron_figure_option_rows(retron_scope_plot_result.figures)
+        if retron_scope_plot_result is not None
+        else []
+    )
+    retron_scope_figure_options = build_label_value_options(
+        retron_scope_figure_option_rows,
+        label_key="Label",
+        value_key="Filename",
+        disambiguator_key="Filename",
+    )
+    retron_scope_figure_selector = (
+        mo.ui.dropdown(
+            options=retron_scope_figure_options,
+            value=next(iter(retron_scope_figure_options), None),
+            label="Figure",
+            full_width=True,
+        )
+        if len(retron_scope_figure_options) > 1
+        else None
+    )
+    return (
+        retron_scope_figure_option_rows,
+        retron_scope_figure_options,
+        retron_scope_figure_selector,
+    )
+
+
+@app.cell(hide_code=True)
+def _(retron_scope_figure_selector, retron_scope_plot_result):
+    retron_scope_selected_figure = None
+    retron_scope_selected_filename = None
+    if retron_scope_plot_result is not None and retron_scope_plot_result.figures:
+        retron_scope_selected_filename = (
+            retron_scope_figure_selector.value
+            if retron_scope_figure_selector is not None
+            else retron_scope_plot_result.figures[0].filename
+        )
+        for retron_scope_figure in retron_scope_plot_result.figures:
+            if retron_scope_figure.filename == retron_scope_selected_filename:
+                retron_scope_selected_figure = retron_scope_figure.fig
+                break
+    return retron_scope_selected_figure, retron_scope_selected_filename
+
+
+@app.cell(hide_code=True)
+def _(
+    filter_supporting_table_for_figure,
+    retron_notebook_table_preview,
+    retron_scope_plot_result,
+    retron_scope_selected_filename,
+):
+    retron_scope_supporting_table_view = (
+        filter_supporting_table_for_figure(
+            retron_scope_plot_result.supporting_table,
+            filename=retron_scope_selected_filename,
+        )
+        if retron_scope_plot_result is not None
+        else None
+    )
+    retron_scope_supporting_table_preview = retron_notebook_table_preview(
+        retron_scope_supporting_table_view,
+        max_rows=500,
+    )
+    return retron_scope_supporting_table_preview, retron_scope_supporting_table_view
+
+
+@app.cell(hide_code=True)
+def _(
+    contextualize_retron_plot_copy,
+    retron_scope_plot_result,
+    retron_scope_relevant_map,
+    retron_scope_supporting_table_view,
+):
+    retron_scope_contextual_copy = (
+        contextualize_retron_plot_copy(
+            question=retron_scope_plot_result.question,
+            math=retron_scope_plot_result.math,
+            meaning=retron_scope_plot_result.meaning,
+            supporting_table=retron_scope_supporting_table_view,
+            relevant_stress_map=retron_scope_relevant_map,
+        )
+        if retron_scope_plot_result is not None
+        else None
+    )
+    return (retron_scope_contextual_copy,)
+
+
+@app.cell(hide_code=True)
+def _(
+    dataframe_to_csv_bytes,
+    download_safe_stem,
+    figure_to_download_bytes,
+    mo,
+    retron_scope_plot_result,
+    retron_scope_selected_figure,
+    retron_scope_selected_filename,
+    retron_scope_supporting_table_view,
+):
+    retron_scope_export_panel = None
+    if retron_scope_plot_result is not None:
+        retron_scope_export_stem = download_safe_stem(
+            retron_scope_selected_filename or retron_scope_plot_result.plot_id
+        )
+        retron_scope_export_items = []
+        if retron_scope_selected_figure is not None:
+            retron_scope_export_items.extend(
+                [
+                    mo.download(
+                        data=lambda fig=retron_scope_selected_figure: figure_to_download_bytes(
+                            fig,
+                            fmt="png",
+                        ),
+                        filename=f"{retron_scope_export_stem}.png",
+                        mimetype="image/png",
+                        label="Figure PNG",
+                    ),
+                    mo.download(
+                        data=lambda fig=retron_scope_selected_figure: figure_to_download_bytes(
+                            fig,
+                            fmt="svg",
+                        ),
+                        filename=f"{retron_scope_export_stem}.svg",
+                        mimetype="image/svg+xml",
+                        label="Figure SVG",
+                    ),
+                    mo.download(
+                        data=lambda fig=retron_scope_selected_figure: figure_to_download_bytes(
+                            fig,
+                            fmt="pdf",
+                        ),
+                        filename=f"{retron_scope_export_stem}.pdf",
+                        mimetype="application/pdf",
+                        label="Figure PDF",
+                    ),
+                ]
+            )
+        if retron_scope_supporting_table_view is not None:
+            retron_scope_export_items.append(
+                mo.download(
+                    data=lambda df=retron_scope_supporting_table_view: dataframe_to_csv_bytes(df),
+                    filename=f"{retron_scope_export_stem}__supporting_table.csv",
+                    mimetype="text/csv",
+                    label="Table CSV",
+                )
+            )
+        retron_scope_export_panel = mo.vstack(
+            [
+                mo.hstack(
+                    retron_scope_export_items,
+                    justify="start",
+                    wrap=True,
+                    gap=0.5,
+                ),
+            ]
+        )
+    return (retron_scope_export_panel,)
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    retron_figure_label,
+    retron_scope_contextual_copy,
+    retron_scope_figure_selector,
+    retron_scope_plot_dataset_errors,
+    retron_scope_plot_error,
+    retron_scope_plot_labels,
+    retron_scope_plot_result,
+    retron_scope_plot_selector,
+    retron_scope_selected_filename,
+    retron_scope_selected_figure,
+    retron_scope_supporting_table_preview,
+    retron_scope_supporting_table_view,
+    retron_scope_export_panel,
+    retron_table_kwargs,
+):
+    retron_scope_review_blocks = [
+    ]
+    if not retron_scope_plot_labels or retron_scope_plot_selector is None:
+        retron_scope_review_blocks.append(mo.md("No plot specs are selected for this experiment."))
+    else:
+        retron_scope_control_items = [retron_scope_plot_selector]
+        if retron_scope_figure_selector is not None:
+            retron_scope_control_items.append(retron_scope_figure_selector)
+        retron_scope_review_blocks.append(
+            mo.hstack(
+                retron_scope_control_items,
+                gap=0.75,
+                align="start",
+                justify="start",
+                wrap=True,
+            )
+        )
+        if retron_scope_plot_dataset_errors:
+            retron_scope_review_blocks.append(
+                mo.callout(
+                    mo.md("\n".join(f"- {item}" for item in retron_scope_plot_dataset_errors)),
+                    kind="warn",
+                )
+            )
+        elif retron_scope_plot_error:
+            retron_scope_review_blocks.append(
+                mo.callout(
+                    mo.md(
+                        f"Failed to render the selected plot: `{retron_scope_plot_error}`"
+                    ),
+                    kind="danger",
+                )
+            )
+        elif retron_scope_plot_result is None:
+            retron_scope_review_blocks.append(mo.md("Select a plot view to render."))
+        else:
+            if retron_scope_figure_selector is not None:
+                retron_scope_review_blocks.append(
+                    mo.md(f"Figure: {retron_figure_label(retron_scope_selected_filename or '')}")
+                )
+            if retron_scope_selected_figure is not None:
+                retron_scope_review_blocks.append(retron_scope_selected_figure)
+            else:
+                retron_scope_review_blocks.append(mo.md("This plot spec did not yield a figure."))
+            retron_scope_review_blocks.append(
+                mo.callout(
+                    mo.vstack(
+                        [
+                            mo.md(f"### {retron_scope_plot_result.title}"),
+                            mo.md(f"**Question**\n{retron_scope_contextual_copy['question']}"),
+                            mo.md(f"**Formula**\n```text\n{retron_scope_contextual_copy['math']}\n```"),
+                            mo.md(f"**Interpretation**\n{retron_scope_contextual_copy['meaning']}"),
+                            mo.md(f"**Data**\n`{retron_scope_plot_result.source_record}`"),
+                        ],
+                        gap=0.08,
+                    ),
+                    kind="info",
+                )
+            )
+            if retron_scope_export_panel is not None:
+                retron_scope_review_blocks.append(retron_scope_export_panel)
+            retron_scope_review_blocks.append(
+                mo.ui.table(
+                    retron_scope_supporting_table_preview,
+                    **retron_table_kwargs(
+                        page_size=8,
+                        max_height=420,
+                    ),
+                )
+            )
+    retron_scope_review_panel = mo.vstack(retron_scope_review_blocks, gap=0.45)
+    return (retron_scope_review_panel,)
+
+
+@app.cell(hide_code=True)
+def _(retron_scope_review_panel):
+    retron_scope_review_panel
+
+
+if __name__ == "__main__":
+    app.run()

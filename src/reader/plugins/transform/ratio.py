@@ -9,13 +9,13 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from contextlib import suppress
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.registry import Plugin, PluginConfig
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class RatioCfg(PluginConfig):
@@ -26,17 +26,28 @@ class RatioCfg(PluginConfig):
 
 
 class RatioTransform(Plugin):
-    key = "ratio"
-    category = "transform"
     ConfigModel = RatioCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def output_ports(cls):
+        return cls.passthrough_output_ports(
+            outputs={"df": dataframe_output("df", "tidy.v1")},
+            passthrough={"df": "df"},
+            promoted_examples={"df": ("plate_reader.annotated.v1",)},
+        )
+
+    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
+        del cfg
+        return self.inherit_dataframe_output_ports(
+            inputs=inputs,
+            outputs=outputs,
+            passthrough={"df": "df"},
+            where=where,
+        )
 
     def run(self, ctx, inputs, cfg: RatioCfg):
         df: pd.DataFrame = inputs["df"].copy()

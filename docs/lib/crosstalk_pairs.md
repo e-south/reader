@@ -13,7 +13,7 @@
 - [Export to the experiment exports directory](#export-to-the-experiment-exports-directory)
 - [See also](#see-also)
 
-This document describes the low-level crosstalk pairing utilities in `reader.lib.crosstalk.pairs`. Use this when you want bespoke control or to embed the logic outside the pipeline plugin.
+This document describes the low-level crosstalk pairing utilities in `reader.domains.logic.crosstalk.pairs`. Use this when you want bespoke control or to embed the logic outside the pipeline plugin.
 
 The library computes:
 - Per-design selectivity summary (top-1 vs top-2 treatment response).
@@ -102,7 +102,7 @@ Scores:
 ### Example config
 
 ```python
-from reader.lib.crosstalk.pairs import compute_crosstalk_pairs
+from reader.domains.logic.crosstalk.pairs import compute_crosstalk_pairs
 
 result = compute_crosstalk_pairs(
     df,
@@ -191,15 +191,21 @@ PY
 
 ### Export to the experiment exports directory
 
-Add an export spec (relative to `outputs/exports/`):
+Bind the export through protocol outputs (relative to `outputs/exports/`):
 
 ```yaml
-exports:
-  specs:
-    - id: export_crosstalk_pairs
-      uses: export/csv
-      reads: { df: crosstalk_pairs/table }
-      with: { path: "crosstalk_pairs.csv" }
+protocol:
+  id: plate_reader/dual_reporter_screen
+  analysis:
+    crosstalk_pairs:
+      enabled: true
+      export: true
+  outputs:
+    exports:
+      include: [crosstalk_pairs_table]
+      artifacts:
+        crosstalk_pairs_table:
+          path: crosstalk_pairs.csv
 ```
 
 Then run:

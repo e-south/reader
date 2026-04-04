@@ -11,14 +11,14 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.registry import Plugin, PluginConfig
-from reader.lib.crosstalk import compute_crosstalk_pairs
+from reader.domains.logic.crosstalk import compute_crosstalk_pairs
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 def _pick_alias(df: pd.DataFrame, base: str | None) -> str | None:
@@ -79,17 +79,15 @@ class CrosstalkPairsCfg(PluginConfig):
 class CrosstalkPairs(Plugin):
     """Compute crosstalk-safe design pairings from a fold_change.v1 table."""
 
-    key = "crosstalk_pairs"
-    category = "transform"
     ConfigModel = CrosstalkPairsCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"table": "fold_change.v1"}
+    def input_ports(cls):
+        return {"table": dataframe_input("table", "fold_change.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"table": "crosstalk_pairs.v1"}
+    def output_ports(cls):
+        return {"table": dataframe_output("table", "crosstalk_pairs.v1")}
 
     def run(self, ctx, inputs: dict[str, Any], cfg: CrosstalkPairsCfg) -> dict[str, Any]:
         df = inputs["table"].copy()

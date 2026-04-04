@@ -15,7 +15,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from reader.core.registry import Plugin, PluginConfig
+from reader.workbench.ports import dataframe_input, dataframe_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class OverflowCfg(PluginConfig):
@@ -30,17 +31,28 @@ class OverflowCfg(PluginConfig):
 
 
 class OverflowHandling(Plugin):
-    key = "overflow_handling"
-    category = "transform"
     ConfigModel = OverflowCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1"}
+    def output_ports(cls):
+        return cls.passthrough_output_ports(
+            outputs={"df": dataframe_output("df", "tidy.v1")},
+            passthrough={"df": "df"},
+            promoted_examples={"df": ("plate_reader.annotated.v1",)},
+        )
+
+    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
+        del cfg
+        return self.inherit_dataframe_output_ports(
+            inputs=inputs,
+            outputs=outputs,
+            passthrough={"df": "df"},
+            where=where,
+        )
 
     def run(self, ctx, inputs, cfg: OverflowCfg):
         df = inputs["df"].copy()

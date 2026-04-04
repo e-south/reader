@@ -11,18 +11,21 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import ParseError
-from reader.core.registry import Plugin, PluginConfig
-from reader.io.discovery import DEFAULT_EXCLUDE, DEFAULT_ROOTS, discover_files
+from reader.domains.cytometry.io.fcs import parse_fcs_file
+from reader.errors import ParseError
+from reader.plugins.ingest._discovery import discover_auto_input_files
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
+from reader.workbench.ports import dataframe_output, file_path_input
+from reader.workbench.registry import Plugin, PluginConfig, PreflightIssue
 
 DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
 
@@ -49,163 +52,76 @@ class FlowCytometerCfg(PluginConfig):
 class FlowCytometerIngest(Plugin):
     """Ingest .fcs files into tidy.v1 (snapshot; time is constant)."""
 
-    key = "flow_cytometer"
-    category = "ingest"
     ConfigModel = FlowCytometerCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        return {"raw?": "none"}  # optional explicit file input
+    def input_ports(cls):
+        return {"raw": file_path_input("raw", optional=True)}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"df": "tidy.v1", "channels": "cytometer.channels.v1"}
+    def output_ports(cls):
+        return {
+            "df": dataframe_output("df", "tidy.v1"),
+            "channels": dataframe_output("channels", "cytometer.channels.v1"),
+        }
 
-    def _auto_pick_one(self, files: list[Path], mode: str) -> Path:
-        if mode == "single":
-            if len(files) != 1:
-                raise ParseError(
-                    "Auto-discovery expected exactly one .fcs file, found "
-                    f"{len(files)}:\n- "
-                    + "\n- ".join(str(p) for p in files)
-                    + "\nHint: set auto_pick: latest or auto_pick: merge, or pass reads.raw explicitly."
+    @classmethod
+    def preflight_readiness(cls, *, exp_dir, cfg: FlowCytometerCfg, reads):
+        issues: list[PreflightIssue] = []
+        if importlib.util.find_spec("flowio") is None:
+            issues.append(
+                PreflightIssue(
+                    kind="dependency",
+                    message="flowio is required for ingest/flow_cytometer. Re-sync the core reader environment.",
                 )
-            return files[0]
-        if mode == "latest":
-            return max(files, key=lambda p: p.stat().st_mtime)
-        raise ParseError(f"_auto_pick_one called with mode={mode!r}")
+            )
+        if "raw" not in reads:
+            try:
+                discover_auto_input_files(
+                    exp_dir=exp_dir,
+                    auto_roots=cfg.auto_roots,
+                    auto_include=cfg.auto_include,
+                    auto_exclude=cfg.auto_exclude,
+                    auto_recursive=cfg.auto_recursive,
+                    auto_pick=cfg.auto_pick,
+                    discovery_label=".fcs files",
+                    singular_label=".fcs file",
+                )
+            except ParseError as err:
+                issues.append(PreflightIssue(kind="file", message=str(err)))
+        return tuple(issues)
 
     def _discover(self, ctx, cfg: FlowCytometerCfg) -> list[Path]:
-        roots = cfg.auto_roots or list(DEFAULT_ROOTS)
-        files = discover_files(
-            ctx.exp_dir,
-            roots=roots,
-            include=cfg.auto_include,
-            exclude=cfg.auto_exclude,
-            recursive=cfg.auto_recursive,
+        return discover_auto_input_files(
+            exp_dir=ctx.exp_dir,
+            auto_roots=cfg.auto_roots,
+            auto_include=cfg.auto_include,
+            auto_exclude=cfg.auto_exclude,
+            auto_recursive=cfg.auto_recursive,
+            auto_pick=cfg.auto_pick,
+            discovery_label=".fcs files",
+            singular_label=".fcs file",
         )
-        if not files:
-            raise ParseError(
-                f"No .fcs files discovered under {roots} (include={cfg.auto_include}, exclude={cfg.auto_exclude}).\n"
-                "Hint: put raw files under ./inputs (default), or set auto_roots / reads.raw explicitly."
-            )
-        if cfg.auto_pick in ("single", "latest"):
-            return [self._auto_pick_one(files, cfg.auto_pick)]
-        if cfg.auto_pick == "merge":
-            return files
-        raise ParseError(f"Unknown auto_pick mode {cfg.auto_pick!r} (expected: single|latest|merge)")
-
-    def _channel_names(self, channels: dict[int, dict[str, object]], *, field: str) -> list[str]:
-        names: list[str] = []
-        for key in sorted(channels):
-            meta = channels[key]
-            name = meta.get(field)
-            if name is None:
-                raise ParseError(
-                    f"Channel metadata missing field '{field}' for channel {key}. Use channel_name_field: pns or pnn."
-                )
-            names.append(str(name))
-        return names
 
     def run(self, ctx, inputs, cfg: FlowCytometerCfg):
-        try:
-            from flowio import FlowData  # noqa: PLC0415
-        except Exception as e:  # pragma: no cover - environment-specific
-            raise ParseError(
-                "flowio is required for ingest/flow_cytometer. Install with: uv sync --locked --group cytometry"
-            ) from e
-
         files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
-        field = str(cfg.channel_name_field).lower().strip()
         channel_map = {str(k): str(v) for k, v in (cfg.channel_map or {}).items()}
         drop_channels = {str(c) for c in (cfg.drop_channels or [])}
-
-        def _to_float(value) -> float:
-            if value is None:
-                return float("nan")
-            try:
-                return float(value)
-            except Exception:
-                return float("nan")
-
-        def _parse_pne(value) -> tuple[float, float]:
-            if value is None:
-                return (float("nan"), float("nan"))
-            if isinstance(value, (tuple, list)) and len(value) == 2:
-                return (_to_float(value[0]), _to_float(value[1]))
-            text = str(value).strip()
-            if "," in text:
-                left, right = text.split(",", 1)
-                return (_to_float(left.strip()), _to_float(right.strip()))
-            return (float("nan"), float("nan"))
-
-        def _clean_text(value) -> str | None:
-            if value is None:
-                return None
-            if isinstance(value, bytes):
-                try:
-                    return value.decode("utf-8", errors="ignore")
-                except Exception:
-                    return value.decode(errors="ignore")
-            return str(value)
 
         frames: list[pd.DataFrame] = []
         channel_meta_frames: list[pd.DataFrame] = []
         for f in files:
-            flow = FlowData(str(f))
-            event_count = int(flow.event_count)
-            channel_count = int(flow.channel_count)
-            raw_events = np.asarray(flow.events, dtype=float)
-            if raw_events.size != event_count * channel_count:
-                raise ParseError(
-                    f"Unexpected event buffer size for {f.name}: "
-                    f"{raw_events.size} values for {event_count} events × {channel_count} channels."
-                )
-            values = raw_events.reshape(event_count, channel_count)
-            channel_names = self._channel_names(flow.channels, field=field)
-            if len(channel_names) != channel_count:
-                raise ParseError(
-                    f"Channel count mismatch: metadata has {len(channel_names)} names, events have {channel_count}."
-                )
-            if channel_map:
-                mapped = [channel_map.get(name, name) for name in channel_names]
-                if len(set(mapped)) != len(mapped):
-                    raise ParseError("channel_map produces duplicate channel names; ensure a 1:1 mapping.")
-                channel_names = mapped
-            wide = pd.DataFrame(values, columns=channel_names)
-            wide["event_index"] = range(event_count)
-            long = wide.melt(id_vars=["event_index"], var_name="channel", value_name="value")
-            if drop_channels:
-                long = long[~long["channel"].isin(drop_channels)]
-            sample_id = f.stem if cfg.sample_id_from == "stem" else f.name
-            long["sample_id"] = sample_id
-            long["position"] = sample_id
-            long["time"] = float(cfg.time_value)
+            long, channels_meta = parse_fcs_file(
+                f,
+                channel_name_field=cfg.channel_name_field,
+                channel_map=channel_map,
+                drop_channels=drop_channels,
+                sample_id_from=cfg.sample_id_from,
+                time_value=cfg.time_value,
+            )
             frames.append(long)
-
-            channel_rows = []
-            channel_indices = sorted(flow.channels)
-            for idx, name in zip(channel_indices, channel_names, strict=False):
-                meta = flow.channels.get(idx, {})
-                pne_decades, pne_zero = _parse_pne(meta.get("pne"))
-                row = {
-                    "sample_id": sample_id,
-                    "channel_index": int(idx),
-                    "channel_name": str(name),
-                    "pns": _clean_text(meta.get("pns")),
-                    "pnn": _clean_text(meta.get("pnn")),
-                    "pnt": _clean_text(meta.get("pnt")),
-                    "pnf": _clean_text(meta.get("pnf")),
-                    "pnl": _clean_text(meta.get("pnl")),
-                    "pnr": _to_float(meta.get("pnr")),
-                    "pnb": _to_float(meta.get("pnb")),
-                    "png": _to_float(meta.get("png")),
-                    "pne_decades": pne_decades,
-                    "pne_zero": pne_zero,
-                }
-                channel_rows.append(row)
-            if channel_rows:
-                channel_meta_frames.append(pd.DataFrame(channel_rows))
+            if not channels_meta.empty:
+                channel_meta_frames.append(channels_meta)
 
         if not frames:
             raise ParseError("No cytometer frames parsed from selected files")

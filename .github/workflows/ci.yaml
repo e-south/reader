@@ -6,9 +6,18 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  lint-test-build:
+  quality:
+    name: Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v5
@@ -24,7 +33,13 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --dev
+        run: uv sync --locked --group dev
+
+      - name: Lockfile drift check
+        run: uv lock --check
+
+      - name: Docs integrity
+        run: uv run python tools/check_docs.py
 
       - name: Lint
         run: uv run ruff check .
@@ -32,8 +47,73 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
-      - name: Tests
-        run: uv run pytest -q
+      - name: Compile source
+        run: uv run python -m compileall src/reader
 
       - name: Build (sdist + wheel)
         run: uv build
+
+  default-tests:
+    name: Default Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --group dev
+
+      - name: Run default test lane with coverage
+        run: |
+          mkdir -p .artifacts
+          uv run pytest -q \
+            --cov=reader \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml:.artifacts/coverage.xml \
+            --junitxml=.artifacts/pytest-default.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: default-test-artifacts
+          path: .artifacts/
+
+      - name: Upload coverage to Codecov
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: .artifacts/coverage.xml
+          flags: default
+          name: default-suite
+          fail_ci_if_error: false
+          verbose: true
+
+  lint-test-build:
+    name: lint-test-build
+    runs-on: ubuntu-latest
+    needs: [quality, default-tests]
+    if: always()
+
+    steps:
+      - name: Mirror the legacy required status context
+        run: |
+          echo "quality=${{ needs.quality.result }}"
+          echo "default-tests=${{ needs.default-tests.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.default-tests.result }}" = "success"

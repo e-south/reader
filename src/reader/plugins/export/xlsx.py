@@ -9,15 +9,15 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
-from reader.core.errors import ExecutionError
-from reader.core.registry import Plugin, PluginConfig
+from reader.errors import ExecutionError
+from reader.workbench.ports import dataframe_input, file_path_output
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class ExportXlsxCfg(PluginConfig):
@@ -27,18 +27,15 @@ class ExportXlsxCfg(PluginConfig):
 
 
 class ExportXlsx(Plugin):
-    key = "xlsx"
-    category = "export"
     ConfigModel = ExportXlsxCfg
 
     @classmethod
-    def input_contracts(cls) -> Mapping[str, str]:
-        # Accept any DataFrame artifact; validate type at runtime.
-        return {"df": "none"}
+    def input_ports(cls):
+        return {"df": dataframe_input("df")}
 
     @classmethod
-    def output_contracts(cls) -> Mapping[str, str]:
-        return {"files": "none"}
+    def output_ports(cls):
+        return {"artifact": file_path_output("artifact")}
 
     def run(self, ctx, inputs: dict[str, Any], cfg: ExportXlsxCfg) -> dict[str, Any]:
         df = inputs["df"]
@@ -54,4 +51,4 @@ class ExportXlsx(Plugin):
         except ImportError as e:
             raise ExecutionError("export/xlsx requires the 'openpyxl' dependency to write .xlsx files.") from e
         ctx.logger.info("export • xlsx → %s", out_path)
-        return {"files": [out_path]}
+        return {"artifact": out_path}

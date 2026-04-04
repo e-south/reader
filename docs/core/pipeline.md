@@ -1,249 +1,209 @@
-# Configuring pipelines
+# Configuring Reader v7
 
-Pipelines are defined in `config.yaml` and detail steps you want to run the same way each time (ingest/merge/transform/validate). Outputs derived from pipelines can then feed into plots, notebooks, and exports.
+`reader` now has three explicit layers:
 
-### Contents
+- authoring: experiment `config.yaml`
+- semantics: `reader.protocols`
+- execution: compiled workbench IR
 
-1. [Schema marker](#schema-marker)
-2. [Top-level structure](#top-level-structure)
-3. [Step shape](#step-shape)
-4. [Example configuration](#example-configuration)
+The config should describe assay inputs, analysis choices, and requested outputs
+in domain terms, not plugin or graph terms.
 
----
-
-### Schema marker
-
-Every config must declare the schema at the top:
+## Minimal shape
 
 ```yaml
-schema: "reader/v2"
-```
-
----
-
-### Top-level structure
-
-```yaml
-schema: "reader/v2"
+schema: reader/v7
 
 experiment:
-  id: <string>                 # required
-  title: <string | null>       # optional
+  id: 20250614_sensor_panel_M9_glu
 
-paths:
-  outputs: "./outputs"        # default
-  plots: "plots"              # default (relative to outputs; use "." to flatten)
-  exports: "exports"          # default (relative to outputs; use "." to flatten)
-  notebooks: "notebooks"      # default (relative to outputs)
+protocol:
+  id: plate_reader/dual_reporter_screen
+  inputs:
+    ingest:
+      mode: auto
+    fold_change:
+      report_times: [8.0, 14.0]
 
-plotting:
-  palette: "colorblind"       # string or null
-
-data:
-  groupings: {}                # optional (used by some plots)
-  aliases: {}                  # optional (alias maps for transform/alias)
-
-pipeline:
-  presets: []                  # optional
-  runtime: {}                  # optional (e.g., strict: true)
-  overrides: {}                # optional per-step overrides by id
-  steps: []                    # required (use empty list if none)
-
-plots:
-  presets: []                  # optional
-  defaults:                    # optional defaults applied to all plot specs
-    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
-    with:  {}                  # shallow-merged into spec.with
-  overrides: {}                # optional per-plot overrides by id
-  specs: []                    # optional (unordered)
-
-exports:
-  presets: []                  # optional
-  defaults:                    # optional defaults applied to all export specs
-    reads: {}                  # e.g., { df: "ratios/yfp_od600" }
-    with:  {}
-  overrides: {}                # optional per-export overrides by id
-  specs: []                    # optional (unordered)
-
-notebook:
-  preset: "notebook/basic"     # optional (default for `reader notebook`)
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.xlsx
 ```
 
-Notes:
+## Top-level surface
 
-- `paths.outputs` is resolved relative to the config file and stored as an absolute path.
-- `paths.plots`, `paths.exports`, and `paths.notebooks` must be relative to `paths.outputs`.
-- `pipeline.steps` is required (use `[]` if you have no pipeline steps yet).
-- Step ids must be unique across pipeline, plots, and exports.
-- Inline `preset:` entries inside `steps` are not supported. Use `pipeline.presets`, `plots.presets`, or `exports.presets` instead.
-- Plot/export defaults apply after preset expansion and before per-id overrides.
+- `schema`
+  Must be `reader/v7`.
+- `experiment`
+  Explicit experiment identity. `experiment.id` is required. Optional `experiment.lifecycle`
+  may be `draft` or `template` for intentionally non-runnable configs; omit it for
+  normal active experiments.
+- `protocol`
+  Assay binding plus semantic config.
+- `resources`
+  External files such as `sample_map` or `metadata`.
+- `annotations`
+  Labels, orders, collections, and logic maps.
+- `paths`
+  Optional output layout override.
+- `plotting`
+  Optional shared plotting palette override.
 
----
+There is no public `graph_patch`, no top-level `pipeline` / `plots` /
+`exports`, and no `protocol.with`.
 
-### Outputs layout
+## Protocol surface
 
-By default, outputs are written under `outputs/`:
+The protocol block is split by role:
 
-```
-outputs/
-  artifacts/
-  plots/
-  exports/
-  notebooks/
-  manifests/
-    manifest.json
-    plots_manifest.json
-    exports_manifest.json
-```
-- `notebook.preset` controls the default preset used by `reader notebook` when `--preset` is omitted.
+- `protocol.inputs`
+  Assay-family input bindings and protocol-owned knobs.
+- `protocol.analysis`
+  Analysis toggles and semantic policy choices.
+- `protocol.outputs`
+  Notebook, plot, and export selection.
 
----
+## Plot and artifact registries
 
-### Step shape
+Protocols expose two user-facing registries:
 
-A step object (used in `pipeline.steps`, `plots.specs`, and `exports.specs`) looks like:
+- plot outputs
+  Named figures such as `raw_kinetics`, `endpoint_by_condition`, or
+  `logic_symmetry`
+- export artifacts
+  Named files such as `crosstalk_pairs_table` or
+  `logic_summary_workbook`
+
+Plot outputs can also be grouped into named plot profiles. A profile is just a
+semantic bundle of figure ids chosen by the protocol author.
+
+Users do not select plugins directly. They choose:
+
+- a plot profile
+- optional `include` / `exclude` figure ids
+- optional per-figure `views`
+- optional export `include` / `exclude`
+- optional per-artifact `artifacts` config
+
+Unknown keys on the public authoring surface now fail fast. `reader/v7` no
+longer silently drops misspelled `protocol` keys, unknown plot/export output
+blocks, or malformed annotation collections.
+
+## Plate-reader example
 
 ```yaml
-- id: <string>
-  uses: "<category>/<key>"     # ingest/merge/transform/validator/plot/export
-  reads: {}                    # optional (input bindings)
-  with:  {}                    # optional (plugin params)
-  writes: {}                   # optional (stable output labels)
+protocol:
+  id: plate_reader/dual_reporter_screen
+  inputs:
+    ingest:
+      mode: auto
+      sheet_names: ["Plate 1 - Sheet1", "Plate 2 - Sheet1"]
+    fold_change:
+      report_times: [8.0, 14.0]
+      treatment_column: treatment
+      group_by: [design_id]
+  analysis:
+    crosstalk_pairs:
+      enabled: true
+      export: true
+  outputs:
+    notebook:
+      template: notebook/eda
+    plots:
+      profile: heatmap_review
+      views:
+        ratio_heatmap:
+          time: 12.0
+        support_heatmap:
+          time: 12.0
+    exports:
+      include: [crosstalk_pairs_table]
+      artifacts:
+        crosstalk_pairs_table:
+          path: crosstalk_pairs.csv
 ```
 
-Rules:
-
-- `reads` can bind inputs to a prior output (e.g., `merge/df`) or to a file path using `file:`.
-- `writes` maps outputs to stable labels (so downstream steps can avoid tight coupling to step ids).
-- `pipeline` steps may not use `plot/*` or `export/*` plugins.
-- `plots` specs must use `plot/*` plugins and are unordered.
-- `exports` specs must use `export/*` plugins and are unordered.
-
----
-
-### Inputs + metadata placement
-
-By default, place **raw inputs and metadata under `inputs/`**. Auto-discovery for ingest plugins
-(`ingest/synergy_h1`, `ingest/flow_cytometer`) scans `inputs/` by default and **excludes common
-metadata filenames** to avoid accidental ingestion:
-
-- `metadata.*`
-- `metadata_filtered.*`
-- `sample_map.*`
-- `sample_metadata.*`
-- `plate_map.*`
-
-If your metadata uses different names, either pass an explicit `reads.raw` file path or add those
-names to the ingest step’s `auto_exclude` list.
-
-**Aliases in steps**
-
-The `transform/alias` plugin can pull alias maps from `data.aliases` using `aliases_ref`:
+## Logic/SFXI example
 
 ```yaml
-- id: alias_design_id
-  uses: transform/alias
-  reads: { df: "final/df" }
-  with:
-    aliases_ref: "design_id"     # pulls from data.aliases.design_id
+protocol:
+  id: logic/sfxi_screen
+  inputs:
+    ingest:
+      mode: mixed
+    response:
+      logic_channel: YFP/CFP
+      intensity_channel: YFP/OD600
+    reference:
+      design_id: REF
+      stat: mean
+    design_by: [design_id]
+    logic_map_ref: induction_logic
+  analysis:
+    include_export: true
+  outputs:
+    notebook:
+      template: notebook/sfxi_eda
+    plots:
+      profile: logic_geometry
+    exports:
+      include: [logic_summary_workbook]
 ```
 
-For multiple columns, add multiple alias steps (one per column):
+## Cytometry example
 
 ```yaml
-- id: alias_design_id
-  uses: transform/alias
-  reads: { df: "final/df" }
-  with:
-    aliases_ref: "design_id"
-
-- id: alias_treatment
-  uses: transform/alias
-  reads: { df: "alias_design_id/df" }
-  with:
-    aliases_ref: "treatment"
+protocol:
+  id: cytometry/flow_panel
+  inputs:
+    ingest:
+      auto_roots: ["./inputs"]
+      channel_name_field: pns
+    metadata:
+      require_columns: [design_id, treatment]
+      require_non_null: true
 ```
 
----
+## Inspect the config surface
 
-### Example configuration
+Use the CLI to inspect one protocol or one experiment:
 
-```yaml
-schema: "reader/v2"                 # required schema marker
-
-experiment:
-  id: "20250512_panel_M9_glu"       # short unique experiment id
-  title: "Cell line panel — M9"     # optional display name
-
-paths:
-  outputs: "./outputs"              # base output directory (relative to config)
-  plots: "plots"                    # subdir under outputs/
-  exports: "exports"                # subdir under outputs/
-  notebooks: "notebooks"            # subdir under outputs/
-
-plotting:
-  palette: "colorblind"             # palette name (or null)
-
-data:
-  groupings:
-    genotype:                       # grouping name used by plots
-      group_ab:
-        - {"Group A": ["g1", "g2"]} # label -> members
-        - {"Group B": ["g3"]}
-  aliases:
-    design_id:
-      "ctrl": "control"             # rename raw labels
-
-pipeline:
-  runtime:
-    strict: true                    # fail fast on missing inputs/columns
-  steps:
-    - id: ingest                    # unique step id
-      uses: ingest/synergy_h1       # plugin to read plate reader files
-      with:
-        channels: ["OD600", "CFP"]  # measurements to ingest
-        auto_roots: ["./inputs"]    # where to look for raw files
-        auto_pick: "single"         # pick one file if multiple
-
-    - id: merge_map
-      uses: merge/sample_map        # attach metadata columns
-      reads:
-        df: "ingest/df"             # from prior step
-        sample_map: "file:./inputs/metadata.xlsx"  # metadata file
-
-    - id: ratio_yfp_od600
-      uses: transform/ratio
-      reads: { df: "merge_map/df" } # input dataframe
-      with:  { name: "YFP/OD600", numerator: "YFP", denominator: "OD600" }  # new column
-      writes: { df: "ratios/yfp_od600" }  # stable label for downstream
-
-plots:
-  presets:
-    - plots/plate_reader_yfp_full   # bundle of plot specs
-  defaults:
-    reads:
-      df: "ratios/yfp_od600"        # default plot input
-  specs:
-    - id: plot_ts
-      uses: plot/time_series
-      with:
-        x: time                     # x-axis column
-        y: ["OD600", "YFP"]         # y-series
-        hue: treatment              # color by treatment
-
-exports:
-  defaults:
-    reads:
-      df: "ratios/yfp_od600"        # default export input
-  specs:
-    - id: export_ratios
-      uses: export/csv
-      with: { path: "ratios.csv" }  # file name under outputs/exports/
-
-notebook:
-  preset: "notebook/eda"            # default notebook scaffold
+```bash
+uv run reader protocols <protocol-id>
+uv run reader protocols <protocol-id> --example-config
+uv run reader inspect <config|dir|index>
+uv run reader config <config|dir|index> --format json
+uv run reader explain <config|dir|index>
+uv run reader plot <config|dir|index> --list
+uv run reader export <config|dir|index> --list
 ```
 
----
+For setup and task-oriented command routes, use
+[Getting started](../guides/getting_started.md),
+[Common tasks](../guides/common_routes.md), and the
+[CLI reference](./cli.md). For machine-readable inspection, use
+[Automation and JSON](../guides/automation.md).
 
-@e-south
+For plate-reader assays, the protocol boundary matters:
+
+- `plate_reader/dual_reporter_screen` owns CFP/YFP-style dual-reporter panels.
+- `plate_reader/single_reporter_screen` owns single-reporter panels such as RFP/OD600 screens.
+- `plate_reader/retron_sponge_screen` owns matched-control sponge assays with explicit control/window/comparison/ranking semantics.
+
+For the direct-ratio retron workflow, including the compiled `R -> B -> C -> D -> M -> O` program and semantic-table exports, see the [Retron sponge screen guide](../guides/retron_sponge_screen.md).
+
+## Mental model
+
+The flow is:
+
+`config -> protocol binding -> protocol compiler -> workbench decl -> graph -> engine -> records`
+
+That keeps:
+
+- authored config in `config.yaml`
+- assay semantics in `reader.protocols`
+- execution IR in `decl/` and `graph/`
+- plugin mechanics in `plugins/`
+
+separate and explicit.

@@ -23,6 +23,7 @@ dependencies = [
   "pillow>=10.0",
   "polars>=1.36.1",
   "openai>=2.14.0",
+  "flowio>=1.4.0",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +32,7 @@ dnadesign = [
 ]
 
 [project.scripts]
-reader = "reader.core.cli:app"
+reader = "reader.workbench.cli:app"
 
 [tool.setuptools.package-dir]
 "" = "src"
@@ -41,12 +42,13 @@ where = ["src"]
 include = ["reader*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+"reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
+
 [dependency-groups]
-cytometry = [
-    "flowio>=1.4.0",
-]
 dev = [
   "pytest>=8.2",
+  "pytest-cov>=7.0",
   "ruff>=0.4",
   "pre-commit>=3.7",
 ]
@@ -97,10 +99,27 @@ python_functions = ["test_*"]
 addopts = [
   "--strict-config",
   "--strict-markers",
-  "-ra"
+  "-ra",
+  "-m",
+  "not integration and not fleet",
+]
+
+markers = [
+  "fleet: full data-backed active-experiment end-to-end matrix excluded from the default lane",
+  "integration: cross-surface integration coverage",
+  "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
+  "smoke: representative real-experiment runtime coverage kept in the default test lane",
 ]
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
   "outputs", "plots", "raw_data", "_scratch"
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["reader"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

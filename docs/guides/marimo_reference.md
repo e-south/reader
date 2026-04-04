@@ -8,6 +8,12 @@ Where this fits:
 - For pipeline outputs and plots/exports that notebooks consume, see [Pipeline](../core/pipeline.md).
 - Use `reader notebook` to scaffold an experiment notebook with paths and manifests wired up.
 
+Agent workflow:
+- Prefer `uv run reader notebook <config> --mode run --headless` for browser review.
+- Prefer `uv run marimo check <notebook.py>` before opening a notebook when you only need a clean validation pass.
+- When using Chrome MCP, open the printed loopback URL in a fresh isolated page and wait for the notebook heading before inspecting content.
+- Do not launch raw `marimo edit` directly from an arbitrary shell when `reader notebook` can manage the notebook. The reader launcher handles repo-local cache dirs, loopback ports, and stale-session restarts when the notebook or reader runtime has changed.
+
 Editing rule: only edit code inside the `@app.cell` function body. Marimo manages parameters and return statements.
 
 ```python
@@ -121,10 +127,18 @@ Common issues and solutions:
 After generating a notebook, run:
 
 ```bash
-marimo check --fix
+uv run marimo check notebook.py
 ```
 
-to catch common formatting issues and pitfalls (when available in your environment).
+to catch common formatting issues and pitfalls before a browser review.
+
+For reader-managed browser review:
+
+```bash
+uv run reader notebook <config> --mode run --headless
+```
+
+That route prints a loopback URL, keeps Marimo runtime state under `.cache/marimo/`, and avoids stale same-experiment sessions accumulating across repeated launches.
 
 ---
 
@@ -444,7 +458,3 @@ def _(mo, weather):
     )
     return seattle_weather_df
 ```
-
----
-
-@e-south

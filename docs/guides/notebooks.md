@@ -5,7 +5,7 @@ Once you run a pipeline you can generate [marimo notebooks](https://marimo.io/) 
 ### Contents
 
 1. [General usage](#general-usage)
-2. [Using reader presets](#using-reader-presets)
+2. [Using reader templates](#using-reader-templates)
 
 ---
 
@@ -59,10 +59,10 @@ In general there are two ways to use marimo:
 
 ---
 
-### Using reader presets
+### Using reader templates
 
-Presets let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
-Use `reader notebook` for broad exploration across artifact dataframes.
+Templates let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
+Use `uv run reader notebook` for broad exploration across dataframe records.
 By default, notebooks are written under `outputs/notebooks/`.
 
 Scaffold a notebook (opens Marimo by default):
@@ -71,41 +71,61 @@ Scaffold a notebook (opens Marimo by default):
 uv run reader notebook experiments/my_experiment/config.yaml
 ```
 
+For browser review without opening the editor, prefer:
+
+```bash
+uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
+```
+
 What the scaffolded notebook includes:
 
-* artifact discovery via `outputs/manifests/manifest.json`; if the manifest is missing or unreadable, the notebook
-  will warn and scan `outputs/artifacts/**/df.parquet` to populate the dataset list
-* a dataset dropdown labeled “Dataset (artifact df.parquet)” (defaults to the most downstream step when possible)
-* a canonical `df_active` variable populated from the selected artifact (polars required to read parquet)
-* dataset status (backend, rows/columns, parquet path)
+* dataframe record discovery via `outputs/manifests/records.json`
+* a dataset dropdown labeled “Dataset (dataframe record)” (defaults to the most downstream step when possible)
+* a canonical dataframe selection variable backed by the chosen parquet file (polars required to read parquet)
+* a compact experiment overview with experiment id/title plus a `design_id` / `treatment` summary when those columns exist
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
-* a top header with experiment id/title, resolved outputs path, and a conditions/treatments table
-* a design + treatment summary panel (`design_id` / `treatment` if present)
-* an ad-hoc EDA panel with x/y/hue/groupby dropdowns and Altair plotting
+* load-status messaging when no records exist yet or parquet loading fails
+
+The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` templates are intentionally minimal record explorers.
+They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
+`plate_reader/retron_sponge_screen` instead defaults to `notebook/retron_sponge`, which adds an
+experiment-scoped plot-portfolio review, transform ladder, and semantic-table walkthrough on top of the record explorer.
+For cross-run retron library review, `notebook/retron_sponge_aggregate` is available as an explicit opt-in template
+for generic review experiments that aggregate exported semantic tables from multiple source screens.
 
 The dataset dropdown drives the canonical `df_active` variable.
 
 See what’s available:
 
 ```bash
-reader notebook --list-presets
+uv run reader notebook --list-templates
 ```
 
 Notes:
 
-* `reader notebook` only scaffolds the notebook; it does not run the pipeline.
-* `reader notebook` launches Marimo with the active Python interpreter (e.g., `sys.executable -m marimo ...`), so running via `uv run` ensures the notebook deps are available.
-* Use `--mode none` to scaffold without launching Marimo, or `--mode run` to launch a read-only app.
-* Common presets include `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda` (SFXI vec8 builder scaffold; requires a `transform/sfxi` step or existing SFXI artifacts).
-* The SFXI preset draws a red dashed induction marker on the time-series plot when an induction time can be inferred from artifacts:
+* `uv run reader notebook` only scaffolds the notebook; it does not run the pipeline.
+* `uv run reader notebook` launches Marimo with the active Python interpreter, so running via `uv run` ensures the notebook deps are available.
+* `reader notebook` manages Marimo runtime state under `.cache/marimo/` in the repo. It uses clean repo-local XDG and Matplotlib cache directories instead of leaking into user-global Marimo state.
+* `reader notebook` reuses an existing reader-managed session for the same notebook only when the notebook file and reader runtime fingerprint still match. If either has drifted, it restarts the stale session instead of silently attaching to it.
+* It also prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
+* Use `--mode none` to scaffold without launching Marimo, `--mode run` to launch a read-only app, and `--headless` when an agent or browser automation should attach to the printed loopback URL.
+* Use `--port <n>` only when you need a fixed loopback port. Otherwise let `reader` choose a clean port starting at `2718`.
+* For agent review, the low-friction path is:
+  - `uv run reader notebook <config> --mode run --headless`
+  - open the printed URL in Chrome MCP
+  - or run `uv run marimo check <notebook.py>` for a static validation pass
+* Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
+* Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
+* Template behavior is capability-driven:
+  - plot filtering is only available for templates that declare plot-filter support
+  - auto-pick chooses a template from declared default rules instead of hardcoded CLI branching
+  - template applicability checks are declared on the template asset itself
+* `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
+* The SFXI template draws a red dashed induction marker on the time-series plot when an induction time can be inferred from dataframe records:
   - preferred: an explicit column like `induction_time_h` (or `induction_time`) in the tidy dataframe
   - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time
   If neither is present, the induction marker is omitted.
-* If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new <FILE>` to create a second notebook.
-* If `--preset` is omitted, reader uses `notebook.preset` from `config.yaml` if provided; otherwise it auto-selects `notebook/eda` when plots exist, or `notebook/basic` when they don't (both presets currently scaffold the same minimal notebook).
+* If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new` to create a second notebook with an automatic numeric suffix.
+* If `--template` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it auto-selects the first template whose declared default rule matches the workbench state.
 
-See also: [SFXI vec8 in reader](sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook preset aligns with the code.
-
----
-
-@e-south
+See also: [SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook template aligns with the code.

@@ -1,0 +1,125 @@
+# Security
+
+`reader` is a local experimental workbench, not a multi-tenant service. Its security model is therefore mostly about trust boundaries, safe defaults, and preventing accidental damage or ambiguous execution rather than defending an internet-facing API.
+
+This document describes the current security posture and the boundaries maintainers should preserve.
+
+## Trust Model
+
+Assume these inputs may be malformed or mistaken:
+
+- `config.yaml`
+- resource paths
+- raw input files
+- CLI overrides
+- generated manifests
+
+Assume these components are trusted code and should be treated accordingly:
+
+- built-in plugins
+- external plugins discovered from Python entry points
+- notebook templates
+- repo-local Python code and dependencies
+
+External plugins and notebooks are executable Python. They are an extension surface, not a sandbox boundary.
+
+## Current Controls
+
+### Config parsing
+
+- YAML is loaded with `yaml.safe_load`.
+- Only `reader/v7` is accepted.
+- removed legacy keys are rejected explicitly
+- protocol, experiment, paths, resources, and annotations are shape-checked before model validation
+
+### Schema strictness
+
+- plugin configs use pydantic models with `extra = "forbid"`
+- unsupported public keys fail fast
+- CLI JSON modes reject unsupported combinations explicitly
+
+### Filesystem safety
+
+- `paths.<subdir>` must remain relative to `paths.outputs`
+- path escapes via `..` are rejected
+- absolute subdirectory paths are rejected
+- generated outputs are expected under `outputs/`
+
+### Execution boundaries
+
+- plugin ports are typed and validated
+- dataframe contracts are checked at runtime
+- built-in plugins are registered through an explicit manifest, not by implicit package scanning
+- external plugins must come from the `reader.plugins` entry-point group
+
+### Provenance and integrity
+
+- persisted records include config digests
+- data and file bundles are tracked in `outputs/manifests/records.json`
+- file content digests are recorded for persisted artifacts
+
+## What Reader Does Not Promise
+
+`reader` does not currently provide:
+
+- sandboxing for untrusted plugins
+- sandboxing for notebook execution
+- secret management
+- network isolation for external code
+- policy enforcement that only signed plugins may run
+
+If you install or author a plugin, you are executing Python with the same trust level as the local environment.
+
+## Maintainer Guidance
+
+- Treat plugin additions as code-execution changes, not just config additions.
+- Keep plugin implementations thin and push domain logic into `domains/`.
+- Prefer explicit manifests and typed ports over implicit runtime discovery.
+- Do not revive legacy config shims or raw graph mutation surfaces.
+- Keep generated outputs generated; do not hand-edit manifests to “fix” runtime state.
+
+## Operator Guidance
+
+- Do not place secrets in `config.yaml`.
+- Review external plugins before enabling them.
+- Treat notebooks as executable code.
+- Use `uv sync --locked` so dependency state matches the lockfile.
+- Prefer preflight commands before mutation:
+  `reader validate`, `reader explain`, `reader run --dry-run`.
+
+## Security Review Checklist
+
+Use this checklist for security-sensitive changes.
+
+- Does the change widen the public config surface?
+- Does it add a new path or file-binding surface?
+- Does it introduce dynamic import or implicit plugin discovery?
+- Does it weaken contract validation or port checks?
+- Does it change where generated outputs or manifests are written?
+- Does it add a new execution surface for notebooks or external code?
+
+If the answer is yes to any of those, the change deserves an explicit security review.
+
+## Security And Harness Design
+
+The OpenAI harness-engineering article emphasizes explicit interfaces, fast feedback loops, and guardrailed autonomy. In `reader`, that maps to:
+
+- machine-readable discovery and preflight commands
+- fail-fast validation instead of permissive coercion
+- clear trust boundaries around plugins and notebooks
+- keeping the public experiment surface smaller than the internal execution model
+
+That is security work as much as UX work. Ambiguous surfaces create accidental misuse.
+
+## Current Open Security Debt
+
+The main open risk is not a parser exploit; it is semantic drift. When assay semantics are split between protocol metadata and compiler behavior, operators have a harder time reasoning about what the system will do. That is a security-adjacent problem because opaque execution weakens reviewability.
+
+The other standing boundary is external plugins. They remain a deliberate trust boundary rather than a sandboxed capability surface.
+
+## Related Docs
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [DESIGN.md](./DESIGN.md)
+- [QUALITY.md](./QUALITY.md)
+- [RELIABILITY.md](./RELIABILITY.md)

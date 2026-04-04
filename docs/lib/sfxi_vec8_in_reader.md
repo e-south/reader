@@ -38,13 +38,13 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
   * **Reader makes this explicit** by writing an `intensity_log2_offset_delta` column into every vec8 row. When `log2_offset_delta` is left at its default (`0.0`), this column will be all zeros.
   * **If OPAL uses a different delta, recovered linear intensities and downstream scores will be inconsistent.** Keep the values in sync (preferably by validating against the vec8 column at ingest time).
 
-- The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader/lib/sfxi/*` and adds pipeline plumbing and logging.
+- The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader.domains.logic.sfxi.*` and adds pipeline plumbing and logging.
 
 ---
 
 ### Relevant modules
 
-Key modules in `src/reader/lib/sfxi/`:
+Key modules in `src/reader/domains/logic/sfxi/`:
 
 * **Selection + cornerization + aggregation:** `selection.py`
 
@@ -68,7 +68,7 @@ Key modules in `src/reader/lib/sfxi/`:
 
 ### Input contract
 
-SFXI consumes a **tidy+map** DataFrame (the typical source is the `validator/to_tidy_plus_map` artifact).
+SFXI consumes an **annotated plate-reader** DataFrame (the typical source is the `validator/to_tidy_plus_map` dataframe record).
 
 #### Required columns
 
@@ -173,7 +173,7 @@ Corner mapping is handled in `selection.cornerize_and_aggregate(...)`.
 
 #### Treatment map
 
-`treatment_map` assigns your experimental treatment labels to the four logic corners:
+At the library layer, SFXI still consumes a plain `treatment_map` that assigns experimental treatment labels to the four logic corners:
 
 ```yaml
 with:
@@ -186,6 +186,12 @@ with:
 
 * Keys **must be exactly**: `{"00","10","01","11"}` (`api.load_sfxi_config` enforces this).
 * Values are the treatment labels expected to appear in the tidy data.
+
+In `reader/v7` experiment configs, you do **not** write `treatment_map`
+directly on a hand-authored `transform/sfxi` step. Instead, define the mapping
+once under `annotations.logic_maps.<name>` and reference it with
+`protocol.inputs.logic_map_ref`. The protocol materializes the lower-level
+mapping before running the SFXI transform.
 
 Duplicate values are rejected (after optional normalization) to avoid ambiguous mapping:
 
@@ -427,66 +433,57 @@ When using `lib.sfxi.run` entry points, the JSON log includes:
 
 > Note: the library (`run_sfxi`) writes `sfxi_log.json`. If you are using a higher-level transform wrapper, it may choose to surface the same information via console logging and/or pipeline metadata instead of writing a separate JSON file.
 
-See `src/reader/core/contracts.py` for the canonical contract referenced by the pipeline (`sfxi.vec8.v2`).
+See `src/reader/contracts/builtins/` for the canonical contracts referenced by the pipeline (`plate_reader.annotated.v1`, `sfxi.vec8.v2`).
 
 ---
 
 ### Configuration entry point
 
-In reader pipeline configs, SFXI runs as a transform step using `transform/sfxi`. A minimal example:
+In `reader/v7`, SFXI is normally configured through the bound protocol plus
+semantic `protocol.inputs` / `protocol.analysis` / `protocol.outputs`
+fields. A minimal example:
 
 ```yaml
-- id: sfxi_vec8
-  uses: transform/sfxi
-  reads:
-    df: promote_to_tidy_plus_map/df
-  with:
+protocol:
+  id: logic/sfxi_screen
+  inputs:
+    ingest:
+      mode: mixed
+      channels: [OD600, CFP, YFP]
+    fold_change:
+      report_times: [14.0]
+      use_global_baseline: true
+      global_baseline_value: EtOH_0_percent_0nM_cipro
     response:
       logic_channel: YFP/CFP
       intensity_channel: YFP/OD600
-
     design_by: [design_id]
-
-    # treatment → corner mapping (state order: 00,10,01,11)
-    treatment_case_sensitive: true
-    treatment_map:
-      "00": EtOH 0%, 0 nM cipro
-      "10": EtOH 3%, 0 nM cipro
-      "01": EtOH 0%, 100 nM cipro
-      "11": EtOH 3%, 100 nM cipro
-
-    # time selection
-    target_time_h: 10.0            # null → latest available time
-    time_mode: nearest             # nearest | last_before | first_after | exact
-    time_tolerance_h: 0.25         # soft warning threshold
-
-    # corner completeness
-    require_all_corners_per_design: true
-
-    # intensity reference anchor (required)
+    logic_map_ref: induction_logic
     reference:
       design_id: REF
-      stat: mean                   # mean | median
-      # on_missing: error          # currently only 'error' is supported
+      stat: mean
+  outputs:
+    exports:
+      include: [logic_summary_workbook]
 
-    # numerical guards / knobs
-    eps_ratio: 1e-9
-    eps_range: 1e-12
-    eps_ref: 1e-9
-    eps_abs: 0.0
-    ref_add_alpha: 0.0
-    log2_offset_delta: 0.0
-
-    # output
-    output_subdir: sfxi
-    vec8_filename: vec8.csv
-    log_filename: sfxi_log.json
+annotations:
+  logic_maps:
+    induction_logic:
+      column: treatment_alias
+      corners:
+        "00": EtOH 0%, 0 nM cipro
+        "10": EtOH 3%, 0 nM cipro
+        "01": EtOH 0%, 100 nM cipro
+        "11": EtOH 3%, 100 nM cipro
+      case_sensitive: true
 ```
 
 Additional notes:
 
 * `response.logic_channel` and `response.intensity_channel` are **required** and must match `channel` values in the tidy table exactly (string equality).
-* `treatment_map` must contain exactly the four keys `00, 10, 01, 11`.
+* `protocol.id` should bind the experiment to `logic/sfxi_screen` when SFXI is the primary analysis protocol.
+* `annotations.logic_maps.<name>.corners` must contain exactly the four keys `00, 10, 01, 11`.
+* `logic_map_ref` must point to a defined annotations logic map; reader fails fast on unknown refs.
 * `reference.design_id` is required for intensity anchoring; missing reference data results in an error rather than a fallback.
 * Although a `time_column` config key exists in `SFXIConfig`, the current selector validation expects a literal `time` column in the tidy table. (If your upstream data uses a different name, rename it to `time` before SFXI.)
 
@@ -497,7 +494,7 @@ Additional notes:
 The following example uses the SFXI-capable experiment
 `experiments/2025/20250915_sfxi_pSingle_ref/config.yaml`.
 
-1) Run the pipeline to generate tidy+map and vec8 outputs:
+1) Run the pipeline to generate annotated plate-reader and vec8 outputs:
 
     ```bash
     uv run reader run experiments/2025/20250915_sfxi_pSingle_ref/config.yaml
@@ -505,18 +502,22 @@ The following example uses the SFXI-capable experiment
 
     This writes:
 
-    * `outputs/sfxi/vec8.csv`
-    * `outputs/sfxi/sfxi_log.json`
+    * dataframe records under `outputs/artifacts/`
+    * a typed records catalog at `outputs/manifests/records.json`
+    * an SFXI dataframe record at `sfxi_vec8/vec8`
 
-2) Export the vec8 table via `reader export`. Add export specs to the experiment `config.yaml` (adjust the `reads` path to match your SFXI step id):
+2) Export the vec8 table via `reader export`. Bind the workbook export as a protocol artifact:
 
     ```yaml
-    exports:
-      specs:
-        - id: export_vec8_xlsx
-          uses: export/xlsx
-          reads: { df: sfxi_vec8/vec8 }
-          with: { path: "sfxi/vec8.xlsx", sheet_name: "vec8" }
+    protocol:
+      id: logic/sfxi_screen
+      outputs:
+        exports:
+          include: [logic_summary_workbook]
+          artifacts:
+            logic_summary_workbook:
+              path: sfxi/vec8.xlsx
+              sheet_name: vec8
     ```
 
     Then run exports:
@@ -529,20 +530,16 @@ The following example uses the SFXI-capable experiment
 
     * `outputs/exports/sfxi/vec8.xlsx`
 
-3) Launch the SFXI notebook preset (interactive vec8 inspection + export panel):
+3) Launch the SFXI notebook template (interactive vec8 inspection + export panel):
 
     ```bash
-    uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --preset notebook/sfxi_eda --mode edit
+    uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --template notebook/sfxi_eda --mode edit
     ```
 
     Notes:
 
-    * The notebook preset is gated: it only scaffolds when the experiment has a valid
-      `transform/sfxi` step or existing SFXI artifacts.
+    * The notebook template is gated: it only scaffolds when the experiment has a valid
+      `transform/sfxi` step or existing SFXI dataframe records.
     * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 
 4) (Optional) export vec8 from the notebook UI:
-
----
-
-@e-south

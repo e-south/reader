@@ -1,26 +1,27 @@
 # Documentation index
 
-A quick map to the docs. This keeps the top-level `docs/` directory lean while making
-core, guides, and library references easy to find.
+Use [docs/README.md](./README.md) for the full documentation map. If you
+reached `docs/index.md` directly, start here for the guide or reference page
+that matches the question.
 
-## Core
+## Start here
+
+- [Getting started](./guides/getting_started.md)
+- [Common tasks](./guides/common_routes.md)
+
+## Core workflows
+
+- [Preflight, run, verify](./guides/preflight_run_verify.md)
+- [Automation and JSON](./guides/automation.md)
+
+## Reference
 
 - [CLI reference](./core/cli.md)
-- [Configuring pipelines](./core/pipeline.md)
-- [Plugin development](./core/plugins.md)
-- [Spec / architecture](./core/spec.md)
+- [Configuring `reader/v7`](./core/pipeline.md)
 
-## Guides
+## Maintainer docs
 
-- [Notebooks](./guides/notebooks.md)
-- [Marimo reference](./guides/marimo_reference.md)
-- [End-to-end demo](./guides/demo.md)
-
-## Library
-
-- [Crosstalk pairs](./lib/crosstalk_pairs.md)
-- [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md)
-
-## Audits
-
-- [SFXI reader / OPAL audit](./audits/sfxi_reader_opal_audit.md)
+- [Documentation index](./README.md)
+- [Repo change gate](./repo-change-gate.md)
+- [Repo maintenance](./repo-maintenance.md)
+- [Architecture](../ARCHITECTURE.md)
