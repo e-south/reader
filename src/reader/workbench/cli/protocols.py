@@ -27,8 +27,8 @@ def protocols(
             "or plate_reader/retron_sponge_screen)."
         ),
     ),
-    domain: str | None = typer.Option(None, "--domain", metavar="NAME", help="Filter protocols by semantic domain."),
-    family: str | None = typer.Option(None, "--family", metavar="NAME", help="Filter protocols by semantic family."),
+    domain: str | None = typer.Option(None, "--domain", metavar="NAME", help="Filter protocols by domain."),
+    family: str | None = typer.Option(None, "--family", metavar="NAME", help="Filter protocols by family."),
     example_config: bool = typer.Option(
         False,
         "--example-config",
@@ -93,7 +93,7 @@ def protocols(
             if input_rows:
                 shared.console.print(
                     Panel(
-                        inspection_protocols.protocol_surface_table("Inputs Surface", input_rows),
+                        inspection_protocols.protocol_surface_table("Inputs", input_rows),
                         border_style="accent",
                         box=box.ROUNDED,
                     )
@@ -102,7 +102,7 @@ def protocols(
             if analysis_rows:
                 shared.console.print(
                     Panel(
-                        inspection_protocols.protocol_surface_table("Analysis Surface", analysis_rows),
+                        inspection_protocols.protocol_surface_table("Analysis", analysis_rows),
                         border_style="accent",
                         box=box.ROUNDED,
                     )

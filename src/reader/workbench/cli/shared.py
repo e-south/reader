@@ -32,13 +32,20 @@ app = typer.Typer(
     invoke_without_command=True,
     help=(
         "reader — experimental workbench.\n\n"
-        "Discover assays and experiments, inspect compiled workflow plans, validate authoring YAML, "
-        "run pipelines, and materialize plots, exports, or notebooks. "
+        "Discover assays and experiments, inspect workflow plans, validate YAML, "
+        "run pipelines, and produce plots, exports, or notebooks. "
         "Start with 'uv run reader demo', 'uv run reader ls', or 'uv run reader protocols'."
     ),
 )
 console = Console(theme=THEME)
 rich_tracebacks(show_locals=False)
+
+JOB_INDEX_SCOPE_NOTE = "from the default 'uv run reader ls' inventory, resolved against the nearest experiments/ root from the current working directory"
+JOB_ARG_HELP = (
+    f"Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' {JOB_INDEX_SCOPE_NOTE}."
+)
+JOB_ARG_HELP_WITH_DEFAULT = f"{JOB_ARG_HELP[:-1]} (defaults to nearest ./config.yaml)"
+JOB_ARG_HELP_SHORT = f"Experiment config path, directory, or index from 'uv run reader ls' {JOB_INDEX_SCOPE_NOTE}."
 
 PLOT_ONLY_OPTION = typer.Option(None, "--only", help="Run only the specified plot id (repeatable).")
 PLOT_EXCLUDE_OPTION = typer.Option(None, "--exclude", help="Exclude the specified plot id (repeatable).")

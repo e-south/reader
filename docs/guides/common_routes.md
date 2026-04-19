@@ -31,7 +31,7 @@ uv run reader protocols <protocol-id> --example-config
 uv run reader init ./experiments/<new-experiment> --protocol <protocol-id>
 ```
 
-Use the protocol commands to see the public assay surface before you scaffold a new experiment.
+Use the protocol commands to see the public assay definition before you scaffold a new experiment.
 
 ## Validate before execution
 

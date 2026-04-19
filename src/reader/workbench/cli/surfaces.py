@@ -14,6 +14,7 @@ from ._lazy import load as _load
 from .helpers import (
     append_journal,
     bind_decl_protocol,
+    ensure_active_lifecycle,
     find_nearest_experiments_dir,
     find_year_jobs,
     format_job_arg,
@@ -43,6 +44,77 @@ def _spec_overrides():
     return _load("reader.workbench.spec_overrides")
 
 
+def _validate_list_mode_flags(
+    *,
+    list_only: bool,
+    dry_run: bool,
+    inputs: list[str] | None,
+    sets: list[str] | None,
+) -> None:
+    if not list_only:
+        return
+    if dry_run:
+        raise typer.BadParameter("--dry-run cannot be combined with --list")
+    if inputs:
+        raise typer.BadParameter("--input cannot be combined with --list")
+    if sets:
+        raise typer.BadParameter("--set cannot be combined with --list")
+
+
+def _apply_surface_overrides(
+    selected,
+    *,
+    inputs: list[str] | None,
+    sets: list[str] | None,
+    experiment_root: Path,
+    resources,
+):
+    spec_overrides = _spec_overrides()
+    input_overrides = spec_overrides.parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
+    set_overrides = spec_overrides.parse_set_overrides(sets or [])
+    selected = spec_overrides.apply_step_overrides(
+        selected,
+        input_overrides=input_overrides,
+        set_overrides=set_overrides,
+        root=experiment_root,
+        resources=resources,
+    )
+    return spec_overrides, selected
+
+
+def _validate_plot_job_for_execution(
+    job_path: Path,
+    *,
+    only: list[str] | None,
+    exclude: list[str] | None,
+    dry_run: bool,
+    inputs: list[str] | None,
+    sets: list[str] | None,
+) -> None:
+    runtime = _load("reader.runtime").builtin_runtime()
+    _, decl = load_job_models(job_path, runtime=runtime)
+    if not dry_run:
+        ensure_active_lifecycle(decl, job_path, command_name="plot")
+    workbench = _load("reader.workbench.graph").resolve_workbench(decl)
+    plot_specs = list(workbench.plots)
+    if not plot_specs:
+        raise typer.BadParameter("No plots configured in this experiment. Add plots to the config.")
+    selected = _spec_overrides().select_surface_specs(
+        plot_specs, only=only or [], exclude=exclude or [], kind="plot spec"
+    )
+    if not selected:
+        raise typer.BadParameter("No plots selected. Adjust --only/--exclude or use --list to inspect valid ids.")
+    _apply_surface_overrides(
+        selected,
+        inputs=inputs,
+        sets=sets,
+        experiment_root=decl.experiment.root,
+        resources=decl.experiment_semantics.resources,
+    )
+    if not dry_run:
+        require_dataframe_records(decl, job_path, runtime=runtime)
+
+
 def _render_surface_specs_table(
     *, title_text: str, selected, runtime, record_producers, summaries: dict[str, str]
 ) -> None:
@@ -68,7 +140,7 @@ def _surface_next_steps(*, job_hint: str | None, output_dir: Path, include_plot:
     def _cmd(base: str, tail: str = "") -> str:
         return reader_command(base, job_hint, tail)
 
-    lines = [f"Artifacts saved in [path]{output_dir}[/path]", "", "Next steps:"]
+    lines = [f"Files saved in [path]{output_dir}[/path]", "", "Next steps:"]
     if include_plot:
         lines.append(f"  {_cmd('plot')}")
     if include_export:
@@ -91,6 +163,8 @@ def _run_plot_job(
     sets: list[str] | None,
 ) -> None:
     _, decl = load_job_models(job_path)
+    if not list_only and not dry_run:
+        ensure_active_lifecycle(decl, job_path, command_name="plot")
     runtime = _load("reader.runtime").builtin_runtime()
     workbench = _load("reader.workbench.graph").resolve_workbench(decl)
     bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
@@ -121,10 +195,10 @@ def _run_plot_job(
                 )
                 return
             shared.console.print(
-                Panel.fit("No plot specs configured in this experiment.", border_style="warn", box=box.ROUNDED)
+                Panel.fit("No plots configured in this experiment.", border_style="warn", box=box.ROUNDED)
             )
             return
-        raise typer.BadParameter("No plot specs configured in this experiment. Add plots to the config.")
+        raise typer.BadParameter("No plots configured in this experiment. Add plots to the config.")
     selected = _spec_overrides().select_surface_specs(
         plot_specs, only=only or [], exclude=exclude or [], kind="plot spec"
     )
@@ -151,34 +225,34 @@ def _run_plot_job(
             summaries=inspection_runtime.plot_output_summaries(bound_protocol),
         )
         return
+    if not selected:
+        raise typer.BadParameter("No plots selected. Adjust --only/--exclude or use --list to inspect valid ids.")
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    spec_overrides = _spec_overrides()
-    input_overrides = spec_overrides.parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
-    set_overrides = spec_overrides.parse_set_overrides(sets or [])
-    selected = spec_overrides.apply_step_overrides(
+    spec_overrides, selected = _apply_surface_overrides(
         selected,
-        input_overrides=input_overrides,
-        set_overrides=set_overrides,
-        root=experiment_root,
+        inputs=inputs,
+        sets=sets,
+        experiment_root=experiment_root,
         resources=resources,
     )
-    append_journal(
-        job_path,
-        " ".join(
-            spec_overrides.build_surface_command(
-                "reader plot",
-                job_path,
-                only=only,
-                exclude=exclude,
-                list_only=False,
-                dry_run=dry_run,
-                log_level=log_level,
-                inputs=inputs,
-                sets=sets,
-            )
-        ),
-    )
+    if not dry_run:
+        append_journal(
+            job_path,
+            " ".join(
+                spec_overrides.build_surface_command(
+                    "reader plot",
+                    job_path,
+                    only=only,
+                    exclude=exclude,
+                    list_only=False,
+                    dry_run=dry_run,
+                    log_level=log_level,
+                    inputs=inputs,
+                    sets=sets,
+                )
+            ),
+        )
     _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,
@@ -216,6 +290,8 @@ def _run_export_job(
     sets: list[str] | None,
 ) -> None:
     _, decl = load_job_models(job_path)
+    if not list_only and not dry_run:
+        ensure_active_lifecycle(decl, job_path, command_name="export")
     fmt = normalize_output_format(format)
     workbench = _load("reader.workbench.graph").resolve_workbench(decl)
     runtime = _load("reader.runtime").builtin_runtime()
@@ -241,10 +317,10 @@ def _run_export_job(
                 )
                 return
             shared.console.print(
-                Panel.fit("No export specs configured in this experiment.", border_style="warn", box=box.ROUNDED)
+                Panel.fit("No exports configured in this experiment.", border_style="warn", box=box.ROUNDED)
             )
             return
-        raise typer.BadParameter("No export specs configured in this experiment. Add exports to the config.")
+        raise typer.BadParameter("No exports configured in this experiment. Add exports to the config.")
     selected = _spec_overrides().select_surface_specs(
         export_specs, only=only or [], exclude=exclude or [], kind="export spec"
     )
@@ -271,38 +347,38 @@ def _run_export_job(
             summaries=inspection_runtime.export_output_summaries(bound_protocol),
         )
         return
+    if not selected:
+        raise typer.BadParameter("No exports selected. Adjust --only/--exclude or use --list to inspect valid ids.")
     if fmt == "json":
         raise typer.BadParameter("--format json is only supported with --list")
     if not dry_run:
         require_dataframe_records(decl, job_path, runtime=runtime)
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    spec_overrides = _spec_overrides()
-    input_overrides = spec_overrides.parse_input_overrides(inputs or [], root=experiment_root, resources=resources)
-    set_overrides = spec_overrides.parse_set_overrides(sets or [])
-    selected = spec_overrides.apply_step_overrides(
+    spec_overrides, selected = _apply_surface_overrides(
         selected,
-        input_overrides=input_overrides,
-        set_overrides=set_overrides,
-        root=experiment_root,
+        inputs=inputs,
+        sets=sets,
+        experiment_root=experiment_root,
         resources=resources,
     )
-    append_journal(
-        job_path,
-        " ".join(
-            spec_overrides.build_surface_command(
-                "reader export",
-                job_path,
-                only=only,
-                exclude=exclude,
-                list_only=False,
-                dry_run=dry_run,
-                log_level=log_level,
-                inputs=inputs,
-                sets=sets,
-            )
-        ),
-    )
+    if not dry_run:
+        append_journal(
+            job_path,
+            " ".join(
+                spec_overrides.build_surface_command(
+                    "reader export",
+                    job_path,
+                    only=only,
+                    exclude=exclude,
+                    list_only=False,
+                    dry_run=dry_run,
+                    log_level=log_level,
+                    inputs=inputs,
+                    sets=sets,
+                )
+            ),
+        )
     _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,
@@ -326,12 +402,12 @@ def _run_export_job(
         )
 
 
-@app.command(help="Save plot files from plot specs using existing dataframe records.")
+@app.command(help="List plot specs or save plot files from existing dataframe records.")
 def plot(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'uv run reader ls'.",
+        help=shared.JOB_ARG_HELP_SHORT,
     ),
     year: str | None = typer.Option(
         None, "--year", metavar="YYYY", help="Run plots for all experiments under experiments/YYYY."
@@ -362,6 +438,7 @@ def plot(
 ):
     if root and not year:
         raise typer.BadParameter("--root is only valid with --year")
+    _validate_list_mode_flags(list_only=list_only, dry_run=dry_run, inputs=inputs, sets=sets)
     fmt = normalize_output_format(format)
     if year:
         if fmt == "json":
@@ -370,6 +447,24 @@ def plot(
             raise typer.BadParameter("--year cannot be combined with CONFIG|DIR|INDEX")
         root_path = find_nearest_experiments_dir(Path.cwd()) if root is None else Path(root).resolve()
         jobs = find_year_jobs(year, root_path)
+        if not list_only:
+            failures: list[tuple[Path, str]] = []
+            for job_path in jobs:
+                try:
+                    _validate_plot_job_for_execution(
+                        job_path,
+                        only=only,
+                        exclude=exclude,
+                        dry_run=dry_run,
+                        inputs=inputs,
+                        sets=sets,
+                    )
+                except (ReaderError, typer.BadParameter) as exc:
+                    failures.append((job_path, str(exc)))
+            if failures:
+                lines = [f"{len(failures)} experiment(s) are not runnable for year {year}:"]
+                lines += [f"- {path.parent.name}: {msg}" for path, msg in failures]
+                abort("\n".join(lines))
         shared.console.print(
             Panel.fit(
                 f"Plotting {len(jobs)} experiment(s) for {year} under [path]{root_path}[/path].",
@@ -438,12 +533,12 @@ def plot(
         handle_reader_error(err)
 
 
-@app.command(help="Run export specs using existing dataframe records.")
+@app.command(help="List export specs or write export files from existing dataframe records.")
 def export(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'uv run reader ls'.",
+        help=shared.JOB_ARG_HELP_SHORT,
     ),
     only: list[str] = EXPORT_ONLY_OPTION,
     exclude: list[str] = EXPORT_EXCLUDE_OPTION,
@@ -464,6 +559,7 @@ def export(
     sets: list[str] = EXPORT_SET_OPTION,
 ):
     try:
+        _validate_list_mode_flags(list_only=list_only, dry_run=dry_run, inputs=inputs, sets=sets)
         job_path = infer_job_path(job)
         _run_export_job(
             job_path,
@@ -481,12 +577,12 @@ def export(
         handle_reader_error(err)
 
 
-@app.command(help="List emitted workbench records from outputs/manifests/records.json.")
+@app.command(help="List records from outputs/manifests/records.json.")
 def records(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
     format: str = typer.Option(
@@ -508,7 +604,10 @@ def records(
             )
         )
         if not store.catalog_exists():
-            abort(f"No outputs/manifests/records.json found. Run '{reader_command('run')}' first to produce records.")
+            abort(
+                f"No outputs/manifests/records.json found. "
+                f"Run '{reader_command('run', job_path)}' first to produce records."
+            )
     except ReaderError as err:
         handle_reader_error(err)
     fmt = normalize_output_format(format)
@@ -538,7 +637,10 @@ def records(
         if not latest_records:
             shared.console.print(
                 Panel.fit(
-                    f"No record history listed in outputs/manifests/records.json. Run '{reader_command('run')}' first.",
+                    (
+                        "No record history listed in outputs/manifests/records.json. "
+                        f"Run '{reader_command('run', job_path)}' first."
+                    ),
                     border_style="warn",
                     box=box.ROUNDED,
                 )
@@ -564,7 +666,10 @@ def records(
         if not latest_records:
             shared.console.print(
                 Panel.fit(
-                    f"No records listed in outputs/manifests/records.json. Run '{reader_command('run')}' first.",
+                    (
+                        "No records listed in outputs/manifests/records.json. "
+                        f"Run '{reader_command('run', job_path)}' first."
+                    ),
                     border_style="warn",
                     box=box.ROUNDED,
                 )
@@ -590,7 +695,7 @@ def steps(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
@@ -633,7 +738,7 @@ def steps(
     )
 
 
-@app.command(help="List plugins by workbench ontology: category, domain, and family.")
+@app.command(help="List plugins by category, domain, and family.")
 def plugins(
     category: str | None = typer.Option(
         None, "--category", metavar="NAME", help="Filter by category: ingest | transform | plot | export | validator"
@@ -642,16 +747,16 @@ def plugins(
         None,
         "--domain",
         metavar="NAME",
-        help="Filter by semantic domain, for example: plate_reader | cytometry | logic | generic",
+        help="Filter by domain, for example: plate_reader | cytometry | logic | generic",
     ),
     family: str | None = typer.Option(
         None,
         "--family",
         metavar="NAME",
-        help="Filter by semantic family, for example: time_series | metadata_merge | workbook_ingest",
+        help="Filter by family, for example: time_series | metadata_merge | workbook_ingest",
     ),
     protocol: str | None = typer.Option(
-        None, "--protocol", metavar="ID", help="Limit to plugins used by the named protocol's default compiled plan."
+        None, "--protocol", metavar="ID", help="Limit to plugins used by the named protocol's default plan."
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."

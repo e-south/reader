@@ -126,7 +126,7 @@ def test_plot_list_empty(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg_path), "--list"])
     assert result.exit_code == 0
-    assert "No plot specs configured" in result.output
+    assert "No plots configured" in result.output
 
 
 def test_plot_list_json(tmp_path: Path) -> None:
@@ -235,6 +235,33 @@ def test_plot_json_requires_list(tmp_path: Path) -> None:
     assert "only supported with --list" in _plain(result.output)
 
 
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["--list", "--dry-run"], "--dry-run cannot be combined with --list"),
+        (["--list", "--input", "df={record: ratio_yfp_od600/df}"], "--input cannot be combined with --list"),
+        (["--list", "--set", "with.time=6.0"], "--set cannot be combined with --list"),
+    ],
+)
+def test_plot_list_rejects_ignored_execution_flags(tmp_path: Path, args: list[str], expected: str) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), *args])
+    assert result.exit_code != 0
+    assert expected in _plain(result.output)
+
+
+def test_plot_rejects_empty_selection_after_filters(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["plot", str(cfg), "--exclude", "raw_kinetics", "--exclude", "endpoint_by_condition", "--dry-run"],
+    )
+    assert result.exit_code != 0
+    assert "No plots selected" in _plain(result.output)
+
+
 def test_plot_requires_records(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -251,6 +278,14 @@ def test_plot_dry_run_does_not_require_records(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "DRY RUN" in result.output
+    assert "raw_kinetics" in result.output
+
+
+def test_plot_dry_run_allows_non_active_lifecycle(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, {**_base_config(), "experiment": {"id": "exp_cli", "lifecycle": "draft"}})
+    runner = CliRunner()
+    result = runner.invoke(app, ["plot", str(cfg), "--dry-run"])
+    assert result.exit_code == 0
     assert "raw_kinetics" in result.output
 
 
@@ -271,6 +306,31 @@ def test_export_dry_run_does_not_require_records(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "DRY RUN" in result.output
     assert "crosstalk_pairs_table" in result.output
+
+
+def test_export_dry_run_allows_non_active_lifecycle(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, {**_base_config(), "experiment": {"id": "exp_cli", "lifecycle": "draft"}})
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--dry-run"])
+    assert result.exit_code == 0
+    assert "crosstalk_pairs_table" in result.output
+
+
+@pytest.mark.parametrize("command", ["plot", "export"])
+def test_plot_export_surfaces_corrupt_record_catalog_error(tmp_path: Path, command: str) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    records_path = tmp_path / "outputs" / "manifests" / "records.json"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text("{not-json", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, [command, str(cfg)])
+
+    assert result.exit_code != 0
+    text = _plain(result.output)
+    assert "Could not read record catalog" in text
+    assert "records.json is not valid JSON" in text
+    assert "Run 'uv run reader run" not in text
 
 
 def test_plot_year_list(tmp_path: Path, monkeypatch) -> None:
@@ -303,6 +363,84 @@ def test_plot_year_json_requires_single_experiment_listing(tmp_path: Path, monke
     assert "single-experiment plot" in result.output
 
 
+def test_plot_year_dry_run_preflights_batch_before_execution(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    year_dir = tmp_path / "experiments" / "2025"
+    exp_a = year_dir / "exp_a"
+    exp_b = year_dir / "exp_b"
+    exp_a.mkdir(parents=True)
+    exp_b.mkdir(parents=True)
+    write_config(exp_a, _base_config())
+    cfg_b = _base_config()
+    cfg_b["protocol"]["outputs"]["plots"] = {"profile": "none"}
+    write_config(exp_b, cfg_b)
+
+    calls: list[str] = []
+
+    def _fake_run_plot_job(job_path: Path, **kwargs) -> None:
+        calls.append(job_path.parent.name)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("reader.workbench.cli.surfaces._run_plot_job", _fake_run_plot_job)
+    result = runner.invoke(app, ["plot", "--year", "2025", "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "No plots configured in this experiment" in _plain(result.output)
+    assert calls == []
+
+
+def test_plot_year_run_preflights_batch_before_mutation(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    year_dir = tmp_path / "experiments" / "2025"
+    exp_a = year_dir / "exp_a"
+    exp_b = year_dir / "exp_b"
+    exp_a.mkdir(parents=True)
+    exp_b.mkdir(parents=True)
+    write_config(exp_a, _base_config())
+    cfg_b = _base_config()
+    cfg_b["experiment"] = {"id": "exp_b", "lifecycle": "draft"}
+    write_config(exp_b, cfg_b)
+
+    calls: list[str] = []
+
+    def _fake_run_plot_job(job_path: Path, **kwargs) -> None:
+        calls.append(job_path.parent.name)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("reader.workbench.cli.surfaces.require_dataframe_records", lambda decl, job_path, runtime: None)
+    monkeypatch.setattr("reader.workbench.cli.surfaces._run_plot_job", _fake_run_plot_job)
+    result = runner.invoke(app, ["plot", "--year", "2025"])
+
+    assert result.exit_code != 0
+    assert "lifecycle 'draft'" in _plain(result.output)
+    assert calls == []
+
+
+def test_plot_year_run_preflights_override_errors_before_mutation(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    year_dir = tmp_path / "experiments" / "2025"
+    exp_a = year_dir / "exp_a"
+    exp_b = year_dir / "exp_b"
+    exp_a.mkdir(parents=True)
+    exp_b.mkdir(parents=True)
+    write_config(exp_a, _base_config())
+    write_config(exp_b, _base_config())
+
+    calls: list[str] = []
+
+    def _fake_run_plot_job(job_path: Path, **kwargs) -> None:
+        calls.append(job_path.parent.name)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("reader.workbench.cli.surfaces.require_dataframe_records", lambda decl, job_path, runtime: None)
+    monkeypatch.setattr("reader.workbench.cli.surfaces._run_plot_job", _fake_run_plot_job)
+    result = runner.invoke(app, ["plot", "--year", "2025", "--set", "bad.path=1"])
+
+    assert result.exit_code != 0
+    assert "--set path must start with reads., with., or writes." in _plain(result.output)
+    assert calls == []
+
+
 def test_export_list_filters(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
@@ -328,7 +466,7 @@ def test_export_list_empty(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg_path), "--list"])
     assert result.exit_code == 0
-    assert "No export specs configured" in result.output
+    assert "No exports configured" in result.output
 
 
 def test_export_list_json(tmp_path: Path) -> None:
@@ -381,6 +519,30 @@ def test_export_json_requires_list(tmp_path: Path) -> None:
     result = runner.invoke(app, ["export", str(cfg), "--format", "json"])
     assert result.exit_code != 0
     assert "only supported with --list" in _plain(result.output)
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["--list", "--dry-run"], "--dry-run cannot be combined with --list"),
+        (["--list", "--input", "df={record: ratio_yfp_od600/df}"], "--input cannot be combined with --list"),
+        (["--list", "--set", "with.path=exports/crosstalk_pairs.csv"], "--set cannot be combined with --list"),
+    ],
+)
+def test_export_list_rejects_ignored_execution_flags(tmp_path: Path, args: list[str], expected: str) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), *args])
+    assert result.exit_code != 0
+    assert expected in _plain(result.output)
+
+
+def test_export_rejects_empty_selection_after_filters(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    result = runner.invoke(app, ["export", str(cfg), "--exclude", "crosstalk_pairs_table", "--dry-run"])
+    assert result.exit_code != 0
+    assert "No exports selected" in _plain(result.output)
 
 
 def test_validate_checks_files_by_default(tmp_path: Path) -> None:

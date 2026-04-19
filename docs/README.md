@@ -13,7 +13,8 @@ exact CLI or config details.
 ## Core workflows
 
 - [Preflight, run, verify](./guides/preflight_run_verify.md): deterministic operating path for one experiment.
-- [Automation and JSON](./guides/automation.md): machine-readable discovery, inspection, and preflight surfaces.
+- [Automation and JSON](./guides/automation.md): machine-readable discovery, inspection, and preflight output.
+- [Experiment bootstrap](./guides/experiment_bootstrap.md): create a new experiment from local or Drive-backed inputs, build metadata, and verify the run.
 - [End-to-end demo](./guides/demo.md): one concrete walkthrough from discovery to outputs.
 
 ## User guides
@@ -25,15 +26,15 @@ exact CLI or config details.
 ## Reference
 
 - [CLI reference](./core/cli.md): full command reference.
-- [Configuring `reader/v7`](./core/pipeline.md): config schema and protocol-owned authoring surface.
+- [Configuring `reader/v7`](./core/pipeline.md): config schema and protocol-owned settings.
 
 ## Maintainer docs
 
 - [Repo change gate](./repo-change-gate.md): minimum gate before landing tracked changes.
-- [Repo maintenance](./repo-maintenance.md): repo-wide verification, CI lanes, and maintenance surfaces.
+- [Repo maintenance](./repo-maintenance.md): repo-wide checks, CI runs, and maintenance guidance.
 - [Plugin development](./core/plugins.md): add or extend ingest, transform, plot, export, and validator plugins.
 - [Architecture](../ARCHITECTURE.md): system structure, ownership boundaries, and invariants.
-- [Design](../DESIGN.md): product and information-design rules for the public surface.
+- [Design](../DESIGN.md): product and information-design rules for the public UI and docs.
 - [Quality](../QUALITY.md): quality bar, evidence expectations, and failure taxonomy.
 - [Reliability](../RELIABILITY.md): preflight, run, verify, and recovery expectations.
 - [Security](../SECURITY.md): trust boundaries and safe defaults.

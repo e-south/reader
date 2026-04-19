@@ -3,7 +3,7 @@
 This page is the full CLI reference. For setup and the shortest common paths,
 start with [Getting started](../guides/getting_started.md) and
 [Common tasks](../guides/common_routes.md). For the operating loop and
-machine-readable routes, use [Preflight, run, verify](../guides/preflight_run_verify.md)
+machine-readable output, use [Preflight, run, verify](../guides/preflight_run_verify.md)
 and [Automation and JSON](../guides/automation.md).
 
 A typical order is:
@@ -23,8 +23,9 @@ uv run reader <command> CONFIG|DIR|INDEX [options]
 
 If `CONFIG|DIR|INDEX` is omitted, `uv run reader` searches upward from the current working directory for
 `config.yaml`. If a numeric index is provided, it is resolved against the nearest `experiments/`
-directory (or `./experiments` if none is found) using the same default experiment inventory as
-`uv run reader ls`; indices shown by `uv run reader ls --all` are accepted too.
+directory (or `./experiments` if none is found) using the same default experiment list as
+`uv run reader ls`. Hidden scaffold/template entries shown by `uv run reader ls --all` must be
+addressed by explicit path.
 
 ---
 
@@ -36,20 +37,20 @@ List experiments:
 uv run reader ls --root experiments
 ```
 
-Show protocol ids, selected-plan summaries, and current output counts:
+Show protocol ids, selected step summaries, and current output counts:
 
 ```bash
 uv run reader ls --root experiments --details
 ```
 
-Add readiness state so the inventory tells you whether each experiment is
-draft/template, blocked, ready to run, or already has a record catalog:
+Add readiness state so the list tells you whether each experiment is
+draft/template, blocked, ready to run, or already has a records catalog:
 
 ```bash
 uv run reader ls --root experiments --details --readiness
 ```
 
-Emit the same inventory as JSON for agents or automation:
+Emit the same list as JSON for agents or automation:
 
 ```bash
 uv run reader ls --root experiments --details --format json
@@ -57,14 +58,14 @@ uv run reader ls --root experiments --details --readiness --format json
 ```
 
 The JSON payload uses explicit `catalog`, `selection`, `summary`, and
-`experiments` blocks so agents do not need to reconstruct fleet state by
+`experiments` blocks so agents do not need to reconstruct the experiment list by
 walking every row or guessing which filters produced the current view.
 When `--readiness` is enabled, `selection.readiness` is `true`, each experiment
-entry gains a `readiness` block, and `summary.by_readiness` counts the fleet by
+entry gains a `readiness` block, and `summary.by_readiness` counts experiments by
 `config_error`, `draft`, `template`, `dependency_blocked`, `blocked`, `runnable`,
 `legacy_outputs_present`, or `records_ready`.
 
-Filter the inventory down to one assay family, one lifecycle, or just broken configs:
+Filter the list down to one assay family, one lifecycle, or just broken configs:
 
 ```bash
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
@@ -79,6 +80,9 @@ Include scaffold/template directories too:
 ```bash
 uv run reader ls --root experiments --all
 ```
+
+Use explicit paths for scaffold/template configs when acting on them. Numeric
+indexes only target the default `uv run reader ls` experiment list.
 
 If `--root` is omitted, `uv run reader` auto-detects the nearest `experiments/` directory.
 
@@ -108,7 +112,7 @@ uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 
 Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels. Use `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
 
-For the matched-control sponge workflow itself, use the [Retron sponge screen guide](../guides/retron_sponge_screen.md). That guide maps the direct-ratio analysis sequence, the compiled semantic tables, and the retron-specific plot/export surface.
+For the matched-control sponge workflow itself, use the [Retron sponge screen guide](../guides/retron_sponge_screen.md). That guide maps the direct-ratio analysis sequence, the compiled assay tables, and the retron-specific plots and exports.
 
 Inspect one experiment end to end:
 
@@ -116,7 +120,7 @@ Inspect one experiment end to end:
 uv run reader inspect CONFIG|DIR|INDEX
 ```
 
-Emit the experiment as layered JSON with `authoring`, `semantics`, and
+Emit the experiment as structured JSON with `authoring`, `semantics`, and
 `implementation`:
 
 ```bash
@@ -136,16 +140,16 @@ Guided walkthrough:
 uv run reader demo
 ```
 
-Protocol descriptions are the main discovery surface for assay-specific inputs
+Protocol descriptions are the main place to check assay-specific inputs
 and outputs. For the compact route, use [Common tasks](../guides/common_routes.md).
-For machine-readable contracts, use [Automation and JSON](../guides/automation.md).
+For machine-readable output, use [Automation and JSON](../guides/automation.md).
 
 In short:
 
-- `uv run reader protocols <id>` shows the protocol authoring surface, selected outputs, and compiled defaults.
+- `uv run reader protocols <id>` shows the protocol inputs, selected outputs, and compiled defaults.
 - `uv run reader protocols <id> --example-config` prints a starter `reader/v7` outline.
 - `uv run reader inspect`, `config`, `steps`, and `explain` show one bound experiment; JSON mode uses shared `authoring`, `semantics`, and `implementation` sections.
-- `uv run reader ls --details --readiness` is the fleet-level inventory and preflight view.
+- `uv run reader ls --details --readiness` is the experiment list with preflight state.
 - `uv run reader plot --list`, `uv run reader export --list`, and `uv run reader records` show selected outputs and generated records.
 - `uv run reader plugins --protocol <id> --category ...` scopes registry inspection to the plugins a protocol uses by default.
 
@@ -190,7 +194,7 @@ then separates overall status/counts into `summary` from file-check details in
 `validation`. `uv run reader validate --no-files --format json` still reports
 declared file and auto-root counts even when the checks are skipped.
 
-If you want the same preflight signal while browsing the whole workbench, use
+If you want the same preflight signal while browsing the whole experiment list, use
 `uv run reader ls --details --readiness`. If you want the readiness view beside
 one experiment’s compiled plan and current outputs, use `uv run reader inspect`.
 For the full operating loop, use [Preflight, run, verify](../guides/preflight_run_verify.md).
@@ -230,7 +234,7 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
 
-Inspect the emitted record catalog:
+Inspect the emitted records catalog:
 
 ```bash
 uv run reader records CONFIG|DIR|INDEX
@@ -241,7 +245,7 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 In JSON mode, `uv run reader records` keeps experiment identity at the top level, then
 adds the record-manifest path, a summary by record kind and producer, and the
 latest record entries. `--all` does not dump every historical revision; it adds
-per-record revision counts and a total revision summary so the surface stays
+per-record revision counts and a total revision summary so the output stays
 compact.
 
 Useful flags:
@@ -268,13 +272,17 @@ Run plots for all experiments in a year (expects `experiments/YYYY`):
 uv run reader plot --year 2025
 ```
 
+For mutating runs, `reader plot --year` preflights the full batch first. If any
+selected experiment is not runnable, the command aborts before writing plot
+files so the year run does not leave partial state behind.
+
 Override the experiments root when using `--year`:
 
 ```bash
 uv run reader plot --year 2025 --root /path/to/experiments
 ```
 
-List resolved semantic plot outputs and their upstream dataframe bindings:
+List plot outputs and their upstream dataframe bindings:
 
 ```bash
 uv run reader plot CONFIG|DIR|INDEX --list
@@ -319,7 +327,7 @@ Run export specs only:
 uv run reader export CONFIG|DIR|INDEX
 ```
 
-List resolved semantic export artifacts and their upstream dataframe bindings:
+List exports and their upstream dataframe bindings:
 
 ```bash
 uv run reader export CONFIG|DIR|INDEX --list
@@ -443,7 +451,7 @@ List pipeline steps (resolved):
 uv run reader steps CONFIG|DIR|INDEX
 ```
 
-List workbench records from `outputs/manifests/records.json`:
+List records from `outputs/manifests/records.json`:
 
 ```bash
 uv run reader records CONFIG|DIR|INDEX

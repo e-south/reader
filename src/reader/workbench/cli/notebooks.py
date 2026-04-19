@@ -263,7 +263,7 @@ def notebook(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'uv run reader ls'.",
+        help=shared.JOB_ARG_HELP_SHORT,
     ),
     name: str | None = typer.Option(
         None,

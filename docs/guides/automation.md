@@ -3,13 +3,13 @@
 Use JSON output when another tool needs stable discovery, inspection, or
 preflight data from `reader`.
 
-## Fleet discovery
+## Experiment list
 
 ```bash
 uv run reader ls --root experiments --details --readiness --format json
 ```
 
-Use this as the fleet-level inventory and readiness surface. It includes
+Use this as the machine-readable experiment list with readiness data. It includes
 `catalog`, `selection`, `summary`, and `experiments`.
 
 ## Protocol discovery
@@ -19,7 +19,7 @@ uv run reader protocols <protocol-id> --format json
 uv run reader plugins --protocol <protocol-id> --category <category> --format json
 ```
 
-Use `protocols` for the public assay surface and compiled defaults. Use
+Use `protocols` for the public assay definition and compiled defaults. Use
 `plugins` only when you need registry-level inspection for one protocol.
 
 ## Single experiment inspection
@@ -48,7 +48,7 @@ Use `validate --no-files` for schema and wiring only, `validate` when input
 files matter, and `run --dry-run` to inspect the execution slice without
 mutation.
 
-## Result inventory
+## Records
 
 ```bash
 uv run reader records <config|dir|index> --format json

@@ -123,10 +123,10 @@ Use the cheapest command that answers the current question.
 
 - use `reader validate --no-files` for schema-only checks
 - use `reader run --dry-run` before executing a slice
-- use `reader ls --details --format json` for fleet-wide inspection
+- use `reader ls --details --format json` for workbench-wide inspection
 - use `reader inspect --format json` for one experiment’s current state
 
-This follows the same harness principle highlighted in OpenAI’s harness-engineering article: better harnesses reduce retries by shortening the path from action to trustworthy feedback.
+Shorter feedback loops reduce retries by shortening the path from action to trustworthy feedback.
 
 Use [docs/guides/automation.md](./docs/guides/automation.md) for the compact JSON route.
 

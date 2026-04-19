@@ -194,11 +194,11 @@ uv run ruff check .
 uv run pytest -q
 uv run pytest -q -m smoke
 uv run pytest -q -m repo_matrix
-uv run pytest -q -m fleet
+uv run pytest -q -m active_experiments
 uv run pytest -q -m integration
 ```
 
-The default `uv run pytest -q` lane excludes only the full data-backed `fleet` matrix so local feedback stays bounded while still keeping ordinary integration checks, the repo-wide config sweep, and a few real temp-copy smoke runs in the default suite.
+The default `uv run pytest -q` lane excludes only the full data-backed active-experiment matrix so local feedback stays bounded while still keeping ordinary integration checks, the repo-wide config sweep, and a few real temp-copy smoke runs in the default suite.
 
 Add/remove dependencies:
 

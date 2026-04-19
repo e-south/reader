@@ -14,6 +14,8 @@ import re
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import typer
 from rich.console import Console
 from typer.testing import CliRunner
 
@@ -107,7 +109,7 @@ def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) ->
     assert cli._infer_job_path("1") == (year_dir / "config.yaml").resolve()
 
 
-def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, tmp_path: Path) -> None:
+def test_numeric_job_index_rejects_hidden_scaffold_index(monkeypatch, tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     year_dir = exp_root / "2025" / "real_exp"
     template_dir = exp_root / "2025" / "_template_alpha"
@@ -117,7 +119,8 @@ def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, t
     write_config(year_dir / "config.yaml", _base_config())
 
     monkeypatch.chdir(tmp_path)
-    assert cli._infer_job_path("1") == (template_dir / "config.yaml").resolve()
+    with pytest.raises(typer.BadParameter, match="hidden scaffold/template config"):
+        cli._infer_job_path("1")
     assert cli._infer_job_path("2") == (year_dir / "config.yaml").resolve()
 
 
@@ -622,9 +625,9 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert "plate_reader/dual_reporter_screen" in result.output
     assert "Dual-reporter plate-reader panel protocol" in result.output
     assert "notebook/eda" in result.output
-    assert "Inputs Surface" in result.output
+    assert "Inputs" in result.output
     assert "ingest.mode" in result.output
-    assert "Analysis Surface" in result.output
+    assert "Analysis" in result.output
     assert "Semantic Program" in result.output
     assert "Plot Profiles" in result.output
     assert "Plot Outputs" in result.output
@@ -778,14 +781,14 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     assert "Experiment overview" in result.output
     assert "Readiness" in result.output
     assert "records ready" in result.output
-    assert "Authoring bindings" in result.output
+    assert "Config values" in result.output
     assert "Semantic Program" in result.output
     assert "fold_change.report_times" in result.output
     assert "Pipeline chain" in result.output
     assert "Plot outputs" in result.output
-    assert "Export artifacts" in result.output
+    assert "Exports" in result.output
     assert "Generated outputs" in result.output
-    assert "Record catalog" in result.output
+    assert "Records" in result.output
     assert "raw_kinetics" in result.output
     assert "crosstalk_pairs_table" in result.output
 

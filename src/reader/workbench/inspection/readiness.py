@@ -43,7 +43,7 @@ def config_error_readiness_payload(error: str) -> dict[str, object]:
 def _non_active_lifecycle_payload(*, lifecycle: str, job_path: Path) -> dict[str, object]:
     next_step = {
         "command": reader_command("validate", job_path, "--no-files", "--format", "json"),
-        "description": "Inspect config shape without treating this non-active experiment as run-ready.",
+        "description": "Check the config shape without treating this non-active experiment as ready to run.",
     }
     summary_by_lifecycle = {
         "draft": "draft experiment; add inputs and switch lifecycle to active when ready",
@@ -137,7 +137,7 @@ def experiment_readiness_payload(
         next_steps = [
             {
                 "command": reader_command("validate", job_path, "--format", "json"),
-                "description": "Inspect missing runtime dependencies before running this assay.",
+                "description": "Check missing runtime dependencies before running this assay.",
             }
         ]
     elif not can_run:
@@ -146,7 +146,7 @@ def experiment_readiness_payload(
         next_steps = [
             {
                 "command": reader_command("validate", job_path, "--format", "json"),
-                "description": "Inspect blocking file or dependency issues.",
+                "description": "Check blocking file or dependency issues.",
             }
         ]
     elif records_catalog:
@@ -158,11 +158,11 @@ def experiment_readiness_payload(
         ]
     elif legacy_outputs_present:
         state = "legacy_outputs_present"
-        summary_text = "legacy outputs present without current record catalog"
+        summary_text = "old outputs present but no current records catalog"
         next_steps = [
             {
                 "command": reader_command("run", job_path),
-                "description": "Regenerate the current record catalog and selected outputs from source inputs.",
+                "description": "Rerun from source inputs to rebuild records and selected outputs.",
             }
         ]
     else:

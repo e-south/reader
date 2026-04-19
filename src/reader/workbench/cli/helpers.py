@@ -187,11 +187,16 @@ def infer_job_path(job: str | None) -> Path:
                 return job_lookup[idx]
             jobs_with_scaffolds_lookup = dict(jobs_with_scaffolds)
             if idx in jobs_with_scaffolds_lookup:
-                return jobs_with_scaffolds_lookup[idx]
+                hidden_job = jobs_with_scaffolds_lookup[idx]
+                raise typer.BadParameter(
+                    f"Experiment index {idx} points to hidden scaffold/template config {hidden_job.parent} under {root_path}. "
+                    f"Numeric indexes only address the default 'uv run reader ls' inventory. "
+                    "Pass the path explicitly for scaffold/template configs."
+                )
             scaffold_hint = ""
             if jobs_with_scaffolds != jobs:
                 scaffold_hint = (
-                    " Default inventory valid: "
+                    " Default index range: "
                     f"{_format_index_span(index for index, _ in jobs)}; with '--all': "
                     f"{_format_index_span(index for index, _ in jobs_with_scaffolds)}."
                 )
@@ -238,6 +243,17 @@ def format_job_arg(job: str | None) -> str | None:
     return value or None
 
 
+def ensure_active_lifecycle(decl: WorkbenchDecl, job_path: Path, *, command_name: str) -> None:
+    lifecycle = decl.experiment.lifecycle
+    if lifecycle == "active":
+        return
+    raise typer.BadParameter(
+        f"Experiment lifecycle '{lifecycle}' is not runnable for '{command_name}'. "
+        f"Use '{reader_command('validate', job_path, '--no-files')}' to check the config or "
+        f"'{reader_command('inspect', job_path)}' for details."
+    )
+
+
 def require_dataframe_records(decl: WorkbenchDecl, job_path: Path, *, runtime: ReaderRuntime) -> None:
     layout = decl.experiment_semantics.layout
     outputs_dir = layout.outputs_dir
@@ -254,9 +270,7 @@ def require_dataframe_records(decl: WorkbenchDecl, job_path: Path, *, runtime: R
     try:
         records = store.iter_latest_records(kind="dataframe_artifact")
     except RecordError as exc:
-        raise RecordError(
-            f"Could not read record catalog at {store.records_path}. Run '{reader_command('run', job_path)}' first."
-        ) from exc
+        raise RecordError(f"Could not read record catalog at {store.records_path}: {exc}") from exc
     if not records:
         raise RecordError(
             f"No dataframe records listed in outputs/manifests/records.json. Run '{reader_command('run', job_path)}' first."
@@ -277,14 +291,15 @@ def append_journal(job_path: Path, command_line: str) -> None:
     )
 
 
-def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str) -> str:
+def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str, *, job_path: Path | None = None) -> str:
     which_str = str(which).strip()
     pipeline = list(_load("reader.workbench.graph").resolve_workbench(decl).pipeline)
     if any(step.id == which_str for step in pipeline):
         return which_str
     options = ", ".join(step.id for step in pipeline[:12])
+    steps_command = reader_command("steps", job_path) if job_path is not None else reader_command("steps")
     raise typer.BadParameter(
-        f"Unknown pipeline step id '{which_str}'. Tip: use '{reader_command('steps')}' to list ids "
+        f"Unknown pipeline step id '{which_str}'. Tip: use '{steps_command}' to list ids "
         f"(first few: {options}{' …' if len(pipeline) > 12 else ''})."
     )
 

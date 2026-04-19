@@ -101,11 +101,11 @@ addopts = [
   "--strict-markers",
   "-ra",
   "-m",
-  "not integration and not fleet",
+  "not integration and not active_experiments",
 ]
 
 markers = [
-  "fleet: full data-backed active-experiment end-to-end matrix excluded from the default lane",
+  "active_experiments: full data-backed active-experiment end-to-end matrix excluded from the default lane",
   "integration: cross-surface integration coverage",
   "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
   "smoke: representative real-experiment runtime coverage kept in the default test lane",

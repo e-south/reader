@@ -2,9 +2,9 @@
 
 `reader` now has three explicit layers:
 
-- authoring: experiment `config.yaml`
-- semantics: `reader.protocols`
-- execution: compiled workbench IR
+- config: experiment `config.yaml`
+- protocol: `reader.protocols`
+- execution: compiled workbench plan
 
 The config should describe assay inputs, analysis choices, and requested outputs
 in domain terms, not plugin or graph terms.
@@ -31,7 +31,7 @@ resources:
     path: ./inputs/metadata.xlsx
 ```
 
-## Top-level surface
+## Top-level keys
 
 - `schema`
   Must be `reader/v7`.
@@ -53,18 +53,18 @@ resources:
 There is no public `graph_patch`, no top-level `pipeline` / `plots` /
 `exports`, and no `protocol.with`.
 
-## Protocol surface
+## Protocol block
 
 The protocol block is split by role:
 
 - `protocol.inputs`
   Assay-family input bindings and protocol-owned knobs.
 - `protocol.analysis`
-  Analysis toggles and semantic policy choices.
+  Analysis toggles and protocol policy choices.
 - `protocol.outputs`
   Notebook, plot, and export selection.
 
-## Plot and artifact registries
+## Plot and export choices
 
 Protocols expose two user-facing registries:
 
@@ -76,7 +76,7 @@ Protocols expose two user-facing registries:
   `logic_summary_workbook`
 
 Plot outputs can also be grouped into named plot profiles. A profile is just a
-semantic bundle of figure ids chosen by the protocol author.
+named group of figure ids chosen by the protocol author.
 
 Users do not select plugins directly. They choose:
 
@@ -86,7 +86,7 @@ Users do not select plugins directly. They choose:
 - optional export `include` / `exclude`
 - optional per-artifact `artifacts` config
 
-Unknown keys on the public authoring surface now fail fast. `reader/v7` no
+Unknown keys in the public config now fail fast. `reader/v7` no
 longer silently drops misspelled `protocol` keys, unknown plot/export output
 blocks, or malformed annotation collections.
 
@@ -165,7 +165,7 @@ protocol:
       require_non_null: true
 ```
 
-## Inspect the config surface
+## Inspect the config
 
 Use the CLI to inspect one protocol or one experiment:
 

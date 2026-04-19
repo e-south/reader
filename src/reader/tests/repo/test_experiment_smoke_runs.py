@@ -51,7 +51,7 @@ def _run(
     )
 
 
-@pytest.mark.fleet
+@pytest.mark.active_experiments
 @pytest.mark.parametrize("config_path", END_TO_END_RUNNABLE_CONFIGS, ids=repo_rel)
 def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path: Path) -> None:
     rel_dir = str(config_path.parent.relative_to(REPO_ROOT / "experiments"))

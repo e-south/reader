@@ -14,6 +14,7 @@ from . import shared
 from ._lazy import load as _load
 from .helpers import (
     append_journal,
+    ensure_active_lifecycle,
     find_nearest_experiments_dir,
     format_job_arg,
     indexed_jobs,
@@ -45,7 +46,7 @@ def ls(
     include_scaffolds: bool = typer.Option(
         False,
         "--all",
-        help="Include scaffold/template directories alongside the default experiment inventory.",
+        help="Include scaffold and template directories too.",
     ),
     protocol: str | None = typer.Option(
         None, "--protocol", metavar="ID", help="Only show experiments bound to the given protocol id."
@@ -65,12 +66,12 @@ def ls(
     details: bool = typer.Option(
         False,
         "--details",
-        help="Show protocol id, selected-plan summary, and generated output counts for each experiment.",
+        help="Show protocol id, selected steps, and generated output counts for each experiment.",
     ),
     readiness: bool = typer.Option(
         False,
         "--readiness",
-        help="With --details, run per-experiment preflight and record-state checks.",
+        help="With --details, run preflight and records checks for each experiment.",
     ),
     format: str = typer.Option(
         "table",
@@ -312,15 +313,15 @@ def ls(
         readiness_bits = [f"{key}={value}" for key, value in dict(inventory_summary.get("by_readiness") or {}).items()]
         if readiness_bits:
             summary.add_row("Readiness", ", ".join(readiness_bits))
-        shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED, title="Inventory summary"))
+        shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED, title="Experiment summary"))
 
 
-@app.command(help="Inspect one experiment: readiness, inputs, pipeline chain, plots, artifacts, and generated outputs.")
+@app.command(help="Inspect one experiment: readiness, inputs, pipeline steps, plots, exports, and generated outputs.")
 def inspect(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
@@ -350,7 +351,7 @@ def explain(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
@@ -358,7 +359,6 @@ def explain(
 ):
     try:
         job_path = infer_job_path(job)
-        append_journal(job_path, reader_command("explain", job_path))
         spec, decl = load_job_models(job_path)
         runtime = _load("reader.runtime").builtin_runtime()
         fmt = normalize_output_format(format)
@@ -379,7 +379,7 @@ def validate(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     no_files: bool = typer.Option(False, "--no-files", help="Skip file existence checks (config-only validation)."),
     format: str = typer.Option(
@@ -388,7 +388,6 @@ def validate(
 ):
     try:
         job_path = infer_job_path(job)
-        append_journal(job_path, reader_command("validate", job_path))
         _, decl = load_job_models(job_path)
         runtime = _load("reader.runtime").builtin_runtime()
         fmt = normalize_output_format(format)
@@ -421,12 +420,12 @@ def validate(
         handle_reader_error(err)
 
 
-@app.command(help="Print the authoring config plus compiled runtime plan.")
+@app.command(help="Print the config plus compiled runtime plan.")
 def config(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     format: str = typer.Option("yaml", "--format", metavar="FMT", help="Output format: yaml | json (default: yaml)."),
 ):
@@ -463,7 +462,7 @@ def run(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
-        help="Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' (defaults to nearest ./config.yaml)",
+        help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
     from_step: str | None = typer.Option(
         None,
@@ -504,9 +503,11 @@ def run(
     fmt = normalize_output_format(format)
     if fmt == "json" and not dry_run:
         raise typer.BadParameter("--format json is only supported with --dry-run")
+    if not dry_run:
+        ensure_active_lifecycle(decl, job_path, command_name="run")
 
     if only:
-        resolve_pipeline_step_id(decl, only)
+        resolve_pipeline_step_id(decl, only, job_path=job_path)
         parts += ["--only", only]
         if dry_run:
             parts += ["--dry-run"]
@@ -516,7 +517,8 @@ def run(
             parts += ["--log-level", log_level]
         if compact:
             parts += ["--compact"]
-        append_journal(job_path, " ".join(parts))
+        if not dry_run:
+            append_journal(job_path, " ".join(parts))
         try:
             runtime = _load("reader.runtime").builtin_runtime()
             if dry_run and fmt == "json":
@@ -550,10 +552,10 @@ def run(
         return
 
     if from_step:
-        resolve_pipeline_step_id(decl, from_step)
+        resolve_pipeline_step_id(decl, from_step, job_path=job_path)
         parts += ["--from", from_step]
     if until:
-        resolve_pipeline_step_id(decl, until)
+        resolve_pipeline_step_id(decl, until, job_path=job_path)
         parts += ["--until", until]
     if dry_run:
         parts += ["--dry-run"]
@@ -563,7 +565,8 @@ def run(
         parts += ["--log-level", log_level]
     if compact:
         parts += ["--compact"]
-    append_journal(job_path, " ".join(parts))
+    if not dry_run:
+        append_journal(job_path, " ".join(parts))
     try:
         runtime = _load("reader.runtime").builtin_runtime()
         if dry_run and fmt == "json":
