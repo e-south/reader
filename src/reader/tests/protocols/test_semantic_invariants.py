@@ -66,3 +66,29 @@ def test_compiler_rejects_unknown_semantic_override_ids() -> None:
             overrides={"missing_metric": ProtocolSemanticExecution(status="compiled")},
             active_profile="yfp_cfp_fold_change",
         )
+
+
+def test_bound_protocol_semantic_program_applies_execution_overrides_without_changing_structure() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
+
+    authored = protocol.semantic_program(active_profile="yfp_cfp_fold_change")
+    compiled = protocol.semantic_program(
+        active_profile="yfp_cfp_fold_change",
+        execution_overrides={
+            "OD": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ingest",),
+                record_ids=("ingest/df",),
+            )
+        },
+    )
+    authored_metrics = {node.id: node for node in authored.metrics}
+    compiled_metrics = {node.id: node for node in compiled.metrics}
+
+    assert compiled.active_profile == authored.active_profile
+    assert [node.id for node in compiled.metrics] == [node.id for node in authored.metrics]
+    assert compiled_metrics["OD"].summary == authored_metrics["OD"].summary
+    assert compiled_metrics["OD"].formula == authored_metrics["OD"].formula
+    assert authored_metrics["OD"].execution.status == "descriptive_only"
+    assert compiled_metrics["OD"].execution.status == "compiled"
+    assert compiled_metrics["OD"].execution.step_ids == ("ingest",)

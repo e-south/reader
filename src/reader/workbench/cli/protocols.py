@@ -55,8 +55,7 @@ def protocols(
                 emit_json(inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime))
                 return
             bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
-            compiled_program = compiled_plan.semantic_program or descriptor.semantic_program()
-            authored_program = descriptor.semantic_program(active_profile=compiled_program.active_profile)
+            semantic_program = compiled_plan.semantic_program or bound_protocol.semantic_program()
             summary = table(f"Protocol: {descriptor.protocol}")
             summary.add_column("Section", style="accent")
             summary.add_column("Details")
@@ -75,19 +74,14 @@ def protocols(
                 summary.add_row("Metrics", ", ".join(item.id for item in descriptor.metrics))
             if descriptor.ranking is not None:
                 summary.add_row("Primary ranking", descriptor.ranking.primary_metric)
-            if (
-                authored_program.controls
-                or authored_program.windows
-                or authored_program.metrics
-                or authored_program.ranking
-            ):
+            if semantic_program.has_nodes:
                 summary.add_row(
                     "Semantic nodes",
                     str(
-                        len(authored_program.controls)
-                        + len(authored_program.windows)
-                        + len(authored_program.metrics)
-                        + (1 if authored_program.ranking is not None else 0)
+                        len(semantic_program.controls)
+                        + len(semantic_program.windows)
+                        + len(semantic_program.metrics)
+                        + (1 if semantic_program.ranking is not None else 0)
                     ),
                 )
             summary.add_row("Default notebook", descriptor.execution.notebook.default_template)
@@ -114,29 +108,19 @@ def protocols(
                         box=box.ROUNDED,
                     )
                 )
-            if (
-                authored_program.controls
-                or authored_program.windows
-                or authored_program.metrics
-                or authored_program.ranking
-            ):
+            if semantic_program.has_nodes:
                 shared.console.print(
                     Panel(
-                        inspection_semantics.semantic_program_table(authored_program, include_execution=False),
+                        inspection_semantics.semantic_program_table(semantic_program, include_execution=False),
                         border_style="accent",
                         box=box.ROUNDED,
                     )
                 )
-            if (
-                compiled_program.controls
-                or compiled_program.windows
-                or compiled_program.metrics
-                or compiled_program.ranking
-            ):
+            if semantic_program.has_nodes:
                 shared.console.print(
                     Panel(
                         inspection_semantics.semantic_program_table(
-                            compiled_program,
+                            semantic_program,
                             title="Compiled Semantic Execution",
                         ),
                         border_style="accent",

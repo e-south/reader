@@ -7,7 +7,6 @@ from reader.errors import ConfigError
 from reader.protocols.model import (
     CompiledProtocolPlan,
     ProtocolSemanticExecution,
-    ProtocolSemanticNode,
     ProtocolSemanticProgram,
 )
 from reader.workbench.decl.model import (
@@ -399,83 +398,7 @@ def _semantic_program(
     overrides: dict[str, ProtocolSemanticExecution],
     active_profile: str | None = None,
 ) -> ProtocolSemanticProgram:
-    descriptor_program = protocol.descriptor.semantic_program(active_profile=active_profile)
-    valid_ids = {
-        *(node.id for node in descriptor_program.controls),
-        *(node.id for node in descriptor_program.windows),
-        *(node.id for node in descriptor_program.metrics),
-    }
-    if descriptor_program.ranking is not None:
-        valid_ids.add(descriptor_program.ranking.id)
-    unknown_override_ids = sorted(set(overrides) - valid_ids)
-    if unknown_override_ids:
-        options = ", ".join(sorted(valid_ids)) or "—"
-        raise ConfigError(
-            f"Semantic execution overrides reference unknown ids {unknown_override_ids} for protocol {protocol.id!r}. "
-            f"Known semantic ids: {options}"
-        )
-
-    def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
-        return tuple(
-            ProtocolSemanticNode(
-                id=node.id,
-                kind=node.kind,
-                summary=node.summary,
-                profiles=node.profiles,
-                stage=node.stage,
-                formula=node.formula,
-                depends_on=node.depends_on,
-                value_space=node.value_space,
-                unit=node.unit,
-                comparable_group=node.comparable_group,
-                anchor=node.anchor,
-                selector=node.selector,
-                params=node.params,
-                match_on=node.match_on,
-                control_selector=node.control_selector,
-                primary_metric=node.primary_metric,
-                direction=node.direction,
-                penalties=node.penalties,
-                supporting_metrics=node.supporting_metrics,
-                execution=overrides.get(node.id, node.execution),
-            )
-            for node in nodes
-        )
-
-    ranking = descriptor_program.ranking
-    if ranking is not None:
-        ranking = ProtocolSemanticNode(
-            id=ranking.id,
-            kind=ranking.kind,
-            summary=ranking.summary,
-            profiles=ranking.profiles,
-            stage=ranking.stage,
-            formula=ranking.formula,
-            depends_on=ranking.depends_on,
-            value_space=ranking.value_space,
-            unit=ranking.unit,
-            comparable_group=ranking.comparable_group,
-            anchor=ranking.anchor,
-            selector=ranking.selector,
-            params=ranking.params,
-            match_on=ranking.match_on,
-            control_selector=ranking.control_selector,
-            primary_metric=ranking.primary_metric,
-            direction=ranking.direction,
-            penalties=ranking.penalties,
-            supporting_metrics=ranking.supporting_metrics,
-            execution=overrides.get(ranking.id, ranking.execution),
-        )
-
-    return ProtocolSemanticProgram(
-        protocol=descriptor_program.protocol,
-        profiles=descriptor_program.profiles,
-        active_profile=descriptor_program.active_profile,
-        controls=_apply(descriptor_program.controls),
-        windows=_apply(descriptor_program.windows),
-        metrics=_apply(descriptor_program.metrics),
-        ranking=ranking,
-    )
+    return protocol.semantic_program(active_profile=active_profile, execution_overrides=overrides)
 
 
 def _plate_reader_semantic_program(

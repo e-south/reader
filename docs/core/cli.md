@@ -127,9 +127,10 @@ Emit the experiment as structured JSON with `authoring`, `semantics`, and
 uv run reader inspect CONFIG|DIR|INDEX --format json
 ```
 
-In JSON mode, `semantics` is the authored assay meaning for the active profile.
-Compiled plugin bindings, step wiring, and semantic execution coverage live
-under `implementation.compiled`.
+In JSON mode, `semantics.program` is the authored view of the active semantic
+program for the experiment. The same program, with execution bindings and
+coverage, lives under `implementation.compiled.semantic_program` beside the
+compiled plugin wiring.
 
 List just the pipeline chain and bindings:
 
@@ -184,7 +185,8 @@ uv run reader config CONFIG|DIR|INDEX --format json
 ```
 
 In JSON mode, `authoring` is the full `reader/v7` document, while
-`implementation` carries the compiled plan and compiled semantic execution data.
+`implementation` carries the compiled plan and the execution-bound semantic
+program.
 
 Validate schema, wiring, and inputs:
 
@@ -365,13 +367,10 @@ uv run reader export CONFIG|DIR|INDEX --only crosstalk_pairs_table --set with.pa
 
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution). If `--template` is omitted, the CLI
-uses the first configured `notebooks.specs` entry, otherwise auto-picks a default
-template from declared template capabilities:
-
-- plot-capable template when plots exist
-- cytometry EDA template when the pipeline is cytometry-shaped
-- fallback basic template otherwise
+Scaffold a marimo notebook (no pipeline execution). If `--template` is omitted,
+the CLI resolves the protocol default notebook template after applying any
+`protocol.outputs.notebook.template` override from the experiment config. It
+does not auto-pick a template from notebook specs or template capabilities.
 
 Notebooks are written under `outputs/notebooks/`.
 

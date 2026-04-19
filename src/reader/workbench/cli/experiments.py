@@ -340,14 +340,13 @@ def inspect(
     if fmt == "json":
         emit_json(payload)
         return
-    compiled_program = decl.experiment_semantics.protocol_program
-    authored_program = runtime.bind_protocol(decl.experiment_semantics.protocol).descriptor.semantic_program(
-        active_profile=(compiled_program.active_profile if compiled_program is not None else None)
+    semantic_program = (
+        decl.experiment_semantics.protocol_program
+        or runtime.bind_protocol(decl.experiment_semantics.protocol).semantic_program()
     )
     for renderable in _load("reader.workbench.inspection.reports").experiment_inspect_renderables(
         payload=payload,
-        authored_semantic_program=authored_program,
-        compiled_semantic_program=compiled_program,
+        semantic_program=semantic_program,
     ):
         shared.console.print(renderable)
 
@@ -551,6 +550,8 @@ def run(
                 include_pipeline=True,
                 include_plots=False,
                 include_exports=False,
+                job_label=format_job_arg(job),
+                show_next_steps=True,
                 runtime=runtime,
             )
         except ReaderError as err:

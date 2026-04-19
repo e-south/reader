@@ -72,6 +72,26 @@ def test_run_dry_run_allows_non_active_lifecycle(tmp_path: Path) -> None:
     assert "DRY RUN" in _plain(result.output)
 
 
+def test_run_only_shows_next_steps(tmp_path: Path, monkeypatch) -> None:
+    cfg = write_config(tmp_path, _run_config())
+    captured: dict[str, object] = {}
+
+    def _fake_run_job(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("reader.workbench.engine.run_job", _fake_run_job)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", str(cfg), "--only", "ingest"])
+
+    assert result.exit_code == 0
+    kwargs = dict(captured["kwargs"])
+    assert kwargs["resume_from"] == "ingest"
+    assert kwargs["until"] == "ingest"
+    assert kwargs["show_next_steps"] is True
+
+
 def test_resolve_pipeline_step_id_hint_includes_target_config(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _run_config())
     decl = load_decl(cfg)

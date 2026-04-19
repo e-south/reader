@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from reader.domains.semantics import PluginDomain, validate_plugin_domain
@@ -563,6 +563,9 @@ class ProtocolSemanticNode:
             tuple(str(value) for value in self.supporting_metrics if str(value).strip()),
         )
 
+    def with_execution(self, execution: ProtocolSemanticExecution) -> ProtocolSemanticNode:
+        return replace(self, execution=execution)
+
 
 @dataclass(frozen=True)
 class ProtocolSemanticProgram:
@@ -622,6 +625,49 @@ class ProtocolSemanticProgram:
                         f"ProtocolSemanticProgram ranking references unknown metric {metric_id!r}. "
                         f"Known metrics: {options}."
                     )
+
+    @property
+    def has_nodes(self) -> bool:
+        return bool(self.controls or self.windows or self.metrics or self.ranking is not None)
+
+    def with_execution_overrides(
+        self,
+        overrides: dict[str, ProtocolSemanticExecution] | None,
+        *,
+        protocol_id: str | None = None,
+    ) -> ProtocolSemanticProgram:
+        overrides = dict(overrides or {})
+        if not overrides:
+            return self
+        valid_ids = {
+            *(node.id for node in self.controls),
+            *(node.id for node in self.windows),
+            *(node.id for node in self.metrics),
+        }
+        if self.ranking is not None:
+            valid_ids.add(self.ranking.id)
+        unknown_override_ids = sorted(set(overrides) - valid_ids)
+        if unknown_override_ids:
+            options = ", ".join(sorted(valid_ids)) or "—"
+            protocol_label = protocol_id or self.protocol
+            raise ConfigError(
+                f"Semantic execution overrides reference unknown ids {unknown_override_ids} for protocol "
+                f"{protocol_label!r}. Known semantic ids: {options}"
+            )
+
+        def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
+            return tuple(node.with_execution(overrides.get(node.id, node.execution)) for node in nodes)
+
+        ranking = self.ranking
+        if ranking is not None:
+            ranking = ranking.with_execution(overrides.get(ranking.id, ranking.execution))
+        return replace(
+            self,
+            controls=_apply(self.controls),
+            windows=_apply(self.windows),
+            metrics=_apply(self.metrics),
+            ranking=ranking,
+        )
 
 
 @dataclass(frozen=True)
@@ -1087,6 +1133,15 @@ class BoundProtocol:
     def allows_notebook_template(self, template: str) -> bool:
         return template in self.allowed_notebook_templates
 
+    def semantic_program(
+        self,
+        *,
+        active_profile: str | None = None,
+        execution_overrides: dict[str, ProtocolSemanticExecution] | None = None,
+    ) -> ProtocolSemanticProgram:
+        program = self.descriptor.semantic_program(active_profile=active_profile)
+        return program.with_execution_overrides(execution_overrides, protocol_id=self.id)
+
     def resolve_notebook_template(
         self,
         *,
@@ -1122,7 +1177,7 @@ class BoundProtocol:
             plots=plan.plots,
             exports=plan.exports,
             notebooks=notebooks,
-            semantic_program=plan.semantic_program or self.descriptor.semantic_program(),
+            semantic_program=plan.semantic_program or self.semantic_program(),
         )
 
     def effective_plugin_config(self, *, plugin_id: str, step_with: dict[str, Any] | None = None) -> dict[str, Any]:

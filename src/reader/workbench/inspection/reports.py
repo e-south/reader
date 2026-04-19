@@ -16,8 +16,7 @@ from .semantics import semantic_program_table
 def experiment_inspect_renderables(
     *,
     payload: dict[str, object],
-    authored_semantic_program,
-    compiled_semantic_program,
+    semantic_program,
 ) -> list[Panel]:
     experiment = dict(payload.get("experiment") or {})
     authoring = dict(payload.get("authoring") or {})
@@ -106,19 +105,19 @@ def experiment_inspect_renderables(
         authoring_table.add_row("—", "—", "No explicit bindings; protocol defaults only.")
     renderables.append(Panel(authoring_table, border_style="accent", box=box.ROUNDED))
 
-    if authored_semantic_program is not None:
+    if semantic_program is not None:
         renderables.append(
             Panel(
-                semantic_program_table(authored_semantic_program, include_execution=False),
+                semantic_program_table(semantic_program, include_execution=False),
                 border_style="accent",
                 box=box.ROUNDED,
             )
         )
-    if compiled_semantic_program is not None:
+    if semantic_program is not None:
         renderables.append(
             Panel(
                 semantic_program_table(
-                    compiled_semantic_program,
+                    semantic_program,
                     title="Compiled Semantic Execution",
                 ),
                 border_style="accent",
@@ -262,22 +261,19 @@ def workflow_explain_renderables(
         summary.add_row("Resources", ", ".join(resources))
     renderables.append(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Plan summary"))
 
-    compiled_program = decl.experiment_semantics.protocol_program
-    authored_program = bound_protocol.descriptor.semantic_program(
-        active_profile=(compiled_program.active_profile if compiled_program is not None else None)
-    )
-    if authored_program is not None:
+    semantic_program = decl.experiment_semantics.protocol_program or bound_protocol.semantic_program()
+    if semantic_program is not None:
         renderables.append(
             Panel(
-                semantic_program_table(authored_program, include_execution=False),
+                semantic_program_table(semantic_program, include_execution=False),
                 border_style="cyan",
                 box=box.ROUNDED,
             )
         )
-    if compiled_program is not None:
+    if semantic_program is not None:
         renderables.append(
             Panel(
-                semantic_program_table(compiled_program, title="Compiled Semantic Execution"),
+                semantic_program_table(semantic_program, title="Compiled Semantic Execution"),
                 border_style="cyan",
                 box=box.ROUNDED,
             )

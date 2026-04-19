@@ -43,9 +43,10 @@ def experiment_config_authoring_payload(*, document: dict[str, Any]) -> dict[str
     return deepcopy(document)
 
 
-def authored_semantic_program_for_bound_protocol(*, bound_protocol, compiled_semantic_program):
-    active_profile = compiled_semantic_program.active_profile if compiled_semantic_program is not None else None
-    return bound_protocol.descriptor.semantic_program(active_profile=active_profile)
+def semantic_program_for_bound_protocol(*, bound_protocol, compiled_semantic_program):
+    if compiled_semantic_program is not None:
+        return compiled_semantic_program
+    return bound_protocol.semantic_program()
 
 
 def experiment_implementation_payload(
@@ -74,7 +75,7 @@ def experiment_surface_payload(
     *,
     experiment: dict[str, object],
     authoring: dict[str, object],
-    authored_semantic_program,
+    semantic_program,
     implementation: dict[str, object],
 ) -> dict[str, object]:
     return {
@@ -82,8 +83,8 @@ def experiment_surface_payload(
         "authoring": deepcopy(authoring),
         "semantics": {
             "program": (
-                semantic_program_payload(authored_semantic_program, include_execution=False)
-                if authored_semantic_program is not None
+                semantic_program_payload(semantic_program, include_execution=False)
+                if semantic_program is not None
                 else None
             ),
         },
@@ -149,7 +150,7 @@ def experiment_explain_payload(
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
-    authored_program = authored_semantic_program_for_bound_protocol(
+    semantic_program = semantic_program_for_bound_protocol(
         bound_protocol=bound_protocol,
         compiled_semantic_program=decl.experiment_semantics.protocol_program,
     )
@@ -162,12 +163,11 @@ def experiment_explain_payload(
         runtime=runtime,
         record_producers=record_producers,
     )
-    if decl.experiment_semantics.protocol_program is not None:
-        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
+    compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        authored_semantic_program=authored_program,
+        semantic_program=semantic_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,
@@ -242,7 +242,7 @@ def experiment_steps_payload(
         notebook_steps=[],
     )
     plan_payload["pipeline_count"] = len(pipeline_steps)
-    authored_program = authored_semantic_program_for_bound_protocol(
+    semantic_program = semantic_program_for_bound_protocol(
         bound_protocol=bound_protocol,
         compiled_semantic_program=decl.experiment_semantics.protocol_program,
     )
@@ -254,12 +254,11 @@ def experiment_steps_payload(
         "exports": [],
         "notebooks": [],
     }
-    if decl.experiment_semantics.protocol_program is not None:
-        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
+    compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        authored_semantic_program=authored_program,
+        semantic_program=semantic_program,
         implementation=experiment_implementation_payload(
             plan=plan_payload,
             compiled=compiled_payload,
@@ -286,7 +285,7 @@ def experiment_config_json_payload(
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
-    authored_program = authored_semantic_program_for_bound_protocol(
+    semantic_program = semantic_program_for_bound_protocol(
         bound_protocol=bound_protocol,
         compiled_semantic_program=decl.experiment_semantics.protocol_program,
     )
@@ -299,12 +298,11 @@ def experiment_config_json_payload(
         runtime=runtime,
         record_producers=record_producers,
     )
-    if decl.experiment_semantics.protocol_program is not None:
-        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
+    compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=experiment_config_authoring_payload(document=spec.model_dump(by_alias=True)),
-        authored_semantic_program=authored_program,
+        semantic_program=semantic_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,
@@ -366,7 +364,7 @@ def experiment_inspect_payload(
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
-    authored_program = authored_semantic_program_for_bound_protocol(
+    semantic_program = semantic_program_for_bound_protocol(
         bound_protocol=bound_protocol,
         compiled_semantic_program=decl.experiment_semantics.protocol_program,
     )
@@ -379,12 +377,11 @@ def experiment_inspect_payload(
         runtime=runtime,
         record_producers=record_producers,
     )
-    if decl.experiment_semantics.protocol_program is not None:
-        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
+    compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        authored_semantic_program=authored_program,
+        semantic_program=semantic_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,

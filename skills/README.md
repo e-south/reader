@@ -14,4 +14,5 @@ Guidelines:
 
 Current repo-local skill:
 
-- `reader-experiment-bootstrap`: new experiment intake, metadata mapping, Drive-backed input staging, and local experiment audits.
+- [`reader-experiment-bootstrap`](./reader-experiment-bootstrap/SKILL.md): new experiment intake, metadata mapping, Drive-backed input staging, and local experiment audits.
+  Primary workflow: [docs/guides/experiment_bootstrap.md](../docs/guides/experiment_bootstrap.md)
