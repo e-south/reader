@@ -275,8 +275,19 @@ def protocol_runtime_defaults_payload(plugin_defaults) -> list[dict[str, object]
 def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
     bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
     compiled_plan = bound_protocol.compile()
-    semantic_program = compiled_plan.semantic_program or descriptor.semantic_program()
+    compiled_program = compiled_plan.semantic_program or descriptor.semantic_program()
+    authored_program = descriptor.semantic_program(active_profile=compiled_program.active_profile)
     record_producers = record_producer_map(compiled_plan.pipeline, runtime=runtime)
+    compiled_payload = compiled_workbench_payload(
+        bound_protocol=bound_protocol,
+        pipeline_steps=compiled_plan.pipeline,
+        plot_steps=compiled_plan.plots,
+        export_steps=compiled_plan.exports,
+        notebook_steps=compiled_plan.notebooks,
+        runtime=runtime,
+        record_producers=record_producers,
+    )
+    compiled_payload["semantic_program"] = semantic_program_payload(compiled_program)
     return {
         "protocol": descriptor.protocol,
         "domain": descriptor.domain,
@@ -308,18 +319,10 @@ def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
                 }
                 for item in descriptor.effect_signs
             ],
-            "program": semantic_program_payload(semantic_program),
+            "program": semantic_program_payload(authored_program, include_execution=False),
         },
         "implementation": {
             "defaults": protocol_runtime_defaults_payload(descriptor.execution.plugin_defaults),
-            "compiled": compiled_workbench_payload(
-                bound_protocol=bound_protocol,
-                pipeline_steps=compiled_plan.pipeline,
-                plot_steps=compiled_plan.plots,
-                export_steps=compiled_plan.exports,
-                notebook_steps=compiled_plan.notebooks,
-                runtime=runtime,
-                record_producers=record_producers,
-            ),
+            "compiled": compiled_payload,
         },
     }

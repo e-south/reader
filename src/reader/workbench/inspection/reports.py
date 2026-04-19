@@ -13,7 +13,12 @@ from .runtime import render_read_binding
 from .semantics import semantic_program_table
 
 
-def experiment_inspect_renderables(*, payload: dict[str, object], semantic_program) -> list[Panel]:
+def experiment_inspect_renderables(
+    *,
+    payload: dict[str, object],
+    authored_semantic_program,
+    compiled_semantic_program,
+) -> list[Panel]:
     experiment = dict(payload.get("experiment") or {})
     authoring = dict(payload.get("authoring") or {})
     implementation = dict(payload.get("implementation") or {})
@@ -101,8 +106,25 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
         authoring_table.add_row("—", "—", "No explicit bindings; protocol defaults only.")
     renderables.append(Panel(authoring_table, border_style="accent", box=box.ROUNDED))
 
-    if semantic_program is not None:
-        renderables.append(Panel(semantic_program_table(semantic_program), border_style="accent", box=box.ROUNDED))
+    if authored_semantic_program is not None:
+        renderables.append(
+            Panel(
+                semantic_program_table(authored_semantic_program, include_execution=False),
+                border_style="accent",
+                box=box.ROUNDED,
+            )
+        )
+    if compiled_semantic_program is not None:
+        renderables.append(
+            Panel(
+                semantic_program_table(
+                    compiled_semantic_program,
+                    title="Compiled Semantic Execution",
+                ),
+                border_style="accent",
+                box=box.ROUNDED,
+            )
+        )
 
     filesystem = _table("Inputs + resources")
     filesystem.add_column("kind", style="accent", width=10)
@@ -240,10 +262,22 @@ def workflow_explain_renderables(
         summary.add_row("Resources", ", ".join(resources))
     renderables.append(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Plan summary"))
 
-    if decl.experiment_semantics.protocol_program is not None:
+    compiled_program = decl.experiment_semantics.protocol_program
+    authored_program = bound_protocol.descriptor.semantic_program(
+        active_profile=(compiled_program.active_profile if compiled_program is not None else None)
+    )
+    if authored_program is not None:
         renderables.append(
             Panel(
-                semantic_program_table(decl.experiment_semantics.protocol_program),
+                semantic_program_table(authored_program, include_execution=False),
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+    if compiled_program is not None:
+        renderables.append(
+            Panel(
+                semantic_program_table(compiled_program, title="Compiled Semantic Execution"),
                 border_style="cyan",
                 box=box.ROUNDED,
             )

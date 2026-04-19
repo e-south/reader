@@ -127,6 +127,10 @@ Emit the experiment as structured JSON with `authoring`, `semantics`, and
 uv run reader inspect CONFIG|DIR|INDEX --format json
 ```
 
+In JSON mode, `semantics` is the authored assay meaning for the active profile.
+Compiled plugin bindings, step wiring, and semantic execution coverage live
+under `implementation.compiled`.
+
 List just the pipeline chain and bindings:
 
 ```bash
@@ -180,7 +184,7 @@ uv run reader config CONFIG|DIR|INDEX --format json
 ```
 
 In JSON mode, `authoring` is the full `reader/v7` document, while
-`implementation` carries the compiled plan.
+`implementation` carries the compiled plan and compiled semantic execution data.
 
 Validate schema, wiring, and inputs:
 

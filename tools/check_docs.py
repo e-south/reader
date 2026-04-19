@@ -30,6 +30,7 @@ REQUIRED_LINKS = {
         "guides/common_routes.md",
         "guides/preflight_run_verify.md",
         "guides/automation.md",
+        "guides/experiment_bootstrap.md",
         "guides/demo.md",
         "core/cli.md",
         "core/pipeline.md",

@@ -340,8 +340,14 @@ def inspect(
     if fmt == "json":
         emit_json(payload)
         return
+    compiled_program = decl.experiment_semantics.protocol_program
+    authored_program = runtime.bind_protocol(decl.experiment_semantics.protocol).descriptor.semantic_program(
+        active_profile=(compiled_program.active_profile if compiled_program is not None else None)
+    )
     for renderable in _load("reader.workbench.inspection.reports").experiment_inspect_renderables(
-        payload=payload, semantic_program=decl.experiment_semantics.protocol_program
+        payload=payload,
+        authored_semantic_program=authored_program,
+        compiled_semantic_program=compiled_program,
     ):
         shared.console.print(renderable)
 

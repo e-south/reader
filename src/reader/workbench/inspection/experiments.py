@@ -43,6 +43,11 @@ def experiment_config_authoring_payload(*, document: dict[str, Any]) -> dict[str
     return deepcopy(document)
 
 
+def authored_semantic_program_for_bound_protocol(*, bound_protocol, compiled_semantic_program):
+    active_profile = compiled_semantic_program.active_profile if compiled_semantic_program is not None else None
+    return bound_protocol.descriptor.semantic_program(active_profile=active_profile)
+
+
 def experiment_implementation_payload(
     *,
     plan: dict[str, object] | None = None,
@@ -69,14 +74,18 @@ def experiment_surface_payload(
     *,
     experiment: dict[str, object],
     authoring: dict[str, object],
-    semantic_program,
+    authored_semantic_program,
     implementation: dict[str, object],
 ) -> dict[str, object]:
     return {
         "experiment": deepcopy(experiment),
         "authoring": deepcopy(authoring),
         "semantics": {
-            "program": semantic_program_payload(semantic_program) if semantic_program is not None else None,
+            "program": (
+                semantic_program_payload(authored_semantic_program, include_execution=False)
+                if authored_semantic_program is not None
+                else None
+            ),
         },
         "implementation": deepcopy(implementation),
     }
@@ -140,10 +149,25 @@ def experiment_explain_payload(
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
+    authored_program = authored_semantic_program_for_bound_protocol(
+        bound_protocol=bound_protocol,
+        compiled_semantic_program=decl.experiment_semantics.protocol_program,
+    )
+    compiled_payload = compiled_workbench_payload(
+        bound_protocol=bound_protocol,
+        pipeline_steps=pipeline_steps,
+        plot_steps=plot_steps,
+        export_steps=export_steps,
+        notebook_steps=notebook_steps,
+        runtime=runtime,
+        record_producers=record_producers,
+    )
+    if decl.experiment_semantics.protocol_program is not None:
+        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        semantic_program=decl.experiment_semantics.protocol_program,
+        authored_semantic_program=authored_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,
@@ -153,15 +177,7 @@ def experiment_explain_payload(
                 export_steps=export_steps,
                 notebook_steps=notebook_steps,
             ),
-            compiled=compiled_workbench_payload(
-                bound_protocol=bound_protocol,
-                pipeline_steps=pipeline_steps,
-                plot_steps=plot_steps,
-                export_steps=export_steps,
-                notebook_steps=notebook_steps,
-                runtime=runtime,
-                record_producers=record_producers,
-            ),
+            compiled=compiled_payload,
         ),
     )
 
@@ -226,21 +242,27 @@ def experiment_steps_payload(
         notebook_steps=[],
     )
     plan_payload["pipeline_count"] = len(pipeline_steps)
+    authored_program = authored_semantic_program_for_bound_protocol(
+        bound_protocol=bound_protocol,
+        compiled_semantic_program=decl.experiment_semantics.protocol_program,
+    )
+    compiled_payload = {
+        "pipeline": [
+            pipeline_step_payload(step, runtime=runtime, record_producers=record_producers) for step in pipeline_steps
+        ],
+        "plots": [],
+        "exports": [],
+        "notebooks": [],
+    }
+    if decl.experiment_semantics.protocol_program is not None:
+        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        semantic_program=decl.experiment_semantics.protocol_program,
+        authored_semantic_program=authored_program,
         implementation=experiment_implementation_payload(
             plan=plan_payload,
-            compiled={
-                "pipeline": [
-                    pipeline_step_payload(step, runtime=runtime, record_producers=record_producers)
-                    for step in pipeline_steps
-                ],
-                "plots": [],
-                "exports": [],
-                "notebooks": [],
-            },
+            compiled=compiled_payload,
         ),
     )
 
@@ -264,10 +286,25 @@ def experiment_config_json_payload(
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
+    authored_program = authored_semantic_program_for_bound_protocol(
+        bound_protocol=bound_protocol,
+        compiled_semantic_program=decl.experiment_semantics.protocol_program,
+    )
+    compiled_payload = compiled_workbench_payload(
+        bound_protocol=bound_protocol,
+        pipeline_steps=pipeline_steps,
+        plot_steps=plot_steps,
+        export_steps=export_steps,
+        notebook_steps=notebook_steps,
+        runtime=runtime,
+        record_producers=record_producers,
+    )
+    if decl.experiment_semantics.protocol_program is not None:
+        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=experiment_config_authoring_payload(document=spec.model_dump(by_alias=True)),
-        semantic_program=decl.experiment_semantics.protocol_program,
+        authored_semantic_program=authored_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,
@@ -277,15 +314,7 @@ def experiment_config_json_payload(
                 export_steps=export_steps,
                 notebook_steps=notebook_steps,
             ),
-            compiled=compiled_workbench_payload(
-                bound_protocol=bound_protocol,
-                pipeline_steps=pipeline_steps,
-                plot_steps=plot_steps,
-                export_steps=export_steps,
-                notebook_steps=notebook_steps,
-                runtime=runtime,
-                record_producers=record_producers,
-            ),
+            compiled=compiled_payload,
         ),
     )
 
@@ -337,10 +366,25 @@ def experiment_inspect_payload(
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
     notebook_steps = list(workbench.notebooks)
+    authored_program = authored_semantic_program_for_bound_protocol(
+        bound_protocol=bound_protocol,
+        compiled_semantic_program=decl.experiment_semantics.protocol_program,
+    )
+    compiled_payload = compiled_workbench_payload(
+        bound_protocol=bound_protocol,
+        pipeline_steps=pipeline_steps,
+        plot_steps=plot_steps,
+        export_steps=export_steps,
+        notebook_steps=notebook_steps,
+        runtime=runtime,
+        record_producers=record_producers,
+    )
+    if decl.experiment_semantics.protocol_program is not None:
+        compiled_payload["semantic_program"] = semantic_program_payload(decl.experiment_semantics.protocol_program)
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
-        semantic_program=decl.experiment_semantics.protocol_program,
+        authored_semantic_program=authored_program,
         implementation=experiment_implementation_payload(
             plan=implementation_plan_payload(
                 bound_protocol=bound_protocol,
@@ -350,15 +394,7 @@ def experiment_inspect_payload(
                 export_steps=export_steps,
                 notebook_steps=notebook_steps,
             ),
-            compiled=compiled_workbench_payload(
-                bound_protocol=bound_protocol,
-                pipeline_steps=pipeline_steps,
-                plot_steps=plot_steps,
-                export_steps=export_steps,
-                notebook_steps=notebook_steps,
-                runtime=runtime,
-                record_producers=record_producers,
-            ),
+            compiled=compiled_payload,
             inputs={
                 "counts": {
                     "files": input_file_count,

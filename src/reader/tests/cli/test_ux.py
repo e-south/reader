@@ -36,6 +36,10 @@ def _plain(text: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
+def _compiled_semantic_program(payload: dict) -> dict:
+    return payload["implementation"]["compiled"]["semantic_program"]
+
+
 def _tidy_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -435,14 +439,16 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["steps", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["compiled"] >= 1
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["summary"]["compiled"] >= 1
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["implementation"]["plan"]["pipeline_count"] >= 1
     assert payload["implementation"]["plan"]["plots"] == []
     assert payload["implementation"]["compiled"]["plots"] == []
@@ -462,15 +468,17 @@ def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: P
     result = runner.invoke(cli.app, ["config", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["schema"] == "reader/v7"
     assert payload["authoring"]["protocol"]["id"] == "plate_reader/dual_reporter_screen"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
     assert payload["semantics"]["program"]["ranking"]["primary_metric"] == "log2FC"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
@@ -484,13 +492,14 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["explain", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["summary"]["total"] >= 1
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["compiled"]["plots"][0]["semantics"]["category"] == "plot"
@@ -816,13 +825,15 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["experiment"]["lifecycle"] == "active"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["inputs"]["counts"]["files"] == 2
@@ -857,21 +868,23 @@ def test_protocols_command_can_emit_json() -> None:
     result = runner.invoke(cli.app, ["protocols", "plate_reader/dual_reporter_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     metrics = {item["id"]: item for item in payload["semantics"]["program"]["metrics"]}
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
-    assert metrics["OD"]["execution"]["status"] == "compiled"
     assert metrics["Ratio"]["formula"] == "YFP / CFP"
     assert metrics["Ratio"]["value_space"] == "linear_ratio"
     assert metrics["Ratio"]["unit"] == "ratio"
     assert metrics["Ratio"]["comparable_group"] == "primary_ratio_linear"
-    assert metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_fold_change"
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
-    assert metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
-    assert metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
     assert payload["semantics"]["program"]["ranking"] is None
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
+    assert compiled_metrics["OD"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
+    assert compiled_metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
     assert payload["authoring"]["starter_config"]["schema"] == "reader/v7"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
@@ -885,14 +898,16 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     result = runner.invoke(cli.app, ["protocols", "logic/sfxi_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["protocol"] == "logic/sfxi_screen"
-    assert payload["semantics"]["program"]["summary"]["compiled"] == 4
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
-    assert payload["semantics"]["program"]["controls"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
-    assert payload["semantics"]["program"]["windows"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["total"] == 4
+    assert compiled_program["summary"]["compiled"] == 4
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
+    assert compiled_program["windows"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
 
 
 def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
@@ -900,8 +915,10 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     result = runner.invoke(cli.app, ["protocols", "plate_reader/retron_sponge_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
     figure_ids = {item["id"] for item in payload["authoring"]["outputs"]["figures"]}
     plot_profile_ids = {item["id"] for item in payload["authoring"]["outputs"]["plot_profiles"]}
     assert payload["protocol"] == "plate_reader/retron_sponge_screen"
@@ -936,16 +953,16 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert metrics["R"]["value_space"] == "log2_ratio"
     assert metrics["R"]["unit"] == "log2_ratio"
     assert metrics["R"]["comparable_group"] == "primary_ratio_log2"
-    assert metrics["R"]["execution"]["status"] == "compiled"
-    assert metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
-    assert metrics["D_AUC"]["execution"]["status"] == "compiled"
-    assert metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert metrics["D_abs_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert program["controls"][0]["execution"]["status"] == "compiled"
-    assert program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_metrics["R"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
+    assert compiled_metrics["D_AUC"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_metrics["D_abs_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_abs_AUC"
-    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
     assert payload["implementation"]["compiled"]["pipeline"][-1]["id"] == "semantic_metrics"
 
 
@@ -969,33 +986,38 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
     assert program["active_profile"] == "single_reporter_raw"
     assert {item["id"] for item in program["profiles"]} == {
         "single_reporter_raw",
         "single_reporter_fold_change",
     }
     assert set(metrics) == {"Normalizer", "Reporter", "Reporter_Normalizer"}
-    assert metrics["Reporter"]["execution"]["status"] == "compiled"
     assert metrics["Normalizer"]["formula"] == "configured_normalizer_channel"
-    assert metrics["Normalizer"]["execution"]["note"] == "Raw OD700 values are materialized on the ingest dataframe."
     assert metrics["Reporter_Normalizer"]["formula"] == "configured_reporter_channel / configured_normalizer_channel"
-    assert metrics["Reporter_Normalizer"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
+    assert compiled_metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert (
+        compiled_metrics["Normalizer"]["execution"]["note"]
+        == "Raw OD700 values are materialized on the ingest dataframe."
+    )
+    assert compiled_metrics["Reporter_Normalizer"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
     assert program["controls"] == []
     assert program["windows"] == []
     assert program["ranking"] is None
     assert program["summary"] == {
         "total": 3,
-        "compiled": 3,
-        "descriptive_only": 0,
         "by_kind": {
-            "control_rule": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "window": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "metric": {"total": 3, "compiled": 3, "descriptive_only": 0},
-            "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
+            "control_rule": 0,
+            "window": 0,
+            "metric": 3,
+            "ranking": 0,
         },
     }
+    assert compiled_program["summary"]["compiled"] == 3
+    assert compiled_program["summary"]["descriptive_only"] == 0
 
 
 def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_path: Path) -> None:
@@ -1022,8 +1044,10 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
 
     assert program["active_profile"] == "single_reporter"
     assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "single_reporter"}
@@ -1046,20 +1070,20 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     assert "CFP" not in metrics
     assert metrics["OD"]["formula"] == "configured_growth_channel"
     assert metrics["OD"]["summary"] == "Raw configured growth-proxy trace."
-    assert metrics["Reporter"]["execution"]["status"] == "compiled"
     assert metrics["R"]["formula"] == "log2(configured_reporter_channel / configured_growth_channel)"
     assert metrics["mu"]["formula"] == "d(log(configured_growth_channel)) / dt"
     assert metrics["R"]["value_space"] == "log2_ratio"
-    assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
     assert metrics["Reporter_OD"]["formula"] == "configured_reporter_channel / configured_growth_channel"
-    assert metrics["Reporter_OD"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
+    assert compiled_metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_metrics["Reporter_OD"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
     assert (
-        metrics["Reporter_OD"]["execution"]["note"]
+        compiled_metrics["Reporter_OD"]["execution"]["note"]
         == "The mCherry/OD700 support channel is materialized as a ratio step output."
     )
-    assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_abs_AUC"
-    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
 
 
 def test_plate_reader_single_reporter_compiler_derives_channels_from_analysis() -> None:

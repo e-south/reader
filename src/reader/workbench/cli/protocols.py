@@ -55,7 +55,8 @@ def protocols(
                 emit_json(inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime))
                 return
             bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
-            semantic_program = compiled_plan.semantic_program or descriptor.semantic_program()
+            compiled_program = compiled_plan.semantic_program or descriptor.semantic_program()
+            authored_program = descriptor.semantic_program(active_profile=compiled_program.active_profile)
             summary = table(f"Protocol: {descriptor.protocol}")
             summary.add_column("Section", style="accent")
             summary.add_column("Details")
@@ -74,15 +75,15 @@ def protocols(
                 summary.add_row("Metrics", ", ".join(item.id for item in descriptor.metrics))
             if descriptor.ranking is not None:
                 summary.add_row("Primary ranking", descriptor.ranking.primary_metric)
-            summary.add_row(
-                "Semantic nodes",
-                str(
-                    len(semantic_program.controls)
-                    + len(semantic_program.windows)
-                    + len(semantic_program.metrics)
-                    + (1 if semantic_program.ranking is not None else 0)
-                ),
-            )
+                summary.add_row(
+                    "Semantic nodes",
+                    str(
+                        len(authored_program.controls)
+                        + len(authored_program.windows)
+                        + len(authored_program.metrics)
+                        + (1 if authored_program.ranking is not None else 0)
+                    ),
+                )
             summary.add_row("Default notebook", descriptor.execution.notebook.default_template)
             summary.add_row("Allowed notebooks", ", ".join(descriptor.execution.notebook.allowed_templates))
             if descriptor.default_plot_profile is not None:
@@ -108,14 +109,30 @@ def protocols(
                     )
                 )
             if (
-                semantic_program.controls
-                or semantic_program.windows
-                or semantic_program.metrics
-                or semantic_program.ranking
+                authored_program.controls
+                or authored_program.windows
+                or authored_program.metrics
+                or authored_program.ranking
             ):
                 shared.console.print(
                     Panel(
-                        inspection_semantics.semantic_program_table(semantic_program),
+                        inspection_semantics.semantic_program_table(authored_program, include_execution=False),
+                        border_style="accent",
+                        box=box.ROUNDED,
+                    )
+                )
+            if (
+                compiled_program.controls
+                or compiled_program.windows
+                or compiled_program.metrics
+                or compiled_program.ranking
+            ):
+                shared.console.print(
+                    Panel(
+                        inspection_semantics.semantic_program_table(
+                            compiled_program,
+                            title="Compiled Semantic Execution",
+                        ),
                         border_style="accent",
                         box=box.ROUNDED,
                     )
