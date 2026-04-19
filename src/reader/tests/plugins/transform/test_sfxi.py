@@ -9,7 +9,7 @@ import pandas.testing as pdt
 
 from reader.domains.logic.sfxi.run import build_vec8_from_tidy
 from reader.plugins.transform.sfxi import SFXICfg, SFXITransform
-from reader.protocols import ProtocolBinding
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.workbench.experiment import (
     AnnotationSemantics,
     ExperimentSemantics,
@@ -25,6 +25,7 @@ def _ctx():
         logger=logging.getLogger("reader.tests.sfxi"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="logic/sfxi_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="logic/sfxi_screen"),
             annotations=AnnotationSemantics(
                 logic_maps=LogicMaps(
                     by_id={

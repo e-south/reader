@@ -124,7 +124,14 @@ These are the failure classes that quality work should continue to reduce.
 
 ## Current Open Quality Debt
 
-The main unresolved quality debt is still semantic, not documentation. Protocol windows, controls, metrics, and ranking are not yet compiled from one executable typed analysis program. Until that changes, there is still some duplicate truth between protocol metadata and compiler behavior.
+The main unresolved quality debt is now concentration and documentation drift.
+
+Semantic ownership is explicit, but two areas still need sustained pressure:
+
+- large protocol surfaces can accumulate too much family-specific behavior in a
+  few files
+- maintainer docs can drift unless they keep linking to real code surfaces and
+  the docs integrity check stays part of the gate
 
 ## Definition Of Done
 

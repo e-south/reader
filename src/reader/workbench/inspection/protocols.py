@@ -275,7 +275,7 @@ def protocol_runtime_defaults_payload(plugin_defaults) -> list[dict[str, object]
 def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
     bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
     compiled_plan = bound_protocol.compile()
-    semantic_program = compiled_plan.semantic_program or bound_protocol.semantic_program()
+    semantic_program = compiled_plan.semantic_program
     record_producers = record_producer_map(compiled_plan.pipeline, runtime=runtime)
     compiled_payload = compiled_workbench_payload(
         bound_protocol=bound_protocol,

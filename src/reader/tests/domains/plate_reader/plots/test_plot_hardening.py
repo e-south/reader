@@ -28,7 +28,7 @@ from reader.domains.plate_reader.plots.time_series import plot_time_series
 from reader.errors import ConfigError
 from reader.plugins.plot.snapshot_barplot import SnapshotBarCfg
 from reader.plugins.plot.snapshot_heatmap import HeatmapCfg, SnapshotHeatmapPlot
-from reader.protocols import ProtocolBinding
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.tests.support import load_decl, write_config
 from reader.workbench.engine import validate as validate_job
 from reader.workbench.experiment import (
@@ -213,6 +213,7 @@ def test_snapshot_heatmap_render_resolves_order_refs_from_semantics() -> None:
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="plate_reader/dual_reporter_screen"),
             annotations=AnnotationSemantics(
                 orders=AnnotationOrders(
                     by_id={
@@ -261,6 +262,7 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="plate_reader/dual_reporter_screen"),
             annotations=AnnotationSemantics(orders=AnnotationOrders()),
             resources=ResourceCatalog(),
             layout=OutputLayout(

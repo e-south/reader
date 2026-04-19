@@ -140,9 +140,14 @@ Use [docs/guides/automation.md](./docs/guides/automation.md) for the compact JSO
 
 ## Current Reliability Debt
 
-The largest remaining reliability debt is semantic rather than operational. Protocol controls, windows, metrics, and ranking are still not one executable typed analysis DAG. That means some assay truth is still split between protocol metadata and compiler behavior.
+The largest remaining reliability debt is no longer semantic ambiguity. It is
+change-surface concentration and documentation freshness.
 
-Operationally, the workbench is more reliable when inspection and dry-run routes are used first. Architecturally, full reliability requires finishing that semantic cut.
+Operationally, the workbench is reliable when inspection and dry-run routes are
+used first. Structurally, the higher-risk failures now come from oversized
+maintainer surfaces such as the protocol kernel and retron notebook bundle, or
+from docs that stop matching those surfaces closely enough for operators and
+agents to trust them.
 
 ## Related Docs
 

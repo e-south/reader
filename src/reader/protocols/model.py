@@ -507,6 +507,10 @@ class ProtocolSemanticExecution:
     note: str = ""
 
     def __post_init__(self) -> None:
+        status = str(self.status).strip()
+        if status not in {"compiled", "descriptive_only"}:
+            raise ValueError("ProtocolSemanticExecution.status must be 'compiled' or 'descriptive_only'.")
+        object.__setattr__(self, "status", status)
         object.__setattr__(self, "step_ids", tuple(str(value) for value in self.step_ids if str(value).strip()))
         object.__setattr__(self, "plugin_ids", tuple(str(value) for value in self.plugin_ids if str(value).strip()))
         object.__setattr__(self, "record_ids", tuple(str(value) for value in self.record_ids if str(value).strip()))
@@ -587,6 +591,16 @@ class ProtocolSemanticProgram:
             profile_ids.add(profile.id)
         if self.active_profile is not None and self.active_profile not in profile_ids:
             raise ValueError(f"Unknown active semantic profile {self.active_profile!r}.")
+
+        def _assert_known_profiles(node_profiles: tuple[str, ...], *, where: str) -> None:
+            unknown_profiles = sorted(set(node_profiles) - profile_ids)
+            if unknown_profiles:
+                options = ", ".join(sorted(profile_ids)) or "—"
+                raise ValueError(
+                    f"{where} references unknown semantic profiles: {', '.join(unknown_profiles)}. "
+                    f"Known profiles: {options}."
+                )
+
         for group_name, nodes in (
             ("controls", self.controls),
             ("windows", self.windows),
@@ -597,8 +611,11 @@ class ProtocolSemanticProgram:
                 if node.id in seen:
                     raise ValueError(f"Duplicate semantic node {node.id!r} in {group_name}.")
                 seen.add(node.id)
+                _assert_known_profiles(node.profiles, where=f"ProtocolSemanticProgram.{group_name} item {node.id!r}")
         if self.ranking is not None and self.ranking.kind != "ranking":
             raise ValueError("ProtocolSemanticProgram.ranking must have kind='ranking'.")
+        if self.ranking is not None:
+            _assert_known_profiles(self.ranking.profiles, where="ProtocolSemanticProgram.ranking")
 
         node_ids = {node.id for node in (*self.controls, *self.windows, *self.metrics)}
         metric_ids = {node.id for node in self.metrics}
@@ -712,14 +729,16 @@ class ProtocolNotebookPolicy:
 
 @dataclass(frozen=True)
 class CompiledProtocolPlan:
+    semantic_program: ProtocolSemanticProgram
     runtime: dict[str, Any] = field(default_factory=dict)
     pipeline: tuple[PluginStepDecl, ...] = ()
     plots: tuple[PluginStepDecl, ...] = ()
     exports: tuple[PluginStepDecl, ...] = ()
     notebooks: tuple[NotebookTemplateCallDecl, ...] = ()
-    semantic_program: ProtocolSemanticProgram | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.semantic_program, ProtocolSemanticProgram):
+            raise ValueError("CompiledProtocolPlan.semantic_program must be a ProtocolSemanticProgram instance.")
         object.__setattr__(self, "runtime", dict(self.runtime or {}))
         object.__setattr__(self, "pipeline", tuple(self.pipeline or ()))
         object.__setattr__(self, "plots", tuple(self.plots or ()))
@@ -1171,13 +1190,17 @@ class BoundProtocol:
             notebooks = (NotebookTemplateCallDecl(id="default", template=selected_template),)
         for entry in notebooks:
             self.resolve_notebook_template(explicit_template=entry.template)
+        if plan.semantic_program.protocol != self.id:
+            raise ConfigError(
+                f"Protocol {self.id!r} compiler returned semantic program for {plan.semantic_program.protocol!r}."
+            )
         return CompiledProtocolPlan(
+            semantic_program=plan.semantic_program,
             runtime=plan.runtime,
             pipeline=plan.pipeline,
             plots=plan.plots,
             exports=plan.exports,
             notebooks=notebooks,
-            semantic_program=plan.semantic_program or self.semantic_program(),
         )
 
     def effective_plugin_config(self, *, plugin_id: str, step_with: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -10,7 +10,10 @@ uv run reader ls --root experiments --details
 uv run reader ls --root experiments --details --readiness
 ```
 
-The first command lists discovered experiments. `--details` adds selected pipeline, plot, and export summaries. `--readiness` adds blocked, draft, runnable, and records-ready state.
+The first command lists discovered experiments. `--details` adds selected
+pipeline, plot, and export summaries. `--readiness` adds the current preflight
+state, including `config_error`, `template`, `draft`, `dependency_blocked`,
+`blocked`, `runnable`, `legacy_outputs_present`, and `records_ready`.
 
 ## Inspect one experiment
 

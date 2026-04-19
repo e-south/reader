@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from reader.errors import ConfigError
-from reader.protocols import ProtocolBinding, builtin_protocol_catalog
+from reader.protocols import BoundProtocol, ProtocolBinding, builtin_protocol_catalog
 from reader.protocols.compiler import _semantic_program
 from reader.protocols.model import (
     CompiledProtocolPlan,
@@ -12,8 +14,12 @@ from reader.protocols.model import (
     ProtocolMetricSpec,
     ProtocolNotebookPolicy,
     ProtocolSemanticExecution,
+    ProtocolSemanticNode,
     ProtocolSemanticProfileSpec,
+    ProtocolSemanticProgram,
 )
+from reader.workbench.decl.model import NotebookTemplateCallDecl
+from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 
 
 def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:
@@ -49,7 +55,7 @@ def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:
                 allowed_templates=("notebook/basic",),
                 summary="Test notebook policy.",
             ),
-            compiler=lambda protocol: CompiledProtocolPlan(),
+            compiler=lambda protocol: CompiledProtocolPlan(semantic_program=protocol.semantic_program()),
         ),
     )
 
@@ -92,3 +98,69 @@ def test_bound_protocol_semantic_program_applies_execution_overrides_without_cha
     assert authored_metrics["OD"].execution.status == "descriptive_only"
     assert compiled_metrics["OD"].execution.status == "compiled"
     assert compiled_metrics["OD"].execution.step_ids == ("ingest",)
+
+
+def test_bound_protocol_compile_injects_default_notebook_when_compiler_omits_notebooks() -> None:
+    descriptor = ProtocolDescriptor(
+        protocol="test/default_notebook",
+        domain="generic",
+        family="test_protocol",
+        summary="Compiler notebook fallback contract.",
+        execution=ProtocolExecutionPlan(
+            notebook=ProtocolNotebookPolicy(
+                default_template="notebook/basic",
+                allowed_templates=("notebook/basic", "notebook/eda"),
+                summary="Notebook policy.",
+            ),
+            compiler=lambda protocol: CompiledProtocolPlan(semantic_program=protocol.semantic_program()),
+        ),
+    )
+
+    compiled = BoundProtocol(descriptor=descriptor).compile()
+
+    assert compiled.notebooks == (NotebookTemplateCallDecl(id="default", template="notebook/basic"),)
+
+
+def test_protocol_semantic_execution_rejects_unknown_status() -> None:
+    with pytest.raises(ValueError, match="must be 'compiled' or 'descriptive_only'"):
+        ProtocolSemanticExecution(status="typo")
+
+
+def test_semantic_program_rejects_profiles_without_declared_catalog() -> None:
+    with pytest.raises(ValueError, match="references unknown semantic profiles"):
+        ProtocolSemanticProgram(
+            protocol="test/missing_profiles",
+            metrics=(
+                ProtocolSemanticNode(
+                    id="M",
+                    kind="metric",
+                    summary="Metric with undeclared profile.",
+                    profiles=("profile_a",),
+                    stage="raw",
+                    formula="value",
+                ),
+            ),
+        )
+
+
+def test_experiment_semantics_rejects_mismatched_protocol_program() -> None:
+    compiled_program = (
+        builtin_protocol_catalog()
+        .bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
+        .compile()
+        .semantic_program
+    )
+
+    with pytest.raises(ValueError, match="must target the bound protocol"):
+        ExperimentSemantics(
+            protocol=ProtocolBinding(id="logic/sfxi_screen"),
+            annotations=AnnotationSemantics(),
+            resources=ResourceCatalog(),
+            layout=OutputLayout(
+                outputs_dir=Path("outputs"),
+                plots_subdir="plots",
+                exports_subdir="exports",
+                notebooks_subdir="notebooks",
+            ),
+            protocol_program=compiled_program,
+        )

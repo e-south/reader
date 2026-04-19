@@ -105,25 +105,23 @@ def experiment_inspect_renderables(
         authoring_table.add_row("—", "—", "No explicit bindings; protocol defaults only.")
     renderables.append(Panel(authoring_table, border_style="accent", box=box.ROUNDED))
 
-    if semantic_program is not None:
-        renderables.append(
-            Panel(
-                semantic_program_table(semantic_program, include_execution=False),
-                border_style="accent",
-                box=box.ROUNDED,
-            )
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, include_execution=False),
+            border_style="accent",
+            box=box.ROUNDED,
         )
-    if semantic_program is not None:
-        renderables.append(
-            Panel(
-                semantic_program_table(
-                    semantic_program,
-                    title="Compiled Semantic Execution",
-                ),
-                border_style="accent",
-                box=box.ROUNDED,
-            )
+    )
+    renderables.append(
+        Panel(
+            semantic_program_table(
+                semantic_program,
+                title="Compiled Semantic Execution",
+            ),
+            border_style="accent",
+            box=box.ROUNDED,
         )
+    )
 
     filesystem = _table("Inputs + resources")
     filesystem.add_column("kind", style="accent", width=10)
@@ -261,23 +259,21 @@ def workflow_explain_renderables(
         summary.add_row("Resources", ", ".join(resources))
     renderables.append(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Plan summary"))
 
-    semantic_program = decl.experiment_semantics.protocol_program or bound_protocol.semantic_program()
-    if semantic_program is not None:
-        renderables.append(
-            Panel(
-                semantic_program_table(semantic_program, include_execution=False),
-                border_style="cyan",
-                box=box.ROUNDED,
-            )
+    semantic_program = decl.experiment_semantics.protocol_program
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, include_execution=False),
+            border_style="cyan",
+            box=box.ROUNDED,
         )
-    if semantic_program is not None:
-        renderables.append(
-            Panel(
-                semantic_program_table(semantic_program, title="Compiled Semantic Execution"),
-                border_style="cyan",
-                box=box.ROUNDED,
-            )
+    )
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, title="Compiled Semantic Execution"),
+            border_style="cyan",
+            box=box.ROUNDED,
         )
+    )
 
     if pipeline_steps:
         renderables.append(

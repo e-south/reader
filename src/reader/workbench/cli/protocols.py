@@ -55,7 +55,7 @@ def protocols(
                 emit_json(inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime))
                 return
             bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
-            semantic_program = compiled_plan.semantic_program or bound_protocol.semantic_program()
+            semantic_program = compiled_plan.semantic_program
             summary = table(f"Protocol: {descriptor.protocol}")
             summary.add_column("Section", style="accent")
             summary.add_column("Details")

@@ -278,4 +278,11 @@ class ExperimentSemantics:
     annotations: AnnotationSemantics
     resources: ResourceCatalog
     layout: OutputLayout
-    protocol_program: ProtocolSemanticProgram | None = None
+    protocol_program: ProtocolSemanticProgram
+
+    def __post_init__(self) -> None:
+        if self.protocol_program.protocol != self.protocol.id:
+            raise ValueError(
+                "ExperimentSemantics.protocol_program must target the bound protocol "
+                f"{self.protocol.id!r}, got {self.protocol_program.protocol!r}."
+            )

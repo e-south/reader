@@ -48,6 +48,25 @@ REQUIRED_LINKS = {
         "core/cli.md",
         "core/pipeline.md",
     },
+    "docs/core/spec.md": {
+        "./pipeline.md",
+        "../../src/reader/protocols/",
+        "../../src/reader/workbench/experiment/",
+        "../../src/reader/workbench/engine/",
+        "../../src/reader/plugins/",
+        "../../src/reader/contracts/",
+        "../repo-maintenance.md",
+        "../../QUALITY.md",
+        "../../RELIABILITY.md",
+    },
+    "docs/core/plugins.md": {
+        "./pipeline.md",
+        "./spec.md",
+        "../../ARCHITECTURE.md",
+        "../../src/reader/plugins/",
+        "../../src/reader/workbench/assets/plugin_manifest.py",
+        "../../src/reader/protocols/compiler.py",
+    },
 }
 
 

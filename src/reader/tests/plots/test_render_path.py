@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from reader.contracts import builtin_contract_catalog
-from reader.protocols import ProtocolBinding, builtin_protocol_catalog
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics, resolve_workbench
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
@@ -86,6 +86,7 @@ def test_plot_save_calls_render(tmp_path: Path) -> None:
         experiment=ExperimentDecl(id="exp_plot", title="exp_plot", lifecycle="active", root=tmp_path),
         experiment_semantics=ExperimentSemantics(
             protocol=ProtocolBinding(id="workbench/generic"),
+            protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
             annotations=AnnotationSemantics(),
             resources=ResourceCatalog(),
             layout=OutputLayout(

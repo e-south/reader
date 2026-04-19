@@ -111,11 +111,20 @@ These are the invariants the codebase should preserve.
 
 ## Known Architectural Debt
 
-The deepest remaining architecture gap is still in protocol execution semantics.
+The deepest remaining debt is now concentration, not split semantic ownership.
 
-`protocols/` now owns richer semantic descriptors for controls, windows, metrics, ranking, figures, and artifacts, but not all of that meaning is compiled from one executable typed analysis program yet. Some assay semantics still live partly in protocol metadata and partly in compiler behavior.
+The compiled semantic program is explicit end-to-end, from bound protocol
+through compiled plan to experiment semantics and inspection payloads. The
+remaining architecture pressure is that too much assay detail still collects in
+three places:
 
-That is the next rooted cut. When that work lands, `reader inspect`, `reader protocols`, and `reader explain` should report the semantic analysis program directly instead of primarily reporting compiled plugin mechanics.
+- `src/reader/protocols/builtins.py`
+- `src/reader/protocols/compiler.py`
+- `src/reader/workbench/notebooks/` for retron-review flows
+
+Those surfaces are still coherent, but they are large enough that future
+assay families can turn them into semantic monoliths if new logic is not pushed
+down into domain modules and family-specific helpers.
 
 ## Extension Guide
 

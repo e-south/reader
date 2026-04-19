@@ -340,10 +340,7 @@ def inspect(
     if fmt == "json":
         emit_json(payload)
         return
-    semantic_program = (
-        decl.experiment_semantics.protocol_program
-        or runtime.bind_protocol(decl.experiment_semantics.protocol).semantic_program()
-    )
+    semantic_program = decl.experiment_semantics.protocol_program
     for renderable in _load("reader.workbench.inspection.reports").experiment_inspect_renderables(
         payload=payload,
         semantic_program=semantic_program,
