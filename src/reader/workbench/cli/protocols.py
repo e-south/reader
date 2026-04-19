@@ -75,6 +75,12 @@ def protocols(
                 summary.add_row("Metrics", ", ".join(item.id for item in descriptor.metrics))
             if descriptor.ranking is not None:
                 summary.add_row("Primary ranking", descriptor.ranking.primary_metric)
+            if (
+                authored_program.controls
+                or authored_program.windows
+                or authored_program.metrics
+                or authored_program.ranking
+            ):
                 summary.add_row(
                     "Semantic nodes",
                     str(

@@ -645,6 +645,14 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert "Plot Implementations" in result.output
 
 
+def test_protocols_command_lists_semantic_nodes_without_ranking() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["protocols", "plate_reader/single_reporter_screen"], terminal_width=160)
+    assert result.exit_code == 0
+    assert "Semantic nodes" in result.output
+    assert "Compiled Semantic Execution" in result.output
+
+
 def test_protocols_command_can_render_example_config() -> None:
     runner = CliRunner()
     result = runner.invoke(
