@@ -15,6 +15,7 @@
 - [Preflight, run, verify](docs/guides/preflight_run_verify.md): deterministic path for inspecting, executing, and checking one experiment.
 - [Automation and JSON](docs/guides/automation.md): machine-readable discovery, inspection, and preflight output.
 - [Experiment bootstrap](docs/guides/experiment_bootstrap.md): create a new experiment from local or Drive-backed data and audit the local experiment list.
+- [Workbench gardening](docs/guides/workbench_gardening.md): maintainer workflow for information-architecture audits, reversible cleanup, and verification-surface hardening.
 - [CLI reference](docs/core/cli.md): full command reference.
 - [Configuring `reader/v7`](docs/core/pipeline.md): config schema and protocol choices for experiment configs.
 - [Repo maintenance](docs/repo-maintenance.md): maintainer checks and CI runs.

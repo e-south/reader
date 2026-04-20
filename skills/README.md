@@ -16,3 +16,5 @@ Current repo-local skill:
 
 - [`reader-experiment-bootstrap`](./reader-experiment-bootstrap/SKILL.md): new experiment intake, metadata mapping, Drive-backed input staging, and local experiment audits.
   Primary workflow: [docs/guides/experiment_bootstrap.md](../docs/guides/experiment_bootstrap.md)
+- [`reader-workbench-gardening`](./reader-workbench-gardening/SKILL.md): maintain `reader`'s information architecture, semantic boundaries, and verification surfaces without locking the repo into one assay family.
+  Primary workflow: [docs/guides/workbench_gardening.md](../docs/guides/workbench_gardening.md)

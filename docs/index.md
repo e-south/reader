@@ -18,4 +18,5 @@ Maintainer routes:
 - [Full docs map](./README.md)
 - [Repo change gate](./repo-change-gate.md)
 - [Repo maintenance](./repo-maintenance.md)
+- [Workbench gardening](./guides/workbench_gardening.md)
 - [Architecture](../ARCHITECTURE.md)

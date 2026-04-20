@@ -32,6 +32,7 @@ exact CLI or config details.
 
 - [Repo change gate](./repo-change-gate.md): minimum gate before landing tracked changes.
 - [Repo maintenance](./repo-maintenance.md): repo-wide checks, CI runs, and maintenance guidance.
+- [Workbench gardening](./guides/workbench_gardening.md): maintainer workflow for information-architecture audits, reversible cleanup, and CLI or verification-surface hardening.
 - [Plugin development](./core/plugins.md): add or extend ingest, transform, plot, export, and validator plugins.
 - [Architecture](../ARCHITECTURE.md): system structure, ownership boundaries, and invariants.
 - [Design](../DESIGN.md): product and information-design rules for the public UI and docs.
