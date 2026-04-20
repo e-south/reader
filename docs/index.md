@@ -1,7 +1,7 @@
 # Documentation index
 
 Use [docs/README.md](./README.md) for the full documentation map. This page
-stays intentionally thin so it does not become a second, drifting docs index.
+stays thin so it does not turn into a second, drifting docs index.
 
 Most common routes:
 

@@ -4,18 +4,29 @@
 
 ![reader banner](assets/reader-banner.svg)
 
-`reader` is a toolkit for organizing experiment directories and running config-driven analysis pipelines over structured assay data. Each experiment has a clear working layout: raw inputs live in `inputs/`, optional notebooks live in `notebooks/`, generated results live in `outputs/`, and a `reader/v7` `config.yaml` describes what should be run.
+`reader` organizes experiment directories and runs config-driven analysis
+pipelines over structured assay data. Each experiment uses a fixed layout:
+raw inputs in `inputs/`, optional notebooks in `notebooks/`, generated results
+in `outputs/`, and a `reader/v7` `config.yaml` that declares the run.
 
 ---
 
 ## Documentation
 
-- [Documentation index](docs/README.md): complete map of user docs, reference docs, and maintainer docs.
-- [Getting started](docs/guides/getting_started.md): install `reader`, verify the environment, and inspect the first experiment.
-- [Preflight, run, verify](docs/guides/preflight_run_verify.md): deterministic path for inspecting, executing, and checking one experiment.
-- [Automation and JSON](docs/guides/automation.md): machine-readable discovery, inspection, and preflight output.
-- [Experiment bootstrap](docs/guides/experiment_bootstrap.md): create a new experiment from local or Drive-backed data and audit the local experiment list.
-- [Workbench gardening](docs/guides/workbench_gardening.md): maintainer workflow for information-architecture audits, reversible cleanup, and verification-surface hardening.
+- [Documentation index](docs/README.md): full map of user, reference, and
+  maintainer docs.
+- [Getting started](docs/guides/getting_started.md): install `reader`, check
+  the environment, and inspect a first experiment.
+- [Preflight, run, verify](docs/guides/preflight_run_verify.md): inspect,
+  validate, and execute one experiment.
+- [Automation and JSON](docs/guides/automation.md): machine-readable
+  discovery, inspection, and preflight routes.
+- [Experiment bootstrap](docs/guides/experiment_bootstrap.md): create an
+  experiment from local or Drive-backed inputs.
+- [Workbench gardening](docs/guides/workbench_gardening.md): maintainer
+  workflow for architecture and docs cleanup.
 - [CLI reference](docs/core/cli.md): full command reference.
-- [Configuring `reader/v7`](docs/core/pipeline.md): config schema and protocol choices for experiment configs.
-- [Repo maintenance](docs/repo-maintenance.md): maintainer checks and CI runs.
+- [Configuring `reader/v7`](docs/core/pipeline.md): schema and protocol-owned
+  config surface.
+- [Repo maintenance](docs/repo-maintenance.md): repo-wide checks, CI, and
+  maintainer routines.
