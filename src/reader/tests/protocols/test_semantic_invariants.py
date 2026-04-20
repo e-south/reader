@@ -6,7 +6,6 @@ import pytest
 
 from reader.errors import ConfigError
 from reader.protocols import BoundProtocol, ProtocolBinding, builtin_protocol_catalog
-from reader.protocols.compiler import _semantic_program
 from reader.protocols.model import (
     CompiledProtocolPlan,
     ProtocolDescriptor,
@@ -18,6 +17,7 @@ from reader.protocols.model import (
     ProtocolSemanticProfileSpec,
     ProtocolSemanticProgram,
 )
+from reader.protocols.semantic_coverage import _semantic_program
 from reader.workbench.decl.model import NotebookTemplateCallDecl
 from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 

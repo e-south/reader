@@ -22,7 +22,7 @@ from typer.testing import CliRunner
 from reader.contracts import builtin_contract_catalog
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
-from reader.tests.support import base_reader_config, build_decl, write_config
+from reader.tests.support import base_reader_config, build_decl, default_notebook_name, write_config
 from reader.workbench import PluginSemantics, cli
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
 from reader.workbench.config import ReaderSpec
@@ -304,6 +304,30 @@ def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) 
     assert entry["readiness"]["state"] == "legacy_outputs_present"
     assert entry["readiness"]["records"]["catalog"] is False
     assert entry["readiness"]["records"]["legacy_outputs_present"] is True
+
+
+def test_ls_json_does_not_treat_notebook_only_scaffolds_as_legacy_outputs(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "notebook_only"
+    exp_dir.mkdir(parents=True)
+    cfg_path = write_config(exp_dir / "config.yaml", base_reader_config(experiment_id="notebook_only"))
+
+    runner = CliRunner()
+    scaffold_result = runner.invoke(cli.app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert scaffold_result.exit_code == 0, scaffold_result.output
+    assert (exp_dir / "outputs" / "notebooks" / default_notebook_name()).exists()
+
+    result = runner.invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["by_readiness"] == {"runnable": 1}
+    entry = payload["experiments"][0]
+    assert entry["readiness"]["state"] == "runnable"
+    assert entry["readiness"]["records"]["catalog"] is False
+    assert entry["readiness"]["records"]["legacy_outputs_present"] is False
 
 
 def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:

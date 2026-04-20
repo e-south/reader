@@ -33,7 +33,9 @@ The transform `transform/retron_sponge_metrics` materializes two typed assay rec
   - contract: `plate_reader.sponge_summary.v1`
   - carries `R_pre`, `P_pre`, `C_AUC`, `C_END`, `D_AUC`, `D_END`, `D_abs_AUC`, `D_abs_END`, `D_growth_AUC`, `D_growth_END`, `M_AUC`, `M_END`, `O_AUC`, `O_abs_AUC`, `S_AUC`, `S_abs_AUC`, `L_pre`, `L_post_AUC`, `T_ratio_AUC`, `T_growth_AUC`, and `T_finalOD`
 
-The internal config key is still `protocol.analysis.semantic_metrics` for compatibility. In the user-facing docs and notebooks, treat those outputs as derived assay metrics rather than a separate semantic layer.
+The canonical internal config key is `protocol.analysis.semantic_metrics`. In
+the user-facing docs and notebooks, treat those outputs as derived assay metrics
+rather than a separate semantic layer.
 
 ## Metric flow
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from reader.errors import RecordError
+from reader.errors import ReaderError, RecordError
 from reader.workbench.commands import reader_command
 from reader.workbench.experiments import discover_experiment_configs
 
@@ -279,9 +279,7 @@ def require_dataframe_records(decl: WorkbenchDecl, job_path: Path, *, runtime: R
 
 def append_journal(job_path: Path, command_line: str) -> None:
     exp_dir = job_path.parent
-    journal = exp_dir / (
-        "JOURNAL.md" if (exp_dir / "JOURNAL.md").exists() or not (exp_dir / "journal.md").exists() else "journal.md"
-    )
+    journal = _canonical_journal_path(exp_dir)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = "" if journal.exists() else "# Experiment Journal\n\n"
     entry = f"### {ts}\n\n```\n{command_line}\n```\n\n"
@@ -289,6 +287,23 @@ def append_journal(job_path: Path, command_line: str) -> None:
         header + (journal.read_text(encoding="utf-8") if journal.exists() else "") + entry,
         encoding="utf-8",
     )
+
+
+def _canonical_journal_path(exp_dir: Path) -> Path:
+    canonical = exp_dir / "JOURNAL.md"
+    legacy = exp_dir / "journal.md"
+    if canonical.exists() and legacy.exists():
+        try:
+            if canonical.samefile(legacy):
+                return canonical
+        except OSError:
+            pass
+        raise ReaderError(
+            f"Both {canonical.name} and {legacy.name} exist in {exp_dir}. Consolidate to {canonical.name} first."
+        )
+    if legacy.exists():
+        legacy.rename(canonical)
+    return canonical
 
 
 def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str, *, job_path: Path | None = None) -> str:

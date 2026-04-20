@@ -126,7 +126,7 @@ def experiment_readiness_payload(
         exports_subdir=layout.exports_subdir,
         notebooks_subdir=layout.notebooks_subdir,
     )
-    legacy_outputs_present = any(generated.values()) and not records_catalog
+    legacy_outputs_present = any(generated[key] for key in ("records", "plots", "exports")) and not records_catalog
     workbench = resolve_workbench(decl)
     can_run = summary["status"] == "ok"
     file_issues = int(summary["files"].get("issues") or 0)

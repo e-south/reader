@@ -45,11 +45,14 @@ uv run reader export <config|dir|index> --list
 uv run reader run <config|dir|index>
 uv run reader plot <config|dir|index>
 uv run reader export <config|dir|index>
-uv run reader notebook <config|dir|index>
+uv run reader notebook <config|dir|index> --mode none
+uv run reader notebook <config|dir|index> --mode run --headless
 ```
 
-`run` materializes records. `plot`, `export`, and `notebook` materialize their
-own output surfaces after the experiment is ready.
+`run` materializes records. `plot` and `export` materialize their output
+surfaces after the experiment is ready. `notebook --mode none` scaffolds a
+review notebook without launching Marimo, and `--mode run --headless` prints a
+loopback URL for agent/browser review.
 
 ## 5. Verify outputs and provenance
 

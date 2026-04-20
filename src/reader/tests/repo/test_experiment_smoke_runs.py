@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
 from reader.tests.repo.experiment_matrix import END_TO_END_RUNNABLE_CONFIGS, repo_rel
-from reader.tests.support import REPO_ROOT, load_decl
+from reader.tests.support import REPO_ROOT, default_notebook_name, load_decl
 from reader.workbench import resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.engine import run_spec
@@ -222,6 +222,23 @@ def test_retron_sponge_experiment_generates_semantic_outputs_from_clean_temp_cop
     assert any(plots_dir.glob("raw_kinetics*.pdf"))
     assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()
     assert (outputs / layout.exports_subdir / "retron" / "semantic_trace.csv").exists()
+
+
+@pytest.mark.smoke
+def test_cli_notebook_scaffold_on_staged_experiment_preserves_runnable_readiness(tmp_path: Path) -> None:
+    cfg_path = _stage_experiment(tmp_path, "2025/20250614_sensor_panel_M9_glu")
+    runner = CliRunner()
+
+    notebook_result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"], env={"COLUMNS": "200"})
+    assert notebook_result.exit_code == 0, notebook_result.output
+
+    notebook_path = cfg_path.parent / "outputs" / "notebooks" / default_notebook_name()
+    assert notebook_path.exists()
+
+    inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
+    assert inspect_result.exit_code == 0
+    inspect_payload = json.loads(inspect_result.output)
+    assert inspect_payload["implementation"]["readiness"]["state"] == "runnable"
 
 
 @pytest.mark.smoke

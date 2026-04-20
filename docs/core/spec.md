@@ -41,7 +41,10 @@ plugin wiring or internal graph structure.
   nodes, notebook policy, and the compiled semantic program contract.
 - [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py)
   owns protocol-specific compilation from bound protocol config into pipeline,
-  plots, exports, notebooks, and execution-bound semantic coverage.
+  plots, exports, notebooks, and step assembly.
+- [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
+  owns execution-bound semantic coverage mapping so semantic status/materialized
+  record ids do not stay buried inside the step compiler.
 - [`src/reader/workbench/config/`](../../src/reader/workbench/config/)
   parses YAML and validates the wire schema only.
 - [`src/reader/workbench/decl/build.py`](../../src/reader/workbench/decl/build.py)
@@ -116,9 +119,11 @@ remain:
 - Protocol concentration:
   [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py),
   [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py),
-  and [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py)
+  [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py), and
+  [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
   still carry a large share of assay semantics. New assay families should keep
-  pushing logic down into domain modules and family-specific helpers.
+  pushing descriptor, compiler, and semantic-coverage logic down into
+  family-specific helpers.
 - Retron notebook concentration:
   [`src/reader/workbench/notebooks/`](../../src/reader/workbench/notebooks/)
   remains the biggest local cluster of large files. It is functional, but it is
