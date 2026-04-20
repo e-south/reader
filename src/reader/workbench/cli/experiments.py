@@ -519,9 +519,9 @@ def run(
             parts += ["--log-level", log_level]
         if compact:
             parts += ["--compact"]
-        if not dry_run:
-            append_journal(job_path, " ".join(parts))
         try:
+            if not dry_run:
+                append_journal(job_path, " ".join(parts))
             runtime = _load("reader.runtime").builtin_runtime()
             if dry_run and fmt == "json":
                 emit_json(
@@ -569,9 +569,9 @@ def run(
         parts += ["--log-level", log_level]
     if compact:
         parts += ["--compact"]
-    if not dry_run:
-        append_journal(job_path, " ".join(parts))
     try:
+        if not dry_run:
+            append_journal(job_path, " ".join(parts))
         runtime = _load("reader.runtime").builtin_runtime()
         if dry_run and fmt == "json":
             emit_json(
