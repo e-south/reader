@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from reader.errors import ConfigError
-from reader.protocols import BoundProtocol, ProtocolBinding, builtin_protocol_catalog
+from reader.protocols import BUILTIN_PROTOCOLS, BoundProtocol, ProtocolBinding, builtin_protocol_catalog
 from reader.protocols.model import (
     CompiledProtocolPlan,
     ProtocolDescriptor,
@@ -20,6 +20,17 @@ from reader.protocols.model import (
 from reader.protocols.semantic_coverage import _semantic_program
 from reader.workbench.decl.model import NotebookTemplateCallDecl
 from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
+
+
+def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
+    assert [descriptor.protocol for descriptor in BUILTIN_PROTOCOLS] == [
+        "workbench/generic",
+        "plate_reader/dual_reporter_screen",
+        "plate_reader/single_reporter_screen",
+        "plate_reader/retron_sponge_screen",
+        "logic/sfxi_screen",
+        "cytometry/flow_panel",
+    ]
 
 
 def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:

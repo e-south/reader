@@ -119,12 +119,16 @@ remaining architecture pressure is that too much assay detail still collects in
 three places:
 
 - `src/reader/protocols/builtins.py`
+- `src/reader/protocols/_builtins_plate_reader_variants.py`
 - `src/reader/protocols/compiler.py`
 - `src/reader/workbench/notebooks/` for retron-review flows
 
-Those surfaces are still coherent, but they are large enough that future
-assay families can turn them into semantic monoliths if new logic is not pushed
-down into domain modules and family-specific helpers.
+The public builtin catalog is smaller than before because the heavier
+plate-reader variants now live in a family helper, and notebook launch
+preflight/runtime state is split from the planner. Even so, those surfaces are
+still large enough that future assay families can turn them into semantic
+monoliths if new logic is not pushed down into domain modules and
+family-specific helpers.
 
 ## Extension Guide
 

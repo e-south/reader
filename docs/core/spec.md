@@ -42,6 +42,12 @@ plugin wiring or internal graph structure.
 - [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py)
   owns protocol-specific compilation from bound protocol config into pipeline,
   plots, exports, notebooks, and step assembly.
+- [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py)
+  remains the public builtin catalog surface, while
+  [`src/reader/protocols/_builtins_plate_reader_variants.py`](../../src/reader/protocols/_builtins_plate_reader_variants.py)
+  owns the heavier single-reporter and retron matched-control descriptor
+  assembly so family-specific assay detail does not keep accreting in the
+  catalog façade.
 - [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
   owns execution-bound semantic coverage mapping so semantic status/materialized
   record ids do not stay buried inside the step compiler.
@@ -60,6 +66,13 @@ plugin wiring or internal graph structure.
   is the explicit built-in plugin registry.
 - [`src/reader/workbench/templates/catalog.py`](../../src/reader/workbench/templates/catalog.py)
   owns notebook template selection and compatibility checks.
+- [`src/reader/workbench/notebooks/launch.py`](../../src/reader/workbench/notebooks/launch.py)
+  owns Marimo launch orchestration, while
+  [`src/reader/workbench/notebooks/_launch_runtime.py`](../../src/reader/workbench/notebooks/_launch_runtime.py)
+  and
+  [`src/reader/workbench/notebooks/_launch_registry.py`](../../src/reader/workbench/notebooks/_launch_registry.py)
+  keep runtime-path/env setup and managed-session state separate from the
+  planner itself.
 - [`src/reader/domains/`](../../src/reader/domains/)
   owns domain math, parsing, ordering, and figure-planning logic.
 - [`src/reader/plugins/`](../../src/reader/plugins/)
@@ -118,16 +131,20 @@ remain:
 
 - Protocol concentration:
   [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py),
+  [`src/reader/protocols/_builtins_plate_reader_variants.py`](../../src/reader/protocols/_builtins_plate_reader_variants.py),
   [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py),
   [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py), and
   [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
-  still carry a large share of assay semantics. New assay families should keep
-  pushing descriptor, compiler, and semantic-coverage logic down into
-  family-specific helpers.
+  still carry a large share of assay semantics. The plate-reader variants are
+  now in a private family helper instead of the public façade, but new assay
+  families should keep pushing descriptor, compiler, and semantic-coverage
+  logic down into family-specific helpers instead of back into shared catalog
+  files.
 - Retron notebook concentration:
   [`src/reader/workbench/notebooks/`](../../src/reader/workbench/notebooks/)
-  remains the biggest local cluster of large files. It is functional, but it is
-  still the highest-risk area for future monolith drift.
+  remains the biggest local cluster of large files. Launch preflight/runtime
+  state is now split from the planner, but the retron review stack is still the
+  highest-risk area for future monolith drift.
 
 ## Dependency management
 

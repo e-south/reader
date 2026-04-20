@@ -2,7 +2,7 @@
 name: reader-experiment-bootstrap
 description: Bootstraps `reader` experiment workspaces by selecting a matching protocol/template, materializing raw assay inputs, building sample metadata, and running the preflight/run/verify loop. Use when creating a new experiment, cloning prior assay semantics into a new run, or auditing local experiments. Do not use for generic result interpretation, ad hoc config edits with no bootstrap objective, or hand-editing generated outputs.
 metadata:
-  version: 0.1.2
+  version: 0.2.0
   category: scientific-workbench
   tags: [reader, experiments, metadata, google-drive, audit]
 ---
@@ -63,6 +63,8 @@ Clarification policy:
    `uv run python tools/audit_local_experiments.py [--years <yyyy> [<yyyy> ...]]`
    and add `--include-non-active` only when draft/template configs are
    intentionally in scope.
+5. Prefer `reader notebook --mode none` when the task needs a generated review
+   scaffold without launching Marimo during intake or audit.
 
 ## Guardrails
 
@@ -80,6 +82,45 @@ Clarification policy:
 - preflight evidence
 - execution + verification evidence
 - local experiment audit summary when the task is repo-wide
+
+## Output Contract
+
+Return:
+
+1. Decision summary
+   - target experiment, chosen protocol/template, and copied prior context
+2. Metadata contract
+   - key columns, control semantics, unresolved assumptions, and explicit user confirmations still needed
+3. Preflight bundle
+   - commands run, JSON/table evidence, and whether the experiment is blocked, runnable, or draft
+4. Execution + verification bundle
+   - run/plot/export/notebook steps executed plus records/artifact checks
+5. Local audit bundle
+   - local experiment audit results when the task is repo-wide
+
+## Trigger Tests
+
+Should trigger:
+
+- "Bootstrap a new reader experiment from this workbook."
+- "Find the nearest matching experiment and stage a new run."
+- "Audit local experiments under experiments/."
+- "Materialize raw inputs and wire metadata for a new reader run."
+
+Should not trigger:
+
+- "Interpret these results."
+- "Hand-edit the generated outputs."
+- "Tweak one plot label in an existing notebook."
+
+## Troubleshooting
+
+- Missing workbook or Drive provenance:
+  - keep the raw-input step explicit and incomplete instead of guessing filenames or source state
+- Metadata ambiguity:
+  - stop when well identity, treatment meaning, or control semantics are unclear
+- Preflight passes but outputs drift:
+  - re-run the smallest failing surface and verify `outputs/manifests/records.json` instead of trusting filesystem shape alone
 
 ## Additional resources
 

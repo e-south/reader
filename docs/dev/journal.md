@@ -1,5 +1,37 @@
 # Dev Journal
 
+## 2026-04-19: Protocol Variant Split + Notebook Launch Fail-Fast Hardening
+
+Reduced two remaining information-architecture hotspots without changing the
+public CLI or protocol catalog surface.
+
+- Split the heavier single-reporter and retron matched-control protocol
+  descriptors out of `src/reader/protocols/builtins.py` into
+  `src/reader/protocols/_builtins_plate_reader_variants.py`.
+- Kept `reader.protocols.builtin_protocol_catalog()` and the public builtin
+  ordering unchanged so runtime/CLI imports still see the same stable catalog.
+- Split Marimo launch runtime-path/env setup and managed-session registry logic
+  out of `src/reader/workbench/notebooks/launch.py` into:
+  - `src/reader/workbench/notebooks/_launch_runtime.py`
+  - `src/reader/workbench/notebooks/_launch_registry.py`
+- Reordered notebook launch planning so missing targets fail before repo-local
+  `.cache/marimo/` state is created.
+- Added regression coverage for:
+  - missing notebook targets not creating launch runtime dirs
+  - managed-session register/unregister round trips
+  - staged retron experiment CLI preflight surfaces (`validate --no-files`,
+    `run --dry-run`, `plot --list`, `export --list`, `inspect`)
+- Tightened the repo-local `reader-experiment-bootstrap` skill so its output
+  contract and trigger boundaries match the current skill design bar.
+
+The placement rule is clearer again:
+
+- `builtins.py` is the public protocol catalog façade, not the place where the
+  largest assay-family descriptor blocks should keep growing
+- notebook launch planning fails fast before mutating repo-local runtime state
+- repo-local skills route to docs with an explicit output contract instead of
+  acting like loose prose notes
+
 ## 2026-03-16: Progressive-Disclosure CLI + Docs Hardening Slice
 
 Audited the live `reader/v7` surface as a real operator and agent harness, then

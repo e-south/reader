@@ -242,6 +242,44 @@ def test_cli_notebook_scaffold_on_staged_experiment_preserves_runnable_readiness
 
 
 @pytest.mark.smoke
+def test_cli_preflight_surface_contracts_on_staged_retron_experiment(tmp_path: Path) -> None:
+    cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
+    runner = CliRunner()
+
+    validate_no_files = runner.invoke(app, ["validate", str(cfg_path), "--no-files", "--format", "json"])
+    validate_files = runner.invoke(app, ["validate", str(cfg_path), "--format", "json"])
+    dry_run = runner.invoke(app, ["run", str(cfg_path), "--dry-run", "--format", "json"])
+    plot_list = runner.invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
+    export_list = runner.invoke(app, ["export", str(cfg_path), "--list", "--format", "json"])
+    inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
+
+    assert validate_no_files.exit_code == 0, validate_no_files.output
+    assert validate_files.exit_code == 0, validate_files.output
+    assert dry_run.exit_code == 0, dry_run.output
+    assert plot_list.exit_code == 0, plot_list.output
+    assert export_list.exit_code == 0, export_list.output
+    assert inspect_result.exit_code == 0, inspect_result.output
+
+    validate_no_files_payload = json.loads(validate_no_files.output)
+    validate_files_payload = json.loads(validate_files.output)
+    dry_run_payload = json.loads(dry_run.output)
+    plot_payload = json.loads(plot_list.output)
+    export_payload = json.loads(export_list.output)
+    inspect_payload = json.loads(inspect_result.output)
+
+    assert validate_no_files_payload["summary"]["status"] == "ok"
+    assert validate_files_payload["summary"]["status"] == "ok"
+    assert dry_run_payload["dry_run"] is True
+    assert (
+        dry_run_payload["implementation"]["compiled"]["semantic_program"]["ranking"]["execution"]["status"]
+        == "compiled"
+    )
+    assert "baseline_shifted_kinetics" in {item["id"] for item in plot_payload["plots"]}
+    assert "semantic_summary_table" in {item["id"] for item in export_payload["exports"]}
+    assert inspect_payload["experiment"]["notebook_template"] == "notebook/retron_sponge"
+
+
+@pytest.mark.smoke
 def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journal(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
     runner = CliRunner()
