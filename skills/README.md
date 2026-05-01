@@ -14,6 +14,10 @@ Guidelines:
 
 Current repo-local skill:
 
+- [`reader-data-operations-plan`](./reader-data-operations-plan/SKILL.md):
+  DOP data-class classification, DOP registry/docs alignment, and DOP
+  maintenance routing.
+  Primary workflow: [docs/guides/data_operations_plan.md](../docs/guides/data_operations_plan.md)
 - [`reader-experiment-bootstrap`](./reader-experiment-bootstrap/SKILL.md): new experiment intake, metadata mapping, Drive-backed input staging, and local experiment audits.
   Primary workflow: [docs/guides/experiment_bootstrap.md](../docs/guides/experiment_bootstrap.md)
 - [`reader-workbench-gardening`](./reader-workbench-gardening/SKILL.md): maintain `reader`'s information architecture, semantic boundaries, and verification surfaces without locking the repo into one assay family.

@@ -17,6 +17,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
   validate, and execute one experiment.
 - [Automation and JSON](./guides/automation.md): machine-readable discovery,
   inspection, and preflight routes.
+- [Data Operations Plan](./guides/data_operations_plan.md): classify datasets,
+  capture metadata minimums, and keep intake decisions explicit.
 - [Experiment bootstrap](./guides/experiment_bootstrap.md): create an
   experiment from local or Drive-backed inputs and verify the run.
 - [End-to-end demo](./guides/demo.md): one concrete walkthrough from discovery to outputs.

@@ -9,6 +9,7 @@ Most common routes:
 - [Common tasks](./guides/common_routes.md)
 - [Preflight, run, verify](./guides/preflight_run_verify.md)
 - [Automation and JSON](./guides/automation.md)
+- [Data Operations Plan](./guides/data_operations_plan.md)
 - [Experiment bootstrap](./guides/experiment_bootstrap.md)
 - [CLI reference](./core/cli.md)
 - [Configuring `reader/v7`](./core/pipeline.md)

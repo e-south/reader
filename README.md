@@ -21,6 +21,8 @@ in `outputs/`, and a `reader/v7` `config.yaml` that declares the run.
   validate, and execute one experiment.
 - [Automation and JSON](docs/guides/automation.md): machine-readable
   discovery, inspection, and preflight routes.
+- [Data Operations Plan](docs/guides/data_operations_plan.md): classify data
+  before intake and capture the minimum metadata needed for reliable reuse.
 - [Experiment bootstrap](docs/guides/experiment_bootstrap.md): create an
   experiment from local or Drive-backed inputs.
 - [Workbench gardening](docs/guides/workbench_gardening.md): maintainer

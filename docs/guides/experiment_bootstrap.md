@@ -2,12 +2,14 @@
 
 Use this guide when creating a new `reader` experiment from raw assay data or
 when auditing the local experiment list. This is the main creation and intake workflow
-for the recurring "find a similar experiment, materialize inputs, wire config,
-build metadata, preflight, run, verify" loop.
+for the recurring "classify the data, find a similar experiment, materialize
+inputs, wire config, build metadata, preflight, run, verify" loop.
 
 ## Principles
 
 - Keep `AGENTS.md` as the map, not the encyclopedia.
+- Start with the [Data Operations Plan](./data_operations_plan.md) data class
+  before copying templates or authoring config.
 - Prefer existing protocol contracts and nearby experiment templates over
   bespoke config authoring.
 - Do not hand-edit generated `outputs/`; regenerate instead.
@@ -17,7 +19,23 @@ build metadata, preflight, run, verify" loop.
   scopes. CI should stay stable; local experiment list audits should include ignored
   experiments.
 
-## 1. Discover the assay family and nearest template
+## 1. Classify the data class
+
+Start by selecting the first matching class from
+[Data classes](./data_operations_plan/data_classes.md):
+
+- plate-reader screen
+- flow-cytometry panel
+- logic/SFXI analysis
+- aggregate/review workspace
+- unsupported long-tail assay
+
+The selected class should determine the preferred protocol family, metadata
+minimums, and transfer expectations. If no class fits, keep the experiment as
+`draft` or `template` and document the missing protocol/metadata contract
+instead of forcing the data into a nearby protocol.
+
+## 2. Discover the assay family and nearest template
 
 Start with the local experiment list:
 
@@ -39,6 +57,7 @@ uv run reader protocols <protocol-id> --example-config
 
 Pick the closest prior experiment by:
 
+- data class
 - protocol id
 - raw instrument family
 - channel semantics
@@ -53,7 +72,7 @@ uv run reader steps <config|dir|index>
 uv run reader explain <config|dir|index>
 ```
 
-## 2. Create the workspace
+## 3. Create the workspace
 
 Use `reader init` when protocol defaults are the main starting point:
 
@@ -77,7 +96,7 @@ experiments/YYYY/YYYYMMDD_shortslug/
 Keep hand-authored notebooks in `notebooks/`. `reader notebook` writes generated
 scaffolds under `outputs/notebooks/`.
 
-## 3. Intake raw data
+## 4. Intake raw data
 
 Use the raw workbook or instrument export as the source of truth and keep the
 original filename in `inputs/`.
@@ -101,7 +120,7 @@ editing config:
 If the channel labels differ from the template, add an explicit
 `protocol.inputs.ingest.channel_map` instead of relying on inferred names.
 
-## 4. Build metadata deliberately
+## 5. Build metadata deliberately
 
 Use the nearest prior metadata workbook or CSV as the formatting template, but
 rewrite the semantic content for the new experiment.
@@ -126,7 +145,7 @@ Ask the user for missing or conflicting metadata when any of these are unclear:
 Do not silently resolve collisions like overlapping well assignments. Surface
 the ambiguity and get confirmation first.
 
-## 5. Preflight the smallest slice first
+## 6. Preflight the smallest slice first
 
 Use the normal `reader` loop:
 
@@ -145,7 +164,7 @@ Use the cheapest command that answers the next question:
 - compiled execution slice: `run --dry-run`
 - output portfolio: `plot --list` / `export --list`
 
-## 6. Execute and verify
+## 7. Execute and verify
 
 Run only after preflight is clean:
 
@@ -163,7 +182,7 @@ Verification should include:
 - expected export files
 - any key fold-change or summary tables the experiment is supposed to produce
 
-## 7. Audit the local experiment list
+## 8. Audit the local experiment list
 
 The repo test suite only covers tracked fixture experiments. To audit the real
 local experiment directories under `experiments/`, use the local audit tool.

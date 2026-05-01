@@ -36,6 +36,9 @@ Out of scope:
 
 - Pair with `deep-introspection` to map current boundaries, ownership, and
   runtime flow before changing them.
+- Pair with `reader-data-operations-plan` when the architecture or docs pass is
+  specifically about DOP policy, DOP registry coverage, or DOP intake
+  contracts.
 - Pair with `pragmatic-programming-principles` when boundary, contract, or
   fail-fast decisions need to be made explicit.
 - Pair with `code-review` when the main deliverable is severity-ranked
@@ -90,7 +93,9 @@ aligned with:
 2. Use [Workflow reference](./references/workflow.md) to choose the mode and
    read order before making claims or edits.
 3. If the task is really experiment intake, route to
-   `reader-experiment-bootstrap`. If branch state, publish flow, or CI topology
+   `reader-experiment-bootstrap`. If the task is really DOP classification,
+   registry coverage, or DOP policy maintenance, route to
+   `reader-data-operations-plan`. If branch state, publish flow, or CI topology
    becomes material, continue into
    [docs/repo-maintenance.md](../../docs/repo-maintenance.md).
 4. Use [Checklists](./references/checklists.md) to look for monolith pressure,

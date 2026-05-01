@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = REPO_ROOT / "skills"
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+SOURCE_ROW_RE = re.compile(r"^\| https?://[^|]+ \| \d{4}-\d{2}-\d{2} \| [^|]+ \|$", re.MULTILINE)
 
 
 def iter_skill_dirs() -> list[Path]:
@@ -80,6 +81,18 @@ def audit_skill_dir(skill_dir: Path) -> list[str]:
         errors.append(
             f"{skill_path.relative_to(REPO_ROOT)}: top-level skill does not expose references/external-sources.md"
         )
+    else:
+        external_sources = read_text(external_sources_path)
+        if "| URL | Retrieved | Mapped update |" not in external_sources:
+            errors.append(
+                f"{external_sources_path.relative_to(REPO_ROOT)}: missing source table header "
+                "'| URL | Retrieved | Mapped update |'"
+            )
+        if SOURCE_ROW_RE.search(external_sources) is None:
+            errors.append(
+                f"{external_sources_path.relative_to(REPO_ROOT)}: missing at least one source row "
+                "with URL, YYYY-MM-DD retrieved date, and mapped update"
+            )
 
     return errors
 

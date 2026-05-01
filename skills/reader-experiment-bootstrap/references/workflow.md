@@ -5,7 +5,19 @@ Use this reference when the top-level skill needs a reminder of the concrete
 
 ## Discovery
 
+Start with the Data Operations Plan overview and load only the reference needed
+for the current decision:
+
+- [Data classes](../../../docs/guides/data_operations_plan/data_classes.md)
+  for the class/protocol decision.
+- [Metadata minimums](../../../docs/guides/data_operations_plan/metadata_minimums.md)
+  when building or reviewing sample maps and config metadata.
+- [Transfer and verification](../../../docs/guides/data_operations_plan/transfer_and_verification.md)
+  when staging inputs and proving outputs.
+
 ```bash
+uv run reader dop classes --format json
+uv run reader dop ready-specs --format json
 uv run reader ls --root experiments --details --readiness
 uv run reader ls --root experiments --details --readiness --format json
 uv run reader inspect <config|dir|index>
@@ -39,6 +51,8 @@ meaningful assay-specific behavior.
 - Keep blanks explicit only when the assay semantics require blank subtraction
   or blank QC.
 - Ask before resolving conflicting well assignments.
+- Use the Data Operations Plan stop conditions when well identity, treatment
+  meaning, controls, or channel semantics are ambiguous.
 
 ## Preflight
 
