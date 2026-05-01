@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from pathlib import Path
@@ -58,6 +59,21 @@ def _logic_plot_config() -> dict:
             }
         },
     )
+
+
+def _logic_sfxi_scatter_config() -> dict:
+    cfg = _logic_plot_config()
+    cfg["protocol"]["analysis"] = {
+        "include_vec8": True,
+        "include_fold_change": False,
+        "sfxi_objective": {
+            "setpoints": {"and": [0.0, 0.0, 0.0, 1.0]},
+            "scaling": {"percentile": 95, "min_n": 1, "eps": 1e-8},
+            "exponents": {"logic_exponent_beta": 1.0, "intensity_exponent_gamma": 1.0},
+        },
+    }
+    cfg["protocol"]["outputs"]["plots"] = {"profile": "none", "include": ["sfxi_setpoint_scatter"]}
+    return cfg
 
 
 def _retron_config() -> dict:
@@ -173,6 +189,63 @@ def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> Non
     assert read["source"]["producer"]["id"] == "promote_to_tidy_plus_map"
     assert read["source"]["surface"]["runtime_mode"] == "fixed"
     assert read["source"]["surface"]["rendered"] == "plate_reader.annotated.v1"
+
+
+def test_logic_sfxi_plot_list_surfaces_setpoint_scatter(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _logic_sfxi_scatter_config())
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["plots"] == 1
+    assert payload["summary"]["by_plugin"] == {"plot/sfxi_setpoint_scatter": 1}
+    assert payload["plots"][0]["id"] == "sfxi_setpoint_scatter"
+    read = payload["plots"][0]["reads"][0]
+    assert read["ref"] == {"record": "sfxi_vec8/vec8"}
+    assert read["contract"] == "sfxi.vec8.v2"
+
+
+def test_logic_sfxi_plot_dry_run_reports_missing_dnadesign_public_api(tmp_path: Path, monkeypatch) -> None:
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None):
+        if name == "dnadesign.opal.api.sfxi":
+            raise ModuleNotFoundError(name)
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+    cfg = write_config(tmp_path, _logic_sfxi_scatter_config())
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["plot", str(cfg), "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "reader[dnadesign]" in _plain(result.output)
+
+
+def test_logic_sfxi_validate_reports_missing_dnadesign_public_api(tmp_path: Path, monkeypatch) -> None:
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None):
+        if name == "dnadesign.opal.api.sfxi":
+            raise ModuleNotFoundError(name)
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _fake_import_module)
+    cfg = write_config(tmp_path, _logic_sfxi_scatter_config())
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True)
+    (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["validate", str(cfg), "--format", "json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["summary"]["status"] == "error"
+    assert any("reader[dnadesign]" in message for message in payload["validation"]["errors"])
 
 
 def test_retron_plot_list_json(tmp_path: Path) -> None:

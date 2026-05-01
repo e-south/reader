@@ -411,6 +411,7 @@ Runtime notes:
 - If the notebook or runtime has drifted, it restarts the stale session instead of silently reusing it.
 - It prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
 - For agent review, prefer `--mode run --headless`, then open the printed URL in Chrome MCP.
+- Static HTML export can catch execution failures, but it does not validate live widget behavior. Use a served Marimo app for dropdown, slider, export-button, and chart-rerender checks.
 
 See templates:
 

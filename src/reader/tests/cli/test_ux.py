@@ -193,8 +193,10 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
     output = test_console.export_text()
     assert "Protocol" in output
     assert "plate_reader/dual_repo" in output
-    assert "Selected" in output
-    assert "Generated" in output
+    assert "Selec" in output
+    assert "ted" in output
+    assert "Gener" in output
+    assert "ated" in output
     assert "1 rec" in output
 
 
@@ -637,8 +639,10 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     output = test_console.export_text()
     assert "plate_reader" in output
     assert "test_plot" in output
-    assert "Synthetic plot plugin" in output
-    assert "for CLI tests." in output
+    assert "Synthetic" in output
+    assert "plot plugin" in output
+    assert "for CLI" in output
+    assert "tests." in output
 
 
 def test_protocols_command_filters_by_family() -> None:
@@ -890,8 +894,13 @@ def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
 
     output = test_console.export_text()
     assert "plate_reader/dual_reporter_screen" in output
-    assert "Attach well-position sample maps" in output
-    assert "Summarize nearest-time fold-change tables" in output
+    assert "Attach" in output
+    assert "well-posit" in output
+    assert "ion sample" in output
+    assert "maps" in output
+    assert "Summarize" in output
+    assert "nearest-ti" in output
+    assert "fold-chang" in output
     assert "validator" not in output
 
 

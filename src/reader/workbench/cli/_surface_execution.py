@@ -57,6 +57,20 @@ def apply_surface_overrides(
     return overrides, selected
 
 
+def _raise_dependency_preflight_errors(*, selected, runtime, bound_protocol, exp_root: Path, label: str) -> None:
+    errors: list[str] = []
+    for step in selected:
+        plugin_cls = runtime.plugins.resolve(step.plugin)
+        cfg = plugin_cls.ConfigModel.model_validate(
+            bound_protocol.effective_plugin_config(plugin_id=step.plugin, step_with=(step.with_ or {}))
+        )
+        for issue in plugin_cls.preflight_readiness(exp_dir=exp_root, cfg=cfg, reads=(step.reads or {})):
+            if issue.kind == "dependency":
+                errors.append(f"{label}:{step.id} • {issue.message}")
+    if errors:
+        raise typer.BadParameter("\n".join(errors))
+
+
 def validate_plot_job_for_execution(
     job_path: Path,
     *,
@@ -81,13 +95,21 @@ def validate_plot_job_for_execution(
     )
     if not selected:
         raise typer.BadParameter("No plots selected. Adjust --only/--exclude or use --list to inspect valid ids.")
-    apply_surface_overrides(
+    _, selected = apply_surface_overrides(
         selected,
         inputs=inputs,
         sets=sets,
         experiment_root=decl.experiment.root,
         resources=decl.experiment_semantics.resources,
     )
+    if dry_run:
+        _raise_dependency_preflight_errors(
+            selected=selected,
+            runtime=runtime,
+            bound_protocol=bind_decl_protocol(decl=decl, runtime=runtime),
+            exp_root=decl.experiment.root,
+            label="plot",
+        )
     if not dry_run:
         require_dataframe_records_fn(decl, job_path, runtime=runtime)
 
@@ -227,6 +249,14 @@ def run_plot_job(
         experiment_root=experiment_root,
         resources=resources,
     )
+    if dry_run:
+        _raise_dependency_preflight_errors(
+            selected=selected,
+            runtime=runtime,
+            bound_protocol=bound_protocol,
+            exp_root=experiment_root,
+            label="plot",
+        )
     if not dry_run:
         append_journal_fn(
             job_path,
