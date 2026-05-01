@@ -10,11 +10,7 @@ FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 
 def iter_skill_dirs() -> list[Path]:
-    return sorted(
-        path
-        for path in SKILLS_DIR.iterdir()
-        if path.is_dir() and not path.name.startswith(".")
-    )
+    return sorted(path for path in SKILLS_DIR.iterdir() if path.is_dir() and not path.name.startswith("."))
 
 
 def read_text(path: Path) -> str:
@@ -54,18 +50,10 @@ def audit_skill_dir(skill_dir: Path) -> list[str]:
             "frontmatter name matching folder",
         )
     )
-    errors.extend(
-        require_in_block(frontmatter, "description:", skill_path, "frontmatter description")
-    )
-    errors.extend(
-        require_in_block(frontmatter, "metadata:", skill_path, "metadata block")
-    )
-    errors.extend(
-        require_in_block(frontmatter, "version:", skill_path, "metadata.version")
-    )
-    errors.extend(
-        require_in_block(frontmatter, "category:", skill_path, "metadata.category")
-    )
+    errors.extend(require_in_block(frontmatter, "description:", skill_path, "frontmatter description"))
+    errors.extend(require_in_block(frontmatter, "metadata:", skill_path, "metadata block"))
+    errors.extend(require_in_block(frontmatter, "version:", skill_path, "metadata.version"))
+    errors.extend(require_in_block(frontmatter, "category:", skill_path, "metadata.category"))
     errors.extend(require_in_block(frontmatter, "tags:", skill_path, "metadata.tags"))
 
     if "Use when" not in frontmatter or "Do not use" not in frontmatter:
@@ -87,13 +75,10 @@ def audit_skill_dir(skill_dir: Path) -> list[str]:
 
     external_sources_path = skill_dir / "references" / "external-sources.md"
     if not external_sources_path.exists():
-        errors.append(
-            f"{skill_dir.relative_to(REPO_ROOT)}: missing references/external-sources.md"
-        )
+        errors.append(f"{skill_dir.relative_to(REPO_ROOT)}: missing references/external-sources.md")
     elif "./references/external-sources.md" not in text:
         errors.append(
-            f"{skill_path.relative_to(REPO_ROOT)}: top-level skill does not expose "
-            "references/external-sources.md"
+            f"{skill_path.relative_to(REPO_ROOT)}: top-level skill does not expose references/external-sources.md"
         )
 
     return errors
