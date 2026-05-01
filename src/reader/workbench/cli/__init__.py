@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from . import demo as _demo  # noqa: F401
+from . import dop as _dop  # noqa: F401
 from . import experiments as _experiments  # noqa: F401
 from . import notebooks as notebook_commands
 from . import protocols as _protocols  # noqa: F401

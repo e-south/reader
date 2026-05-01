@@ -17,6 +17,8 @@ it to answer three questions quickly:
   [`src/reader/protocols/`](../../src/reader/protocols/)
 - Experiment-local semantics:
   [`src/reader/workbench/experiment/`](../../src/reader/workbench/experiment/)
+- Data Operations Plan overlay:
+  [`src/reader/workbench/dop/`](../../src/reader/workbench/dop/)
 - Execution IR and runtime:
   [`src/reader/workbench/decl/`](../../src/reader/workbench/decl/),
   [`src/reader/workbench/graph/`](../../src/reader/workbench/graph/),
@@ -59,6 +61,10 @@ plugin wiring or internal graph structure.
 - [`src/reader/workbench/experiment/model.py`](../../src/reader/workbench/experiment/model.py)
   owns experiment-local semantics: protocol binding, annotations, resources,
   layout, and the compiled protocol semantic program.
+- [`src/reader/workbench/dop/`](../../src/reader/workbench/dop/)
+  owns the read-only Data Operations Plan overlay: data-class selection,
+  metadata minimums, stop conditions, transfer rules, and readiness evidence
+  gates. It references protocol ids but does not own protocol execution.
 - [`src/reader/workbench/inspection/`](../../src/reader/workbench/inspection/)
   owns read-only payloads and reports for `inspect`, `steps`, `records`, and
   related CLI surfaces.

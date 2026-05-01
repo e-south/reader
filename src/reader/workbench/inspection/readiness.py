@@ -12,6 +12,29 @@ from reader.workbench.graph import resolve_workbench
 
 from .common import summarize_outputs_dir
 
+READINESS_STATES = frozenset(
+    {
+        "config_error",
+        "draft",
+        "template",
+        "dependency_blocked",
+        "blocked",
+        "runnable",
+        "legacy_outputs_present",
+        "records_ready",
+    }
+)
+READINESS_CAPABILITY_KEYS = frozenset(
+    {
+        "run",
+        "records",
+        "plot",
+        "export",
+        "notebook_scaffold",
+        "notebook_scan_records",
+    }
+)
+
 
 def config_error_readiness_payload(error: str) -> dict[str, object]:
     return {

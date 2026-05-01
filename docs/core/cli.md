@@ -101,6 +101,9 @@ uv run reader protocols plate_reader/retron_sponge_screen
 uv run reader protocols <protocol-id> --example-config
 uv run reader protocols --family screen_analysis
 uv run reader protocols --family matched_control_screen
+uv run reader dop classes
+uv run reader dop classes --protocol plate_reader/retron_sponge_screen --format json
+uv run reader dop ready-specs --format json
 uv run reader notebook --list-templates
 ```
 
