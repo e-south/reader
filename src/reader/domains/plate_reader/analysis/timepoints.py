@@ -60,4 +60,24 @@ def choose_nearest_time(
     return chosen_time
 
 
-__all__ = ["choose_nearest_time", "nearest_time_per_key"]
+def infer_induction_time_h(df: pd.DataFrame, *, time_col: str) -> float | None:
+    for column in ("induction_time_h", "induction_time", "time_of_induction_h", "time_of_induction"):
+        if column in df.columns:
+            values = pd.to_numeric(df[column], errors="coerce").dropna()
+            if not values.empty:
+                return float(values.iloc[0])
+
+    if "sheet_index" not in df.columns:
+        return None
+    sheet_values = pd.to_numeric(df["sheet_index"], errors="coerce").dropna()
+    if sheet_values.empty:
+        return None
+    min_sheet = float(sheet_values.min())
+    sheet_series = pd.to_numeric(df["sheet_index"], errors="coerce")
+    times = pd.to_numeric(df.loc[sheet_series > min_sheet, time_col], errors="coerce").dropna()
+    if times.empty:
+        return None
+    return float(times.min())
+
+
+__all__ = ["choose_nearest_time", "infer_induction_time_h", "nearest_time_per_key"]

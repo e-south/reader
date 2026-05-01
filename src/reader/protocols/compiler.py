@@ -319,12 +319,15 @@ def compile_logic_sfxi_screen(protocol: Any):
             "endpoint_by_design",
             "intensity_overview",
             "logic_symmetry",
+            "sfxi_setpoint_scatter",
+            "sfxi_triptych_sequence",
         },
     )
-    requires_promoted_df = include_vec8 or "logic_symmetry" in selected_plot_ids
+    requires_vec8 = include_vec8 or bool({"sfxi_setpoint_scatter", "sfxi_triptych_sequence"} & set(selected_plot_ids))
+    requires_promoted_df = requires_vec8 or bool({"logic_symmetry", "sfxi_triptych_sequence"} & set(selected_plot_ids))
     if requires_promoted_df:
         pipeline.append(_sfxi_promote_step())
-    if include_vec8:
+    if requires_vec8:
         pipeline.append(_sfxi_vec8_step())
 
     plots = [
@@ -350,7 +353,7 @@ def compile_logic_sfxi_screen(protocol: Any):
         plots=tuple(plots),
         exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
-        semantic_program=_logic_semantic_program(protocol, include_vec8=include_vec8),
+        semantic_program=_logic_semantic_program(protocol, include_vec8=requires_vec8),
     )
 
 
@@ -729,6 +732,25 @@ def _sfxi_vec8_step() -> PluginStepDecl:
     )
 
 
+def _sfxi_setpoint_scatter_defaults(protocol: Any) -> dict[str, Any]:
+    objective = _analysis_mapping(_analysis_options(protocol), key="sfxi_objective")
+    scaling = _analysis_mapping(objective, key="scaling")
+    exponents = _analysis_mapping(objective, key="exponents")
+    return {
+        "setpoints": deepcopy(objective.get("setpoints", {"and": [0.0, 0.0, 0.0, 1.0]})),
+        "scaling_percentile": int(scaling.get("percentile", 95)),
+        "scaling_min_n": int(scaling.get("min_n", 5)),
+        "scaling_eps": float(scaling.get("eps", 1.0e-8)),
+        "logic_exponent_beta": float(exponents.get("logic_exponent_beta", 1.0)),
+        "intensity_exponent_gamma": float(exponents.get("intensity_exponent_gamma", 1.0)),
+        "intensity_log2_offset_delta": float(objective.get("intensity_log2_offset_delta", 0.0)),
+    }
+
+
+def _sfxi_triptych_sequence_defaults(protocol: Any) -> dict[str, Any]:
+    return deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_triptych_sequence"))
+
+
 def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
     plot_reads = _plate_reader_plot_reads(measurement=measurement)
@@ -858,6 +880,23 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             plugin="plot/logic_symmetry",
             reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
             with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "sfxi_setpoint_scatter":
+        return _step(
+            id="sfxi_setpoint_scatter",
+            plugin="plot/sfxi_setpoint_scatter",
+            reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
+            with_=_deep_merge(_sfxi_setpoint_scatter_defaults(protocol), settings),
+        )
+    if output_id == "sfxi_triptych_sequence":
+        return _step(
+            id="sfxi_triptych_sequence",
+            plugin="plot/sfxi_triptych_sequence",
+            reads={
+                "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
+                "assay": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
+            },
+            with_=_deep_merge(_sfxi_triptych_sequence_defaults(protocol), settings),
         )
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
 

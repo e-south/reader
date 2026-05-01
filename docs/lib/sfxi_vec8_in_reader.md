@@ -1,6 +1,6 @@
 ## Generating SFXI 8-vectors in `reader`
 
-This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader (for more details on SFXI see [here](https://github.com/e-south/dnadesign/blob/main/src/dnadesign/opal/docs/setpoint_fidelity_x_intensity.md)). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design_id* in the fixed state order **00, 10, 01, 11**.
+This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader and is owned by **dnadesign** (for more details on SFXI see the OPAL objective docs in `dnadesign/src/dnadesign/opal/docs/plugins/objective-sfxi.md`). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design_id* in the fixed state order **00, 10, 01, 11**.
 
 8-vector definition:
 
@@ -22,8 +22,9 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
 6. [Logic channel](#logic-channel)
 7. [Intensity channel](#intensity-channel)
 8. [Output](#output)
-9. [Configuration entry point](#configuration-entry-point)
-10. [Usage demo](#usage-demo)
+9. [Setpoint scatter plot](#setpoint-scatter-plot)
+10. [Configuration entry point](#configuration-entry-point)
+11. [Usage demo](#usage-demo)
 
 ---
 
@@ -37,6 +38,7 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
   * **Important:** The `delta` used in **reader** (`log2_offset_delta`) must match OPAL’s `intensity_log2_offset_delta`.
   * **Reader makes this explicit** by writing an `intensity_log2_offset_delta` column into every vec8 row. When `log2_offset_delta` is left at its default (`0.0`), this column will be all zeros.
   * **If OPAL uses a different delta, recovered linear intensities and downstream scores will be inconsistent.** Keep the values in sync (preferably by validating against the vec8 column at ingest time).
+  * Reader plot code imports only the public scoring boundary `dnadesign.opal.api.sfxi`, never OPAL internals.
 
 - The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader.domains.logic.sfxi.*` and adds pipeline plumbing and logging.
 
@@ -63,6 +65,10 @@ Key modules in `src/reader/domains/logic/sfxi/`:
 
   * `build_vec8_from_tidy(...)`, `run_sfxi(...)`
   * `write_outputs(...)`
+* **Setpoint scoring plot prep/rendering:** `setpoint_scatter.py`
+
+  * `score_sfxi_setpoints(...)`
+  * `render_sfxi_setpoint_scatter(...)`
 
 ---
 
@@ -437,6 +443,26 @@ See `src/reader/contracts/builtins/` for the canonical contracts referenced by t
 
 ---
 
+### Setpoint scatter plot
+
+The protocol figure `sfxi_setpoint_scatter` consumes the typed `sfxi.vec8.v2`
+record at `sfxi_vec8/vec8`, calls the public dnadesign scorer, and writes plot
+files through reader's plot sink under `outputs/plots` by default.
+
+Persisted score columns and plot axes keep the OPAL objective channel names:
+
+* `logic_fidelity`
+* `effect_scaled`
+* `sfxi`
+
+Reader does not persist compatibility aliases such as `f_logic`, `e_scaled`, or
+`score` for this plot surface. If `dnadesign.opal.api.sfxi` is unavailable or
+has an unsupported `SFXI_API_VERSION`, `reader validate` and
+`reader plot --dry-run` report the missing optional dependency before plot
+execution. Install or sync `reader[dnadesign]` for this figure.
+
+---
+
 ### Configuration entry point
 
 In `reader/v7`, SFXI is normally configured through the bound protocol plus
@@ -462,7 +488,22 @@ protocol:
     reference:
       design_id: REF
       stat: mean
+  analysis:
+    sfxi_objective:
+      setpoints:
+        and: [0.0, 0.0, 0.0, 1.0]
+        or: [0.0, 1.0, 1.0, 1.0]
+      scaling:
+        percentile: 95
+        min_n: 5
+        eps: 1.0e-8
+      exponents:
+        logic_exponent_beta: 1.0
+        intensity_exponent_gamma: 1.0
+      intensity_log2_offset_delta: 0.0
   outputs:
+    plots:
+      include: [sfxi_setpoint_scatter]
     exports:
       include: [logic_summary_workbook]
 
@@ -530,7 +571,16 @@ The following example uses the SFXI-capable experiment
 
     * `outputs/exports/sfxi/vec8.xlsx`
 
-3) Launch the SFXI notebook template (interactive vec8 inspection + export panel):
+3) Render the SFXI setpoint scatter figure when configured:
+
+    ```bash
+    uv run reader plot experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --only sfxi_setpoint_scatter
+    ```
+
+    This writes plot files under `outputs/plots/`, such as
+    `outputs/plots/sfxi_setpoint_scatter.pdf`.
+
+4) Launch the SFXI notebook template (interactive vec8 inspection + export panel):
 
     ```bash
     uv run reader notebook experiments/2025/20250915_sfxi_pSingle_ref/config.yaml --template notebook/sfxi_eda --mode edit
@@ -542,4 +592,4 @@ The following example uses the SFXI-capable experiment
       `transform/sfxi` step or existing SFXI dataframe records.
     * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 
-4) (Optional) export vec8 from the notebook UI:
+5) (Optional) export vec8 from the notebook UI:

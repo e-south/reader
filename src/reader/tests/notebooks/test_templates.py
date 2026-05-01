@@ -105,10 +105,42 @@ def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
     assert "allow_scan=__ALLOW_RECORD_SCAN__" in template
 
 
+def test_triptych_notebook_templates_debounce_snapshot_time_slider() -> None:
+    for template_name in ("notebook/dual_reporter_triptych", "notebook/sfxi_eda"):
+        template = resolve_notebook_template_descriptor(template_name).load_body()
+        assert "debounce=True" in template
+        assert "chart_selection=False" in template
+        assert "legend_selection=False" in template
+        assert "min-height" in template
+        assert "mo.output.replace(_chart_panel)" in template
+        assert "Selected design" in template
+        assert "Triptych context" not in template
+        assert "Design alias" in template
+        assert "Sequence" in template
+
+
+def test_sfxi_notebook_uses_protocol_bound_transform_config() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert "bind_protocol(decl.experiment_semantics.protocol)" in template
+    assert "effective_plugin_config(" in template
+
+
+def test_sfxi_notebook_triptych_uses_closed_corner_condition_labels() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert "sfxi_condition_order" in template
+    assert 'f"{_corner}: {sfxi_cfg.treatment_map[_corner]}"' in template
+    assert 'sfxi_triptych_treatment_col = "sfxi_condition"' in template
+    assert "sfxi_triptych_rows[sfxi_triptych_treatment_col].isin(sfxi_condition_order)" in template
+    assert "treatment_order=sfxi_condition_order" in template
+
+
 def test_notebook_template_catalog_exposes_domain_semantics() -> None:
     descriptors = {item.template: item for item in builtin_notebook_template_catalog().all()}
     assert descriptors["notebook/eda"].domain == "generic"
     assert descriptors["notebook/microplate"].domain == "plate_reader"
+    assert descriptors["notebook/dual_reporter_triptych"].domain == "plate_reader"
     assert descriptors["notebook/retron_sponge"].domain == "plate_reader"
     assert descriptors["notebook/retron_sponge_aggregate"].domain == "generic"
     assert descriptors["notebook/cytometry"].domain == "cytometry"
@@ -148,7 +180,7 @@ def test_notebook_template_default_selection_uses_protocol_policy() -> None:
 def test_notebook_template_catalog_filters_by_protocol() -> None:
     protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
     templates = [item.template for item in compatible_notebook_templates(protocol=protocol)]
-    assert templates == ["notebook/sfxi_eda", "notebook/eda", "notebook/basic"]
+    assert templates == ["notebook/sfxi_eda", "notebook/dual_reporter_triptych", "notebook/eda", "notebook/basic"]
     descriptor = require_notebook_template_for_protocol("notebook/sfxi_eda", protocol=protocol)
     assert descriptor.template == "notebook/sfxi_eda"
     with pytest.raises(ConfigError, match="does not allow notebook template"):
@@ -169,6 +201,7 @@ def test_generic_notebook_template_catalog_includes_retron_aggregate_review() ->
         "notebook/retron_sponge_aggregate",
         "notebook/eda",
         "notebook/microplate",
+        "notebook/dual_reporter_triptych",
         "notebook/cytometry",
         "notebook/sfxi_eda",
     ]

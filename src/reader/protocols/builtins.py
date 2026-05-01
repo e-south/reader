@@ -96,6 +96,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "notebook/retron_sponge_aggregate",
                     "notebook/eda",
                     "notebook/microplate",
+                    "notebook/dual_reporter_triptych",
                     "notebook/cytometry",
                     "notebook/sfxi_eda",
                 ),
@@ -533,7 +534,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(
                 default_template="notebook/eda",
-                allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
+                allowed_templates=(
+                    "notebook/eda",
+                    "notebook/dual_reporter_triptych",
+                    "notebook/microplate",
+                    "notebook/basic",
+                ),
                 summary="Dual-reporter plate-reader screens default to the EDA notebook with plot support.",
             ),
             plugin_defaults=(
@@ -765,6 +771,76 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
             _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
             _field(
+                "sfxi_objective",
+                "OPAL-compatible SFXI objective settings for setpoint scoring plots.",
+                children=(
+                    _field(
+                        "setpoints",
+                        "Named SFXI setpoint vectors in 00/10/01/11 order.",
+                        kind="mapping",
+                        allow_unknown=True,
+                        default={"and": [0.0, 0.0, 0.0, 1.0]},
+                    ),
+                    _field(
+                        "scaling",
+                        "SFXI effect scaling controls.",
+                        children=(
+                            _field("percentile", "Effect scaling percentile.", kind="integer", default=95),
+                            _field(
+                                "min_n", "Minimum sample count before percentile scaling.", kind="integer", default=5
+                            ),
+                            _field("eps", "Small denominator floor used during scaling.", kind="number", default=1e-8),
+                        ),
+                    ),
+                    _field(
+                        "exponents",
+                        "SFXI objective exponents.",
+                        children=(
+                            _field(
+                                "logic_exponent_beta",
+                                "Exponent applied to logic_fidelity.",
+                                kind="number",
+                                default=1.0,
+                            ),
+                            _field(
+                                "intensity_exponent_gamma",
+                                "Exponent applied to effect_scaled.",
+                                kind="number",
+                                default=1.0,
+                            ),
+                        ),
+                    ),
+                    _field(
+                        "intensity_log2_offset_delta",
+                        "Log2 offset applied before raw effect scaling.",
+                        kind="number",
+                        default=0.0,
+                    ),
+                ),
+            ),
+            _field(
+                "sfxi_triptych_sequence",
+                "SFXI triptych sequence bundle settings for kinetics, snapshot, and sequence panels.",
+                allow_unknown=True,
+                children=(
+                    _field(
+                        "sequence_source",
+                        "Public dnadesign USR dataset and overlay settings for sequence panels.",
+                        allow_unknown=True,
+                    ),
+                    _field("bundle_id", "Stable bundle id used for generated file names.", kind="string"),
+                    _field("snapshot_target_time_h", "Visual snapshot target time in hours.", kind="number"),
+                    _field("induction_time_h", "Induction marker time in hours.", kind="number", allow_none=True),
+                    _field(
+                        "sequence_panel",
+                        "Public dnadesign BaseRender sequence-panel profile and sizing settings.",
+                        allow_unknown=True,
+                    ),
+                    _field("movie_enabled", "Emit an MP4 review movie in the bundle.", kind="bool", default=False),
+                    _field("movie_fps", "Review movie frame cadence.", kind="number", default=0.85),
+                ),
+            ),
+            _field(
                 "preprocessing",
                 "Pre-ingest cleanup policy for blanks and overflow.",
                 children=(
@@ -892,6 +968,16 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 kind="summary",
                 summary="Logic symmetry geometry over the configured response channel.",
             ),
+            ProtocolFigureSpec(
+                id="sfxi_setpoint_scatter",
+                kind="summary",
+                summary="OPAL-compatible SFXI objective scatter over logic_fidelity and effect_scaled by setpoint.",
+            ),
+            ProtocolFigureSpec(
+                id="sfxi_triptych_sequence",
+                kind="summary",
+                summary="Bundle each SFXI promoter's kinetics, snapshot, and sequence architecture panels.",
+            ),
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
@@ -905,6 +991,16 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 figures=("logic_symmetry",),
             ),
             ProtocolPlotProfileSpec(
+                id="sfxi_objective",
+                summary="SFXI objective setpoint scatter review.",
+                figures=("sfxi_setpoint_scatter",),
+            ),
+            ProtocolPlotProfileSpec(
+                id="sfxi_sequence_review",
+                summary="SFXI promoter triptych sequence review.",
+                figures=("sfxi_triptych_sequence",),
+            ),
+            ProtocolPlotProfileSpec(
                 id="logic_full",
                 summary="Full logic review with kinetics and symmetry geometry.",
                 figures=(
@@ -913,6 +1009,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "endpoint_by_design",
                     "intensity_overview",
                     "logic_symmetry",
+                    "sfxi_setpoint_scatter",
+                    "sfxi_triptych_sequence",
                 ),
             ),
         ),
@@ -931,7 +1029,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(
                 default_template="notebook/sfxi_eda",
-                allowed_templates=("notebook/sfxi_eda", "notebook/eda", "notebook/basic"),
+                allowed_templates=(
+                    "notebook/sfxi_eda",
+                    "notebook/dual_reporter_triptych",
+                    "notebook/eda",
+                    "notebook/basic",
+                ),
                 summary="SFXI logic screens default to the vec8-aware notebook scaffold.",
             ),
             plugin_defaults=(

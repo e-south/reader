@@ -81,15 +81,10 @@ def test_select_default_notebook_template_uses_protocol_policy() -> None:
 
 def test_static_asset_catalog_only_exposes_templates() -> None:
     catalog = static_asset_catalog()
-    assert [item.kind for item in catalog.all()] == [
-        "template",
-        "template",
-        "template",
-        "template",
-        "template",
-        "template",
-        "template",
-    ]
+    items = catalog.all()
+    assert items
+    assert {item.kind for item in items} == {"template"}
+    assert catalog.resolve("notebook/dual_reporter_triptych", kind="template").kind == "template"
 
 
 def test_build_workbench_asset_catalog_requires_explicit_plugin_registry() -> None:

@@ -88,6 +88,9 @@ What the scaffolded notebook includes:
 
 The default `notebook/eda`, `notebook/basic`, and `notebook/microplate` templates are intentionally minimal record explorers.
 They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
+`notebook/dual_reporter_triptych` is a neutral plate-reader review surface for dual-reporter assays. It renders
+OD600 kinetics, YFP/CFP kinetics, and a YFP/CFP snapshot bar plot for one selected design without assuming SFXI
+four-corner logic or vec8 export semantics.
 `plate_reader/retron_sponge_screen` instead defaults to `notebook/retron_sponge`, which adds an
 experiment-scoped plot-portfolio review, transform ladder, and semantic-table walkthrough on top of the record explorer.
 For cross-run retron library review, `notebook/retron_sponge_aggregate` is available as an explicit opt-in template
@@ -114,13 +117,15 @@ Notes:
   - `uv run reader notebook <config> --mode run --headless`
   - open the printed URL in Chrome MCP
   - or run `uv run marimo check <notebook.py>` for a static validation pass
+* Static HTML export is useful as an execution/shareability smoke check, but it is not an interaction check. Validate dropdowns, sliders, export buttons, and chart rerenders from a live `marimo run` app.
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
-* Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/cytometry`, and `notebook/sfxi_eda`.
+* Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/dual_reporter_triptych`, `notebook/cytometry`, and `notebook/sfxi_eda`.
 * Template behavior is capability-driven:
   - plot filtering is only available for templates that declare plot-filter support
   - auto-pick chooses a template from declared default rules instead of hardcoded CLI branching
   - template applicability checks are declared on the template asset itself
 * `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
+* `notebook/sfxi_eda` reuses the neutral dual-reporter triptych for visualization, then layers SFXI-specific vec8 recomputation, reference anchoring, and XLSX/JSON export on top.
 * The SFXI template draws a red dashed induction marker on the time-series plot when an induction time can be inferred from dataframe records:
   - preferred: an explicit column like `induction_time_h` (or `induction_time`) in the tidy dataframe
   - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time

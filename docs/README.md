@@ -42,6 +42,9 @@ outputs. Use the reference pages when you need exact CLI or config details.
   maintenance guidance.
 - [Workbench gardening](./guides/workbench_gardening.md): maintainer workflow
   for architecture, docs, and verification-surface cleanup.
+- [SFXI triptych sequence plot spec](./dev/sfxi_triptych_sequence_plugin_spec.md):
+  dev spec for promoting the SFXI triptych/BaseRender preview into a formal
+  plot plugin with a versioned dnadesign render contract.
 - [Plugin development](./core/plugins.md): add or extend ingest, transform,
   plot, export, and validator plugins.
 - [Architecture](../ARCHITECTURE.md): system structure, ownership boundaries, and invariants.

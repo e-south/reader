@@ -8,6 +8,8 @@ from reader.plugins.plot.distributions import DistributionsPlot
 from reader.plugins.plot.logic_symmetry import LogicSymmetryPlot
 from reader.plugins.plot.retron_summary import RetronSummaryPlot
 from reader.plugins.plot.retron_trace import RetronTracePlot
+from reader.plugins.plot.sfxi_setpoint_scatter import SFXISetpointScatterPlot
+from reader.plugins.plot.sfxi_triptych_sequence import SFXITriptychSequencePlot
 from reader.plugins.plot.snapshot_barplot import SnapshotBarplot
 from reader.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
 from reader.plugins.plot.time_series import TimeSeriesPlot
@@ -100,6 +102,26 @@ _BUILTIN_PLUGIN_CATALOG = AssetCatalog(
                 tags=("logic", "geometry"),
             ),
             plugin_cls=LogicSymmetryPlot,
+        ),
+        build_plugin_asset(
+            plugin_id="plot/sfxi_setpoint_scatter",
+            semantics=PluginSemantics(
+                domain="logic",
+                family="sfxi_objective_scatter",
+                summary="Render OPAL-compatible SFXI setpoint scatter plots over logic_fidelity and effect_scaled.",
+                tags=("logic", "sfxi", "setpoint", "scatter"),
+            ),
+            plugin_cls=SFXISetpointScatterPlot,
+        ),
+        build_plugin_asset(
+            plugin_id="plot/sfxi_triptych_sequence",
+            semantics=PluginSemantics(
+                domain="logic",
+                family="sfxi_triptych_sequence",
+                summary="Render SFXI promoter kinetics, snapshot, and sequence annotation figure bundles.",
+                tags=("logic", "sfxi", "triptych", "sequence", "baserender"),
+            ),
+            plugin_cls=SFXITriptychSequencePlot,
         ),
         build_plugin_asset(
             plugin_id="plot/retron_trace",
