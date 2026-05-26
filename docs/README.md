@@ -61,4 +61,5 @@ outputs. Use the reference pages when you need exact CLI or config details.
 ## Library notes
 
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
+- [SPOP endpoint scoring in Reader](./lib/spop_endpoint_in_reader.md)
 - [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md)
