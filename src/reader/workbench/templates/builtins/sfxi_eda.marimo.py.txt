@@ -16,6 +16,13 @@ def _():
     except Exception:
         pl = None
     from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.workbench.notebooks.components import (
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
+    )
     from reader.workbench.records import discover_dataframe_records
 
     return (
@@ -24,12 +31,17 @@ def _():
         mo,
         pl,
         load_notebook_workbench_context,
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
         discover_dataframe_records,
     )
 
 
 @app.cell(hide_code=True)
-def _(Path, load_notebook_workbench_context):
+def _(Path, build_notebook_overview, load_notebook_workbench_context):
     notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
     decl = notebook_context.decl
     exp_dir = notebook_context.experiment_root
@@ -38,14 +50,31 @@ def _(Path, load_notebook_workbench_context):
         "id": decl.experiment.id,
         "title": decl.experiment.title or "",
     }
+    notebooks_cfg = decl.experiment_semantics.layout.notebooks_subdir
+    notebooks_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
     pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
+    notebook_overview = build_notebook_overview(
+        experiment_id=exp_meta["id"],
+        experiment_title=exp_meta["title"],
+        protocol_id=decl.experiment_semantics.protocol.id,
+        experiment_root=exp_dir,
+        outputs_dir=outputs_dir,
+        notebooks_dir=notebooks_dir,
+        pipeline_step_ids=pipeline_step_ids,
+    )
     return (
         decl,
-        exp_dir,
-        exp_meta,
+        notebook_overview,
         outputs_dir,
+        notebooks_dir,
         pipeline_step_ids,
     )
+
+
+@app.cell(hide_code=True)
+def _(collect_notebook_deliverables, notebooks_dir, outputs_dir):
+    deliverables = collect_notebook_deliverables(outputs_dir, notebooks_dir=notebooks_dir)
+    return deliverables
 
 
 @app.cell(hide_code=True)
@@ -139,63 +168,18 @@ def _(pl, record_path):
 
 
 @app.cell(hide_code=True)
-def _(df, pl):
-    design_treatment_rows = []
-    design_treatment_note = ""
-    if df is None:
-        design_treatment_note = "No dataset selected yet."
-    else:
-        _columns = list(df.columns) if hasattr(df, "columns") else []
-        _design_col = "design_id" if "design_id" in _columns else None
-        _treatment_col = "treatment" if "treatment" in _columns else None
-
-        if _design_col is None or _treatment_col is None:
-            _missing = []
-            if _design_col is None:
-                _missing.append("design_id")
-            if _treatment_col is None:
-                _missing.append("treatment")
-            design_treatment_note = f"Missing column(s): {', '.join(_missing)}."
-        else:
-
-            def _unique_values(df, col):
-                values = []
-                try:
-                    if pl is not None and df.__class__.__module__.startswith("polars"):
-                        _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
-                        values = _series.to_list()
-                except Exception:
-                    values = []
-                values = [str(_v) for _v in values if _v is not None]
-                return sorted(values)
-
-            _design_vals = _unique_values(df, _design_col)
-            _treatment_vals = _unique_values(df, _treatment_col)
-            _max_len = max(len(_design_vals), len(_treatment_vals), 1)
-            for _i in range(_max_len):
-                design_treatment_rows.append(
-                    {
-                        "Design IDs": _design_vals[_i] if _i < len(_design_vals) else None,
-                        "Treatments": _treatment_vals[_i] if _i < len(_treatment_vals) else None,
-                    }
-                )
+def _(build_design_treatment_summary_rows, df):
+    design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
     return design_treatment_rows, design_treatment_note
 
 
 @app.cell(hide_code=True)
-def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
-    _exp_id = exp_meta.get("id") or exp_dir.name
-    _exp_title = exp_meta.get("title") or _exp_id
-    if design_treatment_rows:
-        _design_table = mo.ui.table(design_treatment_rows, page_size=len(design_treatment_rows))
-    else:
-        _design_table = mo.md(design_treatment_note or "No design/treatment summary available.")
-    eda_overview_panel = mo.vstack(
-        [
-            mo.md(f"# {_exp_title}\n**Experiment id:** `{_exp_id}`"),
-            mo.md("**Design IDs + treatments**"),
-            _design_table,
-        ]
+def _(design_treatment_note, design_treatment_rows, mo, notebook_overview, render_notebook_overview_panel):
+    eda_overview_panel = render_notebook_overview_panel(
+        mo,
+        notebook_overview,
+        design_treatment_rows=design_treatment_rows,
+        design_treatment_note=design_treatment_note,
     )
     return eda_overview_panel
 
@@ -214,45 +198,49 @@ def _(df_error, mo, record_dropdown, record_note):
 
 
 @app.cell(hide_code=True)
-def _(df, df_error, mo, selected_label):
-    if df_error:
-        mo.stop(True, mo.md(f"Failed to load `{selected_label}`: {df_error}"))
-    if df is None:
-        mo.stop(True, mo.md("Select a dataset to explore."))
-    data_ready = True
-    return data_ready
-
-
-@app.cell(hide_code=True)
-def _(df, data_ready, mo, pl):
+def _(df, df_error, mo, pl, selected_label):
     _columns = list(df.columns) if hasattr(df, "columns") else []
     _elements = [mo.md("## Dataset table explorer")]
-    df_table = df
-    if len(_columns) > 40:
+    if df_error:
+        _elements.append(mo.md(f"Failed to load `{selected_label}`: {df_error}"))
+    elif df is None:
+        _elements.append(mo.md("Select a dataset to explore."))
+    elif len(_columns) > 40:
         _display_cols = _columns[:40]
+        df_table = df
         if pl is not None and df.__class__.__module__.startswith("polars"):
             df_table = df.select(_display_cols)
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
-    _elements.append(mo.ui.table(df_table, page_size=10))
+        _elements.append(mo.ui.table(df_table, page_size=10))
+    else:
+        _elements.append(mo.ui.table(df, page_size=10))
     eda_table_panel = mo.vstack(_elements)
     return eda_table_panel
 
 
 @app.cell(hide_code=True)
-def _(eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
-    eda_base_panel = mo.vstack(
-        [
-            eda_overview_panel,
-            eda_dataset_panel,
-            eda_table_panel,
-        ]
-    )
-    return eda_base_panel
+def _(deliverables, mo, render_notebook_deliverables_panel):
+    deliverables_panel = render_notebook_deliverables_panel(mo, deliverables)
+    return deliverables_panel
 
 
 @app.cell(hide_code=True)
-def _(eda_base_panel):
-    eda_base_panel
+def _(deliverables_panel, eda_dataset_panel, eda_table_panel, mo):
+    sfxi_raw_data_panel = mo.accordion(
+        {
+            "Outputs and deliverables": deliverables_panel,
+            "Dataset selection": eda_dataset_panel,
+            "Dataset table": eda_table_panel,
+        },
+        multiple=True,
+        lazy=True,
+    )
+    return sfxi_raw_data_panel
+
+
+@app.cell(hide_code=True)
+def _(eda_overview_panel):
+    eda_overview_panel
 
 
 @app.cell(hide_code=True)
@@ -312,14 +300,9 @@ def _(decl, outputs_dir):
 def _(mo):
     mo.md("""
     ## SFXI 8-vector Builder
-    This section mirrors the **setpoint‑fidelity × intensity** definition used in OPAL: each design is summarized by an **8‑vector** with four **logic** values (v00..v11 in [0,1]) and four **intensity** values (y*00..y*11 in log2, reference‑normalized). The logic half captures **shape** (which corners turn on/off), while the intensity half captures **effect size** after reference normalization to make runs comparable.
+    Each design is summarized by an **8-vector**: four **logic** values (`v00..v11`) and four **intensity** values (`y*00..y*11`).
 
-    Workflow:
-    - choose a **time slice** and map treatments to the **00/10/01/11** corners
-    - logic: `log2(YFP/CFP)` → per‑design min–max → **v00..v11**
-    - intensity: `log2((YFP/OD600)/(reference+α)+δ)` → **y*00..y*11**
-
-    The 8-vector here uses the same `transform/sfxi` code and writes XLSX + JSON logs to the experiment's exports folder.
+    Method details are in `docs/lib/sfxi_vec8_in_reader.md`. This notebook recomputes the same transform used by `transform/sfxi` for one selected time slice.
     """)
 
 
@@ -555,8 +538,14 @@ def _(mo, np, pd, sfxi_cfg, tidy_pd, time_col):
 
     treatment_col = logic_treatment_col
     sfxi_condition_order = [f"{_corner}: {sfxi_cfg.treatment_map[_corner]}" for _corner in ("00", "10", "01", "11")]
+    def _condition_key(value):
+        text = str(value)
+        if case_sensitive:
+            return text
+        return text.strip().casefold()
+
     sfxi_condition_map = {
-        str(sfxi_cfg.treatment_map[_corner]): f"{_corner}: {sfxi_cfg.treatment_map[_corner]}"
+        _condition_key(sfxi_cfg.treatment_map[_corner]): f"{_corner}: {sfxi_cfg.treatment_map[_corner]}"
         for _corner in ("00", "10", "01", "11")
     }
     return common_times, sfxi_condition_map, sfxi_condition_order, treatment_col
@@ -724,11 +713,15 @@ def _(mo, time_mode, time_selected_h, time_target_h):
 
 
 @app.cell(hide_code=True)
-def _(mo, sfxi_condition_map, sfxi_condition_order, subset_pd, treatment_col):
+def _(mo, sfxi_cfg, sfxi_condition_map, sfxi_condition_order, subset_pd, treatment_col):
     sfxi_triptych_treatment_col = "sfxi_condition"
     sfxi_triptych_rows = subset_pd.copy()
     _raw_treatment = sfxi_triptych_rows[treatment_col].astype(str)
-    sfxi_triptych_rows[sfxi_triptych_treatment_col] = _raw_treatment.map(sfxi_condition_map)
+    if sfxi_cfg.treatment_case_sensitive:
+        _treatment_key = _raw_treatment
+    else:
+        _treatment_key = _raw_treatment.str.strip().str.casefold()
+    sfxi_triptych_rows[sfxi_triptych_treatment_col] = _treatment_key.map(sfxi_condition_map)
     sfxi_triptych_rows = sfxi_triptych_rows[
         sfxi_triptych_rows[sfxi_triptych_treatment_col].isin(sfxi_condition_order)
     ].copy()
@@ -838,15 +831,25 @@ def _(mo, vec8_result):
 
 
 @app.cell(hide_code=True)
-def _(Path, exports_dir, mo, sfxi_cfg):
+def _(Path, design_select, exports_dir, mo, sfxi_cfg, time_selected_h, time_target_h, vec8_result):
     export_dir = exports_dir / sfxi_cfg.output_subdir
     xlsx_name = Path(sfxi_cfg.vec8_filename).with_suffix(".xlsx").name
     export_path = export_dir / xlsx_name
     export_button = mo.ui.run_button(label="Export 8-vector (XLSX)", kind="success")
     log_name = sfxi_cfg.log_filename
+    _ref = vec8_result.log.get("reference", {}) if hasattr(vec8_result, "log") else {}
     mo.vstack(
         [
             mo.md("## Export 8-vector"),
+            mo.ui.table(
+                [
+                    {"Field": "Design", "Value": str(design_select.value)},
+                    {"Field": "Target time (h)", "Value": f"{float(time_target_h):.3f}"},
+                    {"Field": "Snapshot time used (h)", "Value": f"{float(time_selected_h):.3f}"},
+                    {"Field": "Reference anchor", "Value": str(_ref.get("design_id_resolved") or _ref.get("design_id"))},
+                ],
+                page_size=4,
+            ),
             mo.md(f"Export path: `{export_path}`"),
             export_button,
             mo.md(f"Log will be written as `{log_name}` next to the XLSX."),
@@ -875,6 +878,16 @@ def _(export_button, export_path, json, log_name, mo, vec8_result):
     with open(log_path, "w", encoding="utf-8") as fh:
         json.dump(vec8_result.log, fh, indent=2, sort_keys=True, default=str)
     mo.md(f"Exported 8-vector to `{export_path}` and log to `{log_path}`.")
+
+
+@app.cell(hide_code=True)
+def _(mo, sfxi_raw_data_panel):
+    mo.vstack(
+        [
+            mo.md("## Raw records and generated outputs"),
+            sfxi_raw_data_panel,
+        ]
+    )
 
 
 if __name__ == "__main__":

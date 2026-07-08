@@ -32,6 +32,7 @@ def _vec8_df() -> pd.DataFrame:
             "design_id": ["p01", "p02"],
             "reference_design_id": ["REF", "REF"],
             "time_selected_h": [10.0, 10.0],
+            "intensity_log2_offset_delta": [0.0, 0.0],
             "r_logic": [8.0, 4.0],
             "v00": [0.0, 0.0],
             "v10": [0.0, 0.0],

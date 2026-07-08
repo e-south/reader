@@ -71,6 +71,25 @@ def _require_vec8_columns(df: pd.DataFrame) -> None:
         raise SFXIError(f"SFXI setpoint scatter requires vec8 columns: {', '.join(missing)}.")
 
 
+def _require_intensity_delta_matches(vec8: pd.DataFrame, *, expected: float) -> None:
+    if "intensity_log2_offset_delta" not in vec8.columns:
+        raise SFXIError("SFXI setpoint scatter requires vec8 column: intensity_log2_offset_delta.")
+    expected_value = float(expected)
+    if not math.isfinite(expected_value) or expected_value < 0.0:
+        raise SFXIError("SFXI setpoint scatter intensity_log2_offset_delta must be finite and nonnegative.")
+    values = pd.to_numeric(vec8["intensity_log2_offset_delta"], errors="coerce")
+    invalid = values.isna() | ~values.map(lambda value: math.isfinite(float(value)))
+    if invalid.any():
+        raise SFXIError("SFXI setpoint scatter vec8 intensity_log2_offset_delta values must be finite.")
+    mismatched = ~values.map(lambda value: math.isclose(float(value), expected_value, rel_tol=0.0, abs_tol=1e-12))
+    if mismatched.any():
+        observed = ", ".join(f"{float(value):g}" for value in sorted(values.drop_duplicates().tolist()))
+        raise SFXIError(
+            "SFXI setpoint scatter intensity_log2_offset_delta mismatch: "
+            f"vec8 has [{observed}], scorer configured {expected_value:g}."
+        )
+
+
 def _coerce_setpoints(setpoints: Mapping[str, Sequence[float]]) -> dict[str, list[float]]:
     if not isinstance(setpoints, Mapping) or not setpoints:
         raise SFXIError("SFXI setpoint scatter requires at least one named setpoint.")
@@ -88,6 +107,12 @@ def _coerce_setpoints(setpoints: Mapping[str, Sequence[float]]) -> dict[str, lis
 
 def _metadata_columns(df: pd.DataFrame) -> list[str]:
     preferred = [
+        "source_id",
+        "source_path",
+        "table_path",
+        "source_kind",
+        "source_row_index",
+        "row_label",
         "design_id",
         "sequence",
         "id",
@@ -96,6 +121,7 @@ def _metadata_columns(df: pd.DataFrame) -> list[str]:
         "experiment_date",
         "time_selected_h",
         "reference_design_id",
+        "intensity_log2_offset_delta",
         "r_logic",
         "flat_logic",
     ]
@@ -114,6 +140,7 @@ def score_sfxi_setpoints(
     intensity_log2_offset_delta: float = 0.0,
 ) -> pd.DataFrame:
     _require_vec8_columns(vec8)
+    _require_intensity_delta_matches(vec8, expected=intensity_log2_offset_delta)
     setpoint_map = _coerce_setpoints(setpoints)
     api = require_dnadesign_sfxi_api()
 

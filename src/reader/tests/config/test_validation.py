@@ -301,6 +301,42 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     assert workbench.exports == ()
 
 
+def test_sfxi_objective_delta_reaches_vec8_and_setpoint_plot_configs(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_analysis={
+            "include_vec8": True,
+            "include_fold_change": False,
+            "sfxi_objective": {
+                "intensity_log2_offset_delta": 0.25,
+                "setpoints": {"and": [0.0, 0.0, 0.0, 1.0]},
+                "scaling": {"percentile": 95, "min_n": 1, "eps": 1.0e-8},
+            },
+        },
+        protocol_outputs={"plots": {"profile": "none", "include": ["sfxi_setpoint_scatter"]}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "logic_maps": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+    workbench = resolve_workbench(decl)
+
+    vec8_step = next(step for step in workbench.pipeline if step.id == "sfxi_vec8")
+    scatter_plot = next(step for step in workbench.plots if step.id == "sfxi_setpoint_scatter")
+
+    assert vec8_step.with_["log2_offset_delta"] == pytest.approx(0.25)
+    assert scatter_plot.with_["intensity_log2_offset_delta"] == pytest.approx(0.25)
+
+
 def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_partition",

@@ -8,12 +8,16 @@ Author(s): Eric J. South
 """
 
 import ast
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from reader.errors import ConfigError
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.workbench.assets import AssetCapabilities
+from reader.workbench.notebooks.scaffold import write_experiment_notebook
 from reader.workbench.templates import (
     NotebookTemplateCatalog,
     NotebookTemplateDescriptor,
@@ -96,6 +100,35 @@ def test_notebook_templates_parse() -> None:
             raise AssertionError(f"{name} template has invalid syntax: {exc}") from exc
 
 
+def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_path: Path) -> None:
+    for descriptor in builtin_notebook_template_catalog().all():
+        target = tmp_path / descriptor.template.replace("/", "__")
+        target = target.with_suffix(".py")
+
+        rendered_path, changed = write_experiment_notebook(
+            target,
+            template=descriptor.template,
+            overwrite=True,
+            plot_specs=[],
+            allow_record_scan=False,
+        )
+        content = rendered_path.read_text(encoding="utf-8")
+
+        assert changed is True
+        assert "__ALLOW_RECORD_SCAN__" not in content
+        assert "__PLOT_SPECS__" not in content
+        result = subprocess.run(
+            [sys.executable, "-m", "marimo", "check", str(rendered_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"{descriptor.template} rendered notebook failed marimo check:\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+
 def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
     template = resolve_notebook_template_descriptor("notebook/basic").load_body()
     assert "pl.read_parquet" in template
@@ -124,6 +157,37 @@ def test_sfxi_notebook_uses_protocol_bound_transform_config() -> None:
 
     assert "bind_protocol(decl.experiment_semantics.protocol)" in template
     assert "effective_plugin_config(" in template
+
+
+def test_sfxi_notebook_surfaces_deliverables_with_progressive_disclosure() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert "collect_notebook_deliverables" in template
+    assert "render_notebook_deliverables_panel" in template
+    assert "render_notebook_deliverables_panel(mo, deliverables)" in template
+    assert "render_notebook_overview_panel" in template
+    assert "data_ready" not in template
+    assert "sfxi_raw_data_panel = mo.accordion" in template
+    assert "Raw records and generated outputs" in template
+    assert "def _(eda_base_panel)" not in template
+
+
+def test_sfxi_notebook_export_panel_requires_valid_vec8_result() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert (
+        "def _(Path, design_select, exports_dir, mo, sfxi_cfg, time_selected_h, time_target_h, vec8_result)" in template
+    )
+    assert '"Reference anchor"' in template
+    assert '"Snapshot time used (h)"' in template
+
+
+def test_sfxi_notebook_treatment_condition_labels_respect_case_insensitive_config() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert "if case_sensitive:" in template
+    assert "return text.strip().casefold()" in template
+    assert "_treatment_key = _raw_treatment.str.strip().str.casefold()" in template
 
 
 def test_sfxi_notebook_triptych_uses_closed_corner_condition_labels() -> None:

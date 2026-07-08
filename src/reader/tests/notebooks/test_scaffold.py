@@ -50,7 +50,7 @@ def test_notebook_scaffold_defaults_to_outputs_dir(tmp_path: Path) -> None:
 def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
     runner = CliRunner()
-    result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
@@ -58,8 +58,10 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert 'label="Dataset (dataframe record)"' in content
     assert "df = None" in content
     assert "## Dataset table explorer" in content
-    assert "Design IDs" in content
+    assert "build_design_treatment_summary_rows" in content
+    assert "render_notebook_overview_panel" in content
     assert "Design + treatment summary" not in content
+    assert "data_ready" not in content
     assert 'label="Group by"' not in content
     assert "Interactive plot explorer" not in content
     assert "explore_x = mo.ui.dropdown" not in content
@@ -74,6 +76,19 @@ def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
     assert "line: value vs time" not in content
     assert "Metadata summary" not in content
     assert "Source artifact" not in content
+
+
+def test_notebook_scaffold_surfaces_deliverables_with_progressive_disclosure(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+
+    assert "collect_notebook_deliverables" in content
+    assert "render_notebook_deliverables_panel" in content
+    assert "render_notebook_deliverables_panel(mo, deliverables)" in content
 
 
 def test_notebook_scaffold_ignores_legacy_dir_when_present(tmp_path: Path) -> None:

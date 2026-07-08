@@ -1,6 +1,14 @@
+---
+doc_id: reader-sfxi-vec8
+surface: library-reference
+owner: reader-maintainers
+last_verified: 2026-07-08
+summary: Reader-owned SFXI vec8 generation, records, plots, exports, and aggregate heatmap review.
+---
+
 ## Generating SFXI 8-vectors in `reader`
 
-This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader and is owned by **dnadesign** (for more details on SFXI see the OPAL objective docs in `dnadesign/src/dnadesign/opal/docs/plugins/objective-sfxi.md`). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design_id* in the fixed state order **00, 10, 01, 11**.
+This document describes how **reader** processes **Setpoint Fidelity x Intensity** (SFXI) 8-vectors from experimental measurements. The objective/scalar spec is outside of reader and is owned by **dnadesign** (see `dnadesign/src/dnadesign/opal/docs/plugins/objectives/sfxi.md`). The process here involves collecting microplate reader data, selecting a timepoint, and then deriving an 8‑vector per *design_id* in the fixed state order **00, 10, 01, 11**.
 
 8-vector definition:
 
@@ -14,17 +22,18 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
 ### Contents
 
 1. [Reader hand-off to OPAL](#reader-hand-off-to-opal)
-1. [Scope (vec8 vs objective)](#scope-vec8-vs-objective)
-2. [Relevant modules](#relevant-modules)
-3. [Input contract](#input-contract)
-4. [Time selection](#time-selection)
-5. [Corner mapping](#corner-mapping)
-6. [Logic channel](#logic-channel)
-7. [Intensity channel](#intensity-channel)
-8. [Output](#output)
-9. [Setpoint scatter plot](#setpoint-scatter-plot)
-10. [Configuration entry point](#configuration-entry-point)
-11. [Usage demo](#usage-demo)
+2. [Scope (vec8 vs objective)](#scope-vec8-vs-objective)
+3. [Relevant modules](#relevant-modules)
+4. [Input contract](#input-contract)
+5. [Time selection](#time-selection)
+6. [Corner mapping](#corner-mapping)
+7. [Logic channel](#logic-channel)
+8. [Intensity channel](#intensity-channel)
+9. [Output](#output)
+10. [Setpoint scatter plot](#setpoint-scatter-plot)
+11. [Aggregate vec8 heatmap](#aggregate-vec8-heatmap)
+12. [Configuration entry point](#configuration-entry-point)
+13. [Usage demo](#usage-demo)
 
 ---
 
@@ -41,6 +50,19 @@ This document describes how **reader** processes **Setpoint Fidelity x Intensity
   * Reader plot code imports only the public scoring boundary `dnadesign.opal.api.sfxi`, never OPAL internals.
 
 - The **reader** transform plugin (`src/reader/plugins/transform/sfxi.py`) delegates to `reader.domains.logic.sfxi.*` and adds pipeline plumbing and logging.
+
+---
+
+### Scope (vec8 vs objective)
+
+Reader owns measured vec8 generation from plate-reader data, the typed
+`sfxi_vec8/vec8` record, reader plots over that record, workbook export, and
+the aggregate heatmap described below.
+
+Reader does not own OPAL campaign scoring, active-learning round scaling,
+selection policy, or OPAL ledger plots. Those semantics stay in dnadesign. When
+reader needs scalar SFXI scores for a plot, it calls the public
+`dnadesign.opal.api.sfxi` boundary and keeps OPAL internals out of reader.
 
 ---
 
@@ -69,6 +91,14 @@ Key modules in `src/reader/domains/logic/sfxi/`:
 
   * `score_sfxi_setpoints(...)`
   * `render_sfxi_setpoint_scatter(...)`
+* **Single-experiment vec8 heatmap adapter:** `vec8_heatmap.py`
+
+  * `normalize_experiment_vec8_heatmap_frame(...)`
+  * `render_experiment_sfxi_vec8_heatmap(...)`
+* **Cross-experiment aggregate heatmap:** `reader.domains.logic.sfxi.vec8_aggregate`
+
+  * `load_sfxi_vec8_sources(...)`
+  * `write_sfxi_vec8_aggregate(...)`
 
 ---
 
@@ -78,13 +108,16 @@ SFXI consumes an **annotated plate-reader** DataFrame (the typical source is the
 
 #### Required columns
 
-The selector enforces the following columns (see `selection.REQUIRED_COLS` and `_enforce_columns`):
+The selector enforces the following base columns (see `selection.REQUIRED_COLS`
+and `_enforce_columns`):
 
 * `position` — well/position identifier (not used in vec8 math, but required for tidy contract consistency)
 * `time` — measurement time (numeric; cast to float during selection)
 * `channel` — channel name (matched by exact string equality)
 * `value` — numeric measurement value
-* `treatment` — treatment label (required even if you also provide an alias column)
+
+Treatment labels are resolved from `treatment` or `treatment_alias`. At least
+one of those columns must contain labels that match the configured logic map.
 
 #### Design identity
 
@@ -101,6 +134,15 @@ Notes:
 #### Optional columns
 
 * `sequence` — if present, it is attached into the vec8 output (per `design_by[0]`)
+
+#### Sequence metadata
+
+Reader treats `sequence` as sample metadata, not as a derived SFXI value. When a
+study has an authoritative sequence table, fill `sequence` in
+`inputs/metadata.xlsx` by exact `design_id` match before regenerating outputs.
+Do not infer sequences from partial aliases. If a design is intentionally
+outside the downstream candidate/X universe, leave that decision documented in
+the study-owned handoff rather than encoding it in reader math.
 
 #### Numerical guards (recorded in logs)
 
@@ -306,14 +348,15 @@ if span <= eps_range:
     v_i = 0.25   (for all i)
     flat_logic = True
 else:
-    v_i = (u_i - u_min) / span
+    v_i = (u_i - u_min) / (span + eps_range)
     flat_logic = False
 ```
 
 Notes:
 
-* The “flat” fallback of `0.25` is a neutral, symmetry-preserving choice: it does not imply a preferred corner when there is no measurable separation.
+* The flat-logic value of `0.25` is a neutral, symmetry-preserving choice: it does not imply a preferred corner when there is no measurable separation.
 * `logic_span_log2` is the `span` value above (the log2-space separation across corners).
+* Reader uses `eps_range` as the denominator guard in the non-flat branch.
 
 All of this logic is implemented in `math._logic_minmax_from_four(...)` and applied per *design* in `math.compute_vec8(...)`.
 
@@ -338,6 +381,13 @@ Policy:
 3. Otherwise, raise a clear error (no silent fallback).
 
 This ensures the anchor is tied to the correct design label even when aliases are used for display.
+
+For the current 2026 SFXI pDual-10 panels, configs use
+`reference.design_id: J23105`. The metadata maps the raw `pDual-10` vector row
+to alias `J23105`, so reader resolves the configured J23105 reference to the raw
+`pDual-10` row before computing anchors. The emitted `reference_design_id`
+therefore records the raw design row used for math, while the config preserves
+the biological reference label.
 
 #### Anchor computation (per corner)
 
@@ -382,7 +432,8 @@ All `y*_i` values are in **log2 space**.
 
 ### Output
 
-Output is written by `lib.sfxi.writer.write_outputs(...)` (typically via `run.run_sfxi(...)`).
+Output is written by `reader.domains.logic.sfxi.writer.write_outputs(...)`
+(typically via `reader.domains.logic.sfxi.run.run_sfxi(...)`).
 
 #### Files
 
@@ -427,7 +478,8 @@ This does **not** affect anchor computation: the reference design_id must still 
 
 #### Log payload (`sfxi_log.json`)
 
-When using `lib.sfxi.run` entry points, the JSON log includes:
+When using `reader.domains.logic.sfxi.run.run_sfxi(...)` entry points, the JSON
+log includes:
 
 * resolved channels and config echo
 * chosen time (global)
@@ -460,6 +512,70 @@ Reader does not persist compatibility aliases such as `f_logic`, `e_scaled`, or
 has an unsupported `SFXI_API_VERSION`, `reader validate` and
 `reader plot --dry-run` report the missing optional dependency before plot
 execution. Install or sync `reader[dnadesign]` for this figure.
+
+When the scorer receives an aggregate vec8 table, it preserves source provenance
+columns such as `source_id`, `source_path`, `table_path`, `source_kind`,
+`source_row_index`, and `row_label` in the scored table. Those fields are
+diagnostic metadata only; OPAL still owns the scalar objective math.
+
+---
+
+### Aggregate vec8 heatmap
+
+The command `reader aggregate-sfxi-vec8` renders a reader-owned heatmap over
+measured vec8 rows from one or more finished SFXI experiments:
+
+```bash
+uv run reader aggregate-sfxi-vec8 \
+  experiments/2026/20260706_sfxi_sensor-panel-m9-glu-secg/config.yaml \
+  experiments/2026/20260707_sfxi_sensor-panel-m9-glu-secg/config.yaml \
+  --out-dir outputs/reviews/sfxi_vec8_aggregate
+```
+
+Accepted sources are experiment configs, experiment directories, outputs
+directories, or direct `.csv` / `.parquet` / `.xlsx` vec8 tables. Experiment and
+outputs-directory sources require the typed dataframe record `sfxi_vec8/vec8`.
+Reader does not silently aggregate exported workbooks from experiment sources.
+If you intentionally want to review an exported workbook, pass that workbook as
+an explicit table source. Direct table sources under an experiment directory use
+the experiment directory as `source_id`; otherwise the file stem is used, and
+duplicate `source_id` values are rejected.
+
+Aggregate inputs must include `time_selected_h`. The aggregate plot is a review
+surface for measured vec8 records, so it fails on vec8 tables that do not carry
+snapshot-time provenance.
+
+The aggregate surface is intentionally decoupled from OPAL and `dnadesign`: it
+does not score objectives, consume OPAL campaign ledgers, or import OPAL
+plotting code. It only stacks measured reader vec8 rows and writes:
+
+* `sfxi_vec8_heatmap.png`
+* `sfxi_vec8_heatmap_tidy.csv`
+* `sfxi_vec8_heatmap_manifest.json`
+
+Existing aggregate bundles are not overwritten unless `--overwrite` is passed.
+
+The tidy CSV has one row per `source_id` / `design_id` / vec8 channel and is the
+stable downstream review table if a richer aggregate notebook or study-specific
+plot layer is added later.
+
+The PNG uses compact display labels for readability and annotates the two vec8
+blocks separately: `v00` / `v10` / `v01` / `v11` are the measured logic-pattern
+channels, and `y00*` / `y10*` / `y01*` / `y11*` are the transformed fluorescence
+intensity channels. Rows are displayed with controls first, then natural
+ascending design IDs, and each row label includes the selected snapshot time.
+Colorbar labels use the same SFXI definitions as this document: logic shape is
+reported as `v_i`, and fluorescence intensity is reported as log2
+reference-normalized `y_i*`.
+Full `source_id`, `design_id`, source path, table path, and the unsorted tidy
+values stay in the tidy CSV and manifest. For record-backed sources, the
+manifest also records the source record's contract id, content digest, config
+digest, creation timestamp, and producer metadata.
+
+The aggregate manifest records the unique `intensity_log2_offset_delta` values.
+If more than one delta is present, `mixed_intensity_log2_offset_delta` is `true`;
+the heatmap is still a measured vec8 review surface, but the intensity channels
+should not be interpreted as sharing one linear-intensity inverse.
 
 ---
 
@@ -526,7 +642,13 @@ Additional notes:
 * `annotations.logic_maps.<name>.corners` must contain exactly the four keys `00, 10, 01, 11`.
 * `logic_map_ref` must point to a defined annotations logic map; reader fails fast on unknown refs.
 * `reference.design_id` is required for intensity anchoring; missing reference data results in an error rather than a fallback.
-* Although a `time_column` config key exists in `SFXIConfig`, the current selector validation expects a literal `time` column in the tidy table. (If your upstream data uses a different name, rename it to `time` before SFXI.)
+* `time_column` must name a column present in the input table. The selector
+  normalizes that configured column to `time` internally before choosing the
+  snapshot.
+* `analysis.sfxi_objective.intensity_log2_offset_delta` is compiled into both
+  the vec8 transform (`log2_offset_delta`) and the setpoint-scatter scorer. The
+  plot refuses to score vec8 rows whose `intensity_log2_offset_delta` provenance
+  column does not match the scorer configuration.
 
 ---
 
@@ -592,4 +714,19 @@ The following example uses the SFXI-capable experiment
       `transform/sfxi` step or existing SFXI dataframe records.
     * You can repeat the same workflow with any of the other SFXI-capable experiments in `experiments/2025/`.
 
-5) (Optional) export vec8 from the notebook UI:
+5) Render an aggregate heatmap over one or more completed SFXI experiments:
+
+    ```bash
+    uv run reader aggregate-sfxi-vec8 \
+      experiments/2025/20250915_sfxi_pSingle_ref/config.yaml \
+      --out-dir outputs/reviews/sfxi_vec8_aggregate
+    ```
+
+    This writes:
+
+    * `sfxi_vec8_heatmap.png`
+    * `sfxi_vec8_heatmap_tidy.csv`
+    * `sfxi_vec8_heatmap_manifest.json`
+
+    Pass exported `vec8.xlsx` files directly only when reviewing an explicit
+    workbook snapshot rather than the latest experiment record.

@@ -12,12 +12,13 @@ from .helpers import infer_job_path as _infer_job_path
 from .notebooks import _launch_marimo, notebook
 from .protocols import init, protocols
 from .shared import THEME, app, console, subprocess
-from .surfaces import export, plot, plugins, records, steps
+from .surfaces import aggregate_sfxi_vec8, export, plot, plugins, records, steps
 
 __all__ = [
     "THEME",
     "_infer_job_path",
     "_launch_marimo",
+    "aggregate_sfxi_vec8",
     "app",
     "config",
     "console",

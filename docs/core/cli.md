@@ -1,3 +1,11 @@
+---
+doc_id: reader-cli-reference
+surface: cli-reference
+owner: reader-maintainers
+last_verified: 2026-07-08
+summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
+---
+
 # CLI reference
 
 This page is the full CLI reference. For setup and the shortest common paths,
@@ -368,12 +376,41 @@ uv run reader export CONFIG|DIR|INDEX --only crosstalk_pairs_table --set with.pa
 
 ---
 
+## Aggregate SFXI vec8
+
+Render a cross-experiment heatmap from completed SFXI vec8 records or explicit
+vec8 table files:
+
+```bash
+uv run reader aggregate-sfxi-vec8 SOURCE... --out-dir outputs/reviews/sfxi_vec8_aggregate
+```
+
+`SOURCE` may be an experiment config, experiment directory, outputs directory,
+or a direct `.csv`, `.parquet`, or `.xlsx` vec8 table. Experiment and outputs
+directory sources require the `sfxi_vec8/vec8` dataframe record. Pass
+`outputs/exports/sfxi/vec8.xlsx` directly only when reviewing that exported
+workbook snapshot.
+
+Useful flags:
+
+- `--filename <name>` changes the artifact filename stem.
+- `--title <text>` sets the heatmap title.
+- `--dpi <n>` sets PNG resolution; the default is 300 DPI.
+- `--overwrite` replaces an existing artifact bundle.
+- `--format json` emits artifact paths, source rows, and summary counts.
+
+The aggregate command writes a PNG heatmap, tidy CSV, and manifest. See
+[SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md#aggregate-vec8-heatmap)
+for the source and provenance rules.
+
+---
+
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution). If `--template` is omitted,
-the CLI resolves the protocol default notebook template after applying any
-`protocol.outputs.notebook.template` override from the experiment config. It
-does not auto-pick a template from notebook specs or template capabilities.
+Scaffold a marimo notebook (no pipeline execution). Template selection is
+ordered and protocol-constrained: explicit `--template`, then the first
+compiled notebook spec from `config.yaml`, then the bound protocol default.
+The selected template still has to be allowed by the protocol.
 
 Notebooks are written under `outputs/notebooks/`.
 

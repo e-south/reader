@@ -1,3 +1,11 @@
+---
+doc_id: reader-workbench-gardening
+surface: maintainer-guide
+owner: reader-maintainers
+last_verified: 2026-07-08
+summary: Maintainer workflow for bounded reader architecture, documentation, CLI, and verification gardening.
+---
+
 # Workbench gardening
 
 Use this guide when the task is to keep `reader` easy to change, assay
@@ -70,13 +78,14 @@ Pair this maintainer workflow with global skills when the cycle needs a deeper
 specialized lens:
 
 - `deep-introspection` to map current architecture, ownership, and runtime flow
-- `pragmatic-programming-principles` to choose boundaries, contracts, and
-  fail-fast behavior
-- `code-review` when the main deliverable is findings rather than edits
+- `code-change-discipline` to choose boundaries, contracts, refactor strategy,
+  and fail-fast behavior
+- `artifact-review-and-hardening` when the main deliverable is findings or
+  maintainer hardening rather than edits
 - `harness-engineering` to tighten CLI, JSON, or end-to-end verification
   contracts
-- `deslop` only when cleaning maintainer prose after the technical content is
-  correct
+- `evidence-writing` only when cleaning maintainer prose after the technical
+  content is correct
 
 ## Evidence discipline
 

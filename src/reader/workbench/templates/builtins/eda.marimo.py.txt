@@ -14,6 +14,13 @@ def _():
     except Exception:
         pl = None
     from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.workbench.notebooks.components import (
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
+    )
     from reader.workbench.records import discover_dataframe_records
 
     return (
@@ -22,11 +29,16 @@ def _():
         mo,
         pl,
         load_notebook_workbench_context,
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
         discover_dataframe_records,
     )
 
 @app.cell(hide_code=True)
-def _(Path, load_notebook_workbench_context):
+def _(Path, build_notebook_overview, load_notebook_workbench_context):
     notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
     decl = notebook_context.decl
     exp_dir = notebook_context.experiment_root
@@ -35,14 +47,30 @@ def _(Path, load_notebook_workbench_context):
         "id": decl.experiment.id,
         "title": decl.experiment.title or "",
     }
+    notebooks_cfg = decl.experiment_semantics.layout.notebooks_subdir
+    notebooks_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
     pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
+    notebook_overview = build_notebook_overview(
+        experiment_id=exp_meta["id"],
+        experiment_title=exp_meta["title"],
+        protocol_id=decl.experiment_semantics.protocol.id,
+        experiment_root=exp_dir,
+        outputs_dir=outputs_dir,
+        notebooks_dir=notebooks_dir,
+        pipeline_step_ids=pipeline_step_ids,
+    )
     return (
         decl,
-        exp_dir,
-        exp_meta,
+        notebook_overview,
         outputs_dir,
+        notebooks_dir,
         pipeline_step_ids,
     )
+
+@app.cell(hide_code=True)
+def _(collect_notebook_deliverables, notebooks_dir, outputs_dir):
+    deliverables = collect_notebook_deliverables(outputs_dir, notebooks_dir=notebooks_dir)
+    return deliverables
 
 @app.cell(hide_code=True)
 def _(discover_dataframe_records, outputs_dir):
@@ -123,62 +151,17 @@ def _(pl, record_path):
             df_error = f"Failed to read parquet with polars ({_suffix})."
     return df, df_error
 
-@app.cell(hide_code=True)
-def _(df, pl):
-    design_treatment_rows = []
-    design_treatment_note = ""
-    if df is None:
-        design_treatment_note = "No dataset selected yet."
-    else:
-        _columns = list(df.columns) if hasattr(df, "columns") else []
-        _design_col = "design_id" if "design_id" in _columns else None
-        _treatment_col = "treatment" if "treatment" in _columns else None
-
-        if _design_col is None or _treatment_col is None:
-            _missing = []
-            if _design_col is None:
-                _missing.append("design_id")
-            if _treatment_col is None:
-                _missing.append("treatment")
-            design_treatment_note = f"Missing column(s): {', '.join(_missing)}."
-        else:
-            def _unique_values(df, col):
-                values = []
-                try:
-                    if pl is not None and df.__class__.__module__.startswith("polars"):
-                        _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
-                        values = _series.to_list()
-                except Exception:
-                    values = []
-                values = [str(_v) for _v in values if _v is not None]
-                return sorted(values)
-
-            _design_vals = _unique_values(df, _design_col)
-            _treatment_vals = _unique_values(df, _treatment_col)
-            _max_len = max(len(_design_vals), len(_treatment_vals), 1)
-            for _i in range(_max_len):
-                design_treatment_rows.append(
-                    {
-                        "Design IDs": _design_vals[_i] if _i < len(_design_vals) else None,
-                        "Treatments": _treatment_vals[_i] if _i < len(_treatment_vals) else None,
-                    }
-                )
+def _(build_design_treatment_summary_rows, df):
+    design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
     return design_treatment_rows, design_treatment_note
 
 @app.cell(hide_code=True)
-def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
-    _exp_id = exp_meta.get("id") or exp_dir.name
-    _exp_title = exp_meta.get("title") or _exp_id
-    if design_treatment_rows:
-        _design_table = mo.ui.table(design_treatment_rows, page_size=len(design_treatment_rows))
-    else:
-        _design_table = mo.md(design_treatment_note or "No design/treatment summary available.")
-    eda_overview_panel = mo.vstack(
-        [
-            mo.md(f"# {_exp_title}\n**Experiment id:** `{_exp_id}`"),
-            mo.md("**Design IDs + treatments**"),
-            _design_table,
-        ]
+def _(design_treatment_note, design_treatment_rows, mo, notebook_overview, render_notebook_overview_panel):
+    eda_overview_panel = render_notebook_overview_panel(
+        mo,
+        notebook_overview,
+        design_treatment_rows=design_treatment_rows,
+        design_treatment_note=design_treatment_note,
     )
     return eda_overview_panel
 
@@ -195,33 +178,36 @@ def _(df_error, mo, record_dropdown, record_note):
     return eda_dataset_panel
 
 @app.cell(hide_code=True)
-def _(df, df_error, mo, selected_label):
-    if df_error:
-        mo.stop(True, mo.md(f"Failed to load `{selected_label}`: {df_error}"))
-    if df is None:
-        mo.stop(True, mo.md("Select a dataset to explore."))
-    data_ready = True
-    return data_ready
-
-@app.cell(hide_code=True)
-def _(df, data_ready, mo, pl):
+def _(df, df_error, mo, pl, selected_label):
     _columns = list(df.columns) if hasattr(df, "columns") else []
     _elements = [mo.md("## Dataset table explorer")]
-    df_table = df
-    if len(_columns) > 40:
+    if df_error:
+        _elements.append(mo.md(f"Failed to load `{selected_label}`: {df_error}"))
+    elif df is None:
+        _elements.append(mo.md("Select a dataset to explore."))
+    elif len(_columns) > 40:
         _display_cols = _columns[:40]
+        df_table = df
         if pl is not None and df.__class__.__module__.startswith("polars"):
             df_table = df.select(_display_cols)
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
-    _elements.append(mo.ui.table(df_table, page_size=10))
+        _elements.append(mo.ui.table(df_table, page_size=10))
+    else:
+        _elements.append(mo.ui.table(df, page_size=10))
     eda_table_panel = mo.vstack(_elements)
     return eda_table_panel
 
 @app.cell(hide_code=True)
-def _(eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
+def _(deliverables, mo, render_notebook_deliverables_panel):
+    deliverables_panel = render_notebook_deliverables_panel(mo, deliverables)
+    return deliverables_panel
+
+@app.cell(hide_code=True)
+def _(deliverables_panel, eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
     eda_base_panel = mo.vstack(
         [
             eda_overview_panel,
+            deliverables_panel,
             eda_dataset_panel,
             eda_table_panel,
         ]

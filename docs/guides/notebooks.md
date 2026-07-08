@@ -1,3 +1,11 @@
+---
+doc_id: reader-notebooks-guide
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-08
+summary: Reader marimo notebook workflow, template selection, component ownership, and live-review checks.
+---
+
 # Running notebooks
 
 Once you run a pipeline you can generate [marimo notebooks](https://marimo.io/) to explore outputs.
@@ -82,7 +90,8 @@ What the scaffolded notebook includes:
 * dataframe record discovery via `outputs/manifests/records.json`
 * a dataset dropdown labeled “Dataset (dataframe record)” (defaults to the most downstream step when possible)
 * a canonical dataframe selection variable backed by the chosen parquet file (polars required to read parquet)
-* a compact experiment overview with experiment id/title plus a `design_id` / `treatment` summary when those columns exist
+* a compact experiment overview with experiment id, protocol, pipeline steps, paths, and `design_id` / `treatment` vocabulary when those columns exist
+* a progressive-disclosure deliverables panel for manifest-backed records, plots, exports, and generated notebooks
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
 * load-status messaging when no records exist yet or parquet loading fails
 
@@ -96,7 +105,28 @@ experiment-scoped plot-portfolio review, transform ladder, and semantic-table wa
 For cross-run retron library review, `notebook/retron_sponge_aggregate` is available as an explicit opt-in template
 for generic review experiments that aggregate exported semantic tables from multiple source screens.
 
-The dataset dropdown drives the canonical `df_active` variable.
+Template selection is ordered and protocol-constrained:
+
+1. explicit `--template`
+2. first compiled notebook spec from `config.yaml`
+3. bound protocol default
+
+The selected template must be listed in the protocol's allowed notebook
+templates. This keeps template choice semantic without letting template
+capabilities silently override the experiment contract.
+
+Generated notebooks keep shared review pieces in
+`reader.workbench.notebooks.components`:
+
+* `overview` owns frontmatter, path summaries, pipeline rows, and the
+  design/treatment vocabulary table.
+* `deliverables` owns manifest-backed records plus plot, export, and generated
+  notebook file bundles.
+* assay-specific templates can add domain review sections above or beside
+  those panels, but should avoid duplicating component-owned tables.
+
+The dataset dropdown drives the canonical dataframe selection used by the
+record explorer and assay-specific sections.
 
 See what’s available:
 
@@ -120,9 +150,9 @@ Notes:
 * Static HTML export is useful as an execution/shareability smoke check, but it is not an interaction check. Validate dropdowns, sliders, export buttons, and chart rerenders from a live `marimo run` app.
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
 * Common templates include `notebook/retron_sponge`, `notebook/retron_sponge_aggregate`, `notebook/eda`, `notebook/basic`, `notebook/microplate`, `notebook/dual_reporter_triptych`, `notebook/cytometry`, and `notebook/sfxi_eda`.
-* Template behavior is capability-driven:
+* Template behavior is contract-driven:
   - plot filtering is only available for templates that declare plot-filter support
-  - auto-pick chooses a template from declared default rules instead of hardcoded CLI branching
+  - default selection uses the compiled notebook spec or the protocol default instead of hardcoded CLI branching
   - template applicability checks are declared on the template asset itself
 * `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
 * `notebook/sfxi_eda` reuses the neutral dual-reporter triptych for visualization, then layers SFXI-specific vec8 recomputation, reference anchoring, and XLSX/JSON export on top.
@@ -131,6 +161,6 @@ Notes:
   - fallback: Synergy H1 ingest columns (`sheet_index` + `time`), where the first time in the second sheet is treated as the induction time
   If neither is present, the induction marker is omitted.
 * If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new` to create a second notebook with an automatic numeric suffix.
-* If `--template` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it auto-selects the first template whose declared default rule matches the workbench state.
+* If `--template` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it uses the bound protocol default.
 
 See also: [SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md) for how the vec8 pipeline is computed and how the SFXI notebook template aligns with the code.

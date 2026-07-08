@@ -44,6 +44,7 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("id", "string", required=False, allow_nan=True),
             ColumnRule("time_selected_h", "float", required=False, allow_nan=True),
             ColumnRule("reference_design_id", "string"),
+            ColumnRule("intensity_log2_offset_delta", "float", nonnegative=True),
             ColumnRule("r_logic", "float", nonnegative=True),
             ColumnRule("v00", "float"),
             ColumnRule("v10", "float"),

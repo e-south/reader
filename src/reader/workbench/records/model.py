@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,9 +76,20 @@ class DataFrameArtifactRecord(WorkbenchRecord):
             raise RecordError(f"DataFrameArtifactRecord must use kind 'dataframe_artifact', got {self.kind!r}")
 
     def load_dataframe(self) -> pd.DataFrame:
+        self.verify_content_digest()
         if self.path.suffix.lower() == ".parquet":
             return pd.read_parquet(self.path)
         raise RecordError(f"Record {self.record_id} is not a parquet dataframe: {self.path}")
+
+    def verify_content_digest(self) -> None:
+        if not self.path.exists():
+            raise RecordError(f"Record {self.record_id} dataframe artifact is missing: {self.path}")
+        actual = "sha256:" + hashlib.sha256(self.path.read_bytes()).hexdigest()
+        if actual != self.content_digest:
+            raise RecordError(
+                f"Record {self.record_id} content digest mismatch for {self.path}: "
+                f"expected {self.content_digest}, got {actual}"
+            )
 
 
 @dataclass(frozen=True)

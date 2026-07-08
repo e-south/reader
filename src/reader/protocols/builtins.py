@@ -978,12 +978,23 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 kind="summary",
                 summary="Bundle each SFXI promoter's kinetics, snapshot, and sequence architecture panels.",
             ),
+            ProtocolFigureSpec(
+                id="sfxi_vec8_heatmap",
+                kind="summary",
+                summary="Heatmap over per-design SFXI vec8 logic shape and reference-normalized intensity.",
+            ),
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
                 id="logic_overview",
-                summary="Default SFXI overview with kinetics and endpoint summaries.",
-                figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+                summary="Default SFXI overview with kinetics, endpoint summaries, and vec8 heatmap.",
+                figures=(
+                    "raw_kinetics",
+                    "endpoint_by_condition",
+                    "endpoint_by_design",
+                    "intensity_overview",
+                    "sfxi_vec8_heatmap",
+                ),
             ),
             ProtocolPlotProfileSpec(
                 id="logic_geometry",
@@ -1011,6 +1022,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "logic_symmetry",
                     "sfxi_setpoint_scatter",
                     "sfxi_triptych_sequence",
+                    "sfxi_vec8_heatmap",
                 ),
             ),
         ),

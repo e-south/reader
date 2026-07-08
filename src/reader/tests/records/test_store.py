@@ -95,6 +95,26 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     assert record.producer.source_recipe.recipe == "plate_reader/sample_map"
 
 
+def test_dataframe_record_load_rejects_content_digest_mismatch(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    record = store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=df,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    df.assign(value=[2.0]).to_parquet(record.path, index=False)
+
+    with pytest.raises(RecordError, match="content digest mismatch"):
+        record.load_dataframe()
+
+
 def test_record_store_revision_counts_bulk_read(tmp_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())

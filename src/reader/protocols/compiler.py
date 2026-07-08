@@ -321,14 +321,17 @@ def compile_logic_sfxi_screen(protocol: Any):
             "logic_symmetry",
             "sfxi_setpoint_scatter",
             "sfxi_triptych_sequence",
+            "sfxi_vec8_heatmap",
         },
     )
-    requires_vec8 = include_vec8 or bool({"sfxi_setpoint_scatter", "sfxi_triptych_sequence"} & set(selected_plot_ids))
+    requires_vec8 = include_vec8 or bool(
+        {"sfxi_setpoint_scatter", "sfxi_triptych_sequence", "sfxi_vec8_heatmap"} & set(selected_plot_ids)
+    )
     requires_promoted_df = requires_vec8 or bool({"logic_symmetry", "sfxi_triptych_sequence"} & set(selected_plot_ids))
     if requires_promoted_df:
         pipeline.append(_sfxi_promote_step())
     if requires_vec8:
-        pipeline.append(_sfxi_vec8_step())
+        pipeline.append(_sfxi_vec8_step(protocol))
 
     plots = [
         _plate_reader_plot_output(protocol, output_id=deliverable_id, measurement="yfp_cfp")
@@ -723,13 +726,19 @@ def _sfxi_promote_step() -> PluginStepDecl:
     )
 
 
-def _sfxi_vec8_step() -> PluginStepDecl:
+def _sfxi_vec8_step(protocol: Any) -> PluginStepDecl:
     return _step(
         id="sfxi_vec8",
         plugin="transform/sfxi",
         reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
+        with_={"log2_offset_delta": _sfxi_objective_delta(protocol)},
         writes={"vec8": RecordOutputDecl(record_id="sfxi_vec8/vec8")},
     )
+
+
+def _sfxi_objective_delta(protocol: Any) -> float:
+    objective = _analysis_mapping(_analysis_options(protocol), key="sfxi_objective")
+    return float(objective.get("intensity_log2_offset_delta", 0.0))
 
 
 def _sfxi_setpoint_scatter_defaults(protocol: Any) -> dict[str, Any]:
@@ -743,12 +752,16 @@ def _sfxi_setpoint_scatter_defaults(protocol: Any) -> dict[str, Any]:
         "scaling_eps": float(scaling.get("eps", 1.0e-8)),
         "logic_exponent_beta": float(exponents.get("logic_exponent_beta", 1.0)),
         "intensity_exponent_gamma": float(exponents.get("intensity_exponent_gamma", 1.0)),
-        "intensity_log2_offset_delta": float(objective.get("intensity_log2_offset_delta", 0.0)),
+        "intensity_log2_offset_delta": _sfxi_objective_delta(protocol),
     }
 
 
 def _sfxi_triptych_sequence_defaults(protocol: Any) -> dict[str, Any]:
     return deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_triptych_sequence"))
+
+
+def _sfxi_vec8_heatmap_defaults(protocol: Any) -> dict[str, Any]:
+    return deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_vec8_heatmap"))
 
 
 def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str) -> PluginStepDecl:
@@ -821,6 +834,13 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             plugin="plot/ts_and_snap",
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "sfxi_vec8_heatmap":
+        return _step(
+            id="sfxi_vec8_heatmap",
+            plugin="plot/sfxi_vec8_heatmap",
+            reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
+            with_=_deep_merge(_sfxi_vec8_heatmap_defaults(protocol), settings),
         )
     if output_id == "ratio_overview":
         defaults = {

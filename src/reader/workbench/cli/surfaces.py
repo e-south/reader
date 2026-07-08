@@ -41,6 +41,35 @@ def _spec_overrides():
     return _surface_execution.spec_overrides()
 
 
+SFXI_AGGREGATE_SOURCES_ARGUMENT = typer.Argument(
+    ...,
+    metavar="SOURCE...",
+    help="Experiment config, experiment directory, outputs directory, or vec8 table file.",
+)
+SFXI_AGGREGATE_OUT_DIR_OPTION = typer.Option(
+    Path("outputs/reviews/sfxi_vec8_aggregate"),
+    "--out-dir",
+    metavar="DIR",
+    help="Directory for the aggregate heatmap, tidy CSV, and manifest.",
+)
+SFXI_AGGREGATE_FILENAME_OPTION = typer.Option(
+    "sfxi_vec8_heatmap",
+    "--filename",
+    metavar="NAME",
+    help="Output filename stem for the aggregate artifact bundle.",
+)
+SFXI_AGGREGATE_TITLE_OPTION = typer.Option(None, "--title", metavar="TEXT", help="Optional heatmap title.")
+SFXI_AGGREGATE_DPI_OPTION = typer.Option(300, "--dpi", metavar="N", help="PNG resolution in dots per inch.")
+SFXI_AGGREGATE_OVERWRITE_OPTION = typer.Option(
+    False,
+    "--overwrite",
+    help="Replace an existing aggregate artifact bundle.",
+)
+SFXI_AGGREGATE_FORMAT_OPTION = typer.Option(
+    "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
+)
+
+
 def _validate_list_mode_flags(
     *,
     list_only: bool,
@@ -348,6 +377,45 @@ def export(
         )
     except ReaderError as err:
         handle_reader_error(err)
+
+
+@app.command("aggregate-sfxi-vec8", help="Render an aggregate SFXI vec8 heatmap from experiment records or vec8 files.")
+def aggregate_sfxi_vec8(
+    sources: list[Path] = SFXI_AGGREGATE_SOURCES_ARGUMENT,
+    out_dir: Path = SFXI_AGGREGATE_OUT_DIR_OPTION,
+    filename: str = SFXI_AGGREGATE_FILENAME_OPTION,
+    title: str | None = SFXI_AGGREGATE_TITLE_OPTION,
+    dpi: int = SFXI_AGGREGATE_DPI_OPTION,
+    overwrite: bool = SFXI_AGGREGATE_OVERWRITE_OPTION,
+    format: str = SFXI_AGGREGATE_FORMAT_OPTION,
+) -> None:
+    fmt = normalize_output_format(format)
+    try:
+        aggregate_module = _load("reader.domains.logic.sfxi.vec8_aggregate")
+        artifacts = aggregate_module.write_sfxi_vec8_aggregate(
+            sources=sources,
+            out_dir=out_dir,
+            title=title,
+            filename=filename,
+            dpi=dpi,
+            overwrite=overwrite,
+        )
+    except ReaderError as err:
+        handle_reader_error(err)
+    if fmt == "json":
+        emit_json(artifacts.to_payload())
+        return
+
+    listing = table("SFXI Vec8 Aggregate")
+    listing.add_column("field", style="accent")
+    listing.add_column("value", overflow="fold")
+    listing.add_row("sources", str(artifacts.summary["sources"]))
+    listing.add_row("rows", str(artifacts.summary["rows"]))
+    listing.add_row("channels", str(artifacts.summary["channels"]))
+    listing.add_row("heatmap", str(artifacts.heatmap_path))
+    listing.add_row("tidy", str(artifacts.tidy_path))
+    listing.add_row("manifest", str(artifacts.manifest_path))
+    shared.console.print(Panel(listing, border_style="accent", box=box.ROUNDED))
 
 
 @app.command(help="List records from outputs/manifests/records.json.")

@@ -1,3 +1,11 @@
+---
+doc_id: reader-marimo-reference
+surface: agent-reference
+owner: reader-maintainers
+last_verified: 2026-07-08
+summary: Marimo authoring and validation reference for reader-managed notebooks.
+---
+
 ## Marimo notebooks (context for agents)
 
 This document is a reference for working with marimo notebooks.

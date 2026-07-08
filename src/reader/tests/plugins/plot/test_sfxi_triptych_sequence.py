@@ -37,6 +37,7 @@ def _vec8_df() -> pd.DataFrame:
             "id": ["seq01"],
             "sequence": ["ACGTACGTACGT"],
             "reference_design_id": ["pDual-10"],
+            "intensity_log2_offset_delta": [0.0],
             "time_selected_h": [12.0],
             "v00": [0.0],
             "v10": [1.0],

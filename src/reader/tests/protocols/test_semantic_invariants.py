@@ -132,6 +132,22 @@ def test_bound_protocol_compile_injects_default_notebook_when_compiler_omits_not
     assert compiled.notebooks == (NotebookTemplateCallDecl(id="default", template="notebook/basic"),)
 
 
+def test_logic_sfxi_screen_can_compile_vec8_heatmap_plot() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            outputs={"plots": {"include": ["sfxi_vec8_heatmap"]}},
+        )
+    )
+
+    compiled = protocol.compile()
+    plot = next(step for step in compiled.plots if step.id == "sfxi_vec8_heatmap")
+
+    assert plot.plugin == "plot/sfxi_vec8_heatmap"
+    assert plot.reads["vec8"].record_id == "sfxi_vec8/vec8"
+    assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
+
+
 def test_protocol_semantic_execution_rejects_unknown_status() -> None:
     with pytest.raises(ValueError, match="must be 'compiled' or 'descriptive_only'"):
         ProtocolSemanticExecution(status="typo")

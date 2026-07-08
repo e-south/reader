@@ -1,8 +1,8 @@
 ---
 name: reader-workbench-gardening
-description: Audit and garden `reader`'s workbench architecture, semantic boundaries, docs, and verification surfaces so the repo stays assay-extensible, decoupled, fail-fast, and easy to change. Use when auditing monolith pressure, assay lock-in, stale semantics or docs, CLI or harness drift, or maintainer ergonomics before or during change cycles. Do not use for new-experiment intake, one-off feature work with no architecture objective, result interpretation, or hand-editing generated outputs.
+description: Garden reader workbench architecture, docs, semantics, and verification surfaces. Use when auditing monolith pressure, assay lock-in, stale docs, CLI drift, or maintainer ergonomics. Do not use for experiment intake, generated-output edits, result interpretation, or branch/publish/CI work.
 metadata:
-  version: 0.3.0
+  version: 0.3.1
   category: scientific-workbench
   tags: [reader, architecture, workbench, maintenance, harness, semantics]
 ---
@@ -39,14 +39,14 @@ Out of scope:
 - Pair with `reader-data-operations-plan` when the architecture or docs pass is
   specifically about DOP policy, DOP registry coverage, or DOP intake
   contracts.
-- Pair with `pragmatic-programming-principles` when boundary, contract, or
-  fail-fast decisions need to be made explicit.
-- Pair with `code-review` when the main deliverable is severity-ranked
-  findings rather than code changes.
+- Pair with `code-change-discipline` when boundary, contract, refactor, or
+  fail-fast decisions need an explicit change strategy.
+- Pair with `artifact-review-and-hardening` when the main deliverable is
+  severity-ranked findings or maintainer hardening.
 - Pair with `harness-engineering` when CLI, JSON, or end-to-end verification
   surfaces need stronger contracts or evidence.
-- Pair with `deslop` only when cleaning maintainer docs or skill prose after
-  the technical content is settled.
+- Pair with `evidence-writing` only when cleaning maintainer docs or skill prose
+  after the technical content is settled.
 
 ## Inputs
 

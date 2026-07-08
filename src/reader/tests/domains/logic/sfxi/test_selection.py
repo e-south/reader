@@ -170,6 +170,27 @@ def test_time_mode_variants_and_tolerance_warnings():
         cornerize_and_aggregate(df, channel="YFP/CFP", target_time_h=2.0, time_mode="exact", **common)
 
 
+def test_cornerize_honors_configured_time_column_before_required_column_check():
+    tmap = {"00": "A", "10": "B", "01": "C", "11": "D"}
+    df = _tidy(_rows_for_times([1.0], tmap, channel="YFP/CFP")).rename(columns={"time": "time_h"})
+
+    selected = cornerize_and_aggregate(
+        df,
+        design_by=["design_id"],
+        treatment_map=tmap,
+        case_sensitive=True,
+        time_column="time_h",
+        channel="YFP/CFP",
+        target_time_h=1.0,
+        time_mode="exact",
+        time_tolerance_h=0.1,
+        require_all_corners_per_design=True,
+    )
+
+    assert selected.chosen_time == pytest.approx(1.0)
+    assert "time" in selected.per_corner.columns
+
+
 def test_treatment_alias_selection_and_case_sensitivity():
     tmap = {"00": "EtOH", "10": "PMS", "01": "Cipro", "11": "NEG"}
     rows = []

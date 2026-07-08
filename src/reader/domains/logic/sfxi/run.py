@@ -45,9 +45,6 @@ def _attach_sequence(vec8: pd.DataFrame, tidy_df: pd.DataFrame, *, design_by: li
     if "sequence" not in tidy_df.columns:
         return vec8
 
-    if "sequence" not in tidy_df.columns:
-        return vec8
-
     idx_cols = [c for c in design_by if c in tidy_df.columns]
     if not idx_cols:
         return vec8
