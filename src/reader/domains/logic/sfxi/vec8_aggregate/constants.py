@@ -6,7 +6,6 @@ REQUIRED_VEC8_COLUMNS = (
     "design_id",
     "time_selected_h",
     "reference_design_id",
-    "intensity_log2_offset_delta",
     "r_logic",
     *VEC8_CHANNELS,
     "flat_logic",

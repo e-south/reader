@@ -72,8 +72,6 @@ def _require_vec8_columns(df: pd.DataFrame) -> None:
 
 
 def _require_intensity_delta_matches(vec8: pd.DataFrame, *, expected: float) -> None:
-    if "intensity_log2_offset_delta" not in vec8.columns:
-        raise SFXIError("SFXI setpoint scatter requires vec8 column: intensity_log2_offset_delta.")
     expected_value = float(expected)
     if not math.isfinite(expected_value) or expected_value < 0.0:
         raise SFXIError("SFXI setpoint scatter intensity_log2_offset_delta must be finite and nonnegative.")
@@ -88,6 +86,14 @@ def _require_intensity_delta_matches(vec8: pd.DataFrame, *, expected: float) -> 
             "SFXI setpoint scatter intensity_log2_offset_delta mismatch: "
             f"vec8 has [{observed}], scorer configured {expected_value:g}."
         )
+
+
+def _with_intensity_delta_column(vec8: pd.DataFrame) -> pd.DataFrame:
+    if "intensity_log2_offset_delta" in vec8.columns:
+        return vec8
+    out = vec8.copy()
+    out["intensity_log2_offset_delta"] = 0.0
+    return out
 
 
 def _coerce_setpoints(setpoints: Mapping[str, Sequence[float]]) -> dict[str, list[float]]:
@@ -140,6 +146,7 @@ def score_sfxi_setpoints(
     intensity_log2_offset_delta: float = 0.0,
 ) -> pd.DataFrame:
     _require_vec8_columns(vec8)
+    vec8 = _with_intensity_delta_column(vec8)
     _require_intensity_delta_matches(vec8, expected=intensity_log2_offset_delta)
     setpoint_map = _coerce_setpoints(setpoints)
     api = require_dnadesign_sfxi_api()

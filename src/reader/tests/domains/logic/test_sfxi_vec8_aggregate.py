@@ -147,6 +147,16 @@ def test_write_sfxi_vec8_aggregate_reports_mixed_delta_in_manifest(tmp_path: Pat
     assert manifest["mixed_intensity_log2_offset_delta"] is True
 
 
+def test_load_sfxi_vec8_sources_backfills_missing_v2_intensity_delta(tmp_path: Path) -> None:
+    path = tmp_path / "legacy_vec8.csv"
+    _vec8_df(design_prefix="legacy", v11=1.0).drop(columns=["intensity_log2_offset_delta"]).to_csv(path, index=False)
+
+    aggregate = load_sfxi_vec8_sources([path])
+
+    assert aggregate.frame["intensity_log2_offset_delta"].tolist() == [0.0, 0.0]
+    assert aggregate.intensity_log2_offset_deltas == (0.0,)
+
+
 def test_render_sfxi_vec8_heatmap_uses_compact_display_labels(tmp_path: Path) -> None:
     cfg_path = _write_experiment_with_vec8(
         tmp_path,
@@ -266,9 +276,7 @@ def test_sfxi_vec8_aggregate_requires_design_id_without_genotype_alias(tmp_path:
         load_sfxi_vec8_sources([path])
 
 
-@pytest.mark.parametrize(
-    "missing_column", ["time_selected_h", "reference_design_id", "intensity_log2_offset_delta", "r_logic", "flat_logic"]
-)
+@pytest.mark.parametrize("missing_column", ["time_selected_h", "reference_design_id", "r_logic", "flat_logic"])
 def test_direct_table_sources_require_vec8_v2_provenance_columns(tmp_path: Path, missing_column: str) -> None:
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).drop(columns=[missing_column]).to_csv(path, index=False)

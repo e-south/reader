@@ -149,11 +149,25 @@ def test_score_sfxi_setpoints_reports_missing_public_dnadesign_api(monkeypatch) 
         score_sfxi_setpoints(_vec8_df(), setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
 
 
-def test_score_sfxi_setpoints_requires_intensity_delta_provenance() -> None:
+def test_score_sfxi_setpoints_backfills_missing_intensity_delta_provenance(monkeypatch) -> None:
+    _install_fake_dnadesign_api(monkeypatch)
     vec8 = _vec8_df().drop(columns=["intensity_log2_offset_delta"])
 
-    with pytest.raises(SFXIError, match="requires vec8 column: intensity_log2_offset_delta"):
-        score_sfxi_setpoints(vec8, setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
+    scored = score_sfxi_setpoints(vec8, setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
+
+    assert list(scored["intensity_log2_offset_delta"]) == [0.0, 0.0]
+
+
+def test_score_sfxi_setpoints_rejects_missing_intensity_delta_when_expected_nonzero() -> None:
+    vec8 = _vec8_df().drop(columns=["intensity_log2_offset_delta"])
+
+    with pytest.raises(SFXIError, match="intensity_log2_offset_delta mismatch"):
+        score_sfxi_setpoints(
+            vec8,
+            setpoints={"and": [0.0, 0.0, 0.0, 1.0]},
+            scaling_min_n=1,
+            intensity_log2_offset_delta=0.25,
+        )
 
 
 def test_score_sfxi_setpoints_rejects_intensity_delta_mismatch() -> None:
