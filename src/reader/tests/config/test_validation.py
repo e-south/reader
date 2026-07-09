@@ -301,6 +301,36 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     assert workbench.exports == ()
 
 
+def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "logic_maps": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+    workbench = resolve_workbench(decl)
+
+    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
+    assert "sfxi_vec8_heatmap" not in [plot.id for plot in workbench.plots]
+    assert [plot.id for plot in workbench.plots] == [
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "intensity_overview",
+    ]
+
+
 def test_sfxi_objective_delta_reaches_vec8_and_setpoint_plot_configs(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",

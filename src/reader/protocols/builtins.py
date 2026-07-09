@@ -987,13 +987,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         plot_profiles=(
             ProtocolPlotProfileSpec(
                 id="logic_overview",
-                summary="Default SFXI overview with kinetics, endpoint summaries, and vec8 heatmap.",
+                summary="Default SFXI overview with kinetics and endpoint summaries.",
                 figures=(
                     "raw_kinetics",
                     "endpoint_by_condition",
                     "endpoint_by_design",
                     "intensity_overview",
-                    "sfxi_vec8_heatmap",
                 ),
             ),
             ProtocolPlotProfileSpec(

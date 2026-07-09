@@ -106,7 +106,7 @@ def render_sfxi_triptych_sequence_bundle(
     try:
         records: list[dict[str, Any]] = []
         with PdfPages(staging["pdf"]) as pdf:
-            for _, row in plan.iterrows():
+            for row_number, (_, row) in enumerate(plan.iterrows(), start=1):
                 fig, record = _render_one(
                     baserender=baserender,
                     assay=assay,
@@ -114,7 +114,9 @@ def render_sfxi_triptych_sequence_bundle(
                     cfg=cfg,
                     scales=scales,
                 )
-                png_path = staging["frames_dir"] / f"{_slug(row['display_label'])}.png"
+                png_path = staging["frames_dir"] / _frame_filename(
+                    row_number=row_number, display_label=row["display_label"]
+                )
                 fig.savefig(png_path, dpi=cfg["dpi"], facecolor="white")
                 pdf.savefig(fig, facecolor="white")
                 if len(records) == 0:
@@ -197,6 +199,10 @@ def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "axis_limits": axis_limits,
         "treatments": _normalize_treatments(treatments),
     }
+
+
+def _frame_filename(*, row_number: int, display_label: object) -> str:
+    return f"{row_number:03d}_{_slug(display_label)}.png"
 
 
 def _build_candidate_plan(*, vec8: pd.DataFrame, sequence_rows: pd.DataFrame, cfg: Mapping[str, Any]) -> pd.DataFrame:

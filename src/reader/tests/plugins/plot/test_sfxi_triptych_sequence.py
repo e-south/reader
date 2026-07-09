@@ -190,6 +190,15 @@ def test_sfxi_triptych_sequence_dependency_check_wraps_transitive_import_failure
     assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
 
 
+def test_sfxi_triptych_frame_filename_keeps_colliding_label_slugs_unique() -> None:
+    first = triptych_sequence._frame_filename(row_number=1, display_label="A-1")
+    second = triptych_sequence._frame_filename(row_number=2, display_label="a_1")
+
+    assert first == "001_a_1.png"
+    assert second == "002_a_1.png"
+    assert first != second
+
+
 def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, monkeypatch) -> None:
     _install_fake_sequence_panel(monkeypatch)
     runtime = builtin_runtime()
