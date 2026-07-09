@@ -175,14 +175,26 @@ def test_render_sfxi_vec8_heatmap_uses_compact_display_labels(tmp_path: Path) ->
         ]
         annotation_labels = {text.get_text() for text in ax.texts}
         assert "Logic\npattern" in annotation_labels
-        assert "Fluorescence\nintensity" in annotation_labels
+        assert "Fluor.\nintensity" in annotation_labels
         assert r"vec8 = concat($v$, $y^\star$)" in annotation_labels
-        colorbar_labels = {axis.yaxis.label.get_text() for axis in fig.axes[1:]}
+        colorbar_labels = {axis.xaxis.label.get_text() for axis in fig.axes[1:]}
         assert "$v_i$ normalized response" in colorbar_labels
         assert "$y_i^\\star$ log2 intensity" in colorbar_labels
+        heatmap_box = ax.get_position()
+        colorbar_boxes = [axis.get_position() for axis in fig.axes[1:]]
+        assert all(box.width > box.height for box in colorbar_boxes)
+        assert all(box.y1 < heatmap_box.y0 for box in colorbar_boxes)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        channel_boxes = [
+            tick.get_window_extent(renderer=renderer)
+            for tick in ax.get_xticklabels()
+            if tick.get_visible() and tick.get_text()
+        ]
+        rendered_colorbar_boxes = [axis.get_tightbbox(renderer=renderer) for axis in fig.axes[1:]]
+        assert min(box.y0 for box in channel_boxes) > max(box.y1 for box in rendered_colorbar_boxes) + 2.0
         title = next(text for text in fig.texts if text.get_text() == "Measured SFXI vec8 aggregate")
-        box = ax.get_position()
-        assert title.get_position()[0] == pytest.approx((box.x0 + box.x1) / 2)
+        assert title.get_position()[0] == pytest.approx((heatmap_box.x0 + heatmap_box.x1) / 2)
     finally:
         import matplotlib.pyplot as plt  # noqa: PLC0415
 

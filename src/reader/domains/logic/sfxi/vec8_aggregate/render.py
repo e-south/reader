@@ -21,9 +21,9 @@ CONTROL_SORT_RANKS = {"spyp": 0, "sula": 1, "pdual10": 2}
 NATURAL_SORT_TOKEN = re.compile(r"\d+|\D+")
 TILE_SIZE_IN = 0.38
 AXES_LEFT_MAX = 0.52
-AXES_RIGHT = 0.78
-AXES_BOTTOM = 0.055
-AXES_TOP = 0.825
+AXES_RIGHT = 0.94
+AXES_BOTTOM = 0.24
+AXES_TOP = 0.84
 MIN_TICK_FONT_SIZE = 6.8
 MAX_ROW_TICK_FONT_SIZE = 10.5
 MAX_CHANNEL_TICK_FONT_SIZE = 12.5
@@ -123,7 +123,7 @@ def _figure_size(labels: list[str], *, row_count: int) -> tuple[float, float]:
     heatmap_width = len(VEC8_CHANNELS) * TILE_SIZE_IN
     side_width = 1.55
     width = max(7.2, min(11.4, label_width + heatmap_width + side_width))
-    height = max(4.8, min(18.5, row_count * TILE_SIZE_IN + 2.55))
+    height = max(5.4, min(20.0, row_count * TILE_SIZE_IN + 3.05))
     return (width, height)
 
 
@@ -159,7 +159,7 @@ def _visible_y_tick_label_count(*, max_labels: int, row_count: int, figure_heigh
 
 
 def _annotation_font_size(*, figure_width: float) -> float:
-    return max(13.0, min(16.0, float(figure_width) * 1.35))
+    return max(12.0, min(14.0, float(figure_width) * 1.10))
 
 
 def _colorbar_font_size(row_tick_font_size: float) -> float:
@@ -230,7 +230,7 @@ def _draw_channel_annotations(ax, *, font_size: float) -> None:
     transform = ax.get_xaxis_transform()
     ax.text(
         LOGIC_CHANNEL_COUNT / 2,
-        1.12,
+        1.13,
         "Logic\npattern",
         ha="center",
         va="bottom",
@@ -241,8 +241,8 @@ def _draw_channel_annotations(ax, *, font_size: float) -> None:
     )
     ax.text(
         LOGIC_CHANNEL_COUNT + (len(VEC8_CHANNELS) - LOGIC_CHANNEL_COUNT) / 2,
-        1.12,
-        "Fluorescence\nintensity",
+        1.13,
+        "Fluor.\nintensity",
         ha="center",
         va="bottom",
         linespacing=0.9,
@@ -253,7 +253,7 @@ def _draw_channel_annotations(ax, *, font_size: float) -> None:
     for start, stop in ((0, LOGIC_CHANNEL_COUNT), (LOGIC_CHANNEL_COUNT, len(VEC8_CHANNELS))):
         ax.plot(
             [start + 0.08, stop - 0.08],
-            [1.075, 1.075],
+            [1.08, 1.08],
             color="#8a8a8a",
             linewidth=1.6,
             transform=transform,
@@ -261,7 +261,7 @@ def _draw_channel_annotations(ax, *, font_size: float) -> None:
         )
     ax.text(
         len(VEC8_CHANNELS) / 2,
-        1.035,
+        1.04,
         r"vec8 = concat($v$, $y^\star$)",
         ha="center",
         va="top",
@@ -276,7 +276,7 @@ def _draw_heatmap_centered_title(fig, ax, title: str) -> None:
     box = ax.get_position()
     fig.text(
         (box.x0 + box.x1) / 2,
-        0.985,
+        0.965,
         title,
         ha="center",
         va="top",
@@ -287,18 +287,23 @@ def _draw_heatmap_centered_title(fig, ax, title: str) -> None:
 def _draw_split_colorbars(fig, ax, logic_mesh, intensity_mesh, *, font_size: float) -> None:
     fig.canvas.draw()
     box = ax.get_position()
-    colorbar_width = 0.014
-    colorbar_x = box.x1 + 0.026
-    logic_cax = fig.add_axes([colorbar_x, box.y0 + box.height * 0.58, colorbar_width, box.height * 0.30])
-    intensity_cax = fig.add_axes([colorbar_x, box.y0 + box.height * 0.12, colorbar_width, box.height * 0.30])
-    logic_cbar = fig.colorbar(logic_mesh, cax=logic_cax)
-    logic_cbar.set_label(LOGIC_COLORBAR_LABEL, rotation=90, labelpad=9, va="center")
+    colorbar_height = 0.014
+    # Anchor colorbars in the reserved bottom margin. Sparse heatmaps can shift
+    # the aspect-adjusted axes upward, which should not move the legend stack.
+    logic_y = AXES_BOTTOM - 0.070
+    intensity_y = max(0.035, logic_y - 0.055)
+    logic_cax = fig.add_axes([box.x0, logic_y, box.width, colorbar_height])
+    intensity_cax = fig.add_axes([box.x0, intensity_y, box.width, colorbar_height])
+    logic_cbar = fig.colorbar(logic_mesh, cax=logic_cax, orientation="horizontal")
+    logic_cbar.ax.xaxis.set_label_position("top")
+    logic_cbar.ax.xaxis.set_ticks_position("top")
+    logic_cbar.set_label(LOGIC_COLORBAR_LABEL, labelpad=4)
     logic_cbar.set_ticks([0.0, 1.0])
-    intensity_cbar = fig.colorbar(intensity_mesh, cax=intensity_cax)
-    intensity_cbar.set_label(INTENSITY_COLORBAR_LABEL, rotation=90, labelpad=9, va="center")
+    intensity_cbar = fig.colorbar(intensity_mesh, cax=intensity_cax, orientation="horizontal")
+    intensity_cbar.set_label(INTENSITY_COLORBAR_LABEL, labelpad=4)
     for colorbar in (logic_cbar, intensity_cbar):
-        colorbar.ax.tick_params(labelsize=font_size, length=2)
-        colorbar.ax.yaxis.label.set_size(font_size)
+        colorbar.ax.tick_params(axis="x", labelsize=font_size, length=2)
+        colorbar.ax.xaxis.label.set_size(font_size)
 
 
 def _ordered_plot_frame(frame: pd.DataFrame) -> pd.DataFrame:
