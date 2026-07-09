@@ -276,3 +276,9 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v1"
     assert manifest["row_order"] == ["pDual-10-test01"]
+    record = manifest["records"][0]
+    assert ".staging" not in record["png_path"]
+    assert (outputs / record["png_path"]).exists()
+    index = pd.read_csv(outputs / "exports" / "sfxi_triptych_sequence" / "sfxi_triptych_sequence_index.csv")
+    assert index["png_path"].tolist() == [record["png_path"]]
+    assert (outputs / index.loc[0, "png_path"]).exists()

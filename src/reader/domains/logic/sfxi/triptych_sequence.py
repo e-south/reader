@@ -117,12 +117,15 @@ def render_sfxi_triptych_sequence_bundle(
                 png_path = staging["frames_dir"] / _frame_filename(
                     row_number=row_number, display_label=row["display_label"]
                 )
+                final_png_path = final["frames_dir"] / png_path.name
                 fig.savefig(png_path, dpi=cfg["dpi"], facecolor="white")
                 pdf.savefig(fig, facecolor="white")
                 if len(records) == 0:
                     fig.savefig(staging["poster"], dpi=cfg["dpi"], facecolor="white")
                 _close_figure(fig)
-                records.append({**record, "png_path": _relative_to_outputs(png_path, outputs_dir=ctx.outputs_dir)})
+                records.append(
+                    {**record, "png_path": _relative_to_outputs(final_png_path, outputs_dir=ctx.outputs_dir)}
+                )
 
         movie_path = _write_movie(cfg=cfg, records=records, staging=staging, outputs_dir=ctx.outputs_dir)
         index = pd.DataFrame(records)
