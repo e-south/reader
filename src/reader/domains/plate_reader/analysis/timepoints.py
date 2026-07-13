@@ -60,13 +60,13 @@ def choose_nearest_time(
     return chosen_time
 
 
-def infer_induction_time_h(df: pd.DataFrame, *, time_col: str) -> float | None:
-    for column in ("induction_time_h", "induction_time", "time_of_induction_h", "time_of_induction"):
-        if column in df.columns:
-            values = pd.to_numeric(df[column], errors="coerce").dropna()
-            if not values.empty:
-                return float(values.iloc[0])
+def infer_acquisition_transition_time_h(df: pd.DataFrame, *, time_col: str) -> float | None:
+    """Return the first time in a later workbook acquisition segment.
 
+    A sheet transition is acquisition provenance. It does not identify a
+    biological intervention unless a separate, explicit event contract says
+    that it does.
+    """
     if "sheet_index" not in df.columns:
         return None
     sheet_values = pd.to_numeric(df["sheet_index"], errors="coerce").dropna()
@@ -80,4 +80,4 @@ def infer_induction_time_h(df: pd.DataFrame, *, time_col: str) -> float | None:
     return float(times.min())
 
 
-__all__ = ["choose_nearest_time", "infer_induction_time_h", "nearest_time_per_key"]
+__all__ = ["choose_nearest_time", "infer_acquisition_transition_time_h", "nearest_time_per_key"]

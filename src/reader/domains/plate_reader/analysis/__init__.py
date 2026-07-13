@@ -8,6 +8,13 @@ Plate-reader derived-table and timepoint-selection helpers.
 """
 
 from .fold_change import compute_fold_change_table
+from .response_window import (
+    REQUEST_SCHEMA_VERSION,
+    ExperimentPreflight,
+    ResponseWindowPreflight,
+    ResponseWindowRequest,
+    load_response_window_request,
+)
 from .retron_sponge import compute_retron_sponge_metrics
 from .spop import (
     SPOP_ACRONYM,
@@ -26,7 +33,9 @@ from .timepoints import choose_nearest_time, nearest_time_per_key
 
 __all__ = [
     "SPOP_ACRONYM",
+    "REQUEST_SCHEMA_VERSION",
     "SPOP_DEFAULT_LAMBDA",
+    "ExperimentPreflight",
     "SPOP_METRIC_ID",
     "SPOP_NORMALIZATION_BASIS",
     "SPOP_NUMERIC_SCOPE",
@@ -35,9 +44,12 @@ __all__ = [
     "SpopDoseValue",
     "SpopEndpointScore",
     "SpopScoringError",
+    "ResponseWindowPreflight",
+    "ResponseWindowRequest",
     "choose_nearest_time",
     "compute_fold_change_table",
     "compute_retron_sponge_metrics",
     "nearest_time_per_key",
+    "load_response_window_request",
     "score_spop_endpoint",
 ]
