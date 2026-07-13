@@ -20,15 +20,12 @@ def render_records(
 ) -> None:
     _, decl = load_job_models(job_path)
     outputs_dir = decl.experiment_semantics.layout.outputs_dir
-    store = (
-        _load("reader.runtime")
-        .builtin_runtime()
-        .record_store(
-            outputs_dir,
-            plots_subdir=decl.experiment_semantics.layout.plots_subdir,
-            exports_subdir=decl.experiment_semantics.layout.exports_subdir,
-            create=False,
-        )
+    runtime = _load("reader.runtime").builtin_runtime()
+    store = runtime.record_store(
+        outputs_dir,
+        plots_subdir=decl.experiment_semantics.layout.plots_subdir,
+        exports_subdir=decl.experiment_semantics.layout.exports_subdir,
+        create=False,
     )
     if not store.catalog_exists():
         raise ReaderError(
@@ -44,7 +41,7 @@ def render_records(
                 ),
                 store=store,
                 outputs_dir=outputs_dir,
-                base=decl.experiment.root,
+                runtime=runtime,
                 include_history=all_revisions,
             )
         )
@@ -69,12 +66,14 @@ def render_records(
         listing.add_column("Record")
         listing.add_column("Kind", style="accent")
         listing.add_column("Producer")
+        listing.add_column("Description")
         listing.add_column("Revisions", justify="right")
         for record in latest_records:
             listing.add_row(
                 record.record_id,
                 record.kind,
                 f"{record.producer.kind}:{record.producer.id}",
+                _load("reader.workbench.inspection.results").record_description(record, runtime=runtime),
                 str(revision_counts[record.record_id]),
             )
         shared.console.print(Panel(listing, border_style="accent", box=box.ROUNDED))
@@ -96,12 +95,18 @@ def render_records(
     listing.add_column("Record")
     listing.add_column("Kind", style="accent")
     listing.add_column("Producer")
+    listing.add_column("Description")
     listing.add_column("Details", style="path")
     for record in latest_records:
-        detail = (
-            f"{record.contract_id} • {record.path}"
-            if record.kind == "dataframe_artifact"
-            else ", ".join(str(path) for path in record.files)
+        detail = _load("reader.workbench.inspection.results").record_detail_text(
+            record,
+            base=decl.experiment.root,
         )
-        listing.add_row(record.record_id, record.kind, f"{record.producer.kind}:{record.producer.id}", detail)
+        listing.add_row(
+            record.record_id,
+            record.kind,
+            f"{record.producer.kind}:{record.producer.id}",
+            _load("reader.workbench.inspection.results").record_description(record, runtime=runtime),
+            detail,
+        )
     shared.console.print(Panel(listing, border_style="accent", box=box.ROUNDED))

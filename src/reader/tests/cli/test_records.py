@@ -5,13 +5,15 @@ src/reader/tests/test_cli_records.py
 --------------------------------------------------------------------------------
 """
 
+import json
+
 import pandas as pd
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
 from reader.workbench.cli import app
 from reader.workbench.graph import ProvenanceInput, RecordRef
-from reader.workbench.records import RecordStore
+from reader.workbench.records import PathDescription, RecordStore
 
 
 def test_records_requires_catalog(tmp_path) -> None:
@@ -74,8 +76,10 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         config_digest="sha256:test",
     )
     plot_path = outputs / "plots" / "trace.png"
+    summary_path = outputs / "plots" / "summary.png"
     plot_path.parent.mkdir(parents=True, exist_ok=True)
     plot_path.write_text("png", encoding="utf-8")
+    summary_path.write_text("png", encoding="utf-8")
     store.append_file_bundle(
         producer_kind="plot",
         producer_id="qc",
@@ -83,13 +87,30 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         record_id="plot:qc",
         inputs=[ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))],
         config_digest="sha256:plot",
-        files=[plot_path],
+        files=[plot_path, summary_path],
+        description="Render grouped time-series plots from tidy plate-reader traces.",
+        path_descriptions=(
+            PathDescription(path=plot_path, description="Grouped time-series traces for the configured channels."),
+            PathDescription(path=summary_path, description="Endpoint summary by treatment."),
+        ),
     )
     runner = CliRunner()
     result = runner.invoke(app, ["records", str(config)])
     assert result.exit_code == 0
     assert "ingest/df" in result.output
     assert "plot:qc" in result.output
+    assert "2 files" in result.output
+
+    json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
+    assert json_result.exit_code == 0
+    payload = json.loads(json_result.output)
+    bundle = next(record for record in payload["records"] if record["record_id"] == "plot:qc")
+    assert bundle["description"] == "Render grouped time-series plots from tidy plate-reader traces."
+    assert bundle["path_descriptions"] == [
+        {"path": "plots/summary.png", "description": "Endpoint summary by treatment."},
+        {"path": "plots/trace.png", "description": "Grouped time-series traces for the configured channels."},
+    ]
+    assert "detail" not in bundle
 
 
 def test_records_all_shows_revision_counts(tmp_path) -> None:

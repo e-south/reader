@@ -25,6 +25,17 @@ class PlotFigure:
     filename: str
     ext: str = "pdf"
     dpi: int | None = None
+    description: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.description is None:
+            return
+        if not isinstance(self.description, str) or not self.description.strip():
+            raise ExecutionError("PlotFigure.description must be a non-empty string when provided")
+        normalized = self.description.strip()
+        if "\n" in normalized or "\r" in normalized:
+            raise ExecutionError("PlotFigure.description must be a single line")
+        object.__setattr__(self, "description", normalized)
 
 
 def normalize_plot_figures(rendered: Any, *, where: str) -> list[PlotFigure]:

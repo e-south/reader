@@ -12,8 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
+from matplotlib import pyplot as plt
 
 from reader.contracts import builtin_contract_catalog
+from reader.errors import ExecutionError
+from reader.plotting.sinks import PlotFigure
+from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics, resolve_workbench
@@ -36,6 +41,12 @@ from reader.workbench.registry import Plugin, PluginConfig, Registry
 
 class _Cfg(PluginConfig):
     pass
+
+
+@pytest.mark.parametrize("description", ["", "two\nlines"])
+def test_plot_figure_rejects_invalid_descriptions(description: str) -> None:
+    with pytest.raises(ExecutionError, match="PlotFigure.description"):
+        PlotFigure(fig=object(), filename="plot", description=description)
 
 
 class _DummyPlot(Plugin):
@@ -61,7 +72,51 @@ class _DummyPlot(Plugin):
         return {"artifacts": self.render(ctx, inputs, cfg)}
 
 
-def test_plot_save_calls_render(tmp_path: Path) -> None:
+class _DummyExport(Plugin):
+    ConfigModel = _Cfg
+
+    @classmethod
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
+
+    @classmethod
+    def output_ports(cls):
+        return {"artifacts": file_bundle_output("artifacts")}
+
+    def run(self, ctx, inputs, cfg):
+        out = ctx.exports_dir / "dummy_export.csv"
+        out.write_text("value\n1\n", encoding="utf-8")
+        return {"artifacts": [out]}
+
+
+class _DummyDescribedPlot(FigurePlotPlugin):
+    ConfigModel = _Cfg
+
+    @classmethod
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
+
+    def render(self, ctx, inputs, cfg):
+        del inputs, cfg
+        kinetics, kinetics_ax = plt.subplots()
+        kinetics_ax.plot([0.0, 1.0], [0.0, 1.0])
+        summary, summary_ax = plt.subplots()
+        summary_ax.bar(["control", "treated"], [1.0, 2.0])
+        return [
+            PlotFigure(
+                fig=kinetics,
+                filename="custom_kinetics",
+                description="Reporter kinetics over assay time.",
+            ),
+            PlotFigure(
+                fig=summary,
+                filename="custom_summary",
+                description="Endpoint summary by treatment.",
+            ),
+        ]
+
+
+def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin_descriptions(tmp_path: Path) -> None:
     _DummyPlot.render_called = False
     outputs = tmp_path / "outputs"
     store = RecordStore(
@@ -101,13 +156,26 @@ def test_plot_save_calls_render(tmp_path: Path) -> None:
         plots=SurfaceDecl(
             specs=(
                 PluginStepDecl(
-                    id="plot_dummy",
+                    id="generic_qc",
                     plugin="plot/dummy_plot",
+                    reads={"df": RecordInputDecl(record_id="raw/df")},
+                ),
+                PluginStepDecl(
+                    id="custom_pair",
+                    plugin="plot/dummy_described",
                     reads={"df": RecordInputDecl(record_id="raw/df")},
                 ),
             )
         ),
-        exports=SurfaceDecl(specs=()),
+        exports=SurfaceDecl(
+            specs=(
+                PluginStepDecl(
+                    id="export_dummy",
+                    plugin="export/dummy_export",
+                    reads={"df": RecordInputDecl(record_id="raw/df")},
+                ),
+            )
+        ),
         notebooks=NotebookDecl(specs=()),
     )
 
@@ -117,6 +185,20 @@ def test_plot_save_calls_render(tmp_path: Path) -> None:
             plugin_id="plot/dummy_plot",
             semantics=PluginSemantics(domain="generic", family="test_plot", summary="Test plot plugin."),
             plugin_cls=_DummyPlot,
+        )
+    )
+    reg.register(
+        build_plugin_asset(
+            plugin_id="plot/dummy_described",
+            semantics=PluginSemantics(domain="generic", family="test_plot", summary="Render two test plot files."),
+            plugin_cls=_DummyDescribedPlot,
+        )
+    )
+    reg.register(
+        build_plugin_asset(
+            plugin_id="export/dummy_export",
+            semantics=PluginSemantics(domain="generic", family="test_export", summary="Test export plugin."),
+            plugin_cls=_DummyExport,
         )
     )
     runtime = ReaderRuntime(
@@ -131,12 +213,28 @@ def test_plot_save_calls_render(tmp_path: Path) -> None:
         decl,
         include_pipeline=False,
         include_plots=True,
-        include_exports=False,
+        include_exports=True,
         plot_specs=plot_specs,
+        export_specs=resolve_workbench(decl).exports,
         log_level="ERROR",
         runtime=runtime,
     )
-    latest_ids = {record.record_id for record in store.iter_latest_records()}
+    latest = {record.record_id: record for record in store.iter_latest_records()}
     assert _DummyPlot.render_called is True
-    assert "plot:plot_dummy" in latest_ids
-    assert (outputs / "plots" / "dummy_plot.pdf").exists()
+    plot_record = latest["plot:generic_qc"]
+    plot_path = outputs / "plots" / "dummy_plot.pdf"
+    assert plot_record.description == (
+        "Quality-control measurements and diagnostics defined by the selected experiment domain."
+    )
+    assert plot_record.description_for(plot_path) == (
+        "Quality-control measurements and diagnostics defined by the selected experiment domain."
+    )
+    assert latest["export:export_dummy"].description == "Test export plugin."
+    custom_record = latest["plot:custom_pair"]
+    assert custom_record.description == "Render two test plot files."
+    assert custom_record.description_for(outputs / "plots" / "custom_kinetics.pdf") == (
+        "Reporter kinetics over assay time."
+    )
+    assert custom_record.description_for(outputs / "plots" / "custom_summary.pdf") == ("Endpoint summary by treatment.")
+    assert plot_path.exists()
+    assert (outputs / "exports" / "dummy_export.csv").exists()

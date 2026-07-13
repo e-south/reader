@@ -11,6 +11,10 @@ from reader.workbench.assets import (
     build_workbench_asset_catalog,
     static_asset_catalog,
 )
+from reader.workbench.assets.plugin_manifest import (
+    builtin_plugin_asset_catalog,
+    builtin_plugin_descriptors,
+)
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig, Registry
 from reader.workbench.templates import select_default_notebook_template
@@ -85,6 +89,46 @@ def test_static_asset_catalog_only_exposes_templates() -> None:
     assert items
     assert {item.kind for item in items} == {"template"}
     assert catalog.resolve("notebook/dual_reporter_triptych", kind="template").kind == "template"
+
+
+def test_sample_metadata_descriptor_is_not_plate_reader_specific() -> None:
+    descriptor = builtin_plugin_asset_catalog().resolve("transform/sample_metadata", kind="plugin")
+
+    assert descriptor.domain == "generic"
+    assert descriptor.summary == "Attach sample-keyed metadata tables to tidy measurement rows."
+
+
+def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
+    assert {descriptor.plugin_id for descriptor in builtin_plugin_descriptors()} == {
+        "export/csv",
+        "export/xlsx",
+        "ingest/flow_cytometer",
+        "ingest/synergy_h1",
+        "plot/distributions",
+        "plot/logic_symmetry",
+        "plot/retron_summary",
+        "plot/retron_trace",
+        "plot/sfxi_setpoint_scatter",
+        "plot/sfxi_triptych_sequence",
+        "plot/sfxi_vec8_heatmap",
+        "plot/snapshot_barplot",
+        "plot/snapshot_heatmap",
+        "plot/time_series",
+        "plot/ts_and_snap",
+        "transform/alias",
+        "transform/assay_labels",
+        "transform/blank_correction",
+        "transform/crosstalk_pairs",
+        "transform/fold_change",
+        "transform/outlier_filter",
+        "transform/overflow_handling",
+        "transform/ratio",
+        "transform/retron_sponge_metrics",
+        "transform/sample_map",
+        "transform/sample_metadata",
+        "transform/sfxi",
+        "validator/to_tidy_plus_map",
+    }
 
 
 def test_build_workbench_asset_catalog_requires_explicit_plugin_registry() -> None:
