@@ -103,6 +103,7 @@ def test_notebook_templates_parse() -> None:
 
 def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_path: Path) -> None:
     run_marimo_check = importlib.util.find_spec("marimo") is not None
+    rendered_paths: list[Path] = []
     for descriptor in builtin_notebook_template_catalog().all():
         target = tmp_path / descriptor.template.replace("/", "__")
         target = target.with_suffix(".py")
@@ -121,16 +122,20 @@ def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_pa
         assert "__PLOT_SPECS__" not in content
         if not run_marimo_check:
             continue
-        result = subprocess.run(
-            [sys.executable, "-m", "marimo", "check", str(rendered_path)],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"{descriptor.template} rendered notebook failed marimo check:\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
+        rendered_paths.append(rendered_path)
+
+    if not run_marimo_check:
+        return
+    assert rendered_paths, "Built-in notebook template catalog must not be empty."
+    result = subprocess.run(
+        [sys.executable, "-m", "marimo", "check", *map(str, rendered_paths)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"Rendered notebooks failed marimo check:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
 
 
 def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
