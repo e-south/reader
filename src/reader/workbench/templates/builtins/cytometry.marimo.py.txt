@@ -1,7 +1,8 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
+
 
 @app.cell(hide_code=True)
 def _():
@@ -9,21 +10,19 @@ def _():
     import json
 
     import marimo as mo
-    try:
-        import polars as pl
-    except Exception:
-        pl = None
+    import polars as pl
+    from reader.domains.cytometry import analysis as cytometry_analysis
     from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.records import discover_dataframe_records
-
     return (
         Path,
-        json,
-        mo,
-        pl,
-        load_notebook_workbench_context,
+        cytometry_analysis,
         discover_dataframe_records,
+        json,
+        load_notebook_workbench_context,
+        mo,
     )
+
 
 @app.cell(hide_code=True)
 def _(Path, load_notebook_workbench_context):
@@ -36,13 +35,8 @@ def _(Path, load_notebook_workbench_context):
         "title": decl.experiment.title or "",
     }
     pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
-    return (
-        decl,
-        exp_dir,
-        exp_meta,
-        outputs_dir,
-        pipeline_step_ids,
-    )
+    return decl, exp_dir, exp_meta, outputs_dir, pipeline_step_ids
+
 
 @app.cell(hide_code=True)
 def _(discover_dataframe_records, outputs_dir):
@@ -52,8 +46,16 @@ def _(discover_dataframe_records, outputs_dir):
     )
     return record_info, record_labels, record_note, record_warning
 
+
 @app.cell(hide_code=True)
-def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_warning):
+def _(
+    mo,
+    pipeline_step_ids,
+    record_info,
+    record_labels,
+    record_note,
+    record_warning,
+):
     if record_warning:
         mo.md(record_warning)
     if not record_labels:
@@ -92,7 +94,8 @@ def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_war
             label="Dataset (dataframe record)",
             full_width=True,
         )
-    return record_dropdown
+    return (record_dropdown,)
+
 
 @app.cell(hide_code=True)
 def _(record_dropdown, record_info):
@@ -102,35 +105,39 @@ def _(record_dropdown, record_info):
     else:
         selected_label = record_dropdown.value
         record_path = record_info.get(selected_label, {}).get("path")
-    return selected_label, record_path
+    return record_path, selected_label
+
 
 @app.cell(hide_code=True)
-def _(pl, record_path):
+def _(cytometry_analysis, record_path):
     df = None
     df_error = None
     _pl_error = None
 
     if record_path is not None:
-        if pl is None:
-            df_error = "Polars is required to read parquet. Install the notebooks group."
-        else:
-            try:
-                df = pl.read_parquet(record_path)
-            except Exception as exc:
-                _pl_error = str(exc)
+        try:
+            df = cytometry_analysis.scan_event_table(record_path)
+        except Exception as exc:
+            _pl_error = str(exc)
         if df is None and df_error is None:
             _suffix = _pl_error or "unknown error"
             df_error = f"Failed to read parquet with polars ({_suffix})."
     return df, df_error
 
+
 @app.cell(hide_code=True)
-def _(df, pl):
+def _(cytometry_analysis, df):
     design_treatment_rows = []
     design_treatment_note = ""
+    cyto_distinct_values = {}
     if df is None:
         design_treatment_note = "No dataset selected yet."
     else:
-        _columns = list(df.columns) if hasattr(df, "columns") else []
+        _columns = list(cytometry_analysis.frame_columns(df))
+        cyto_distinct_values = cytometry_analysis.distinct_string_values_by_column(
+            df,
+            ("channel", "treatment", "design_id", "sample_id", "sample_label"),
+        )
         _design_col = "design_id" if "design_id" in _columns else None
         _treatment_col = "treatment" if "treatment" in _columns else None
 
@@ -142,19 +149,8 @@ def _(df, pl):
                 _missing.append("treatment")
             design_treatment_note = f"Missing column(s): {', '.join(_missing)}."
         else:
-            def _unique_values(df, col):
-                values = []
-                try:
-                    if pl is not None and df.__class__.__module__.startswith("polars"):
-                        _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
-                        values = _series.to_list()
-                except Exception:
-                    values = []
-                values = [str(_v) for _v in values if _v is not None]
-                return sorted(values)
-
-            _design_vals = _unique_values(df, _design_col)
-            _treatment_vals = _unique_values(df, _treatment_col)
+            _design_vals = cyto_distinct_values[_design_col]
+            _treatment_vals = cyto_distinct_values[_treatment_col]
             _max_len = max(len(_design_vals), len(_treatment_vals), 1)
             for _i in range(_max_len):
                 design_treatment_rows.append(
@@ -163,7 +159,8 @@ def _(df, pl):
                         "Treatments": _treatment_vals[_i] if _i < len(_treatment_vals) else None,
                     }
                 )
-    return design_treatment_rows, design_treatment_note
+    return cyto_distinct_values, design_treatment_note, design_treatment_rows
+
 
 @app.cell(hide_code=True)
 def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
@@ -180,7 +177,8 @@ def _(design_treatment_note, design_treatment_rows, exp_dir, exp_meta, mo):
             _design_table,
         ]
     )
-    return eda_overview_panel
+    return (eda_overview_panel,)
+
 
 @app.cell(hide_code=True)
 def _(df_error, mo, record_dropdown, record_note):
@@ -192,7 +190,8 @@ def _(df_error, mo, record_dropdown, record_note):
         if df_error:
             _elements.append(mo.md(f"**Load error:** `{df_error}`"))
     eda_dataset_panel = mo.vstack(_elements)
-    return eda_dataset_panel
+    return (eda_dataset_panel,)
+
 
 @app.cell(hide_code=True)
 def _(df, df_error, mo, selected_label):
@@ -200,22 +199,21 @@ def _(df, df_error, mo, selected_label):
         mo.stop(True, mo.md(f"Failed to load `{selected_label}`: {df_error}"))
     if df is None:
         mo.stop(True, mo.md("Select a dataset to explore."))
-    data_ready = True
-    return data_ready
+    return
+
 
 @app.cell(hide_code=True)
-def _(df, data_ready, mo, pl):
-    _columns = list(df.columns) if hasattr(df, "columns") else []
+def _(cytometry_analysis, df, mo):
+    _columns = list(cytometry_analysis.frame_columns(df))
     _elements = [mo.md("## Dataset table explorer")]
-    df_table = df
+    df_table = cytometry_analysis.prepare_event_preview(df)
+    _elements.append(mo.md("Showing at most 10,000 rows to keep the notebook responsive."))
     if len(_columns) > 40:
-        _display_cols = _columns[:40]
-        if pl is not None and df.__class__.__module__.startswith("polars"):
-            df_table = df.select(_display_cols)
         _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
     _elements.append(mo.ui.table(df_table, page_size=10))
     eda_table_panel = mo.vstack(_elements)
-    return eda_table_panel
+    return (eda_table_panel,)
+
 
 @app.cell(hide_code=True)
 def _(eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
@@ -226,28 +224,20 @@ def _(eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
             eda_table_panel,
         ]
     )
-    return eda_base_panel
+    return (eda_base_panel,)
 
 
 @app.cell(hide_code=True)
 def _():
-    try:
-        import numpy as np
-    except Exception:
-        np = None
-    try:
-        import pandas as pd
-    except Exception:
-        pd = None
-    try:
-        import matplotlib.pyplot as plt
-    except Exception:
-        plt = None
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
     return np, pd, plt
 
+
 @app.cell(hide_code=True)
-def _(data_ready, df, mo, pl):
-    _columns = list(df.columns) if hasattr(df, "columns") else []
+def _(cyto_distinct_values, cytometry_analysis, df, mo):
+    _columns = list(cytometry_analysis.frame_columns(df))
     _required = ["channel", "value", "sample_id", "event_index"]
     _missing = [c for c in _required if c not in _columns]
     if _missing:
@@ -261,36 +251,12 @@ def _(data_ready, df, mo, pl):
             ),
         )
 
-    _channels = []
-    if pl is not None and df.__class__.__module__.startswith("polars"):
-        try:
-            _series = df.select(pl.col("channel").drop_nulls().unique()).to_series()
-            _channels = [str(_c) for _c in _series.to_list() if _c is not None]
-        except Exception:
-            _channels = []
-    else:
-        try:
-            _channels = [str(_c) for _c in df["channel"].dropna().unique().tolist()]
-        except Exception:
-            _channels = []
-    _channels = sorted({c for c in _channels if c})
+    _channels = cyto_distinct_values["channel"]
     if not _channels:
         mo.stop(True, mo.md("No channel values found in the selected dataset."))
 
     def _unique_values(col):
-        values = []
-        if col not in _columns:
-            return values
-        try:
-            if pl is not None and df.__class__.__module__.startswith("polars"):
-                _series = df.select(pl.col(col).drop_nulls().unique()).to_series()
-                values = _series.to_list()
-            else:
-                values = df[col].dropna().unique().tolist()
-        except Exception:
-            values = []
-        values = [str(_v) for _v in values if _v is not None]
-        return sorted({v for v in values if v})
+        return cyto_distinct_values.get(col, [])
 
     _treatment_vals = _unique_values("treatment")
     _design_vals = _unique_values("design_id")
@@ -329,14 +295,15 @@ def _(data_ready, df, mo, pl):
     cyto_threshold_group_default = _threshold_group_default
     return (
         cyto_channel_values,
+        cyto_design_values,
         cyto_hue_candidates,
         cyto_hue_default,
-        cyto_design_values,
-        cyto_treatment_values,
-        cyto_sample_values,
         cyto_sample_label_values,
+        cyto_sample_values,
         cyto_threshold_group_default,
+        cyto_treatment_values,
     )
+
 
 @app.cell(hide_code=True)
 def _(
@@ -364,20 +331,21 @@ def _(
     )
     cyto_intro_panel = mo.md(
         f"""## Cytometer exploratory data analysis
-Detected `{len(cyto_channel_values)}` channel(s): {_channel_list}. {_facet_note}
+    Detected `{len(cyto_channel_values)}` channel(s): {_channel_list}. {_facet_note}
 
-This notebook starts from a tidy, event-level cytometry table (typically derived upstream from raw FCS) and supports a standard flow:
-- **Filter** to a subset of samples (design/treatment/sample_id)
-- **Choose channels** for cell selection, singlet isolation, and a fluorescence channel of interest
-- **Gate events** (cells → singlets), then inspect **scatter + fluorescence distributions**
-- Review **per-sample** and **group** summaries, including `% positive` from a configurable threshold
+    This notebook starts from a tidy, event-level cytometry table (typically derived upstream from raw FCS) and supports a standard flow:
+    - **Filter** to a subset of samples (design/treatment/sample_id)
+    - **Choose channels** for cell selection, singlet isolation, and a fluorescence channel of interest
+    - **Gate events** (cells → singlets), then inspect **scatter + fluorescence distributions**
+    - Review **per-sample** and **group** summaries, including `% positive` from a configurable threshold
 
-Operational note: set **Filters → Channels → Gates** first, then inspect plots and stats. Plot-only controls (downsampling, low-clip, colors/facets, axis scales) affect visualization but do not change gate counts or summary statistics.
+    Operational note: set **Filters → Channels → Gates** first, then inspect plots and stats. Plot-only controls (downsampling, low-clip, colors/facets, axis scales) affect visualization but do not change gate counts or summary statistics.
 
-Histogram note: binning and transforms matter. Most histogram functions bin in **linear** space, even if you later display the x-axis on a **log** scale. With a wide range, early bins can span multiple decades and appear as one big, flat rectangle. This notebook uses **log-spaced bins** for `log` histograms and applies **asinh/symlog** transforms before binning when selected. If many values are ≤ 0 (common in compensated cytometry), prefer **symlog/asinh/logicle** rather than a strict log axis; compensation/logicle transforms are not performed here yet.
-"""
+    Histogram note: binning and transforms matter. Most histogram functions bin in **linear** space, even if you later display the x-axis on a **log** scale. With a wide range, early bins can span multiple decades and appear as one big, flat rectangle. This notebook uses **log-spaced bins** for `log` histograms and applies **asinh/symlog** transforms before binning when selected. If many values are ≤ 0 (common in compensated cytometry), prefer **symlog/asinh/logicle** rather than a strict log axis; compensation/logicle transforms are not performed here yet.
+    """
     )
-    return cyto_intro_panel
+    return (cyto_intro_panel,)
+
 
 @app.cell(hide_code=True)
 def _(
@@ -387,8 +355,8 @@ def _(
     cyto_hue_default,
     cyto_sample_label_values,
     cyto_sample_values,
-    cyto_treatment_values,
     cyto_threshold_group_default,
+    cyto_treatment_values,
     mo,
 ):
     def _pick_channel(needles):
@@ -649,31 +617,32 @@ def _(
         ]
     )
     return (
-        cyto_scatter_x_dropdown,
-        cyto_scatter_y_dropdown,
+        cyto_cells_gate_enabled,
         cyto_cells_x_dropdown,
         cyto_cells_y_dropdown,
-        cyto_singlet_x_dropdown,
-        cyto_singlet_y_dropdown,
-        cyto_hue_dropdown,
-        cyto_scatter_scale_x,
-        cyto_scatter_scale_y,
+        cyto_controls_panel,
+        cyto_design_filter,
+        cyto_downsample_target,
+        cyto_facet_dropdown,
         cyto_fluor_dropdown,
         cyto_hist_scale,
-        cyto_facet_dropdown,
-        cyto_design_filter,
-        cyto_treatment_filter,
-        cyto_sample_filter,
-        cyto_downsample_target,
+        cyto_hue_dropdown,
         cyto_low_clip_dropdown,
-        cyto_threshold_mode,
-        cyto_threshold_value,
-        cyto_threshold_quantile,
-        cyto_threshold_group_dropdown,
-        cyto_controls_panel,
-        cyto_cells_gate_enabled,
+        cyto_sample_filter,
+        cyto_scatter_scale_x,
+        cyto_scatter_scale_y,
+        cyto_scatter_x_dropdown,
+        cyto_scatter_y_dropdown,
         cyto_singlet_gate_enabled,
+        cyto_singlet_x_dropdown,
+        cyto_singlet_y_dropdown,
+        cyto_threshold_group_dropdown,
+        cyto_threshold_mode,
+        cyto_threshold_quantile,
+        cyto_threshold_value,
+        cyto_treatment_filter,
     )
+
 
 @app.cell(hide_code=True)
 def _(
@@ -698,7 +667,8 @@ def _(
         label="Control group value",
         full_width=True,
     )
-    return cyto_threshold_control_dropdown
+    return (cyto_threshold_control_dropdown,)
+
 
 @app.cell(hide_code=True)
 def _(
@@ -712,15 +682,10 @@ def _(
     cyto_singlet_x_dropdown,
     cyto_singlet_y_dropdown,
     cyto_treatment_filter,
+    cytometry_analysis,
     df,
     mo,
-    np,
-    pd,
-    pl,
 ):
-    if pd is None or np is None:
-        mo.stop(True, mo.md("Pandas and NumPy are required for cytometry plots."))
-
     _scatter_x = str(cyto_scatter_x_dropdown.value)
     _scatter_y = str(cyto_scatter_y_dropdown.value)
     _cells_x = str(cyto_cells_x_dropdown.value)
@@ -738,54 +703,28 @@ def _(
 
     _channels = sorted({_scatter_x, _scatter_y, _cells_x, _cells_y, _singlet_x, _singlet_y, _fluor})
 
-    _meta_cols = ["treatment", "design_id", "sample_label"]
-    _meta_cols = [c for c in _meta_cols if c in getattr(df, "columns", [])]
-    _index_cols = ["sample_id", "event_index"] + _meta_cols
+    _filters = cytometry_analysis.EventFilters(
+        design_id=None if cyto_design_filter.value == "All" else str(cyto_design_filter.value),
+        treatment=None if cyto_treatment_filter.value == "All" else str(cyto_treatment_filter.value),
+        sample_id=None if cyto_sample_filter.value == "All" else str(cyto_sample_filter.value),
+    )
+    try:
+        cyto_event_wide = cytometry_analysis.prepare_event_table(
+            df,
+            channels=_channels,
+            filters=_filters,
+        )
+    except cytometry_analysis.CytometryAnalysisError as exc:
+        mo.stop(True, mo.md(str(exc)))
 
-    _is_polars = pl is not None and df.__class__.__module__.startswith("polars")
-    if _is_polars:
-        _df = df.filter(pl.col("channel").is_in(_channels))
-        if cyto_design_filter.value != "All" and "design_id" in df.columns:
-            _df = _df.filter(pl.col("design_id") == cyto_design_filter.value)
-        if cyto_treatment_filter.value != "All" and "treatment" in df.columns:
-            _df = _df.filter(pl.col("treatment") == cyto_treatment_filter.value)
-        if cyto_sample_filter.value != "All" and "sample_id" in df.columns:
-            _df = _df.filter(pl.col("sample_id") == cyto_sample_filter.value)
-        _df = _df.with_columns(pl.col("value").cast(pl.Float64))
-        _wide = _df.pivot(values="value", index=_index_cols, on="channel", aggregate_function="first")
-        cyto_event_wide = _wide.to_pandas(use_pyarrow_extension_array=False)
-    else:
-        _df_pd = df.copy()
-        if cyto_design_filter.value != "All" and "design_id" in _df_pd.columns:
-            _df_pd = _df_pd[_df_pd["design_id"] == cyto_design_filter.value]
-        if cyto_treatment_filter.value != "All" and "treatment" in _df_pd.columns:
-            _df_pd = _df_pd[_df_pd["treatment"] == cyto_treatment_filter.value]
-        if cyto_sample_filter.value != "All" and "sample_id" in _df_pd.columns:
-            _df_pd = _df_pd[_df_pd["sample_id"] == cyto_sample_filter.value]
-        _df_pd = _df_pd[_df_pd["channel"].astype(str).isin(_channels)].copy()
-        _df_pd["value"] = pd.to_numeric(_df_pd["value"], errors="coerce")
-        _wide = _df_pd.pivot_table(index=_index_cols, columns="channel", values="value", aggfunc="first")
-        _wide = _wide.reset_index()
-        if isinstance(_wide.columns, pd.MultiIndex):
-            _flat_cols = []
-            for _col in _wide.columns:
-                if isinstance(_col, tuple):
-                    _parts = [c for c in _col if c not in (None, "")]
-                    _flat_cols.append(str(_parts[-1]) if _parts else "")
-                else:
-                    _flat_cols.append(str(_col))
-            _wide.columns = _flat_cols
-        cyto_event_wide = _wide
-
-    if cyto_event_wide.empty:
+    if cyto_event_wide.is_empty():
         mo.stop(True, mo.md("No events remain after filtering."))
 
-    _missing = [c for c in _channels if c not in cyto_event_wide.columns]
-    if _missing:
-        mo.stop(True, mo.md(f"Missing channels after pivot: {', '.join(_missing)}."))
+    cyto_meta_cols = [
+        column for column in ("treatment", "design_id", "sample_label") if column in cyto_event_wide.columns
+    ]
+    return (cyto_event_wide,)
 
-    cyto_meta_cols = _meta_cols
-    return cyto_event_wide, cyto_meta_cols
 
 @app.cell(hide_code=True)
 def _(
@@ -796,66 +735,43 @@ def _(
     cyto_singlet_gate_enabled,
     cyto_singlet_x_dropdown,
     cyto_singlet_y_dropdown,
+    cytometry_analysis,
     mo,
-    np,
-    pd,
 ):
-    def _safe_range(values, low_q=0.01, high_q=0.99):
-        _vals = np.asarray(pd.to_numeric(values, errors="coerce"))
-        _vals = _vals[np.isfinite(_vals)]
-        if _vals.size == 0:
-            mo.stop(True, mo.md("No finite values available for gate defaults."))
-        _min = float(np.nanmin(_vals))
-        _max = float(np.nanmax(_vals))
-        if not np.isfinite(_min) or not np.isfinite(_max):
-            mo.stop(True, mo.md("Gate range could not be determined."))
-        if _max <= _min:
-            _max = _min + 1e-6
-        _q = np.nanquantile(_vals, [low_q, high_q])
-        _q_low = float(_q[0])
-        _q_high = float(_q[1])
-        _q_low = max(_q_low, _min)
-        _q_high = min(_q_high, _max)
-        if _q_high <= _q_low:
-            _q_low, _q_high = _min, _max
-        return _min, _max, (_q_low, _q_high)
-
     _cells_x = str(cyto_cells_x_dropdown.value)
     _cells_y = str(cyto_cells_y_dropdown.value)
     _singlet_x = str(cyto_singlet_x_dropdown.value)
     _singlet_y = str(cyto_singlet_y_dropdown.value)
 
-    _cells_x_min, _cells_x_max, _cells_x_default = _safe_range(cyto_event_wide[_cells_x])
-    _cells_y_min, _cells_y_max, _cells_y_default = _safe_range(cyto_event_wide[_cells_y])
-
-    _singlet_x_vals = pd.to_numeric(cyto_event_wide[_singlet_x], errors="coerce").to_numpy()
-    _singlet_y_vals = pd.to_numeric(cyto_event_wide[_singlet_y], errors="coerce").to_numpy()
-    _ratio = np.divide(
-        _singlet_y_vals,
-        _singlet_x_vals,
-        out=np.full_like(_singlet_y_vals, np.nan),
-        where=_singlet_x_vals != 0,
-    )
-    _ratio_min, _ratio_max, _ratio_default = _safe_range(_ratio)
+    try:
+        _defaults = cytometry_analysis.gate_defaults(
+            cyto_event_wide,
+            cells_x_channel=_cells_x,
+            cells_y_channel=_cells_y,
+            singlet_x_channel=_singlet_x,
+            singlet_y_channel=_singlet_y,
+        )
+    except cytometry_analysis.CytometryAnalysisError as exc:
+        mo.stop(True, mo.md(str(exc)))
 
     cyto_cells_x_range = mo.ui.range_slider(
-        _cells_x_min,
-        _cells_x_max,
-        value=_cells_x_default,
+        _defaults.cells_x.minimum,
+        _defaults.cells_x.maximum,
+        value=_defaults.cells_x.selected,
         label="Cells gate X range",
         full_width=True,
     )
     cyto_cells_y_range = mo.ui.range_slider(
-        _cells_y_min,
-        _cells_y_max,
-        value=_cells_y_default,
+        _defaults.cells_y.minimum,
+        _defaults.cells_y.maximum,
+        value=_defaults.cells_y.selected,
         label="Cells gate Y range",
         full_width=True,
     )
     cyto_singlet_ratio_range = mo.ui.range_slider(
-        _ratio_min,
-        _ratio_max,
-        value=_ratio_default,
+        _defaults.singlet_ratio.minimum,
+        _defaults.singlet_ratio.maximum,
+        value=_defaults.singlet_ratio.selected,
         label="Singlets ratio (Y / X)",
         full_width=True,
     )
@@ -886,9 +802,10 @@ def _(
     return (
         cyto_cells_x_range,
         cyto_cells_y_range,
-        cyto_singlet_ratio_range,
         cyto_gate_panel,
+        cyto_singlet_ratio_range,
     )
+
 
 @app.cell(hide_code=True)
 def _(
@@ -898,13 +815,13 @@ def _(
     cyto_cells_y_dropdown,
     cyto_cells_y_range,
     cyto_design_filter,
+    cyto_downsample_target,
     cyto_event_wide,
     cyto_facet_dropdown,
     cyto_fluor_dropdown,
     cyto_hist_scale,
     cyto_hue_dropdown,
     cyto_low_clip_dropdown,
-    cyto_meta_cols,
     cyto_sample_filter,
     cyto_scatter_scale_x,
     cyto_scatter_scale_y,
@@ -914,194 +831,53 @@ def _(
     cyto_singlet_ratio_range,
     cyto_singlet_x_dropdown,
     cyto_singlet_y_dropdown,
-    cyto_treatment_filter,
     cyto_threshold_control_dropdown,
     cyto_threshold_group_dropdown,
     cyto_threshold_mode,
     cyto_threshold_quantile,
     cyto_threshold_value,
-    cyto_downsample_target,
+    cyto_treatment_filter,
+    cytometry_analysis,
     mo,
-    np,
-    pd,
 ):
-    _df = cyto_event_wide.copy()
-
     _cells_x = str(cyto_cells_x_dropdown.value)
     _cells_y = str(cyto_cells_y_dropdown.value)
     _singlet_x = str(cyto_singlet_x_dropdown.value)
     _singlet_y = str(cyto_singlet_y_dropdown.value)
     _fluor = str(cyto_fluor_dropdown.value)
-
-    _cells_x_vals = pd.to_numeric(_df[_cells_x], errors="coerce").to_numpy()
-    _cells_y_vals = pd.to_numeric(_df[_cells_y], errors="coerce").to_numpy()
-    _singlet_x_vals = pd.to_numeric(_df[_singlet_x], errors="coerce").to_numpy()
-    _singlet_y_vals = pd.to_numeric(_df[_singlet_y], errors="coerce").to_numpy()
-
-    _cells_mask = np.isfinite(_cells_x_vals) & np.isfinite(_cells_y_vals)
-    if cyto_cells_gate_enabled.value:
-        _x_lo, _x_hi = cyto_cells_x_range.value
-        _y_lo, _y_hi = cyto_cells_y_range.value
-        _cells_mask &= (_cells_x_vals >= _x_lo) & (_cells_x_vals <= _x_hi)
-        _cells_mask &= (_cells_y_vals >= _y_lo) & (_cells_y_vals <= _y_hi)
-
-    _ratio = np.divide(
-        _singlet_y_vals,
-        _singlet_x_vals,
-        out=np.full_like(_singlet_y_vals, np.nan),
-        where=_singlet_x_vals != 0,
-    )
-    _singlet_mask = np.isfinite(_ratio)
-    if cyto_singlet_gate_enabled.value:
-        _r_lo, _r_hi = cyto_singlet_ratio_range.value
-        _singlet_mask &= (_ratio >= _r_lo) & (_ratio <= _r_hi)
-
-    _gate_mask = _cells_mask & _singlet_mask
-    if not _gate_mask.any():
-        mo.stop(True, mo.md("No events remain after gating. Adjust ranges."))
-
-    cyto_gated_events = _df.loc[_gate_mask].copy()
-
-    _count_cols = ["sample_id"] + [c for c in cyto_meta_cols if c in _df.columns]
-    _df_counts = _df[_count_cols].copy()
-    _df_counts["_cells_mask"] = _cells_mask
-    _df_counts["_gate_mask"] = _gate_mask
-
-    _counts = (
-        _df_counts.groupby("sample_id", dropna=False)
-        .agg(
-            n_total_events=("_cells_mask", "size"),
-            n_cells_gate=("_cells_mask", "sum"),
-            n_singlets=("_gate_mask", "sum"),
-        )
-        .reset_index()
-    )
-
-    _meta = (
-        _df_counts.groupby("sample_id", dropna=False)[cyto_meta_cols]
-        .first()
-        .reset_index()
-        if cyto_meta_cols
-        else _counts[["sample_id"]]
-    )
-
-    cyto_gate_counts_sample = _meta.merge(_counts, on="sample_id", how="right")
-    cyto_gate_counts_sample["pct_cells"] = np.where(
-        cyto_gate_counts_sample["n_total_events"] > 0,
-        100.0 * cyto_gate_counts_sample["n_cells_gate"] / cyto_gate_counts_sample["n_total_events"],
-        np.nan,
-    )
-    cyto_gate_counts_sample["pct_singlets_of_cells"] = np.where(
-        cyto_gate_counts_sample["n_cells_gate"] > 0,
-        100.0 * cyto_gate_counts_sample["n_singlets"] / cyto_gate_counts_sample["n_cells_gate"],
-        np.nan,
-    )
-    cyto_gate_counts_sample["pct_final"] = np.where(
-        cyto_gate_counts_sample["n_total_events"] > 0,
-        100.0 * cyto_gate_counts_sample["n_singlets"] / cyto_gate_counts_sample["n_total_events"],
-        np.nan,
-    )
-
     _threshold_mode = str(cyto_threshold_mode.value)
-    _threshold_value = float(cyto_threshold_value.value)
-    if _threshold_mode == "from_control_quantile":
-        _group_col = str(cyto_threshold_group_dropdown.value)
-        if _group_col not in cyto_gated_events.columns:
-            mo.stop(True, mo.md(f"Control column `{_group_col}` is missing."))
-        _control_value = str(cyto_threshold_control_dropdown.value)
-        _control_mask = cyto_gated_events[_group_col].astype(str) == _control_value
-        _control_vals = pd.to_numeric(
-            cyto_gated_events.loc[_control_mask, _fluor], errors="coerce"
-        ).to_numpy()
-        _control_vals = _control_vals[np.isfinite(_control_vals)]
-        if _control_vals.size == 0:
-            mo.stop(True, mo.md("No control events available for thresholding."))
-        _q = float(cyto_threshold_quantile.value)
-        _threshold_value = float(np.nanquantile(_control_vals, _q))
-
-    if not np.isfinite(_threshold_value):
-        mo.stop(True, mo.md("Threshold value is not finite."))
-
-    def _summarize(values):
-        _vals = pd.to_numeric(values, errors="coerce").to_numpy()
-        _vals = _vals[np.isfinite(_vals)]
-        if _vals.size == 0:
-            return pd.Series(
-                {
-                    "fluor_median": np.nan,
-                    "fluor_mean": np.nan,
-                    "fluor_geomean": np.nan,
-                    "fluor_p90": np.nan,
-                    "fluor_p99": np.nan,
-                    "pct_positive": np.nan,
-                }
-            )
-        _pos = _vals[_vals > 0]
-        _geom = float(np.exp(np.mean(np.log(_pos)))) if _pos.size else np.nan
-        return pd.Series(
-            {
-                "fluor_median": float(np.nanmedian(_vals)),
-                "fluor_mean": float(np.nanmean(_vals)),
-                "fluor_geomean": _geom,
-                "fluor_p90": float(np.nanpercentile(_vals, 90)),
-                "fluor_p99": float(np.nanpercentile(_vals, 99)),
-                "pct_positive": float(100.0 * np.mean(_vals > _threshold_value)),
-            }
+    try:
+        _analysis = cytometry_analysis.analyze_events(
+            cyto_event_wide,
+            gate=cytometry_analysis.GateSpec(
+                cells_x_channel=_cells_x,
+                cells_y_channel=_cells_y,
+                cells_x_range=tuple(cyto_cells_x_range.value),
+                cells_y_range=tuple(cyto_cells_y_range.value),
+                singlet_x_channel=_singlet_x,
+                singlet_y_channel=_singlet_y,
+                singlet_ratio_range=tuple(cyto_singlet_ratio_range.value),
+                cells_enabled=bool(cyto_cells_gate_enabled.value),
+                singlets_enabled=bool(cyto_singlet_gate_enabled.value),
+            ),
+            threshold=cytometry_analysis.ThresholdSpec(
+                channel=_fluor,
+                value=float(cyto_threshold_value.value),
+                mode=_threshold_mode,
+                group_column=str(cyto_threshold_group_dropdown.value),
+                control_value=str(cyto_threshold_control_dropdown.value),
+                quantile=float(cyto_threshold_quantile.value),
+            ),
         )
+    except cytometry_analysis.CytometryAnalysisError as exc:
+        mo.stop(True, mo.md(str(exc)))
 
-    _applied = cyto_gated_events.groupby("sample_id", dropna=False)[_fluor].apply(_summarize)
-    if isinstance(_applied, pd.Series):
-        _sample_stats = _applied.unstack().reset_index()
-    else:
-        _sample_stats = _applied.reset_index()
-    _required_stats = [
-        "fluor_median",
-        "fluor_mean",
-        "fluor_geomean",
-        "fluor_p90",
-        "fluor_p99",
-        "pct_positive",
-    ]
-    for _col in _required_stats:
-        if _col not in _sample_stats.columns:
-            _sample_stats[_col] = np.nan
-    _sample_stats = _sample_stats[["sample_id"] + _required_stats]
-    cyto_stats_sample = cyto_gate_counts_sample.merge(_sample_stats, on="sample_id", how="left")
-
-    cyto_stats_group = None
-    _group_col = None
-    for _candidate in ("treatment", "design_id"):
-        if _candidate in cyto_stats_sample.columns:
-            _group_col = _candidate
-            break
-    _needed_for_group = {"fluor_median", "fluor_geomean", "pct_positive"}
-    if _group_col and _needed_for_group.issubset(set(cyto_stats_sample.columns)):
-        cyto_stats_group = (
-            cyto_stats_sample.groupby(_group_col, dropna=False)
-            .agg(
-                n_samples=("sample_id", "nunique"),
-                fluor_median_mean=("fluor_median", "mean"),
-                fluor_median_std=("fluor_median", "std"),
-                fluor_geomean_mean=("fluor_geomean", "mean"),
-                pct_positive_mean=("pct_positive", "mean"),
-            )
-            .reset_index()
-        )
-
-    def _nonpositive_pct(values):
-        _vals = pd.to_numeric(values, errors="coerce").to_numpy()
-        _vals = _vals[np.isfinite(_vals)]
-        if _vals.size == 0:
-            return np.nan
-        return float(100.0 * np.mean(_vals <= 0))
-
-    cyto_qc_table = (
-        _df.groupby("sample_id", dropna=False)
-        .agg(
-            pct_nonpositive=(_fluor, _nonpositive_pct),
-        )
-        .reset_index()
-    )
+    cyto_gated_events = _analysis.gated_events
+    cyto_gate_counts_sample = _analysis.gate_counts_sample
+    cyto_stats_sample = _analysis.stats_sample
+    cyto_stats_group = _analysis.stats_group
+    cyto_qc_table = _analysis.qc_table
+    _threshold_value = _analysis.threshold_value
 
     cyto_gate_config = {
         "filters": {
@@ -1149,14 +925,14 @@ def _(
 
     cyto_threshold_value_final = _threshold_value
     return (
-        cyto_gated_events,
-        cyto_gate_counts_sample,
-        cyto_stats_sample,
-        cyto_stats_group,
-        cyto_threshold_value_final,
         cyto_gate_config,
+        cyto_gated_events,
         cyto_qc_table,
+        cyto_stats_group,
+        cyto_stats_sample,
+        cyto_threshold_value_final,
     )
+
 
 @app.cell
 def _(
@@ -1164,12 +940,13 @@ def _(
     cyto_cells_x_range,
     cyto_cells_y_dropdown,
     cyto_cells_y_range,
+    cyto_downsample_target,
     cyto_event_wide,
     cyto_facet_dropdown,
     cyto_fluor_dropdown,
     cyto_gated_events,
-    cyto_hue_dropdown,
     cyto_hist_scale,
+    cyto_hue_dropdown,
     cyto_low_clip_dropdown,
     cyto_scatter_scale_x,
     cyto_scatter_scale_y,
@@ -1179,37 +956,16 @@ def _(
     cyto_singlet_x_dropdown,
     cyto_singlet_y_dropdown,
     cyto_threshold_value_final,
-    cyto_downsample_target,
+    cytometry_analysis,
     mo,
     np,
     pd,
     plt,
 ):
-    if pd is None or np is None:
-        mo.stop(True, mo.md("Pandas and NumPy are required for cytometry plots."))
-    if plt is None:
-        mo.stop(True, mo.md("Matplotlib is required for cytometry plots."))
-
     _hue_col = str(cyto_hue_dropdown.value)
     _facet_col = str(cyto_facet_dropdown.value)
     if _facet_col == "None":
         _facet_col = None
-
-    def _downsample(df, max_events, group_cols):
-        if df is None or df.empty:
-            return df
-        if len(df) <= max_events:
-            return df
-        if group_cols:
-            _grouped = df.groupby(group_cols, dropna=False, group_keys=False)
-            _per_group = max(1, int(max_events / max(_grouped.ngroups, 1)))
-            return (
-                _grouped.apply(
-                    lambda g: g.sample(n=min(len(g), _per_group), random_state=0)
-                )
-                .reset_index(drop=True)
-            )
-        return df.sample(n=max_events, random_state=0).reset_index(drop=True)
 
     def _unique_cols(cols):
         seen = set()
@@ -1250,12 +1006,13 @@ def _(
         _gating_cols.append(_hue_col)
     if _facet_col and _facet_col in cyto_event_wide.columns:
         _gating_cols.append(_facet_col)
-    _gating_df = cyto_event_wide[_gating_cols].copy()
-    if _gating_df.columns.duplicated().any():
-        _gating_df = _gating_df.loc[:, ~_gating_df.columns.duplicated()]
-
     _max_events = int(cyto_downsample_target.value)
-    _gating_df = _downsample(_gating_df, _max_events, [c for c in [_facet_col, _hue_col] if c])
+    _gating_df = cytometry_analysis.prepare_plot_payload(
+        cyto_event_wide,
+        columns=_gating_cols,
+        max_events=_max_events,
+        group_columns=[column for column in (_facet_col, _hue_col) if column],
+    ).to_pandas(use_pyarrow_extension_array=False)
 
     _hue_values = sorted({str(v) for v in _gating_df[_hue_col].dropna().unique()}) if _hue_col in _gating_df.columns else ["all"]
     if not _hue_values:
@@ -1358,44 +1115,27 @@ def _(
         _plot_cols.append(_hue_col)
     if _facet_col and _facet_col in cyto_gated_events.columns:
         _plot_cols.append(_facet_col)
-    _plot_df = cyto_gated_events[_plot_cols].copy()
-    if _plot_df.columns.duplicated().any():
-        _plot_df = _plot_df.loc[:, ~_plot_df.columns.duplicated()]
+    _low_clip = str(cyto_low_clip_dropdown.value)
+    _x_scale = str(cyto_scatter_scale_x.value)
+    _y_scale = str(cyto_scatter_scale_y.value)
+    _plot_df = cytometry_analysis.prepare_plot_events(
+        cyto_gated_events,
+        columns=_plot_cols,
+        x_channel=_scatter_x,
+        y_channel=_scatter_y,
+        max_events=_max_events,
+        group_columns=[column for column in (_facet_col, _hue_col) if column],
+        low_clip_quantile=None if _low_clip == "off" else float(_low_clip),
+        clip_group_column=_facet_col,
+        positive_x=_x_scale == "log",
+        positive_y=_y_scale == "log",
+    ).to_pandas(use_pyarrow_extension_array=False)
+    if _plot_df.empty:
+        mo.stop(True, mo.md("No scatter data available after filtering."))
 
     _plot_df[_scatter_x] = pd.to_numeric(_col_series(_plot_df, _scatter_x), errors="coerce")
     _plot_df[_scatter_y] = pd.to_numeric(_col_series(_plot_df, _scatter_y), errors="coerce")
     _plot_df[_fluor] = pd.to_numeric(_col_series(_plot_df, _fluor), errors="coerce")
-    _plot_df = _plot_df[np.isfinite(_plot_df[_scatter_x]) & np.isfinite(_plot_df[_scatter_y])]
-
-    _low_clip = str(cyto_low_clip_dropdown.value)
-    if _low_clip != "off":
-        _q = float(_low_clip)
-        if _facet_col:
-            _mask = np.zeros(len(_plot_df), dtype=bool)
-            for _, _group in _plot_df.groupby(_facet_col, dropna=False):
-                _x = _group[_scatter_x].to_numpy()
-                _y = _group[_scatter_y].to_numpy()
-                _x_lo = float(np.nanquantile(_x, _q))
-                _y_lo = float(np.nanquantile(_y, _q))
-                _mask[_group.index] = (_x >= _x_lo) & (_y >= _y_lo)
-            _plot_df = _plot_df.loc[_mask]
-        else:
-            _x = _plot_df[_scatter_x].to_numpy()
-            _y = _plot_df[_scatter_y].to_numpy()
-            _x_lo = float(np.nanquantile(_x, _q))
-            _y_lo = float(np.nanquantile(_y, _q))
-            _plot_df = _plot_df[(_plot_df[_scatter_x] >= _x_lo) & (_plot_df[_scatter_y] >= _y_lo)]
-
-    _x_scale = str(cyto_scatter_scale_x.value)
-    _y_scale = str(cyto_scatter_scale_y.value)
-    if _x_scale == "log":
-        _plot_df = _plot_df[_plot_df[_scatter_x] > 0]
-    if _y_scale == "log":
-        _plot_df = _plot_df[_plot_df[_scatter_y] > 0]
-    if _plot_df.empty:
-        mo.stop(True, mo.md("No scatter data available after filtering."))
-
-    _plot_df = _downsample(_plot_df, _max_events, [c for c in [_facet_col, _hue_col] if c])
 
     _plot_df["legend_hue"] = _plot_df[_hue_col].fillna("(missing)").astype(str) if _hue_col in _plot_df.columns else "(missing)"
     _hue_values = sorted({str(v) for v in _plot_df["legend_hue"].dropna().unique()})
@@ -1578,6 +1318,7 @@ def _(
     cyto_marker_fig.patch.set_facecolor("white")
     return cyto_gating_fig, cyto_marker_fig
 
+
 @app.cell(hide_code=True)
 def _(
     cyto_stats_group,
@@ -1623,7 +1364,8 @@ def _(
             ]
         )
     cyto_stats_panel = mo.vstack(_elements)
-    return cyto_stats_panel
+    return (cyto_stats_panel,)
+
 
 @app.cell(hide_code=True)
 def _(cyto_qc_table, mo):
@@ -1636,7 +1378,8 @@ def _(cyto_qc_table, mo):
             mo.ui.table(cyto_qc_table, page_size=10),
         ]
     )
-    return cyto_qc_panel
+    return (cyto_qc_panel,)
+
 
 @app.cell(hide_code=True)
 def _(decl, mo, outputs_dir):
@@ -1677,14 +1420,15 @@ def _(decl, mo, outputs_dir):
         ]
     )
     return (
-        exports_dir,
+        cyto_export_button,
         cyto_export_format,
+        cyto_export_panel,
+        cyto_gate_export_path,
         cyto_plot_export_path,
         cyto_stats_export_path,
-        cyto_gate_export_path,
-        cyto_export_button,
-        cyto_export_panel,
+        exports_dir,
     )
+
 
 @app.cell
 def _(
@@ -1721,7 +1465,7 @@ def _(
         if not _stats_target.is_absolute():
             _stats_target = (exports_dir / _stats_target).resolve()
         _stats_target.parent.mkdir(parents=True, exist_ok=True)
-        cyto_stats_sample.to_csv(_stats_target, index=False)
+        cyto_stats_sample.write_csv(_stats_target)
 
         _gate_target = Path(str(cyto_gate_export_path.value)).expanduser()
         if not _gate_target.is_absolute():
@@ -1736,16 +1480,17 @@ def _(
         _ = mo.md(_export_message)
     return
 
+
 @app.cell(hide_code=True)
 def _(
-    cyto_intro_panel,
     cyto_controls_panel,
+    cyto_export_panel,
     cyto_gate_panel,
     cyto_gating_fig,
+    cyto_intro_panel,
     cyto_marker_fig,
     cyto_qc_panel,
     cyto_stats_panel,
-    cyto_export_panel,
     eda_base_panel,
     mo,
 ):
@@ -1769,6 +1514,8 @@ def _(
         gap=1,
     )
     cyto_tabs
+    return
+
 
 if __name__ == "__main__":
     app.run()
