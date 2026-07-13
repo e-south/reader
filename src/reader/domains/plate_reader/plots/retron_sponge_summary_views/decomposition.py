@@ -188,7 +188,7 @@ def build_retron_decomposition_frame(
     summary: pd.DataFrame | None = None,
     no_stress_label: str = "H2O",
 ) -> pd.DataFrame:
-    trace = _normalize_decision_card_trace_metadata(trace, control_name=control_name)
+    trace = _validated_decision_card_trace(trace)
     base_frame = _build_primary_window_decomposition_frame(
         trace,
         control_name=control_name,
@@ -368,167 +368,15 @@ def _require_decision_card_trace_metadata(trace: pd.DataFrame) -> None:
     )
 
 
-def _normalize_decision_card_trace_metadata(
-    trace: pd.DataFrame,
-    *,
-    control_name: str,
-) -> pd.DataFrame:
+def _validated_decision_card_trace(trace: pd.DataFrame) -> pd.DataFrame:
     frame = trace.copy()
     require_columns(
         frame,
         ["sensor", "sponge", "stress_condition", "time_from_stress", "metric", "value", "replicate_id"],
         where="retron_decomposition",
     )
-    if "matched_control_key" not in frame.columns:
-        frame["matched_control_key"] = _derived_matched_control_key(frame)
-    if "in_pre_window" not in frame.columns:
-        frame["in_pre_window"] = _derived_pre_window_mask(frame)
-    if "in_primary_post_stress" not in frame.columns:
-        frame["in_primary_post_stress"] = _derived_primary_post_stress_mask(frame)
-    if "summary_window_start_h" not in frame.columns:
-        frame["summary_window_start_h"] = _derived_summary_window_start(frame)
-    if "summary_window_end_h" not in frame.columns:
-        frame["summary_window_end_h"] = _derived_summary_window_end(frame)
-    if "summary_window_duration_h" not in frame.columns:
-        frame["summary_window_duration_h"] = pd.to_numeric(
-            frame["summary_window_end_h"], errors="coerce"
-        ) - pd.to_numeric(frame["summary_window_start_h"], errors="coerce")
-    if "pre_stress_read_count" not in frame.columns:
-        frame["pre_stress_read_count"] = _derived_window_read_counts(frame, flag_column="in_pre_window")
-    if "post_stress_read_count" not in frame.columns:
-        frame["post_stress_read_count"] = _derived_window_read_counts(frame, flag_column="in_primary_post_stress")
-    if "matched_group_sample_count" not in frame.columns:
-        frame["matched_group_sample_count"] = _derived_matched_group_sample_count(frame, control_name=control_name)
-    if "stress_addition_gap_h" not in frame.columns:
-        frame["stress_addition_gap_h"] = np.nan
     _require_decision_card_trace_metadata(frame)
     return frame
-
-
-def _decision_card_group_columns(
-    frame: pd.DataFrame,
-    *,
-    include_sponge: bool = True,
-    include_stress: bool = True,
-    include_iptg: bool = True,
-    include_replicate: bool = True,
-) -> list[str]:
-    columns = [column for column in ("source_experiment_id", "plate_id", "sensor") if column in frame.columns]
-    if include_sponge and "sponge" in frame.columns:
-        columns.append("sponge")
-    if include_stress and "stress_condition" in frame.columns:
-        columns.append("stress_condition")
-    if include_iptg and "IPTG" in frame.columns:
-        columns.append("IPTG")
-    if include_replicate and "replicate_id" in frame.columns:
-        columns.append("replicate_id")
-    return columns
-
-
-def _derived_matched_control_key(frame: pd.DataFrame) -> pd.Series:
-    key_columns = [
-        column
-        for column in ("source_experiment_id", "plate_id", "sensor", "stress_condition")
-        if column in frame.columns
-    ]
-    if not key_columns:
-        return pd.Series(["matched-control"] * len(frame), index=frame.index, dtype="object")
-    parts = frame[key_columns].copy()
-    for column in key_columns:
-        parts[column] = parts[column].fillna("NA").astype(str)
-    return parts.agg("::".join, axis=1)
-
-
-def _derived_pre_window_mask(frame: pd.DataFrame) -> pd.Series:
-    group_columns = _decision_card_group_columns(frame)
-    if not group_columns:
-        group_columns = ["sensor"]
-    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
-    minima = time_values.groupby([frame[column] for column in group_columns], dropna=False).transform("min")
-    return time_values.eq(minima).fillna(False)
-
-
-def _derived_primary_post_stress_mask(frame: pd.DataFrame) -> pd.Series:
-    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
-    if {"summary_window_start_h", "summary_window_end_h"}.issubset(frame.columns):
-        start = pd.to_numeric(frame["summary_window_start_h"], errors="coerce")
-        end = pd.to_numeric(frame["summary_window_end_h"], errors="coerce")
-        mask = time_values.ge(start) & time_values.le(end)
-        return mask.fillna(False)
-    if "configured_max_post_stress_hours" in frame.columns:
-        end = pd.to_numeric(frame["configured_max_post_stress_hours"], errors="coerce")
-        mask = time_values.ge(0.0) & time_values.le(end)
-        return mask.fillna(False)
-    return time_values.ge(0.0).fillna(False)
-
-
-def _derived_summary_window_start(frame: pd.DataFrame) -> pd.Series:
-    if "in_primary_post_stress" in frame.columns:
-        time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
-        flagged = time_values.where(frame["in_primary_post_stress"].fillna(False))
-        group_columns = _decision_card_group_columns(frame)
-        if group_columns:
-            return flagged.groupby([frame[column] for column in group_columns], dropna=False).transform("min")
-    return pd.Series(0.0, index=frame.index, dtype=float)
-
-
-def _derived_summary_window_end(frame: pd.DataFrame) -> pd.Series:
-    if "configured_max_post_stress_hours" in frame.columns:
-        configured = pd.to_numeric(frame["configured_max_post_stress_hours"], errors="coerce")
-        if configured.notna().any():
-            return configured
-    time_values = pd.to_numeric(frame["time_from_stress"], errors="coerce")
-    if "in_primary_post_stress" in frame.columns:
-        flagged = time_values.where(frame["in_primary_post_stress"].fillna(False))
-    else:
-        flagged = time_values.where(time_values.ge(0.0))
-    group_columns = _decision_card_group_columns(frame)
-    if group_columns:
-        return flagged.groupby([frame[column] for column in group_columns], dropna=False).transform("max")
-    return pd.Series(float(flagged.max()), index=frame.index, dtype=float)
-
-
-def _derived_window_read_counts(frame: pd.DataFrame, *, flag_column: str) -> pd.Series:
-    if flag_column not in frame.columns:
-        return pd.Series(np.nan, index=frame.index, dtype=float)
-    flagged = frame[frame[flag_column].fillna(False)].copy()
-    if flagged.empty:
-        return pd.Series(np.nan, index=frame.index, dtype=float)
-    group_columns = _decision_card_group_columns(frame, include_replicate=False)
-    replicate_columns = _decision_card_group_columns(flagged)
-    counts = (
-        flagged.groupby(replicate_columns, dropna=False)["time_from_stress"]
-        .nunique()
-        .rename("__read_count")
-        .reset_index()
-    )
-    counts["__read_count"] = pd.to_numeric(counts["__read_count"], errors="coerce")
-    if group_columns:
-        lookup = counts.groupby(group_columns, dropna=False)["__read_count"].median().rename(flag_column).reset_index()
-        merged = frame[group_columns].merge(lookup, on=group_columns, how="left")
-        return pd.to_numeric(merged[flag_column], errors="coerce")
-    median = float(counts["__read_count"].median())
-    return pd.Series(median, index=frame.index, dtype=float)
-
-
-def _derived_matched_group_sample_count(frame: pd.DataFrame, control_name: str) -> pd.Series:
-    sample = frame[frame["sponge"].astype(str) != str(control_name)].copy()
-    group_columns = _decision_card_group_columns(
-        frame, include_sponge=False, include_iptg=False, include_replicate=False
-    )
-    if sample.empty or not group_columns:
-        counts = frame.groupby(_decision_card_group_columns(frame, include_replicate=False), dropna=False)[
-            "replicate_id"
-        ].transform("nunique")
-        return pd.to_numeric(counts, errors="coerce")
-    lookup = (
-        sample.groupby(group_columns, dropna=False)["replicate_id"]
-        .nunique()
-        .rename("matched_group_sample_count")
-        .reset_index()
-    )
-    merged = frame[group_columns].merge(lookup, on=group_columns, how="left")
-    return pd.to_numeric(merged["matched_group_sample_count"], errors="coerce")
 
 
 def _require_decision_card_summary_columns(summary: pd.DataFrame) -> None:
@@ -913,7 +761,7 @@ def _plot_retron_decomposition(
 ) -> list[PlotFigure]:
     if trace is None:
         raise ValueError("retron_decomposition: trace input is required")
-    trace = _normalize_decision_card_trace_metadata(trace, control_name=control_name)
+    trace = _validated_decision_card_trace(trace)
     trace_frame = _matched_control_relevant_trace_frame(
         trace,
         metric="R",

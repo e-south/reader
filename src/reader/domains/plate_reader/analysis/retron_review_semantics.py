@@ -1,3 +1,5 @@
+"""Shared retron review normalization and sponge ordering semantics."""
+
 from __future__ import annotations
 
 from typing import Any

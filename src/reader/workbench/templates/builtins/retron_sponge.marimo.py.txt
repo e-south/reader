@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 
@@ -21,7 +21,7 @@ def _():
         filter_supporting_table_for_figure,
         load_cached_parquet_frame,
         load_retron_semantic_maps_from_config,
-        render_retron_experiment_plot_cached,
+        render_retron_experiment_plot,
         retron_notebook_table_preview,
         retron_assay_context_rows,
         retron_figure_coverage_rows,
@@ -49,7 +49,7 @@ def _():
         load_notebook_workbench_context,
         load_retron_semantic_maps_from_config,
         mo,
-        render_retron_experiment_plot_cached,
+        render_retron_experiment_plot,
         retron_notebook_table_preview,
         retron_assay_context_rows,
         retron_figure_coverage_rows,
@@ -148,17 +148,12 @@ def _(
         retron_scope_config_path
     )
     retron_scope_plot_entries = retron_experiment_plot_rows(retron_scope_plot_specs)
-    retron_scope_plot_spec_map = {
-        str(spec.get("id", "")): spec for spec in retron_scope_plot_specs
-    }
     retron_scope_plot_catalog_rows = []
     for retron_scope_entry in retron_scope_plot_entries:
         retron_scope_plot_id = str(retron_scope_entry["Plot id"])
-        retron_scope_spec = retron_scope_plot_spec_map[retron_scope_plot_id]
         _retron_scope_rendered_files = retron_plot_rendered_files(
             retron_scope_plots_dir,
             plot_id=retron_scope_plot_id,
-            plugin=str(retron_scope_spec.get("plugin", "")),
         )
         retron_scope_plot_catalog_rows.append(
             {
@@ -389,12 +384,12 @@ def _(load_cached_parquet_frame, retron_scope_plot_selector, retron_scope_plot_s
 
 
 @app.cell(hide_code=True)
-def _(render_retron_experiment_plot_cached, retron_scope_plot_dataset_errors, retron_scope_plot_datasets, retron_scope_selected_spec):
+def _(render_retron_experiment_plot, retron_scope_plot_dataset_errors, retron_scope_plot_datasets, retron_scope_selected_spec):
     retron_scope_plot_error = None
     retron_scope_plot_result = None
     if retron_scope_selected_spec is not None and not retron_scope_plot_dataset_errors:
         try:
-            retron_scope_plot_result = render_retron_experiment_plot_cached(
+            retron_scope_plot_result = render_retron_experiment_plot(
                 retron_scope_selected_spec,
                 datasets=retron_scope_plot_datasets,
             )

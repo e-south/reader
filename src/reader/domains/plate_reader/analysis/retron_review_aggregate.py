@@ -1,3 +1,5 @@
+"""Cross-experiment retron sponge aggregate dataframe preparation."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -5,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from reader.workbench.notebooks import _retron_review_shared as retron_review_shared
+from reader.domains.plate_reader.analysis import retron_review_semantics
 
 _ALLOWED_AGGREGATE_SCORE_METRICS = ("O_abs_AUC", "S_abs_AUC", "O_AUC", "S_AUC")
 _FINGERPRINT_FRAME_COLUMNS = [
@@ -21,6 +23,15 @@ _FINGERPRINT_FRAME_COLUMNS = [
     "sponge",
     "sponge_family_size",
     "value",
+]
+_EXPECTED_VS_OBSERVED_COLUMNS = [
+    "sensor",
+    "sponge",
+    "observed",
+    "expected_best_single",
+    "expected_sum",
+    "relevant_motif_count",
+    "sponge_family_size",
 ]
 
 
@@ -43,7 +54,7 @@ def build_specificity_matrix(
     if pivot.empty:
         return pivot
     row_order = sorted(pivot.index.tolist())
-    col_order = sorted(pivot.columns.tolist(), key=retron_review_shared.sponge_sort_key)
+    col_order = sorted(pivot.columns.tolist(), key=retron_review_semantics.sponge_sort_key)
     return pivot.reindex(index=row_order, columns=col_order)
 
 
@@ -57,7 +68,7 @@ def build_architecture_frame(
     if scores.empty:
         return scores
     frame = scores.copy()
-    frame["motif_count"] = frame["sponge"].map(retron_review_shared.motif_count)
+    frame["motif_count"] = frame["sponge"].map(retron_review_semantics.motif_count)
     frame["relevant_motif_count"] = frame.apply(
         lambda row: _relevant_motif_count(
             str(row["sensor"]),
@@ -78,7 +89,7 @@ def build_expected_vs_observed_frame(
 ) -> pd.DataFrame:
     scores = aggregate_on_target_scores(summary_df, score_metric=score_metric)
     if scores.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=_EXPECTED_VS_OBSERVED_COLUMNS)
     mono_lookup = {
         (str(row["sensor"]), str(row["sponge"])): float(row["value"])
         for _, row in scores[scores["sponge_family_size"].astype(str) == "mono"].iterrows()
@@ -103,7 +114,11 @@ def build_expected_vs_observed_frame(
                 "sponge_family_size": row["sponge_family_size"],
             }
         )
-    return pd.DataFrame(rows).sort_values(["sensor", "sponge"], kind="stable").reset_index(drop=True)
+    return (
+        pd.DataFrame(rows, columns=_EXPECTED_VS_OBSERVED_COLUMNS)
+        .sort_values(["sensor", "sponge"], kind="stable")
+        .reset_index(drop=True)
+    )
 
 
 def build_fingerprint_frame(
@@ -119,7 +134,8 @@ def build_fingerprint_frame(
     )
     sample_rows = _fingerprint_sample_rows(frame, score_metric=score_metric)
     available = sorted(
-        {str(value) for value in sample_rows["sponge"].dropna()}, key=retron_review_shared.sponge_sort_key
+        {str(value) for value in sample_rows["sponge"].dropna()},
+        key=retron_review_semantics.sponge_sort_key,
     )
     if not available:
         return pd.DataFrame(columns=_FINGERPRINT_FRAME_COLUMNS)
@@ -165,7 +181,10 @@ def available_multifunctional_sponges(summary_df: pd.DataFrame) -> list[str]:
     if scores.empty:
         return []
     multi = scores[scores["sponge_family_size"].astype(str).isin({"bi", "tri", "quad"})]
-    return sorted({str(value) for value in multi["sponge"].dropna()}, key=retron_review_shared.sponge_sort_key)
+    return sorted(
+        {str(value) for value in multi["sponge"].dropna()},
+        key=retron_review_semantics.sponge_sort_key,
+    )
 
 
 def aggregate_on_target_scores(summary_df: pd.DataFrame, *, score_metric: str) -> pd.DataFrame:
@@ -228,7 +247,7 @@ def build_aggregate_pareto_frame(
     leak_rows = summary_df[
         (summary_df["metric"].astype(str) == "L_pre")
         & (summary_df["sponge"].astype(str) != "tetO")
-        & retron_review_shared.coerce_optional_bool_series(
+        & retron_review_semantics.coerce_optional_bool_series(
             summary_df["relevant_sensor_pair"],
             label="relevant_sensor_pair",
         ).fillna(False)
@@ -238,11 +257,11 @@ def build_aggregate_pareto_frame(
     preload_rows = summary_df[
         (summary_df["metric"].astype(str) == "P_pre")
         & (summary_df["sponge"].astype(str) != "tetO")
-        & retron_review_shared.coerce_optional_bool_series(
+        & retron_review_semantics.coerce_optional_bool_series(
             summary_df["relevant_sensor_pair"],
             label="relevant_sensor_pair",
         ).fillna(False)
-        & retron_review_shared.coerce_optional_bool_series(
+        & retron_review_semantics.coerce_optional_bool_series(
             summary_df["is_relevant_stress"],
             label="is_relevant_stress",
         ).fillna(False)
@@ -252,7 +271,7 @@ def build_aggregate_pareto_frame(
     burden_rows = summary_df[
         (summary_df["metric"].astype(str) == burden_metric)
         & (summary_df["sponge"].astype(str) != "tetO")
-        & retron_review_shared.coerce_optional_bool_series(
+        & retron_review_semantics.coerce_optional_bool_series(
             summary_df["relevant_sensor_pair"],
             label="relevant_sensor_pair",
         ).fillna(False)
@@ -270,9 +289,9 @@ def build_aggregate_pareto_frame(
     if table.empty:
         return table
     table["__family_order"] = table["sponge_family_size"].map(
-        lambda value: retron_review_shared.FAMILY_ORDER.get(str(value), 99)
+        lambda value: retron_review_semantics.FAMILY_ORDER.get(str(value), 99)
     )
-    table["__sponge_order"] = table["sponge"].map(retron_review_shared.sponge_sort_key)
+    table["__sponge_order"] = table["sponge"].map(retron_review_semantics.sponge_sort_key)
     return (
         table.sort_values(["__family_order", "__sponge_order"], kind="stable")
         .drop(columns=["__family_order", "__sponge_order"])
@@ -306,7 +325,7 @@ def _normalized_retron_summary_frame(summary_df: pd.DataFrame, *, required: set[
         frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
     for column in ("relevant_sensor_pair", "is_relevant_stress"):
         if column in frame.columns:
-            frame[column] = retron_review_shared.coerce_optional_bool_series(frame[column], label=column)
+            frame[column] = retron_review_semantics.coerce_optional_bool_series(frame[column], label=column)
     return frame
 
 
@@ -431,7 +450,8 @@ def _sorted_fingerprint_frame(frame: pd.DataFrame) -> pd.DataFrame:
         return frame
     out = frame.copy()
     sponge_order = sorted(
-        out["selected_sponge"].dropna().astype(str).unique(), key=retron_review_shared.sponge_sort_key
+        out["selected_sponge"].dropna().astype(str).unique(),
+        key=retron_review_semantics.sponge_sort_key,
     )
     sponge_order_map = {sponge: idx for idx, sponge in enumerate(sponge_order)}
     sensor_order = sorted(out["sensor"].dropna().astype(str).unique())
@@ -461,7 +481,7 @@ def _relevant_motifs(
     sensor_target_map: Mapping[str, tuple[str, ...]],
 ) -> list[str]:
     targets = set(sensor_target_map.get(sensor, ()))
-    motifs = retron_review_shared.split_motifs(sponge)
+    motifs = retron_review_semantics.split_motifs(sponge)
     return [motif for motif in motifs if motif in targets]
 
 

@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from reader.domains.plate_reader.analysis import retron_review_aggregate
 from reader.workbench.notebooks import _retron_review_aggregate_plots as retron_review_aggregate_plots
 from reader.workbench.notebooks import _retron_review_bundle as retron_review_bundle
 from reader.workbench.notebooks import _retron_review_catalog as retron_review_catalog
@@ -19,19 +20,20 @@ RetronReviewSource = retron_review_bundle.RetronReviewSource
 RetronReviewBundle = retron_review_bundle.RetronReviewBundle
 RetronReviewSourceSurface = retron_review_bundle.RetronReviewSourceSurface
 
-aggregate_on_target_scores = retron_review_aggregate_plots.aggregate_on_target_scores
-available_aggregate_score_metrics = retron_review_aggregate_plots.available_aggregate_score_metrics
-available_multifunctional_sponges = retron_review_aggregate_plots.available_multifunctional_sponges
-build_aggregate_pareto_frame = retron_review_aggregate_plots.build_aggregate_pareto_frame
-build_architecture_frame = retron_review_aggregate_plots.build_architecture_frame
-build_expected_vs_observed_frame = retron_review_aggregate_plots.build_expected_vs_observed_frame
-build_fingerprint_frame = retron_review_aggregate_plots.build_fingerprint_frame
-build_specificity_matrix = retron_review_aggregate_plots.build_specificity_matrix
+aggregate_on_target_scores = retron_review_aggregate.aggregate_on_target_scores
+available_aggregate_score_metrics = retron_review_aggregate.available_aggregate_score_metrics
+available_multifunctional_sponges = retron_review_aggregate.available_multifunctional_sponges
+build_aggregate_pareto_frame = retron_review_aggregate.build_aggregate_pareto_frame
+build_architecture_frame = retron_review_aggregate.build_architecture_frame
+build_expected_vs_observed_frame = retron_review_aggregate.build_expected_vs_observed_frame
+build_fingerprint_frame = retron_review_aggregate.build_fingerprint_frame
+build_specificity_matrix = retron_review_aggregate.build_specificity_matrix
 
 load_cached_parquet_frame = retron_review_bundle.load_cached_parquet_frame
 load_retron_source_semantic_datasets = retron_review_bundle.load_retron_source_semantic_datasets
 load_retron_review_bundle = retron_review_bundle.load_retron_review_bundle
 load_retron_semantic_maps_from_config = retron_review_bundle.load_retron_semantic_maps_from_config
+load_retron_source_record_frame = retron_review_bundle.load_retron_source_record_frame
 load_retron_source_surface = retron_review_bundle.load_retron_source_surface
 retron_plot_rendered_files = retron_review_bundle.retron_plot_rendered_files
 retron_visible_plot_specs = retron_review_bundle.retron_visible_plot_specs
@@ -71,16 +73,6 @@ class RetronAggregatePlotResult:
     figure: Any | None
     supporting_table: pd.DataFrame
     supporting_table_title: str
-
-
-_RETRON_EXPERIMENT_PLOT_CACHE: dict[
-    tuple[str, tuple[tuple[str, int], ...]],
-    RetronNotebookPlotResult,
-] = {}
-_RETRON_AGGREGATE_PLOT_CACHE: dict[
-    tuple[str, int, tuple[tuple[str, tuple[str, ...]], ...], str, str, str, str | None],
-    RetronAggregatePlotResult,
-] = {}
 
 
 def retron_transform_ladder_rows() -> list[dict[str, str]]:
@@ -322,25 +314,7 @@ def render_retron_experiment_plot(
     )
 
 
-def render_retron_experiment_plot_cached(
-    plot_spec: Mapping[str, Any],
-    *,
-    datasets: Mapping[str, pd.DataFrame],
-) -> RetronNotebookPlotResult:
-    plot_id = str(plot_spec.get("id") or "").strip()
-    cache_key = (
-        plot_id,
-        tuple(sorted((str(record_id), id(frame)) for record_id, frame in datasets.items())),
-    )
-    cached = _RETRON_EXPERIMENT_PLOT_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    result = render_retron_experiment_plot(plot_spec, datasets=datasets)
-    _RETRON_EXPERIMENT_PLOT_CACHE[cache_key] = result
-    return result
-
-
-def render_retron_source_plot_cached(
+def render_retron_source_plot(
     source: RetronReviewSource,
     *,
     plot_id: str,
@@ -367,10 +341,14 @@ def render_retron_source_plot_cached(
     datasets = retron_review_experiment_plots.load_source_plot_datasets(
         surface=surface,
         plot_spec=plot_spec,
-        load_frame=load_cached_parquet_frame,
+        load_frame=lambda record_id, path: load_retron_source_record_frame(
+            source,
+            record_id=record_id,
+            path=path,
+        ),
         semantic_datasets=semantic_datasets,
     )
-    return render_retron_experiment_plot_cached(plot_spec, datasets=datasets)
+    return render_retron_experiment_plot(plot_spec, datasets=datasets)
 
 
 def render_retron_aggregate_plot(
@@ -429,44 +407,7 @@ def _summary_supporting_table(
     )
 
 
-def render_retron_aggregate_plot_cached(
-    plot_id: str,
-    *,
-    summary_df: pd.DataFrame,
-    sensor_target_map: Mapping[str, tuple[str, ...]],
-    score_metric: str,
-    architecture_x: str,
-    expected_mode: str,
-    fingerprint_sponge: str | None,
-) -> RetronAggregatePlotResult:
-    cache_key = (
-        str(plot_id),
-        id(summary_df),
-        tuple(
-            sorted((str(sensor), tuple(str(item) for item in targets)) for sensor, targets in sensor_target_map.items())
-        ),
-        str(score_metric),
-        str(architecture_x),
-        str(expected_mode),
-        fingerprint_sponge,
-    )
-    cached = _RETRON_AGGREGATE_PLOT_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    result = render_retron_aggregate_plot(
-        plot_id,
-        summary_df=summary_df,
-        sensor_target_map=sensor_target_map,
-        score_metric=score_metric,
-        architecture_x=architecture_x,
-        expected_mode=expected_mode,
-        fingerprint_sponge=fingerprint_sponge,
-    )
-    _RETRON_AGGREGATE_PLOT_CACHE[cache_key] = result
-    return result
-
-
-def try_render_retron_aggregate_plot_cached(
+def try_render_retron_aggregate_plot(
     plot_id: str,
     *,
     summary_df: pd.DataFrame,
@@ -478,7 +419,7 @@ def try_render_retron_aggregate_plot_cached(
 ) -> tuple[RetronAggregatePlotResult | None, str | None]:
     try:
         return (
-            render_retron_aggregate_plot_cached(
+            render_retron_aggregate_plot(
                 plot_id,
                 summary_df=summary_df,
                 sensor_target_map=sensor_target_map,

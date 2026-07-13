@@ -45,8 +45,9 @@ def collect_notebook_deliverables(outputs_dir: Path, *, notebooks_dir: Path | No
     plot_rows: list[dict[str, Any]] = []
     export_rows: list[dict[str, Any]] = []
 
+    runtime = builtin_runtime()
     try:
-        store = builtin_runtime().record_store(outputs, create=False)
+        store = runtime.record_store(outputs, create=False)
         records = store.iter_latest_records()
     except RecordError as exc:
         records = ()
@@ -97,6 +98,7 @@ def _dataframe_row(record: DataFrameArtifactRecord, *, outputs_dir: Path) -> dic
 
 
 def _file_rows(record: FileBundleRecord, *, outputs_dir: Path) -> list[dict[str, Any]]:
+    descriptions_by_path = {item.path: item.description for item in record.path_descriptions}
     rows = []
     for path in record.files:
         rows.append(
@@ -104,6 +106,7 @@ def _file_rows(record: FileBundleRecord, *, outputs_dir: Path) -> list[dict[str,
                 "Record ID": record.record_id,
                 "Producer": _producer_label(record),
                 "Plugin": record.producer.plugin or "",
+                "Description": descriptions_by_path[path] if record.producer.kind == "plot" else record.description,
                 "File": path.name,
                 "Path": _display_path(path, outputs_dir=outputs_dir),
                 "Exists": _exists_label(path),

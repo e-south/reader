@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from reader.workbench.notebooks import _retron_review_shared as retron_review_shared
+from reader.domains.plate_reader.analysis import retron_review_semantics
 
 
 def retron_figure_label(filename: str) -> str:
@@ -33,7 +33,7 @@ def filter_supporting_table_for_figure(table: pd.DataFrame, *, filename: str | N
     for column, token in scope_tokens.items():
         if token is None or column not in frame.columns:
             continue
-        mask = frame[column].astype(str).map(retron_review_shared.slug) == retron_review_shared.slug(token)
+        mask = frame[column].astype(str).map(retron_review_semantics.slug) == retron_review_semantics.slug(token)
         if not mask.any():
             mask = frame[column].astype(str) == token
         if mask.any():
@@ -83,7 +83,7 @@ def download_safe_stem(value: str) -> str:
     stem = str(value or "").strip()
     if not stem:
         return "retron_review"
-    return retron_review_shared.slug(stem).replace("/", "_") or "retron_review"
+    return retron_review_semantics.slug(stem).replace("/", "_") or "retron_review"
 
 
 def prepare_notebook_plot_figure(item: Any) -> Any:

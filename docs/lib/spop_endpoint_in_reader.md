@@ -1,3 +1,11 @@
+---
+doc_id: reader-spop-endpoint
+surface: library-reference
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Reader-owned SPOP endpoint assay score, inputs, provenance, and downstream handoff boundary.
+---
+
 # SPOP Endpoint Scoring
 
 **Owner:** reader-maintainers  

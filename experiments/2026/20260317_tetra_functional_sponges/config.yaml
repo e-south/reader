@@ -5,8 +5,12 @@ protocol:
   id: plate_reader/retron_sponge_screen
   inputs:
     ingest:
-      mode: auto
-      add_sheet: true
+      mode: mixed
+      channel_map:
+        "OD600:600": OD600
+        "CFP:433,475": CFP
+        "YFP:500,530": YFP
+      auto_pick: single
   analysis:
     measurement: yfp_cfp
     semantic_metrics:

@@ -2038,7 +2038,7 @@ def test_retron_decomposition_fails_fast_when_expected_decoy_sign_is_missing() -
         )
 
 
-def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_is_still_recoverable() -> None:
+def test_retron_decomposition_rejects_missing_analysis_owned_window_metadata() -> None:
     trace = pd.DataFrame(
         [
             {
@@ -2096,23 +2096,18 @@ def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_i
         ]
     )
 
-    figures = plot_retron_sponge_summary(
-        summary=summary,
-        trace=trace,
-        output_dir=None,
-        view="decomposition",
-        title="Sponge vs matched tetO",
-        filename="control_anchored_decomposition",
-        palette_book=None,
-        control_name="tetO",
-        fig_kwargs={},
-    )
-
-    figure = figures[0].fig
-    assert len(figure.axes) == 5
-    visible_axes = [axis for axis in figure.axes if axis.axison]
-    assert visible_axes[0].get_xlabel() == "Time from stress addition (h)"
-    plt.close(figure)
+    with pytest.raises(ValueError, match="matched_control_key"):
+        plot_retron_sponge_summary(
+            summary=summary,
+            trace=trace,
+            output_dir=None,
+            view="decomposition",
+            title="Sponge vs matched tetO",
+            filename="control_anchored_decomposition",
+            palette_book=None,
+            control_name="tetO",
+            fig_kwargs={},
+        )
 
 
 def test_retron_decomposition_rejects_missing_required_decision_metrics() -> None:
