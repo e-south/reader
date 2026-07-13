@@ -86,7 +86,7 @@ def test_load_candidate_bindings_rejects_contract_drift(
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if drift == "unknown_manifest_field":
-        manifest["legacy_aliases"] = []
+        manifest["undeclared_aliases"] = []
     elif drift == "record_id":
         manifest["record"]["record_id"] = "resolved_designs"
     elif drift == "candidate_table":
@@ -150,7 +150,7 @@ def test_load_candidate_bindings_rejects_identity_and_projection_drift(
     elif drift == "densegen_regulators":
         frame.at[0, "densegen__required_regulators"] = "not-a-list"
     else:
-        frame.loc[0, "baserender_adapter_kind"] = "legacy_sequence_plot"
+        frame.loc[0, "baserender_adapter_kind"] = "unsupported_sequence_plot"
     _rewrite_binding_table(root, frame)
 
     with pytest.raises(ValueError, match=message):

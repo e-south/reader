@@ -307,7 +307,7 @@ def _require_available_score_metric(frame: pd.DataFrame, *, score_metric: str) -
     raise ValueError(
         f"retron_review: aggregate score metric {score_metric!r} is unavailable in the loaded semantic summary "
         f"exports. Available metrics: {available_text}. This review bundle is likely backed by stale retron "
-        "summary exports. The positive-area aggregate metrics are not backfilled from legacy signed D_abs_* "
+        "summary exports. The positive-area aggregate metrics are not synthesized from signed D_abs_* "
         "exports because that would change the statistic. Re-run the source experiments referenced by the review "
         "manifest, then reopen the aggregate notebook."
     )

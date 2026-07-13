@@ -225,7 +225,7 @@ def test_promoter_evidence_verifier_rejects_semantic_manifest_drift(
         manifest["claim_status"] = "production"
         manifest["objective_overlay"]["claim_status"] = "production"
     elif drift == "selected_extra":
-        manifest["selected_binding"]["legacy_sequence"] = "ACGTACGT"
+        manifest["selected_binding"]["undeclared_sequence"] = "ACGTACGT"
     elif drift == "selected_sequence_digest":
         manifest["selected_binding"]["sequence_sha256"] = "not-a-digest"
     elif drift == "selected_binding_method":

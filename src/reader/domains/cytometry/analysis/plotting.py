@@ -79,7 +79,7 @@ def _downsample(
         return frame
     groups = [column for column in dict.fromkeys(group_columns) if column in frame.columns]
     if not groups:
-        return _sample_like_legacy_notebook(frame, max_events)
+        return _sample_with_stable_seed(frame, max_events)
     partitions = frame.partition_by(groups, maintain_order=True)
     partitions.sort(
         key=lambda partition: tuple(
@@ -89,16 +89,16 @@ def _downsample(
     per_group = max(1, max_events // max(len(partitions), 1))
     sampled = pl.concat(
         [
-            partition if partition.height <= per_group else _sample_like_legacy_notebook(partition, per_group)
+            partition if partition.height <= per_group else _sample_with_stable_seed(partition, per_group)
             for partition in partitions
         ],
         how="vertical",
     )
     if sampled.height > max_events:
-        return _sample_like_legacy_notebook(sampled, max_events)
+        return _sample_with_stable_seed(sampled, max_events)
     return sampled
 
 
-def _sample_like_legacy_notebook(frame: pl.DataFrame, size: int) -> pl.DataFrame:
+def _sample_with_stable_seed(frame: pl.DataFrame, size: int) -> pl.DataFrame:
     positions = np.random.RandomState(0).choice(frame.height, size=size, replace=False)
     return frame[positions.tolist()]

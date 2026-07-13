@@ -68,7 +68,7 @@ def _tidy_events() -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-def _legacy_prepare(frame: pl.DataFrame, *, design_id: str | None = None) -> pd.DataFrame:
+def _reference_prepare(frame: pl.DataFrame, *, design_id: str | None = None) -> pd.DataFrame:
     channels = ["FSC-A", "FSC-H", "SSC-A", "mCherry-A"]
     work = frame.filter(pl.col("channel").is_in(channels))
     if design_id is not None:
@@ -91,7 +91,7 @@ def _canonical_pandas(frame: pl.DataFrame | pd.DataFrame, columns: list[str]) ->
     return frame.loc[:, columns].sort_values(columns[:2]).reset_index(drop=True)
 
 
-def test_prepare_event_table_matches_legacy_path_and_projects_before_collect(tmp_path) -> None:
+def test_prepare_event_table_matches_reference_reduction_and_projects_before_collect(tmp_path) -> None:
     path = tmp_path / "events.parquet"
     _tidy_events().write_parquet(path)
 
@@ -101,7 +101,7 @@ def test_prepare_event_table_matches_legacy_path_and_projects_before_collect(tmp
         channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
         filters=EventFilters(design_id="d1"),
     )
-    expected = _legacy_prepare(_tidy_events(), design_id="d1")
+    expected = _reference_prepare(_tidy_events(), design_id="d1")
     columns = [
         "sample_id",
         "event_index",
@@ -280,9 +280,9 @@ def test_plot_payload_uses_the_existing_seeded_row_selection() -> None:
             "signal": [float(value) for value in range(12)],
         }
     )
-    legacy = frame.to_pandas(use_pyarrow_extension_array=False)
+    pandas_frame = frame.to_pandas(use_pyarrow_extension_array=False)
     expected = (
-        legacy.groupby(["sample_id"], dropna=False, group_keys=False)
+        pandas_frame.groupby(["sample_id"], dropna=False, group_keys=False)
         .apply(lambda group: group.sample(n=3, random_state=0), include_groups=False)
         .reset_index(drop=True)
     )
