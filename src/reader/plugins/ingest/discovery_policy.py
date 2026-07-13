@@ -17,7 +17,7 @@ from reader.errors import ParseError
 from reader.workbench.paths import resolve_path_within_root
 
 DEFAULT_ROOTS = ("./inputs", "./raw", "./raw_data")
-DEFAULT_INCLUDE = ("*.xlsx", "*.xls")
+DEFAULT_INCLUDE = ("*.xlsx", "*.XLSX")
 DEFAULT_EXCLUDE = (
     "~$*",
     "._*",
@@ -65,10 +65,16 @@ def discover_files(
                 f"auto_roots entry {root!r} must stay under the experiment root after resolving symlinks."
             ) from err
         for path in _iter_candidates(root_path, include, recursive):
+            try:
+                confined_path = resolve_path_within_root(path, root=base)
+            except ValueError as err:
+                raise ParseError(
+                    f"Discovered input {path!s} must stay under the experiment root after resolving symlinks."
+                ) from err
             if any(fnmatch.fnmatch(path.name, pat) for pat in exclude):
                 continue
-            if path in seen:
+            if confined_path in seen:
                 continue
-            out.append(path)
-            seen.add(path)
+            out.append(confined_path)
+            seen.add(confined_path)
     return sorted(out)
