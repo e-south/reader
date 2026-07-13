@@ -31,6 +31,7 @@ from .model import (
 )
 
 _MISSING = object()
+_DUAL_REPORTER_CHANNEL_MAP = {"OD600": "OD600", "CFP": "CFP", "YFP": "YFP"}
 
 
 def _field(
@@ -79,7 +80,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFigureSpec(
                 id="generic_qc",
                 kind="qc",
-                summary="Use domain-specific QC views before interpreting downstream summaries.",
+                summary="Quality-control measurements and diagnostics defined by the selected experiment domain.",
                 primary=True,
             ),
         ),
@@ -95,7 +96,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "notebook/basic",
                     "notebook/retron_sponge_aggregate",
                     "notebook/eda",
-                    "notebook/microplate",
                     "notebook/dual_reporter_triptych",
                     "notebook/cytometry",
                     "notebook/sfxi_eda",
@@ -123,20 +123,19 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "mode",
                         "Ingest mode for Synergy H1 parsing.",
                         kind="string",
-                        choices=("auto", "snapshot_only", "kinetic_only", "mixed"),
-                        default="auto",
+                        choices=("snapshot_only", "kinetic_only", "mixed"),
                     ),
                     _field(
                         "channel_map",
-                        "Optional channel rename mapping.",
+                        "Raw workbook label to canonical channel mapping; required for snapshot or mixed parsing.",
                         kind="mapping",
                         allow_unknown=True,
                         allow_none=True,
+                        default=dict(_DUAL_REPORTER_CHANNEL_MAP),
                     ),
                     _field(
                         "sheet_names", "Optional workbook sheet names to parse.", kind="string_list", allow_none=True
                     ),
-                    _field("add_sheet", "Attach source sheet_name to each row.", kind="bool", default=False),
                     _field(
                         "time_round_decimals",
                         "Rounding precision for parsed time values.",
@@ -167,7 +166,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "auto_pick",
                         "Multi-file selection policy for auto-discovery.",
                         kind="string",
-                        choices=("single", "latest", "merge"),
+                        choices=("single", "latest"),
                         default="single",
                     ),
                     _field(
@@ -176,13 +175,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         kind="bool",
                         default=False,
                     ),
-                    _field(
-                        "add_source_column",
-                        "Attach a source file column when merging multiple workbooks.",
-                        kind="bool",
-                        default=False,
-                    ),
-                    _field("source_col", "Name of the source file column.", kind="string", default="source_file"),
                     _field("print_summary", "Print an ingest summary to the log.", kind="bool", default=True),
                 ),
             ),
@@ -225,7 +217,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         analysis_fields=(
             _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
-            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
             _field(
                 "preprocessing",
                 "Pre-ingest cleanup policy for blanks and overflow.",
@@ -537,7 +528,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 allowed_templates=(
                     "notebook/eda",
                     "notebook/dual_reporter_triptych",
-                    "notebook/microplate",
                     "notebook/basic",
                 ),
                 summary="Dual-reporter plate-reader screens default to the EDA notebook with plot support.",
@@ -545,13 +535,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             plugin_defaults=(
                 ProtocolPluginDefaultsSpec(
                     plugin="ingest/synergy_h1",
-                    summary="Dual-reporter screens default to CFP/YFP/OD600 ingest in auto mode.",
+                    summary="Dual-reporter screens parse one explicitly selected Synergy workbook in mixed mode.",
                     with_={
-                        "mode": binding_value("ingest.mode", "auto"),
+                        "mode": binding_value("ingest.mode", "mixed"),
                         "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
-                        "channel_map": binding_value("ingest.channel_map", None),
+                        "channel_map": binding_value("ingest.channel_map", dict(_DUAL_REPORTER_CHANNEL_MAP)),
                         "sheet_names": binding_value("ingest.sheet_names", None),
-                        "add_sheet": binding_value("ingest.add_sheet", False),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
                         "auto_roots": binding_value("ingest.auto_roots", None),
@@ -559,8 +548,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
                         "auto_pick": binding_value("ingest.auto_pick", "single"),
                         "auto_recursive": binding_value("ingest.auto_recursive", False),
-                        "add_source_column": binding_value("ingest.add_source_column", False),
-                        "source_col": binding_value("ingest.source_col", "source_file"),
                         "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),
@@ -600,21 +587,20 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "mode",
                         "Ingest mode for Synergy H1 parsing.",
                         kind="string",
-                        choices=("auto", "snapshot_only", "kinetic_only", "mixed"),
-                        default="auto",
+                        choices=("snapshot_only", "kinetic_only", "mixed"),
                     ),
                     _field("channels", "Ordered channel names to keep from the workbook.", kind="string_list"),
                     _field(
                         "channel_map",
-                        "Optional channel rename mapping.",
+                        "Raw workbook label to canonical channel mapping; required for snapshot or mixed parsing.",
                         kind="mapping",
                         allow_unknown=True,
                         allow_none=True,
+                        default=dict(_DUAL_REPORTER_CHANNEL_MAP),
                     ),
                     _field(
                         "sheet_names", "Optional workbook sheet names to parse.", kind="string_list", allow_none=True
                     ),
-                    _field("add_sheet", "Attach source sheet_name to each row.", kind="bool", default=False),
                     _field(
                         "time_round_decimals",
                         "Rounding precision for parsed time values.",
@@ -645,7 +631,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "auto_pick",
                         "Multi-file selection policy for auto-discovery.",
                         kind="string",
-                        choices=("single", "latest", "merge"),
+                        choices=("single", "latest"),
                         default="single",
                     ),
                     _field(
@@ -654,13 +640,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         kind="bool",
                         default=False,
                     ),
-                    _field(
-                        "add_source_column",
-                        "Attach a source file column when merging multiple workbooks.",
-                        kind="bool",
-                        default=False,
-                    ),
-                    _field("source_col", "Name of the source file column.", kind="string", default="source_file"),
                     _field("print_summary", "Print an ingest summary to the log.", kind="bool", default=True),
                 ),
             ),
@@ -769,7 +748,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
             _field("include_vec8", "Build the vec8 summary table.", kind="bool", default=True),
             _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
-            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
             _field(
                 "sfxi_objective",
                 "OPAL-compatible SFXI objective settings for setpoint scoring plots.",
@@ -824,13 +802,18 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 allow_unknown=True,
                 children=(
                     _field(
-                        "sequence_source",
-                        "Public dnadesign USR dataset and overlay settings for sequence panels.",
-                        allow_unknown=True,
+                        "candidate_bindings_resource",
+                        "File resource for the study-issued exact Reader alias-to-candidate binding manifest.",
+                        kind="string",
                     ),
                     _field("bundle_id", "Stable bundle id used for generated file names.", kind="string"),
                     _field("snapshot_target_time_h", "Visual snapshot target time in hours.", kind="number"),
-                    _field("induction_time_h", "Induction marker time in hours.", kind="number", allow_none=True),
+                    _field(
+                        "acquisition_transition_time_h",
+                        "Optional workbook acquisition-segment marker time in hours.",
+                        kind="number",
+                        allow_none=True,
+                    ),
                     _field(
                         "sequence_panel",
                         "Public dnadesign BaseRender sequence-panel profile and sizing settings.",
@@ -935,7 +918,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 id="vec8",
                 stage="summary",
                 summary="Eight-value SFXI summary vector over logic and intensity channels.",
-                formula="v00,v10,v01,v11,y00,y10,y01,y11",
+                formula="v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star",
             ),
         ),
         figures=(
@@ -976,7 +959,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFigureSpec(
                 id="sfxi_triptych_sequence",
                 kind="summary",
-                summary="Bundle each SFXI promoter's kinetics, snapshot, and sequence architecture panels.",
+                summary=(
+                    "Growth kinetics, reporter-ratio kinetics, and selected-time treatment values above each "
+                    "promoter's sequence architecture."
+                ),
             ),
             ProtocolFigureSpec(
                 id="sfxi_vec8_heatmap",
@@ -1053,11 +1039,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     plugin="ingest/synergy_h1",
                     summary="Logic screens default to CFP/YFP/OD600 Synergy H1 ingest with protocol-bound channel policy.",
                     with_={
-                        "mode": binding_value("ingest.mode", "auto"),
+                        "mode": binding_value("ingest.mode", "mixed"),
                         "channels": binding_value("ingest.channels", ["OD600", "CFP", "YFP"]),
-                        "channel_map": binding_value("ingest.channel_map", None),
+                        "channel_map": binding_value("ingest.channel_map", dict(_DUAL_REPORTER_CHANNEL_MAP)),
                         "sheet_names": binding_value("ingest.sheet_names", None),
-                        "add_sheet": binding_value("ingest.add_sheet", False),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
                         "auto_roots": binding_value("ingest.auto_roots", None),
@@ -1065,8 +1050,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
                         "auto_pick": binding_value("ingest.auto_pick", "single"),
                         "auto_recursive": binding_value("ingest.auto_recursive", False),
-                        "add_source_column": binding_value("ingest.add_source_column", False),
-                        "source_col": binding_value("ingest.source_col", "source_file"),
                         "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),
@@ -1198,9 +1181,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
             ),
         ),
-        analysis_fields=(
-            _field("strict", "Treat runtime contract mismatches as hard errors.", kind="bool", default=True),
-        ),
+        analysis_fields=(),
         factors=(
             ProtocolFactorSpec(name="sample", role="sample", summary="Sample/run identifier."),
             ProtocolFactorSpec(name="condition", role="condition", summary="Experimental condition."),
@@ -1210,7 +1191,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFigureSpec(
                 id="cytometry_qc",
                 kind="qc",
-                summary="Channel/gating QC precedes downstream comparisons.",
+                summary="Channel distributions, event counts, and gate diagnostics for the selected cytometry dataset.",
                 primary=True,
             ),
         ),

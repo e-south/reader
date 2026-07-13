@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -86,6 +87,26 @@ def test_plot_registry_import_does_not_eager_load_snapshot_heatmap_domain_module
     importlib.import_module("reader.plugins.plot.snapshot_heatmap")
 
     assert "reader.domains.plate_reader.plots.snapshot_heatmap" not in sys.modules
+
+
+def test_builtin_runtime_discovery_does_not_eager_load_matplotlib_pyplot() -> None:
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from reader.runtime import builtin_runtime; "
+                "builtin_runtime(); "
+                "raise SystemExit(1 if 'matplotlib.pyplot' in sys.modules else 0)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert probe.returncode == 0, probe.stderr
 
 
 def test_plotting_mpl_import_does_not_eager_load_plotting_style_module() -> None:

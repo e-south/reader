@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from reader.contracts import ContractCatalog, ContractId, OutputContractSurface
 from reader.errors import ContractError, RegistryError
 from reader.plotting.mpl import ensure_mpl_cache_dir
-from reader.workbench.assets import AssetCatalog, AssetDescriptor
+from reader.workbench.assets import AssetCatalog, AssetDescriptor, plugin_category_from_id
 from reader.workbench.ports import (
     InputPortSpec,
     OutputPortSpec,
@@ -94,6 +94,18 @@ class Plugin(ABC):
     ) -> tuple[PreflightIssue, ...]:
         del exp_dir, cfg, reads
         return ()
+
+    @classmethod
+    def resolve_missing_file_inputs(
+        cls,
+        *,
+        exp_dir: Path,
+        cfg: PluginConfig,
+        inputs: Mapping[str, Any],
+    ) -> Mapping[str, Path]:
+        """Resolve optional file inputs that were not bound in the graph."""
+        del exp_dir, cfg, inputs
+        return {}
 
     @classmethod
     def passthrough_output_ports(
@@ -326,9 +338,10 @@ def load_plugin_catalog(*, contracts: ContractCatalog, categories: set[str] | No
         reg.register(descriptor)
 
     for ep in md.entry_points(group="reader.plugins"):
-        descriptor = _coerce_external_descriptor(ep.load(), ep_name=ep.name)
-        if wanted is not None and descriptor.category not in wanted:
+        entry_point_category = plugin_category_from_id(ep.name)
+        if wanted is not None and entry_point_category not in wanted:
             continue
+        descriptor = _coerce_external_descriptor(ep.load(), ep_name=ep.name)
         reg.register(descriptor)
 
     return reg

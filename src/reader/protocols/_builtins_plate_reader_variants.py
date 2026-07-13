@@ -36,7 +36,6 @@ def build_plate_reader_variant_protocols(
     field_builder: Callable[..., ProtocolConfigFieldSpec],
 ) -> tuple[ProtocolDescriptor, ProtocolDescriptor]:
     field = field_builder
-    dual_strict_field = next(item for item in dual_reporter_protocol.analysis_fields if item.key == "strict")
     dual_preprocessing_field = next(
         item for item in dual_reporter_protocol.analysis_fields if item.key == "preprocessing"
     )
@@ -184,7 +183,6 @@ def build_plate_reader_variant_protocols(
                 default="OD600",
             ),
             field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
-            dual_strict_field,
             dual_preprocessing_field,
         ),
         factors=dual_reporter_protocol.factors,
@@ -305,7 +303,7 @@ def build_plate_reader_variant_protocols(
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(
                 default_template="notebook/eda",
-                allowed_templates=("notebook/eda", "notebook/microplate", "notebook/basic"),
+                allowed_templates=("notebook/eda", "notebook/basic"),
                 summary="Single-reporter plate-reader screens default to the EDA notebook with plot support.",
             ),
             plugin_defaults=(
@@ -316,10 +314,9 @@ def build_plate_reader_variant_protocols(
                         "the compiler derives the required reporter/normalizer channels."
                     ),
                     with_={
-                        "mode": binding_value("ingest.mode", "auto"),
+                        "mode": binding_value("ingest.mode", "kinetic_only"),
                         "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
-                        "add_sheet": binding_value("ingest.add_sheet", False),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
                         "auto_roots": binding_value("ingest.auto_roots", None),
@@ -327,8 +324,6 @@ def build_plate_reader_variant_protocols(
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
                         "auto_pick": binding_value("ingest.auto_pick", "single"),
                         "auto_recursive": binding_value("ingest.auto_recursive", False),
-                        "add_source_column": binding_value("ingest.add_source_column", False),
-                        "source_col": binding_value("ingest.source_col", "source_file"),
                         "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),
@@ -386,7 +381,6 @@ def build_plate_reader_variant_protocols(
                 kind="bool",
                 default=False,
             ),
-            dual_strict_field,
             dual_preprocessing_field,
             field(
                 "semantic_metrics",
@@ -1042,10 +1036,10 @@ def build_plate_reader_variant_protocols(
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(
                 default_template="notebook/retron_sponge",
-                allowed_templates=("notebook/retron_sponge", "notebook/eda", "notebook/microplate", "notebook/basic"),
+                allowed_templates=("notebook/retron_sponge", "notebook/eda", "notebook/basic"),
                 summary=(
                     "Retron sponge screens default to the protocol-specific review notebook and keep the generic "
-                    "record explorers available as fallbacks."
+                    "record explorers available for general record inspection."
                 ),
             ),
             plugin_defaults=(
@@ -1056,10 +1050,9 @@ def build_plate_reader_variant_protocols(
                         "the compiler derives the required measurement-family channels."
                     ),
                     with_={
-                        "mode": binding_value("ingest.mode", "auto"),
+                        "mode": binding_value("ingest.mode", "kinetic_only"),
                         "channel_map": binding_value("ingest.channel_map", None),
                         "sheet_names": binding_value("ingest.sheet_names", None),
-                        "add_sheet": binding_value("ingest.add_sheet", False),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
                         "auto_roots": binding_value("ingest.auto_roots", None),
@@ -1067,8 +1060,6 @@ def build_plate_reader_variant_protocols(
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
                         "auto_pick": binding_value("ingest.auto_pick", "single"),
                         "auto_recursive": binding_value("ingest.auto_recursive", False),
-                        "add_source_column": binding_value("ingest.add_source_column", False),
-                        "source_col": binding_value("ingest.source_col", "source_file"),
                         "print_summary": binding_value("ingest.print_summary", True),
                     },
                 ),

@@ -291,18 +291,11 @@ def append_journal(job_path: Path, command_line: str) -> None:
 
 def _canonical_journal_path(exp_dir: Path) -> Path:
     canonical = exp_dir / "JOURNAL.md"
-    legacy = exp_dir / "journal.md"
-    if canonical.exists() and legacy.exists():
-        try:
-            if canonical.samefile(legacy):
-                return canonical
-        except OSError:
-            pass
+    entry_names = {path.name for path in exp_dir.iterdir()}
+    if "journal.md" in entry_names:
         raise ReaderError(
-            f"Both {canonical.name} and {legacy.name} exist in {exp_dir}. Consolidate to {canonical.name} first."
+            f"Unsupported lowercase journal path in {exp_dir}. Rename journal.md to {canonical.name} before running Reader."
         )
-    if legacy.exists():
-        legacy.rename(canonical)
     return canonical
 
 

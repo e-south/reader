@@ -99,7 +99,7 @@ def build_dual_reporter_triptych_chart(
     data: DualReporterTriptychData,
     time_col: str,
     treatment_col: str,
-    induction_time_h: float | None = None,
+    acquisition_transition_time_h: float | None = None,
     width: int = DEFAULT_TRIPTYCH_PANEL_SIZE,
     height: int | None = None,
     spacing: int = DEFAULT_TRIPTYCH_SPACING,
@@ -130,7 +130,7 @@ def build_dual_reporter_triptych_chart(
         color=color,
         order=order,
         snapshot_time=data.snapshot_time,
-        induction_time_h=induction_time_h,
+        acquisition_transition_time_h=acquisition_transition_time_h,
         width=width,
         height=panel_height,
     )
@@ -144,7 +144,7 @@ def build_dual_reporter_triptych_chart(
         color=color,
         order=order,
         snapshot_time=data.snapshot_time,
-        induction_time_h=induction_time_h,
+        acquisition_transition_time_h=acquisition_transition_time_h,
         width=width,
         height=panel_height,
     )
@@ -363,7 +363,7 @@ def _time_chart(
     color: Any,
     order: list[str],
     snapshot_time: float,
-    induction_time_h: float | None,
+    acquisition_transition_time_h: float | None,
     width: int,
     height: int,
 ) -> Any:
@@ -389,15 +389,15 @@ def _time_chart(
     rule_df = pd_module.DataFrame({time_col: [float(snapshot_time)], "y": [float(y_max)]})
     layers.append(alt.Chart(rule_df).mark_rule(color="black").encode(x=alt.X(f"{time_col}:Q")))
 
-    if induction_time_h is not None:
+    if acquisition_transition_time_h is not None:
         try:
-            induction_time = float(induction_time_h)
-        except Exception:
-            induction_time = None
-        if induction_time is not None and not pd_module.isna(induction_time):
-            induction_df = pd_module.DataFrame({time_col: [induction_time]})
+            transition_time = float(acquisition_transition_time_h)
+        except (TypeError, ValueError):
+            transition_time = None
+        if transition_time is not None and not pd_module.isna(transition_time):
+            transition_df = pd_module.DataFrame({time_col: [transition_time]})
             layers.append(
-                alt.Chart(induction_df).mark_rule(color="red", strokeDash=[6, 4]).encode(x=alt.X(f"{time_col}:Q"))
+                alt.Chart(transition_df).mark_rule(color="#5F5F5F", strokeDash=[6, 4]).encode(x=alt.X(f"{time_col}:Q"))
             )
 
     return alt.layer(*layers).properties(width=width, height=height, title=y_title)

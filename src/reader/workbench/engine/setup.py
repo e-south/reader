@@ -101,7 +101,6 @@ def build_run_context(
         records_path=store.records_path,
         logger=logger,
         palette_book=palette_book,
-        strict=bool(decl.pipeline.runtime.get("strict", True)) if isinstance(decl.pipeline.runtime, dict) else True,
         experiment=decl.experiment_semantics,
         protocol=runtime.bind_protocol(decl.experiment_semantics.protocol),
     )

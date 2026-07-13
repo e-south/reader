@@ -135,15 +135,13 @@ def test_read_only_commands_do_not_create_journal(tmp_path: Path) -> None:
     assert not (tmp_path / "journal.md").exists()
 
 
-def test_run_reports_split_case_journal_conflict_without_traceback(monkeypatch, tmp_path: Path) -> None:
+def test_run_reports_split_case_journal_conflict_without_traceback(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, base_reader_config(experiment_id="exp_run"))
-    (tmp_path / "JOURNAL.md").write_text("# Experiment Journal\n", encoding="utf-8")
     (tmp_path / "journal.md").write_text("# Experiment Journal\n", encoding="utf-8")
-    monkeypatch.setattr(Path, "samefile", lambda self, other: False)
-
+    (tmp_path / "JOURNAL.md").write_text("# Experiment Journal\n", encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(app, ["run", str(cfg)])
 
     assert result.exit_code == 1
-    assert "Both JOURNAL.md and journal.md exist" in _plain(result.output)
+    assert "Unsupported lowercase journal path" in _plain(result.output)
     assert "Traceback" not in result.output

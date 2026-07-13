@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from reader.errors import RecordError
 from reader.runtime import ReaderRuntime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl
@@ -338,9 +339,13 @@ def experiment_inspect_payload(
         for resource_id, entry in sorted(decl.experiment_semantics.resources.by_id.items())
     ]
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
-    records_payload = (
-        record_entries_payload(store=store, outputs_dir=outputs_dir, base=exp_root) if store.catalog_exists() else []
-    )
+    records_payload: list[dict[str, object]] = []
+    records_error: str | None = None
+    if store.catalog_exists():
+        try:
+            records_payload = record_entries_payload(store=store, outputs_dir=outputs_dir, runtime=runtime)
+        except RecordError as exc:
+            records_error = str(exc)
     pipeline_steps = list(workbench.pipeline)
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
@@ -356,6 +361,19 @@ def experiment_inspect_payload(
         record_producers=record_producers,
     )
     compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
+    readiness_payload = experiment_readiness_payload(job_path=job_path, decl=decl, runtime=runtime)
+    generated_payload: dict[str, object] = {
+        "counts": output_counts,
+        "examples": {
+            "records": preview_output_files(artifacts_dir, base=exp_root),
+            "plots": preview_output_files(plots_dir, base=exp_root),
+            "exports": preview_output_files(exports_dir, base=exp_root),
+            "notebooks": preview_output_files(notebooks_dir, base=exp_root),
+        },
+        "records": records_payload,
+    }
+    if records_error is not None:
+        generated_payload["records_error"] = records_error
     return experiment_surface_payload(
         experiment=experiment_payload,
         authoring=authoring_payload,
@@ -384,16 +402,7 @@ def experiment_inspect_payload(
                     for resource_id, path_text in resource_rows
                 ],
             },
-            generated={
-                "counts": output_counts,
-                "examples": {
-                    "records": preview_output_files(artifacts_dir, base=exp_root),
-                    "plots": preview_output_files(plots_dir, base=exp_root),
-                    "exports": preview_output_files(exports_dir, base=exp_root),
-                    "notebooks": preview_output_files(notebooks_dir, base=exp_root),
-                },
-                "records": records_payload,
-            },
-            readiness=experiment_readiness_payload(job_path=job_path, decl=decl, runtime=runtime),
+            generated=generated_payload,
+            readiness=readiness_payload,
         ),
     )

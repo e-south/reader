@@ -31,6 +31,8 @@ from reader.workbench.templates import (
 
 
 def _is_app_cell(dec: ast.AST) -> bool:
+    if isinstance(dec, ast.Call):
+        dec = dec.func
     return (
         isinstance(dec, ast.Attribute)
         and isinstance(dec.value, ast.Name)
@@ -64,6 +66,12 @@ class _Collector(ast.NodeVisitor):
         for alias in node.names:
             self.names.add(alias.asname or alias.name)
 
+    def visit_comprehension(self, node: ast.comprehension) -> None:
+        # Comprehension targets are scoped to the comprehension in Python 3.
+        self.visit(node.iter)
+        for condition in node.ifs:
+            self.visit(condition)
+
 
 def _find_duplicates(template: str) -> set[str]:
     tree = ast.parse(template)
@@ -83,12 +91,29 @@ def _find_duplicates(template: str) -> set[str]:
     return dupes
 
 
+def _undecorated_cell_lines(template: str) -> list[int]:
+    tree = ast.parse(template)
+    return [
+        node.lineno
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_"
+        and not any(_is_app_cell(decorator) for decorator in node.decorator_list)
+    ]
+
+
 def test_notebook_templates_no_duplicate_globals() -> None:
     for descriptor in builtin_notebook_template_catalog().all():
         name = descriptor.template
         template = descriptor.load_body()
         dupes = sorted(_find_duplicates(template))
         assert not dupes, f"{name} defines the same non-private name in multiple cells: {dupes}"
+
+
+def test_notebook_templates_do_not_leave_cell_functions_undecorated() -> None:
+    for descriptor in builtin_notebook_template_catalog().all():
+        lines = _undecorated_cell_lines(descriptor.load_body())
+        assert not lines, f"{descriptor.template} has cell functions without @app.cell at lines {lines}"
 
 
 def test_notebook_templates_parse() -> None:
@@ -212,7 +237,6 @@ def test_sfxi_notebook_triptych_uses_closed_corner_condition_labels() -> None:
 def test_notebook_template_catalog_exposes_domain_semantics() -> None:
     descriptors = {item.template: item for item in builtin_notebook_template_catalog().all()}
     assert descriptors["notebook/eda"].domain == "generic"
-    assert descriptors["notebook/microplate"].domain == "plate_reader"
     assert descriptors["notebook/dual_reporter_triptych"].domain == "plate_reader"
     assert descriptors["notebook/retron_sponge"].domain == "plate_reader"
     assert descriptors["notebook/retron_sponge_aggregate"].domain == "generic"
@@ -263,7 +287,7 @@ def test_notebook_template_catalog_filters_by_protocol() -> None:
 def test_retron_notebook_template_catalog_filters_by_protocol() -> None:
     protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="plate_reader/retron_sponge_screen"))
     templates = [item.template for item in compatible_notebook_templates(protocol=protocol)]
-    assert templates == ["notebook/retron_sponge", "notebook/eda", "notebook/microplate", "notebook/basic"]
+    assert templates == ["notebook/retron_sponge", "notebook/eda", "notebook/basic"]
 
 
 def test_generic_notebook_template_catalog_includes_retron_aggregate_review() -> None:
@@ -273,7 +297,6 @@ def test_generic_notebook_template_catalog_includes_retron_aggregate_review() ->
         "notebook/basic",
         "notebook/retron_sponge_aggregate",
         "notebook/eda",
-        "notebook/microplate",
         "notebook/dual_reporter_triptych",
         "notebook/cytometry",
         "notebook/sfxi_eda",

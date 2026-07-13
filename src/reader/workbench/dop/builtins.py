@@ -206,7 +206,7 @@ BUILTIN_READY_SPECS: tuple[ReadySpec, ...] = (
             "declared files and resources exist",
             "runtime dependencies are available",
         ),
-        accepted_readiness_states=("runnable", "legacy_outputs_present", "records_ready"),
+        accepted_readiness_states=("runnable", "uncataloged_outputs_present", "records_ready"),
         commands=("uv run reader validate <config|dir|index> --format json",),
     ),
     ReadySpec(
@@ -218,7 +218,7 @@ BUILTIN_READY_SPECS: tuple[ReadySpec, ...] = (
             "run capability is true",
             "next command is explicit",
         ),
-        accepted_readiness_states=("runnable", "legacy_outputs_present", "records_ready"),
+        accepted_readiness_states=("runnable", "uncataloged_outputs_present", "records_ready"),
         required_capabilities=("run",),
         commands=("uv run reader run <config|dir|index> --dry-run --format json",),
     ),

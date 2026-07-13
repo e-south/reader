@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-import warnings
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -12,6 +10,7 @@ from reader.contracts import ContractCatalog
 from reader.errors import ContractError, ExecutionError
 from reader.workbench.graph import OutputRef
 from reader.workbench.ports import InputPortSpec, OutputPortSpec
+from reader.workbench.records import PathDescription
 from reader.workbench.registry import Plugin
 
 
@@ -21,8 +20,6 @@ def _assert_input_ports(
     *,
     contracts: ContractCatalog,
     where: str,
-    strict: bool = True,
-    logger: logging.Logger | None = None,
 ) -> None:
     declared = plugin.input_ports()
     allowed = set(declared)
@@ -38,8 +35,6 @@ def _assert_input_ports(
             value=value,
             contracts=contracts,
             where=where,
-            strict=strict,
-            logger=logger,
         )
     extra = sorted(set(inputs) - allowed)
     if extra:
@@ -52,8 +47,6 @@ def _assert_output_ports(
     *,
     contracts: ContractCatalog,
     where: str,
-    strict: bool = True,
-    logger: logging.Logger | None = None,
 ) -> None:
     if set(outputs) != set(output_ports):
         raise ExecutionError(f"[{where}] plugin must emit outputs {sorted(output_ports)} but emitted {sorted(outputs)}")
@@ -67,23 +60,11 @@ def _assert_output_ports(
             try:
                 contracts.validate(value, contract_id=port.contract or "", where=where)
             except ContractError as err:
-                msg = str(err)
-                if strict:
-                    raise ExecutionError(msg) from err
-                if logger is not None:
-                    logger.warning("contract relaxed • %s", msg)
-                else:
-                    warnings.warn(msg, stacklevel=2)
+                raise ExecutionError(str(err)) from err
             continue
         if isinstance(value, pd.DataFrame):
             msg = f"[{where}] output '{name}' is declared as {port.kind} but returned a DataFrame"
-            if strict:
-                raise ExecutionError(msg)
-            if logger is not None:
-                logger.warning("contract relaxed • %s", msg)
-            else:
-                warnings.warn(msg, stacklevel=2)
-            continue
+            raise ExecutionError(msg)
         _coerce_file_output(port=port, value=value, where=where, name=name)
 
 
@@ -174,6 +155,23 @@ def collect_file_output_paths(
     return collected
 
 
+def collect_file_output_descriptions(
+    *,
+    output_ports: Mapping[str, OutputPortSpec],
+    outputs: Mapping[str, Any],
+) -> list[PathDescription]:
+    descriptions: list[PathDescription] = []
+    for name, port in output_ports.items():
+        if port.kind == "dataframe":
+            continue
+        value = outputs[name]
+        if isinstance(value, PathDescription):
+            descriptions.append(value)
+        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            descriptions.extend(item for item in value if isinstance(item, PathDescription))
+    return descriptions
+
+
 def _assert_input_port_value(
     *,
     name: str,
@@ -181,8 +179,6 @@ def _assert_input_port_value(
     value: Any,
     contracts: ContractCatalog,
     where: str,
-    strict: bool,
-    logger: logging.Logger | None,
 ) -> None:
     if port.kind == "dataframe":
         actual_contract = getattr(value, "contract_id", None)
@@ -199,13 +195,7 @@ def _assert_input_port_value(
             msg = str(err)
         else:
             msg = f"[{where}] input '{name}' must be contract {port.contract} but got {actual_contract}"
-        if strict:
-            raise ExecutionError(msg)
-        if logger is not None:
-            logger.warning("contract relaxed • %s", msg)
-        else:
-            warnings.warn(msg, stacklevel=2)
-        return
+        raise ExecutionError(msg)
     if port.kind == "file_path":
         if isinstance(value, Path):
             return
@@ -226,22 +216,39 @@ def _coerce_file_output(
     name: str,
 ) -> list[Path]:
     if port.kind == "file_path":
+        if isinstance(value, PathDescription):
+            return [value.path]
         if isinstance(value, str | Path):
-            return [Path(value)]
+            return [_validated_output_path(value, where=where, name=name)]
         raise ExecutionError(f"[{where}] output '{name}' must be a path-like value for file_path ports")
     if port.kind == "file_bundle":
-        if value is None:
-            return []
+        if isinstance(value, PathDescription):
+            return [value.path]
         if isinstance(value, str | Path):
-            return [Path(value)]
+            return [_validated_output_path(value, where=where, name=name)]
         if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            if not value:
+                raise ExecutionError(f"[{where}] output '{name}' file bundle must contain at least one file")
             paths: list[Path] = []
             for item in value:
+                if isinstance(item, PathDescription):
+                    paths.append(item.path)
+                    continue
                 if not isinstance(item, str | Path):
                     raise ExecutionError(
-                        f"[{where}] output '{name}' file bundle entries must be path-like, got {type(item).__name__}"
+                        f"[{where}] output '{name}' file bundle entries must be path-like or PathDescription, "
+                        f"got {type(item).__name__}"
                     )
-                paths.append(Path(item))
+                paths.append(_validated_output_path(item, where=where, name=name))
             return paths
         raise ExecutionError(f"[{where}] output '{name}' must be a list of path-like values for file_bundle ports")
     raise ExecutionError(f"[{where}] output '{name}' uses unknown non-dataframe port kind {port.kind!r}")
+
+
+def _validated_output_path(value: str | Path, *, where: str, name: str) -> Path:
+    if isinstance(value, str) and not value.strip():
+        raise ExecutionError(f"[{where}] output '{name}' paths must be non-empty")
+    path = Path(value)
+    if path == Path("."):
+        raise ExecutionError(f"[{where}] output '{name}' paths must identify files")
+    return path

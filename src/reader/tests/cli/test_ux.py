@@ -51,6 +51,10 @@ def _tidy_df() -> pd.DataFrame:
     )
 
 
+def _write_openable_workbook(path: Path) -> None:
+    pd.DataFrame({"value": [1]}).to_excel(path, index=False)
+
+
 def _base_config() -> dict:
     return base_reader_config(
         experiment_id="exp",
@@ -223,7 +227,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     inputs_dir = good_dir / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
 
     outputs = good_dir / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
@@ -281,15 +285,15 @@ def test_ls_rejects_missing_root(tmp_path: Path) -> None:
     assert "Experiments root not found" in result.output
 
 
-def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) -> None:
+def test_ls_json_surfaces_uncataloged_outputs(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
-    exp_dir = exp_root / "2025" / "legacy_exp"
+    exp_dir = exp_root / "2025" / "uncataloged_exp"
     exp_dir.mkdir(parents=True)
     write_config(exp_dir / "config.yaml", _base_config())
     inputs_dir = exp_dir / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     plots_dir = exp_dir / "outputs" / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     (plots_dir / "trace.pdf").write_text("plot", encoding="utf-8")
@@ -301,14 +305,14 @@ def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) 
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["summary"]["by_readiness"] == {"legacy_outputs_present": 1}
+    assert payload["summary"]["by_readiness"] == {"uncataloged_outputs_present": 1}
     entry = payload["experiments"][0]
-    assert entry["readiness"]["state"] == "legacy_outputs_present"
+    assert entry["readiness"]["state"] == "uncataloged_outputs_present"
     assert entry["readiness"]["records"]["catalog"] is False
-    assert entry["readiness"]["records"]["legacy_outputs_present"] is True
+    assert entry["readiness"]["records"]["uncataloged_outputs_present"] is True
 
 
-def test_ls_json_does_not_treat_notebook_only_scaffolds_as_legacy_outputs(tmp_path: Path) -> None:
+def test_ls_json_does_not_treat_notebook_only_scaffolds_as_uncataloged_outputs(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     exp_dir = exp_root / "2025" / "notebook_only"
     exp_dir.mkdir(parents=True)
@@ -329,7 +333,34 @@ def test_ls_json_does_not_treat_notebook_only_scaffolds_as_legacy_outputs(tmp_pa
     entry = payload["experiments"][0]
     assert entry["readiness"]["state"] == "runnable"
     assert entry["readiness"]["records"]["catalog"] is False
-    assert entry["readiness"]["records"]["legacy_outputs_present"] is False
+    assert entry["readiness"]["records"]["uncataloged_outputs_present"] is False
+
+
+def test_ls_json_does_not_treat_empty_record_catalog_as_records_ready(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "empty_catalog"
+    exp_dir.mkdir(parents=True)
+    write_config(exp_dir / "config.yaml", _base_config())
+    inputs_dir = exp_dir / "inputs"
+    inputs_dir.mkdir()
+    (inputs_dir / "metadata.xlsx").write_text("metadata", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "run.xlsx")
+    RecordStore(exp_dir / "outputs", contracts=builtin_contract_catalog())
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    readiness = json.loads(result.output)["experiments"][0]["readiness"]
+    assert readiness["state"] == "runnable"
+    assert readiness["records"] == {
+        "catalog": True,
+        "available": False,
+        "uncataloged_outputs_present": False,
+    }
+    assert readiness["capabilities"]["records"] is False
 
 
 def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
@@ -558,7 +589,7 @@ def test_validate_json_surfaces_file_check_selection(monkeypatch, tmp_path: Path
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
@@ -803,7 +834,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -843,7 +874,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -966,7 +997,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert payload["authoring"]["outputs"]["default_plot_profile"] == "screen_overview"
     assert (
         payload["authoring"]["outputs"]["notebook_policy"]["summary"]
-        == "Retron sponge screens default to the protocol-specific review notebook and keep the generic record explorers available as fallbacks."
+        == "Retron sponge screens default to the protocol-specific review notebook and keep the generic record explorers available for general record inspection."
     )
     assert figure_ids == {
         "raw_kinetics",
@@ -1313,6 +1344,7 @@ def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
     assert payload["summary"]["by_kind"] == {"dataframe_artifact": 1}
     assert payload["summary"]["by_producer"] == {"pipeline:ingest": 1}
     assert payload["records"][0]["record_id"] == "ingest/df"
+    assert payload["records"][0]["description"] == "Parse Synergy H1 workbooks into tidy plate-reader traces."
     assert payload["records"][0]["revision_count"] == 2
     assert "all" not in payload
     assert "count" not in payload
@@ -1343,4 +1375,5 @@ def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -
     assert payload["summary"]["history"]["included"] is False
     assert payload["summary"]["history"]["revisions"] is None
     assert payload["records"][0]["record_id"] == "ingest/df"
+    assert payload["records"][0]["description"] == "Parse Synergy H1 workbooks into tidy plate-reader traces."
     assert "revision_count" not in payload["records"][0]

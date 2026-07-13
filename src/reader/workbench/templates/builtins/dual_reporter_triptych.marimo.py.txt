@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 
@@ -29,11 +29,13 @@ def _():
         altair_err = exc
 
     from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.domains.plate_reader.analysis.timepoints import (
+        infer_acquisition_transition_time_h,
+    )
     from reader.workbench.notebooks.dual_reporter_triptych import (
         build_dual_reporter_triptych_chart,
         build_triptych_data,
         choose_time,
-        infer_induction_time_h,
         summarize_design_context,
     )
     from reader.workbench.records import discover_dataframe_records
@@ -46,7 +48,7 @@ def _():
         build_triptych_data,
         choose_time,
         discover_dataframe_records,
-        infer_induction_time_h,
+        infer_acquisition_transition_time_h,
         load_notebook_workbench_context,
         mo,
         pd,
@@ -268,9 +270,9 @@ def _(choose_time, design_col, design_select, mo, pd, tidy_pd, time_col, time_mo
 
 
 @app.cell(hide_code=True)
-def _(infer_induction_time_h, selected_rows, time_col):
-    induction_time_h = infer_induction_time_h(selected_rows, time_col=time_col)
-    return induction_time_h
+def _(infer_acquisition_transition_time_h, selected_rows, time_col):
+    acquisition_transition_time_h = infer_acquisition_transition_time_h(selected_rows, time_col=time_col)
+    return acquisition_transition_time_h
 
 
 @app.cell(hide_code=True)
@@ -330,7 +332,7 @@ def _(
     alt,
     altair_err,
     build_dual_reporter_triptych_chart,
-    induction_time_h,
+    acquisition_transition_time_h,
     mo,
     pd,
     time_col,
@@ -347,7 +349,7 @@ def _(
             data=triptych_data,
             time_col=time_col,
             treatment_col=treatment_col,
-            induction_time_h=induction_time_h,
+            acquisition_transition_time_h=acquisition_transition_time_h,
         )
     except Exception as exc:
         mo.stop(True, mo.md(f"Triptych render failed: `{exc}`"))

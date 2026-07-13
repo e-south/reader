@@ -18,7 +18,7 @@ from reader.protocols.model import (
     ProtocolSemanticProgram,
 )
 from reader.protocols.semantic_coverage import _semantic_program
-from reader.workbench.decl.model import NotebookTemplateCallDecl
+from reader.workbench.decl.model import NotebookTemplateCallDecl, ResourceInputDecl
 from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 
 
@@ -31,6 +31,13 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
         "logic/sfxi_screen",
         "cytometry/flow_panel",
     ]
+
+
+def test_builtin_protocols_do_not_expose_relaxed_runtime_contracts() -> None:
+    for descriptor in BUILTIN_PROTOCOLS:
+        assert all(field.key != "strict" for field in descriptor.analysis_fields)
+        compiled = builtin_protocol_catalog().bind(ProtocolBinding(id=descriptor.protocol)).compile()
+        assert "strict" not in compiled.runtime
 
 
 def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:
@@ -146,6 +153,34 @@ def test_logic_sfxi_screen_can_compile_vec8_heatmap_plot() -> None:
     assert plot.plugin == "plot/sfxi_vec8_heatmap"
     assert plot.reads["vec8"].record_id == "sfxi_vec8/vec8"
     assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
+
+
+def test_logic_sfxi_triptych_reads_one_declared_candidate_binding_resource() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            analysis={
+                "sfxi_triptych_sequence": {
+                    "candidate_bindings_resource": "promoter_candidate_bindings",
+                }
+            },
+            outputs={"plots": {"profile": "none", "include": ["sfxi_triptych_sequence"]}},
+        )
+    )
+
+    compiled = protocol.compile()
+    plot = next(step for step in compiled.plots if step.id == "sfxi_triptych_sequence")
+
+    assert plot.reads["candidate_bindings"] == ResourceInputDecl(resource_id="promoter_candidate_bindings")
+    assert "candidate_bindings_resource" not in plot.with_
+
+
+def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
+
+    vec8 = next(metric for metric in protocol.descriptor.metrics if metric.id == "vec8")
+
+    assert vec8.formula == "v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star"
 
 
 def test_protocol_semantic_execution_rejects_unknown_status() -> None:

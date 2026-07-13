@@ -20,7 +20,7 @@ def test_discover_files_excludes_conventional_metadata_names(tmp_path: Path) -> 
 def test_discover_files_can_search_recursively(tmp_path: Path) -> None:
     nested = tmp_path / "raw" / "nested"
     nested.mkdir(parents=True)
-    target = nested / "run.xls"
+    target = nested / "run.xlsx"
     target.write_text("x", encoding="utf-8")
 
     files = discover_files(tmp_path, recursive=True)

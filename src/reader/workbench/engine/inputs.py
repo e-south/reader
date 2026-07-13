@@ -5,8 +5,10 @@ from typing import Any
 
 from reader.errors import ExecutionError
 from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef
+from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.ports import InputPortSpec
 from reader.workbench.records import RecordStore
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 def _metadata_like_files(inputs_dir: Path) -> list[Path]:
@@ -83,3 +85,51 @@ def _resolve_inputs(
             f"Input '{label}' expects port kind {expected.kind!r} and cannot bind to a record ref {target.record_id!r}"
         )
     return inputs
+
+
+def resolve_missing_file_inputs(
+    *,
+    plugin: Plugin,
+    exp_dir: Path,
+    cfg: PluginConfig,
+    inputs: dict[str, Any],
+    input_ports: dict[str, InputPortSpec],
+) -> dict[str, Any]:
+    try:
+        additions = dict(type(plugin).resolve_missing_file_inputs(exp_dir=exp_dir, cfg=cfg, inputs=inputs))
+    except ExecutionError:
+        raise
+    except Exception as exc:
+        raise ExecutionError(f"{plugin.plugin_id}: failed to resolve missing file inputs: {exc}") from exc
+    conflicts = sorted(set(additions) & set(inputs))
+    if conflicts:
+        raise ExecutionError(f"{plugin.plugin_id}: missing-file resolver cannot replace bound inputs: {conflicts}")
+    unknown = sorted(set(additions) - set(input_ports))
+    if unknown:
+        raise ExecutionError(f"{plugin.plugin_id}: missing-file resolver returned unknown inputs: {unknown}")
+
+    resolved = dict(inputs)
+    for label, value in additions.items():
+        port = input_ports[label]
+        if port.kind != "file_path" or not port.optional:
+            raise ExecutionError(
+                f"{plugin.plugin_id}: missing-file resolver may only fill optional file_path ports; "
+                f"{label!r} is {port.kind!r} (optional={port.optional})"
+            )
+        if not isinstance(value, Path):
+            raise ExecutionError(
+                f"{plugin.plugin_id}: missing-file resolver input {label!r} must be a Path, got {type(value).__name__}"
+            )
+        try:
+            confined = resolve_path_within_root(value, root=exp_dir)
+        except ValueError as exc:
+            raise ExecutionError(
+                f"{plugin.plugin_id}: resolved input {label!r} must stay under the experiment root "
+                "after resolving symlinks"
+            ) from exc
+        if not confined.exists():
+            raise ExecutionError(f"Resolved input file missing for {label!r}: {confined}")
+        if not confined.is_file():
+            raise ExecutionError(f"Resolved input path is not a file for {label!r}: {confined}")
+        resolved[label] = confined
+    return resolved

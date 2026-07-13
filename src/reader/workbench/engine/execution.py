@@ -9,18 +9,35 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 
 from reader.errors import ExecutionError, ReaderError
 from reader.workbench.context import RunContext
-from reader.workbench.graph import ProvenanceInput
-from reader.workbench.records import RecordStore
+from reader.workbench.graph import FileRef, ProvenanceInput
+from reader.workbench.records import PathDescription, RecordStore
 
-from ._shared import diff_files, digest_cfg, snapshot_dir
+from ._shared import digest_cfg
 from .contracts import (
     _assert_input_ports,
     _assert_output_ports,
     _resolve_output_labels,
     _resolve_runtime_output_ports,
+    collect_file_output_descriptions,
     collect_file_output_paths,
 )
-from .inputs import _resolve_inputs
+from .inputs import _resolve_inputs, resolve_missing_file_inputs
+
+
+def _runtime_provenance_inputs(*, step: Any, inputs: dict[str, Any]) -> list[ProvenanceInput]:
+    provenance: list[ProvenanceInput] = []
+    declared_reads = dict(step.reads or {})
+    for label in sorted(inputs):
+        ref = declared_reads.get(label)
+        if ref is None:
+            value = inputs[label]
+            if not isinstance(value, Path):
+                raise ExecutionError(
+                    f"{step.id}: resolved input {label!r} has no declared reference and is not a file path"
+                )
+            ref = FileRef(path=value)
+        provenance.append(ProvenanceInput(label=label, ref=ref))
+    return provenance
 
 
 def _persist_dataframe_outputs(
@@ -28,8 +45,7 @@ def _persist_dataframe_outputs(
     store: RecordStore,
     step: Any,
     cfg: Any,
-    strict: bool,
-    inputs: dict[str, Any],
+    provenance_inputs: list[ProvenanceInput],
     outputs: dict[str, Any],
     resolved_output_ports: dict[str, Any],
     output_labels: dict[str, Any],
@@ -48,9 +64,8 @@ def _persist_dataframe_outputs(
                 record_id=output_labels[out_name].record_id,
                 df=obj,
                 contract_id=port.contract or "",
-                inputs=[ProvenanceInput(label=name, ref=step.reads[name]) for name in (step.reads or {})],
+                inputs=provenance_inputs,
                 config_digest=digest_cfg(cfg),
-                validate_contract=strict,
                 source_recipe=step.source_recipe,
             )
             continue
@@ -63,40 +78,76 @@ def _persist_file_bundle_record(
     ctx: RunContext,
     step: Any,
     cfg: Any,
-    inputs: dict[str, Any],
+    provenance_inputs: list[ProvenanceInput],
     outputs: dict[str, Any],
     resolved_output_ports: dict[str, Any],
     phase: str,
-    pre_state: dict[Path, float],
+    description: str,
+    protocol_figure_description: str | None,
 ) -> None:
-    base_dir = ctx.plots_dir if phase == "plots" else ctx.exports_dir
-    post_state = snapshot_dir(base_dir)
-    changed = diff_files(pre_state, post_state)
     explicit_files = collect_file_output_paths(
         output_ports=resolved_output_ports,
         outputs=outputs,
         where=f"{phase}:{step.id}",
     )
-    combined = list({*changed, *explicit_files})
-    if not combined:
-        return
-    rel_files: list[str] = []
-    for path in combined:
-        try:
-            rel_files.append(str(path.relative_to(ctx.outputs_dir)))
-        except Exception:
-            rel_files.append(str(path))
+    if not explicit_files:
+        raise ExecutionError(f"{phase} {step.id}: must emit at least one explicit file output")
     producer_kind = "plot" if phase == "plots" else "export"
+    record_files = sorted(
+        {_record_output_path(path, outputs_dir=ctx.outputs_dir) for path in explicit_files},
+        key=str,
+    )
+    path_descriptions: tuple[PathDescription, ...] = ()
+    if phase == "plots":
+        explicit_descriptions = collect_file_output_descriptions(
+            output_ports=resolved_output_ports,
+            outputs=outputs,
+        )
+        if protocol_figure_description is not None:
+            path_descriptions = tuple(
+                PathDescription(path=path, description=protocol_figure_description) for path in record_files
+            )
+        elif explicit_descriptions:
+            path_descriptions = tuple(
+                PathDescription(
+                    path=_record_output_path(item.path, outputs_dir=ctx.outputs_dir),
+                    description=item.description,
+                )
+                for item in explicit_descriptions
+            )
+        elif len(record_files) == 1:
+            path_descriptions = (PathDescription(path=record_files[0], description=description),)
+        else:
+            raise ExecutionError(
+                f"plots {step.id}: multiple files require an exact protocol figure summary or producer-supplied "
+                "PathDescription entries"
+            )
     store.append_file_bundle(
         producer_kind=producer_kind,
         producer_id=step.id,
         producer_plugin=step.plugin,
         record_id=f"{producer_kind}:{step.id}",
-        inputs=[ProvenanceInput(label=name, ref=step.reads[name]) for name in (step.reads or {})],
+        inputs=provenance_inputs,
         config_digest=digest_cfg(cfg),
-        files=[Path(path) for path in sorted(set(rel_files))],
+        files=record_files,
+        description=description,
+        path_descriptions=path_descriptions,
         source_recipe=step.source_recipe,
     )
+
+
+def _record_output_path(path: Path, *, outputs_dir: Path) -> Path:
+    try:
+        return path.relative_to(outputs_dir)
+    except ValueError:
+        return path
+
+
+def _protocol_figure_description(*, ctx: RunContext, step: Any) -> str | None:
+    for figure in ctx.protocol.descriptor.figures:
+        if figure.id == step.id:
+            return figure.summary
+    return None
 
 
 def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, registry: Any) -> None:
@@ -115,20 +166,19 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
         output_ports=output_ports,
         writes=(step.writes or {}),
     )
-    pre_state: dict[Path, float] = {}
-    if phase == "plots":
-        pre_state = snapshot_dir(ctx.plots_dir)
-    elif phase == "exports":
-        pre_state = snapshot_dir(ctx.exports_dir)
-
     inputs = _resolve_inputs(store, step.reads or {}, input_ports=input_ports, exp_dir=ctx.exp_dir)
+    inputs = resolve_missing_file_inputs(
+        plugin=plugin,
+        exp_dir=ctx.exp_dir,
+        cfg=cfg,
+        inputs=inputs,
+        input_ports=input_ports,
+    )
     _assert_input_ports(
         plugin,
         inputs,
         contracts=registry.contracts,
         where=step.id,
-        strict=ctx.strict,
-        logger=ctx.logger,
     )
 
     plug_inputs: dict[str, Any] = {}
@@ -158,31 +208,32 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
         outputs,
         contracts=registry.contracts,
         where=step.id,
-        strict=ctx.strict,
-        logger=ctx.logger,
     )
+    provenance_inputs = _runtime_provenance_inputs(step=step, inputs=inputs)
     _persist_dataframe_outputs(
         store=store,
         step=step,
         cfg=cfg,
-        strict=ctx.strict,
-        inputs=inputs,
+        provenance_inputs=provenance_inputs,
         outputs=outputs,
         resolved_output_ports=resolved_output_ports,
         output_labels=output_labels,
         phase=phase,
     )
     if phase in {"plots", "exports"}:
+        protocol_figure_description = _protocol_figure_description(ctx=ctx, step=step) if phase == "plots" else None
+        description = protocol_figure_description or descriptor.summary
         _persist_file_bundle_record(
             store=store,
             ctx=ctx,
             step=step,
             cfg=cfg,
-            inputs=inputs,
+            provenance_inputs=provenance_inputs,
             outputs=outputs,
             resolved_output_ports=resolved_output_ports,
             phase=phase,
-            pre_state=pre_state,
+            description=description,
+            protocol_figure_description=protocol_figure_description,
         )
 
 

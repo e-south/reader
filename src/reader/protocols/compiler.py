@@ -40,7 +40,6 @@ def compile_generic_protocol(protocol: Any):
 def compile_plate_reader_dual_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -87,7 +86,6 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
@@ -109,7 +107,6 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
             "plate_reader/single_reporter_screen requires distinct reporter_channel and normalizer_channel."
         )
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -154,7 +151,6 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=(),
@@ -179,7 +175,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
     reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
     growth_channel = _analysis_channel(analysis, key="growth_channel", default="OD600")
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=False)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -278,7 +273,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
@@ -294,7 +288,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
 
 def compile_logic_sfxi_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
     include_vec8 = _analysis_bool(analysis, key="include_vec8", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
@@ -351,7 +344,6 @@ def compile_logic_sfxi_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
@@ -361,8 +353,6 @@ def compile_logic_sfxi_screen(protocol: Any):
 
 
 def compile_cytometry_flow_panel(protocol: Any):
-    analysis = _analysis_options(protocol)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     try:
         selected_plots = protocol.select_plot_outputs(allowed=set())
@@ -377,7 +367,6 @@ def compile_cytometry_flow_panel(protocol: Any):
     if selected_exports:
         raise ConfigError("cytometry/flow_panel does not currently compile export artifacts.")
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=(
             _step(
                 id="ingest_cytometer",
@@ -909,14 +898,22 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(_sfxi_setpoint_scatter_defaults(protocol), settings),
         )
     if output_id == "sfxi_triptych_sequence":
+        triptych_cfg = _deep_merge(_sfxi_triptych_sequence_defaults(protocol), settings)
+        candidate_bindings_resource = triptych_cfg.pop("candidate_bindings_resource", None)
+        if not isinstance(candidate_bindings_resource, str) or not candidate_bindings_resource.strip():
+            raise ConfigError(
+                "logic/sfxi_screen sfxi_triptych_sequence requires analysis.sfxi_triptych_sequence."
+                "candidate_bindings_resource."
+            )
         return _step(
             id="sfxi_triptych_sequence",
             plugin="plot/sfxi_triptych_sequence",
             reads={
                 "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
                 "assay": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
+                "candidate_bindings": ResourceInputDecl(resource_id=candidate_bindings_resource.strip()),
             },
-            with_=_deep_merge(_sfxi_triptych_sequence_defaults(protocol), settings),
+            with_=triptych_cfg,
         )
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
 

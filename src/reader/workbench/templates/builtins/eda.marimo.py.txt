@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 @app.cell(hide_code=True)
@@ -151,6 +151,7 @@ def _(pl, record_path):
             df_error = f"Failed to read parquet with polars ({_suffix})."
     return df, df_error
 
+@app.cell(hide_code=True)
 def _(build_design_treatment_summary_rows, df):
     design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
     return design_treatment_rows, design_treatment_note

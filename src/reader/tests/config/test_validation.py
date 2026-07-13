@@ -32,6 +32,23 @@ def test_load_rejects_non_mapping(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_load_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+schema: reader/v7
+experiment:
+  id: first
+  id: second
+protocol:
+  id: workbench/generic
+""",
+    )
+
+    with pytest.raises(ConfigError, match="duplicate key 'id'"):
+        ReaderSpec.load(path)
+
+
 def test_load_requires_schema_marker(tmp_path: Path) -> None:
     data = _base_config()
     data.pop("schema")
@@ -118,15 +135,15 @@ def test_normalize_input_binding_rejects_file_symlink_escape(tmp_path: Path) -> 
         )
 
 
-def test_load_rejects_legacy_workflow_sections(tmp_path: Path) -> None:
+def test_load_rejects_removed_workflow_sections(tmp_path: Path) -> None:
     data = _base_config()
     data["pipeline"] = {"steps": []}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="Unsupported legacy/removed"):
+    with pytest.raises(ConfigError, match="reader/v7 rejects removed config keys"):
         ReaderSpec.load(path)
 
 
-def test_load_rejects_legacy_protocol_with_key(tmp_path: Path) -> None:
+def test_load_rejects_removed_protocol_with_key(tmp_path: Path) -> None:
     data = _base_config()
     data["protocol"] = {"id": "workbench/generic", "with": {"x": 1}}
     path = write_config(tmp_path, data)
