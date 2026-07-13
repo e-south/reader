@@ -6,21 +6,23 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import warnings
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
+from reader.domains.promoter.candidate_bindings import (
+    BASERENDER_CONTRACT_ID,
+    BASERENDER_CONTRACT_VERSION,
+    PromoterCandidateBindings,
+)
 from reader.errors import SFXIError
 
-from .triptych_sequence_dnadesign import (
-    DNADESIGN_SEQUENCE_PANEL_CONTRACT_ID,
-    READER_SUPPORTED_SEQUENCE_PANEL_CONTRACT_VERSION,
-)
-
-TRIPTYCH_BUNDLE_CONTRACT_VERSION = "reader.sfxi_triptych_sequence_bundle.v1"
+TRIPTYCH_BUNDLE_CONTRACT_VERSION = "reader.sfxi_triptych_sequence_bundle.v2"
+_PUBLISH_KEYS = ("poster", "pdf", "index", "frames_dir", "manifest", "movie")
 
 
-def bundle_paths(*, ctx, bundle_id: str, movie_enabled: bool) -> dict[str, Path]:
+def bundle_paths(*, ctx, bundle_id: str) -> dict[str, Path]:
     plot_dir = ctx.plots_dir / "sfxi_triptych_sequence"
     export_dir = ctx.exports_dir / "sfxi_triptych_sequence"
     paths = {
@@ -29,9 +31,8 @@ def bundle_paths(*, ctx, bundle_id: str, movie_enabled: bool) -> dict[str, Path]
         "frames_dir": plot_dir / f"{bundle_id}__frames",
         "index": export_dir / f"{bundle_id}_index.csv",
         "manifest": ctx.outputs_dir / "manifests" / f"{bundle_id}_manifest.json",
+        "movie": plot_dir / f"{bundle_id}.mp4",
     }
-    if movie_enabled:
-        paths["movie"] = plot_dir / f"{bundle_id}.mp4"
     return paths
 
 
@@ -107,6 +108,7 @@ def manifest_payload(
     outputs: Mapping[str, Path],
     movie_path: Path | None,
     scales: Mapping[str, object],
+    bindings: PromoterCandidateBindings,
 ) -> dict[str, object]:
     output_map = {
         "png": relative_to_outputs(outputs["poster"], outputs_dir=ctx.outputs_dir),
@@ -127,8 +129,17 @@ def manifest_payload(
         "row_order": [record["design_id"] for record in records],
         "reference_rows": [record for record in records if record.get("row_kind") == "reference"],
         "snapshot_target_time_h": float(cfg["snapshot_target_time_h"]),
-        "dnadesign_contract_id": DNADESIGN_SEQUENCE_PANEL_CONTRACT_ID,
-        "dnadesign_contract_version": READER_SUPPORTED_SEQUENCE_PANEL_CONTRACT_VERSION,
+        "dnadesign_contract_id": BASERENDER_CONTRACT_ID,
+        "dnadesign_contract_version": BASERENDER_CONTRACT_VERSION,
+        "candidate_bindings": {
+            "schema_id": bindings.schema_id,
+            "schema_version": bindings.schema_version,
+            "record_id": bindings.record_id,
+            "manifest_sha256": bindings.manifest_sha256,
+            "records_sha256": bindings.records_sha256,
+            "candidate_table_id": bindings.candidate_table_id,
+            "candidate_selection_sha256": bindings.candidate_selection_sha256,
+        },
         "sequence_profile_id": str(cfg["sequence_panel"]["profile"]),
         "axis_scales": scales,
         "outputs": output_map,
@@ -137,44 +148,126 @@ def manifest_payload(
 
 
 def publish_bundle(*, staging: Mapping[str, Path], final: Mapping[str, Path]) -> None:
-    for key in ("poster", "pdf", "index", "manifest"):
-        final[key].parent.mkdir(parents=True, exist_ok=True)
-    if "movie" in final:
-        final["movie"].parent.mkdir(parents=True, exist_ok=True)
-    final["frames_dir"].parent.mkdir(parents=True, exist_ok=True)
-
-    frames_dir = final["frames_dir"]
-    previous_frames_dir = frames_dir.with_name(f"{frames_dir.name}.__previous")
-    if previous_frames_dir.exists():
-        shutil.rmtree(previous_frames_dir)
-
+    staging_root = Path(staging["poster"]).parent
     try:
-        if frames_dir.exists():
-            frames_dir.rename(previous_frames_dir)
-        shutil.move(str(staging["frames_dir"]), str(frames_dir))
-        for key in ("poster", "pdf", "index", "manifest", "movie"):
-            if key in staging and key in final:
-                Path(staging[key]).replace(final[key])
-    except Exception:
-        if frames_dir.exists():
-            shutil.rmtree(frames_dir)
-        if previous_frames_dir.exists():
-            previous_frames_dir.rename(frames_dir)
-        raise
-    finally:
-        shutil.rmtree(previous_frames_dir, ignore_errors=True)
-        shutil.rmtree(Path(staging["poster"]).parent, ignore_errors=True)
+        replacements = _validated_bundle_replacements(staging=staging, final=final)
+    except Exception as publish_error:
+        _raise_after_staging_cleanup(staging_root, publish_error)
+
+    backup_root = staging_root / ".publish-backups"
+    backups: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
+    try:
+        for key in _PUBLISH_KEYS:
+            target = Path(final[key])
+            target.parent.mkdir(parents=True, exist_ok=True)
+        backup_root.mkdir()
+        for key in _PUBLISH_KEYS:
+            target = Path(final[key])
+            if target.exists():
+                backup = backup_root / f"{key}.backup"
+                target.replace(backup)
+                backups.append((backup, target))
+        for _, source, target in replacements:
+            source.replace(target)
+            installed.append(target)
+    except Exception as publish_error:
+        rollback_errors = _rollback_bundle(installed=installed, backups=backups)
+        if rollback_errors:
+            raise ExceptionGroup(
+                "SFXI triptych publication failed and rollback was incomplete",
+                [publish_error, *rollback_errors],
+            ) from publish_error
+        _raise_after_staging_cleanup(staging_root, publish_error)
+    else:
+        try:
+            cleanup_staging_root(staging_root)
+        except Exception as cleanup_error:  # publication is committed; provenance must still be recorded
+            warnings.warn(
+                "SFXI triptych publication committed, but transaction cleanup failed; "
+                f"remove {staging_root} after reviewing the retained backups: {cleanup_error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+
+def _validated_bundle_replacements(
+    *, staging: Mapping[str, Path], final: Mapping[str, Path]
+) -> tuple[tuple[str, Path, Path], ...]:
+    required = {"poster", "pdf", "index", "manifest", "frames_dir"}
+    missing_staging = sorted(required - staging.keys())
+    missing_final = sorted(set(_PUBLISH_KEYS) - final.keys())
+    if missing_staging or missing_final:
+        raise SFXIError(
+            "SFXI triptych publication requires matching poster, PDF, index, manifest, frame, and optional movie paths."
+        )
+
+    movie_target = Path(final["movie"])
+    if "movie" not in staging and movie_target.exists() and movie_target.is_dir():
+        raise SFXIError(f"SFXI triptych destination movie must be a file: {movie_target}")
+
+    replacements: list[tuple[str, Path, Path]] = []
+    for key in _PUBLISH_KEYS:
+        if key not in staging or key not in final:
+            continue
+        source = Path(staging[key])
+        target = Path(final[key])
+        if not source.exists():
+            raise SFXIError(f"SFXI triptych staged {key} is missing: {source}")
+        source_is_dir = source.is_dir()
+        if (key == "frames_dir") != source_is_dir:
+            expected = "directory" if key == "frames_dir" else "file"
+            raise SFXIError(f"SFXI triptych staged {key} must be a {expected}: {source}")
+        if target.exists() and target.is_dir() != source_is_dir:
+            expected = "directory" if source_is_dir else "file"
+            raise SFXIError(f"SFXI triptych destination {key} must be a {expected}: {target}")
+        replacements.append((key, source, target))
+    return tuple(replacements)
+
+
+def _rollback_bundle(*, installed: list[Path], backups: list[tuple[Path, Path]]) -> list[Exception]:
+    errors: list[Exception] = []
+    for target in reversed(installed):
+        try:
+            _remove_path(target)
+        except Exception as exc:  # pragma: no cover - recovery failure is platform-dependent
+            errors.append(exc)
+    for backup, target in reversed(backups):
+        try:
+            backup.replace(target)
+        except Exception as exc:  # pragma: no cover - recovery failure is platform-dependent
+            errors.append(exc)
+    return errors
+
+
+def _raise_after_staging_cleanup(staging_root: Path, publish_error: Exception) -> None:
+    try:
+        cleanup_staging_root(staging_root)
+    except Exception as cleanup_error:
+        raise ExceptionGroup(
+            "SFXI triptych publication failed and staging cleanup was incomplete",
+            [publish_error, cleanup_error],
+        ) from publish_error
+    raise publish_error
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
 
 
 def cleanup_staging_root(staging_root: Path) -> None:
-    shutil.rmtree(staging_root, ignore_errors=True)
+    if staging_root.exists():
+        shutil.rmtree(staging_root)
 
 
 def relative_to_outputs(path: Path, *, outputs_dir: Path) -> str:
     try:
         return str(path.resolve().relative_to(outputs_dir.resolve()))
-    except ValueError:
-        return str(path.resolve())
+    except ValueError as exc:
+        raise ValueError(f"SFXI artifact is outside the declared outputs directory: {path.resolve()}") from exc
 
 
 __all__ = [

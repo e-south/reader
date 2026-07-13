@@ -14,6 +14,8 @@ import pandas as pd
 from reader.errors import SFXIError
 from reader.plotting.sinks import PlotFigure
 
+from .validation import require_intensity_delta_column
+
 VEC8_COLUMNS = (
     "v00",
     "v10",
@@ -55,9 +57,8 @@ def _require_public_attr(module, attr: str) -> None:
 
 def _raise_dnadesign_sfxi_import_error(exc: ImportError) -> None:
     raise SFXIError(
-        "SFXI setpoint scatter requires the public dnadesign SFXI API. "
-        "Install or sync the optional dependency with `uv sync --extra dnadesign` "
-        "or install `reader[dnadesign]`."
+        "dnadesign SFXI API unavailable. Reader checkout: `uv sync --locked --group dnadesign`. "
+        "Packaged installs require a compatible dnadesign build that exposes dnadesign.opal.api.sfxi."
     ) from exc
 
 
@@ -86,14 +87,6 @@ def _require_intensity_delta_matches(vec8: pd.DataFrame, *, expected: float) -> 
             "SFXI setpoint scatter intensity_log2_offset_delta mismatch: "
             f"vec8 has [{observed}], scorer configured {expected_value:g}."
         )
-
-
-def _with_intensity_delta_column(vec8: pd.DataFrame) -> pd.DataFrame:
-    if "intensity_log2_offset_delta" in vec8.columns:
-        return vec8
-    out = vec8.copy()
-    out["intensity_log2_offset_delta"] = 0.0
-    return out
 
 
 def _coerce_setpoints(setpoints: Mapping[str, Sequence[float]]) -> dict[str, list[float]]:
@@ -146,7 +139,7 @@ def score_sfxi_setpoints(
     intensity_log2_offset_delta: float = 0.0,
 ) -> pd.DataFrame:
     _require_vec8_columns(vec8)
-    vec8 = _with_intensity_delta_column(vec8)
+    require_intensity_delta_column(vec8)
     _require_intensity_delta_matches(vec8, expected=intensity_log2_offset_delta)
     setpoint_map = _coerce_setpoints(setpoints)
     api = require_dnadesign_sfxi_api()

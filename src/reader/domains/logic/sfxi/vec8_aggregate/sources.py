@@ -163,8 +163,6 @@ def _normalize_vec8_frame(loaded: LoadedSFXIVec8Source, *, source_index: int) ->
         raise SFXIError(f"SFXI vec8 source has no rows: {loaded.source_path}")
 
     out = frame.reset_index(drop=True)
-    if "intensity_log2_offset_delta" not in out.columns:
-        out["intensity_log2_offset_delta"] = 0.0
     for channel in VEC8_CHANNELS:
         out[channel] = finite_numeric_column(out[channel], column=channel, source=loaded.source_path)
     out["design_id"] = _nonempty_string_column(out["design_id"], column="design_id", source=loaded.source_path)

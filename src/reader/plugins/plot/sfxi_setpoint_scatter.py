@@ -36,7 +36,7 @@ class SFXISetpointScatterPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {"vec8": dataframe_input("vec8", "sfxi.vec8.v2")}
+        return {"vec8": dataframe_input("vec8", "sfxi.vec8.v3")}
 
     @classmethod
     def preflight_readiness(cls, *, exp_dir, cfg: SFXISetpointScatterCfg, reads):

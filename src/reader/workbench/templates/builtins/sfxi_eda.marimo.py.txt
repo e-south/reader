@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 
@@ -16,6 +16,9 @@ def _():
     except Exception:
         pl = None
     from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.domains.plate_reader.analysis.timepoints import (
+        infer_acquisition_transition_time_h,
+    )
     from reader.workbench.notebooks.components import (
         build_design_treatment_summary_rows,
         build_notebook_overview,
@@ -37,6 +40,7 @@ def _():
         render_notebook_deliverables_panel,
         render_notebook_overview_panel,
         discover_dataframe_records,
+        infer_acquisition_transition_time_h,
     )
 
 
@@ -436,31 +440,9 @@ def _(mo, np, pd, sfxi_cfg, tidy_pd):
 
 
 @app.cell(hide_code=True)
-def _(pd, tidy_pd, time_col):
-    induction_time_h = None
-    explicit_cols = [
-        "induction_time_h",
-        "induction_time",
-        "time_of_induction_h",
-        "time_of_induction",
-    ]
-    for col in explicit_cols:
-        if col in tidy_pd.columns:
-            vals = pd.to_numeric(tidy_pd[col], errors="coerce").dropna()
-            if not vals.empty:
-                induction_time_h = float(vals.iloc[0])
-                break
-
-    if induction_time_h is None and "sheet_index" in tidy_pd.columns:
-        sheet_vals = pd.to_numeric(tidy_pd["sheet_index"], errors="coerce").dropna()
-        if not sheet_vals.empty:
-            min_sheet = float(sheet_vals.min())
-            sheet_series = pd.to_numeric(tidy_pd["sheet_index"], errors="coerce")
-            times = pd.to_numeric(tidy_pd.loc[sheet_series > min_sheet, time_col], errors="coerce").dropna()
-            if not times.empty:
-                induction_time_h = float(times.min())
-
-    return induction_time_h
+def _(infer_acquisition_transition_time_h, tidy_pd, time_col):
+    acquisition_transition_time_h = infer_acquisition_transition_time_h(tidy_pd, time_col=time_col)
+    return acquisition_transition_time_h
 
 
 @app.cell(hide_code=True)
@@ -768,7 +750,7 @@ def _(
     alt,
     altair_err,
     build_dual_reporter_triptych_chart,
-    induction_time_h,
+    acquisition_transition_time_h,
     mo,
     pd,
     time_col,
@@ -786,7 +768,7 @@ def _(
             data=triptych_data,
             time_col=time_col,
             treatment_col=sfxi_triptych_treatment_col,
-            induction_time_h=induction_time_h,
+            acquisition_transition_time_h=acquisition_transition_time_h,
         )
     except Exception as exc:
         mo.stop(True, mo.md(f"Dual-reporter triptych render failed: `{exc}`"))

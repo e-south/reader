@@ -10,10 +10,16 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from reader.domains.logic.sfxi import triptych_sequence, triptych_sequence_dnadesign
+from reader.domains.logic.sfxi import triptych_sequence, triptych_sequence_outputs
+from reader.domains.promoter import sequence_panel
+from reader.domains.promoter.candidate_bindings import load_promoter_candidate_bindings
+from reader.domains.promoter.sequence_panel import PromoterSequencePanelError
 from reader.errors import SFXIError
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.runtime import builtin_runtime
+from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_bindings import (
+    _write_binding_fixture,
+)
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.cli import app
 from reader.workbench.decl.model import (
@@ -22,11 +28,18 @@ from reader.workbench.decl.model import (
     PipelineDecl,
     PluginStepDecl,
     RecordInputDecl,
+    ResourceInputDecl,
     SurfaceDecl,
     WorkbenchDecl,
 )
 from reader.workbench.engine import run_spec
-from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
+from reader.workbench.experiment import (
+    AnnotationSemantics,
+    ExperimentSemantics,
+    OutputLayout,
+    ResourceCatalog,
+    ResourceEntry,
+)
 from reader.workbench.graph import resolve_workbench
 
 
@@ -35,7 +48,7 @@ def _vec8_df() -> pd.DataFrame:
         {
             "design_id": ["pDual-10-test01"],
             "id": ["seq01"],
-            "sequence": ["ACGTACGTACGT"],
+            "sequence": ["ACGTACGT"],
             "reference_design_id": ["pDual-10"],
             "intensity_log2_offset_delta": [0.0],
             "time_selected_h": [12.0],
@@ -84,19 +97,6 @@ def _assay_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _sequence_rows() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "usr_sequence_id": ["seq01"],
-            "usr_sequence": ["ACGTACGTACGT"],
-            "usr_label": ["pDual-10-test01"],
-            "usr_annotations": [[]],
-            "usr_dataset": ["usr_test_promoters"],
-            "sequence_adapter_kind": ["densegen_tfbs"],
-        }
-    )
-
-
 @dataclass(frozen=True)
 class _FakeDiagnostics:
     contract_id: str = "dnadesign.baserender.sequence_panel.v1"
@@ -105,7 +105,7 @@ class _FakeDiagnostics:
     style_preset: str = "presentation_default"
     adapter_kind: str = "densegen_tfbs"
     renderer_name: str = "sequence_rows"
-    sequence_length_bp: int = 12
+    sequence_length_bp: int = 8
     feature_count: int = 1
     strand_count: int = 2
     legend_entries: tuple[str, ...] = ("promoter",)
@@ -129,16 +129,60 @@ class _FakeBaseRender:
         return object()
 
 
-class _FakeUsrWithTransitiveImportFailure:
-    def __getattr__(self, name: str):
-        if name == "Dataset":
-            raise ModuleNotFoundError("No module named 'Bio'")
-        raise AttributeError(name)
-
-
 def _install_fake_sequence_panel(monkeypatch) -> None:
-    monkeypatch.setattr(triptych_sequence, "require_dnadesign_sequence_panel_api", lambda: (_FakeBaseRender, object()))
-    monkeypatch.setattr(triptych_sequence, "_load_usr_rows", lambda *, usr, cfg, exp_dir: _sequence_rows())
+    monkeypatch.setattr(triptych_sequence, "require_baserender_api", lambda: _FakeBaseRender)
+    monkeypatch.setattr(sequence_panel, "require_baserender_api", lambda: _FakeBaseRender)
+
+
+def _triptych_publish_paths(
+    tmp_path: Path, *, movie_enabled: bool = True
+) -> tuple[dict[str, Path], dict[str, Path], Path]:
+    outputs_dir = tmp_path / "outputs"
+    ctx = SimpleNamespace(
+        outputs_dir=outputs_dir,
+        plots_dir=outputs_dir / "plots",
+        exports_dir=outputs_dir / "exports",
+    )
+    final = triptych_sequence_outputs.bundle_paths(ctx=ctx, bundle_id="triptych")
+    staging_root = outputs_dir / ".staging" / "triptych__test"
+    staging_root.mkdir(parents=True)
+    staging = triptych_sequence_outputs.staging_paths(
+        staging_root=staging_root,
+        bundle_id="triptych",
+        movie_enabled=movie_enabled,
+    )
+    return staging, final, staging_root
+
+
+def test_sfxi_triptych_relative_path_rejects_artifact_outside_outputs(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+
+    with pytest.raises(ValueError, match="outside the declared outputs directory"):
+        triptych_sequence_outputs.relative_to_outputs(tmp_path / "outside.pdf", outputs_dir=outputs)
+
+
+def _write_triptych_bundle(paths: dict[str, Path], *, content: str) -> None:
+    for key in ("poster", "pdf", "index", "manifest", "movie"):
+        if key not in paths:
+            continue
+        paths[key].parent.mkdir(parents=True, exist_ok=True)
+        paths[key].write_text(f"{content}:{key}\n", encoding="utf-8")
+    paths["frames_dir"].mkdir(parents=True, exist_ok=True)
+    (paths["frames_dir"] / "001_design.png").write_text(f"{content}:frame\n", encoding="utf-8")
+
+
+def _assert_triptych_bundle(paths: dict[str, Path], *, content: str, include_movie: bool = True) -> None:
+    for key in ("poster", "pdf", "index", "manifest", "movie"):
+        if key not in paths or (key == "movie" and not include_movie):
+            continue
+        assert paths[key].read_text(encoding="utf-8") == f"{content}:{key}\n"
+    assert (paths["frames_dir"] / "001_design.png").read_text(encoding="utf-8") == f"{content}:frame\n"
+
+
+def _assert_no_triptych_transaction_paths(root: Path) -> None:
+    names = {path.name for path in root.rglob("*")}
+    assert not {name for name in names if ".backup" in name or ".__previous" in name}
 
 
 def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None:
@@ -149,10 +193,16 @@ def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None
         protocol_analysis={
             "include_vec8": True,
             "include_fold_change": False,
-            "sfxi_triptych_sequence": {"sequence_source": {"dataset": "usr_test_promoters"}},
+            "sfxi_triptych_sequence": {"candidate_bindings_resource": "promoter_candidate_bindings"},
         },
         protocol_outputs={"plots": {"profile": "none", "include": ["sfxi_triptych_sequence"]}},
-        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        resources={
+            "sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"},
+            "promoter_candidate_bindings": {
+                "kind": "file",
+                "path": "./inputs/promoter_candidate_bindings/manifest.json",
+            },
+        },
         annotations={
             "logic_maps": {
                 "induction_logic": {
@@ -172,22 +222,44 @@ def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None
     reads = {item["label"]: item for item in payload["plots"][0]["reads"]}
     assert reads["vec8"]["ref"] == {"record": "sfxi_vec8/vec8"}
     assert reads["assay"]["ref"] == {"record": "promote_to_tidy_plus_map/df"}
+    assert reads["candidate_bindings"]["ref"]["resource"] == "promoter_candidate_bindings"
 
 
 def test_sfxi_triptych_sequence_dependency_check_wraps_transitive_import_failures(monkeypatch) -> None:
     def fake_import_module(name: str):
-        if name == "dnadesign.baserender":
-            return _FakeBaseRender
-        if name == "dnadesign.usr":
-            return _FakeUsrWithTransitiveImportFailure()
-        raise AssertionError(name)
+        assert name == "dnadesign.baserender"
+        raise ModuleNotFoundError("No module named 'Bio'")
 
-    monkeypatch.setattr(triptych_sequence_dnadesign.importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(sequence_panel.importlib, "import_module", fake_import_module)
 
-    with pytest.raises(SFXIError, match="requires dnadesign public APIs") as exc_info:
-        triptych_sequence_dnadesign.require_dnadesign_sequence_panel_api()
+    with pytest.raises(PromoterSequencePanelError, match="public dnadesign BaseRender API") as exc_info:
+        sequence_panel.require_baserender_api()
 
     assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
+
+
+def test_sfxi_triptych_requires_an_exact_design_binding(tmp_path: Path) -> None:
+    bindings = load_promoter_candidate_bindings(_write_binding_fixture(tmp_path, reader_design_id="different-design"))
+
+    with pytest.raises(SFXIError, match="absent from the exact candidate-binding artifact"):
+        triptych_sequence._build_candidate_plan(
+            vec8=_vec8_df(),
+            bindings=bindings,
+            cfg=triptych_sequence._normalize_config({}),
+        )
+
+
+def test_sfxi_triptych_rejects_reader_sequence_drift_from_binding(tmp_path: Path) -> None:
+    bindings = load_promoter_candidate_bindings(_write_binding_fixture(tmp_path, reader_design_id="pDual-10-test01"))
+    vec8 = _vec8_df()
+    vec8.loc[0, "sequence"] = "TTTTTTTT"
+
+    with pytest.raises(SFXIError, match="sequence disagrees"):
+        triptych_sequence._build_candidate_plan(
+            vec8=vec8,
+            bindings=bindings,
+            cfg=triptych_sequence._normalize_config({}),
+        )
 
 
 def test_sfxi_triptych_frame_filename_keeps_colliding_label_slugs_unique() -> None:
@@ -199,8 +271,154 @@ def test_sfxi_triptych_frame_filename_keeps_colliding_label_slugs_unique() -> No
     assert first != second
 
 
+def test_sfxi_triptych_publish_removes_partial_new_bundle_after_mid_commit_failure(tmp_path: Path, monkeypatch) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(staging, content="new")
+    original_replace = Path.replace
+
+    def fail_on_manifest_install(path: Path, target: Path):
+        if path == staging["manifest"]:
+            raise OSError("injected manifest install failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_manifest_install)
+
+    with pytest.raises(OSError, match="injected manifest install failure"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    assert not any(path.exists() for path in final.values())
+    assert not staging_root.exists()
+
+
+def test_sfxi_triptych_publish_restores_complete_bundle_after_mid_commit_failure(tmp_path: Path, monkeypatch) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+    original_replace = Path.replace
+
+    def fail_on_manifest_install(path: Path, target: Path):
+        if path == staging["manifest"]:
+            raise OSError("injected manifest install failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_manifest_install)
+
+    with pytest.raises(OSError, match="injected manifest install failure"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="old")
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
+def test_sfxi_triptych_publish_restores_backups_when_backup_stage_fails(tmp_path: Path, monkeypatch) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+    original_replace = Path.replace
+
+    def fail_on_manifest_backup(path: Path, target: Path):
+        if path == final["manifest"]:
+            raise OSError("injected manifest backup failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_manifest_backup)
+
+    with pytest.raises(OSError, match="injected manifest backup failure"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="old")
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
+def test_sfxi_triptych_publish_rejects_incomplete_stage_before_touching_existing_bundle(tmp_path: Path) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+    staging["index"].unlink()
+
+    with pytest.raises(SFXIError, match="staged index is missing"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="old")
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
+def test_sfxi_triptych_publish_replaces_complete_bundle_and_cleans_transaction_paths(tmp_path: Path) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+
+    triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="new")
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
+def test_sfxi_triptych_publish_reports_post_commit_cleanup_failure_without_failing_recording(
+    tmp_path: Path, monkeypatch
+) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+
+    def fail_cleanup(path: Path) -> None:
+        assert path == staging_root
+        raise OSError("injected cleanup failure")
+
+    monkeypatch.setattr(triptych_sequence_outputs, "cleanup_staging_root", fail_cleanup)
+
+    with pytest.warns(RuntimeWarning, match="publication committed, but transaction cleanup failed"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="new")
+    assert staging_root.exists()
+
+
+def test_sfxi_triptych_publish_removes_stale_movie_when_movie_is_disabled(tmp_path: Path) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path, movie_enabled=False)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+
+    triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="new", include_movie=False)
+    assert not final["movie"].exists()
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
+def test_sfxi_triptych_publish_restores_stale_movie_after_disabled_movie_install_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    staging, final, staging_root = _triptych_publish_paths(tmp_path, movie_enabled=False)
+    _write_triptych_bundle(final, content="old")
+    _write_triptych_bundle(staging, content="new")
+    original_replace = Path.replace
+
+    def fail_on_manifest_install(path: Path, target: Path):
+        if path == staging["manifest"]:
+            raise OSError("injected manifest install failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_manifest_install)
+
+    with pytest.raises(OSError, match="injected manifest install failure"):
+        triptych_sequence_outputs.publish_bundle(staging=staging, final=final)
+
+    _assert_triptych_bundle(final, content="old")
+    assert final["movie"].read_text(encoding="utf-8") == "old:movie\n"
+    assert not staging_root.exists()
+    _assert_no_triptych_transaction_paths(tmp_path)
+
+
 def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, monkeypatch) -> None:
     _install_fake_sequence_panel(monkeypatch)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="pDual-10-test01")
+    binding_manifest = binding_root / "manifest.json"
     runtime = builtin_runtime()
     outputs = tmp_path / "outputs"
     store = runtime.record_store(outputs, plots_subdir="plots", exports_subdir="exports")
@@ -210,7 +428,7 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
         out_name="vec8",
         record_id="sfxi_vec8/vec8",
         df=_vec8_df(),
-        contract_id="sfxi.vec8.v2",
+        contract_id="sfxi.vec8.v3",
         inputs=[],
         config_digest="sha256:test-vec8",
     )
@@ -227,10 +445,12 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
     decl = WorkbenchDecl(
         experiment=ExperimentDecl(id="exp_sfxi_triptych", title="exp_sfxi_triptych", lifecycle="active", root=tmp_path),
         experiment_semantics=ExperimentSemantics(
-            protocol=ProtocolBinding(id="workbench/generic"),
-            protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
+            protocol=ProtocolBinding(id="logic/sfxi_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="logic/sfxi_screen"),
             annotations=AnnotationSemantics(),
-            resources=ResourceCatalog(),
+            resources=ResourceCatalog(
+                by_id={"promoter_candidate_bindings": ResourceEntry(kind="file", path=binding_manifest)}
+            ),
             layout=OutputLayout(
                 outputs_dir=outputs,
                 plots_subdir="plots",
@@ -248,8 +468,11 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
                     reads={
                         "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
                         "assay": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
+                        "candidate_bindings": ResourceInputDecl(resource_id="promoter_candidate_bindings"),
                     },
-                    with_={"sequence_source": {"dataset": "usr_test_promoters"}},
+                    with_={
+                        "acquisition_transition_time_h": 12.0,
+                    },
                 ),
             )
         ),
@@ -274,9 +497,14 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
     manifest_path = outputs / "manifests" / "sfxi_triptych_sequence_manifest.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v1"
+    assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v2"
+    assert manifest["candidate_bindings"]["manifest_sha256"].startswith("sha256:")
     assert manifest["row_order"] == ["pDual-10-test01"]
     record = manifest["records"][0]
+    assert record["candidate_id"] == "candidate-spyp"
+    assert record["sequence_authority_dataset_id"] == "source-dataset"
+    assert record["acquisition_transition_time_h"] == 12.0
+    assert "induction_time_h" not in record
     assert ".staging" not in record["png_path"]
     assert (outputs / record["png_path"]).exists()
     index = pd.read_csv(outputs / "exports" / "sfxi_triptych_sequence" / "sfxi_triptych_sequence_index.csv")

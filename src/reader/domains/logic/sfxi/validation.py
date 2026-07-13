@@ -1,10 +1,19 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/sfxi/validation.py
+"""Shared validation for strict SFXI dataframe contracts."""
 
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+from __future__ import annotations
 
-# Intentionally minimal – use api.load_sfxi_config
+import pandas as pd
+
+from reader.errors import SFXIError
+
+
+def require_intensity_delta_column(frame: pd.DataFrame) -> None:
+    column = "intensity_log2_offset_delta"
+    if column not in frame.columns:
+        raise SFXIError(
+            f"SFXI vec8 input requires column {column!r}. "
+            "Regenerate an sfxi.vec8.v3 table instead of inferring a default."
+        )
+
+
+__all__ = ["require_intensity_delta_column"]

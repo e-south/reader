@@ -21,17 +21,6 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
-from reader.domains.logic.sfxi.triptych_sequence_dnadesign import (
-    DNADESIGN_SEQUENCE_PANEL_CONTRACT_ID,
-    READER_SUPPORTED_SEQUENCE_PANEL_CONTRACT_VERSION,
-    require_dnadesign_sequence_panel_api,
-)
-from reader.domains.logic.sfxi.triptych_sequence_dnadesign import (
-    draw_sequence_panel as _draw_sequence_panel,
-)
-from reader.domains.logic.sfxi.triptych_sequence_dnadesign import (
-    load_usr_sequence_rows as _load_usr_rows,
-)
 from reader.domains.logic.sfxi.triptych_sequence_outputs import (
     TRIPTYCH_BUNDLE_CONTRACT_VERSION,
 )
@@ -59,12 +48,22 @@ from reader.domains.logic.sfxi.triptych_sequence_outputs import (
 from reader.domains.logic.sfxi.triptych_sequence_outputs import (
     write_movie as _write_movie,
 )
-from reader.domains.plate_reader.analysis.timepoints import infer_induction_time_h
+from reader.domains.plate_reader.analysis.timepoints import infer_acquisition_transition_time_h
 from reader.domains.plate_reader.plots.panels import (
     draw_time_series_panel,
     marker_map_for_levels,
     select_snapshot_rows,
     summarize_snapshot_values,
+)
+from reader.domains.promoter.candidate_bindings import (
+    PromoterCandidateBinding,
+    PromoterCandidateBindings,
+    load_promoter_candidate_bindings,
+)
+from reader.domains.promoter.sequence_panel import (
+    PromoterSequencePanelError,
+    render_candidate_sequence_panel,
+    require_baserender_api,
 )
 from reader.errors import SFXIError
 
@@ -81,9 +80,14 @@ def render_sfxi_triptych_sequence_bundle(
     ctx,
     vec8: pd.DataFrame,
     assay: pd.DataFrame,
+    candidate_bindings_manifest: Path,
     config: Mapping[str, Any],
 ) -> list[Path]:
-    baserender, usr = require_dnadesign_sequence_panel_api()
+    try:
+        require_baserender_api()
+        bindings = load_promoter_candidate_bindings(candidate_bindings_manifest)
+    except (FileNotFoundError, ValueError, PromoterSequencePanelError) as exc:
+        raise SFXIError(f"SFXI triptych candidate-binding dependency is invalid: {exc}") from exc
     cfg = _normalize_config(config)
     _require_columns(vec8, ["design_id"], where="sfxi triptych vec8")
     _require_columns(
@@ -91,8 +95,7 @@ def render_sfxi_triptych_sequence_bundle(
         [cfg["design_col"], cfg["time_col"], "channel", "value", cfg["treatment_col"]],
         where="sfxi triptych assay",
     )
-    sequence_rows = _load_usr_rows(usr=usr, cfg=cfg, exp_dir=ctx.exp_dir)
-    plan = _build_candidate_plan(vec8=vec8, sequence_rows=sequence_rows, cfg=cfg)
+    plan = _build_candidate_plan(vec8=vec8, bindings=bindings, cfg=cfg)
     if plan.empty:
         raise SFXIError("SFXI triptych sequence has no candidate rows to render.")
     if cfg["limit"] is not None:
@@ -100,7 +103,7 @@ def render_sfxi_triptych_sequence_bundle(
 
     scales = _compute_render_scales(assay=assay, render_plan=plan, cfg=cfg)
     bundle_id = _slug(cfg["bundle_id"])
-    final = _bundle_paths(ctx=ctx, bundle_id=bundle_id, movie_enabled=cfg["movie_enabled"])
+    final = _bundle_paths(ctx=ctx, bundle_id=bundle_id)
     staging_root = Path(mkdtemp(prefix=f"{bundle_id}__", dir=str(_staging_parent(ctx.outputs_dir))))
     staging = _staging_paths(staging_root=staging_root, bundle_id=bundle_id, movie_enabled=cfg["movie_enabled"])
     try:
@@ -108,7 +111,6 @@ def render_sfxi_triptych_sequence_bundle(
         with PdfPages(staging["pdf"]) as pdf:
             for row_number, (_, row) in enumerate(plan.iterrows(), start=1):
                 fig, record = _render_one(
-                    baserender=baserender,
                     assay=assay,
                     row=row,
                     cfg=cfg,
@@ -137,12 +139,13 @@ def render_sfxi_triptych_sequence_bundle(
             outputs=final,
             movie_path=final.get("movie") if movie_path is not None else None,
             scales=scales,
+            bindings=bindings,
         )
         staging["manifest"].write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        _publish_bundle(staging=staging, final=final)
     except Exception:
         _cleanup_staging_root(staging_root)
         raise
+    _publish_bundle(staging=staging, final=final)
 
     paths = [final["poster"], final["pdf"], final["index"], final["manifest"]]
     if cfg["movie_enabled"]:
@@ -153,23 +156,19 @@ def render_sfxi_triptych_sequence_bundle(
 
 def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
     cfg = dict(config or {})
-    sequence_source = dict(cfg.get("sequence_source") or {})
     channels = dict(cfg.get("channels") or {})
     sequence_panel = dict(cfg.get("sequence_panel") or {})
     time_series = dict(cfg.get("time_series") or {})
     axis_limits = dict(cfg.get("axis_limits") or {})
     treatments = list(cfg.get("treatments") or DEFAULT_TREATMENTS)
-    if not sequence_source.get("dataset"):
-        raise SFXIError("sfxi_triptych_sequence requires sequence_source.dataset.")
     return {
         "bundle_id": str(cfg.get("bundle_id") or "sfxi_triptych_sequence"),
         "design_col": str(cfg.get("design_col") or "design_id"),
-        "sequence_id_col": str(cfg.get("sequence_id_col") or "id"),
         "sequence_col": str(cfg.get("sequence_col") or "sequence"),
         "time_col": str(cfg.get("time_col") or "time"),
         "treatment_col": str(cfg.get("treatment_col") or "treatment_alias"),
         "snapshot_target_time_h": _finite_float(cfg.get("snapshot_target_time_h"), default=12.0),
-        "induction_time_h": _finite_float(cfg.get("induction_time_h"), default=None),
+        "acquisition_transition_time_h": _finite_float(cfg.get("acquisition_transition_time_h"), default=None),
         "time_tolerance_h": _finite_float(cfg.get("time_tolerance_h"), default=0.51),
         "limit": cfg.get("limit"),
         "dpi": int(cfg.get("dpi") or 220),
@@ -179,16 +178,6 @@ def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
             "growth": str(channels.get("growth") or "OD600"),
             "ratio": str(channels.get("ratio") or "YFP/CFP"),
             "snapshot": str(channels.get("snapshot") or channels.get("ratio") or "YFP/CFP"),
-        },
-        "sequence_source": {
-            "root": sequence_source.get("root"),
-            "dataset": str(sequence_source["dataset"]),
-            "required_overlays": list(sequence_source.get("required_overlays") or []),
-            "id_column": str(sequence_source.get("id_column") or "id"),
-            "sequence_column": str(sequence_source.get("sequence_column") or "sequence"),
-            "label_column": str(sequence_source.get("label_column") or "usr_label__primary"),
-            "annotations_column": str(sequence_source.get("annotations_column") or "densegen__used_tfbs_detail"),
-            "adapter_kind": str(sequence_source.get("adapter_kind") or "densegen_tfbs"),
         },
         "sequence_panel": {
             "profile": str(sequence_panel.get("profile") or "promoter_compact_slide.v1"),
@@ -208,40 +197,38 @@ def _frame_filename(*, row_number: int, display_label: object) -> str:
     return f"{row_number:03d}_{_slug(display_label)}.png"
 
 
-def _build_candidate_plan(*, vec8: pd.DataFrame, sequence_rows: pd.DataFrame, cfg: Mapping[str, Any]) -> pd.DataFrame:
+def _build_candidate_plan(
+    *,
+    vec8: pd.DataFrame,
+    bindings: PromoterCandidateBindings,
+    cfg: Mapping[str, Any],
+) -> pd.DataFrame:
     design_col = str(cfg["design_col"])
-    seq_id_col = str(cfg["sequence_id_col"])
     vec = vec8.copy()
     vec[design_col] = vec[design_col].astype(str)
     if vec[design_col].duplicated().any():
         dupes = sorted(vec.loc[vec[design_col].duplicated(), design_col].astype(str).unique())
         raise SFXIError(f"SFXI triptych requires one vec8 row per design; duplicates: {dupes}")
 
-    if seq_id_col in vec.columns:
-        plan = vec.merge(sequence_rows, left_on=seq_id_col, right_on="usr_sequence_id", how="left")
-    elif str(cfg["sequence_col"]) in vec.columns:
-        sequence_col = str(cfg["sequence_col"])
-        seq = sequence_rows.copy()
-        seq["__join_sequence"] = seq["usr_sequence"].astype(str).str.upper()
-        vec["__join_sequence"] = vec[sequence_col].astype(str).str.upper()
-        plan = vec.merge(seq, on="__join_sequence", how="left").drop(columns=["__join_sequence"])
-    else:
-        raise SFXIError(
-            f"SFXI triptych sequence requires vec8 to include either {seq_id_col!r} or {cfg['sequence_col']!r}."
-        )
-
-    missing = plan[plan["usr_sequence_id"].isna()]
-    if not missing.empty:
-        values = missing[[design_col]].to_dict(orient="records")
-        raise SFXIError(f"Missing USR sequence rows for selected vec8 designs: {values}")
-    if str(cfg["sequence_col"]) in plan.columns:
-        mismatch = plan[
-            plan[str(cfg["sequence_col"])].astype(str).str.upper() != plan["usr_sequence"].astype(str).str.upper()
+    binding_by_design = {binding.reader_design_id: binding for binding in bindings.rows}
+    missing = sorted(set(vec[design_col]) - set(binding_by_design))
+    if missing:
+        raise SFXIError(f"SFXI triptych designs are absent from the exact candidate-binding artifact: {missing}")
+    plan = vec.copy()
+    plan["candidate_binding"] = plan[design_col].map(binding_by_design)
+    sequence_col = str(cfg["sequence_col"])
+    if sequence_col in plan.columns:
+        mismatches = [
+            str(row[design_col])
+            for _, row in plan.iterrows()
+            if str(row[sequence_col]).upper() != row["candidate_binding"].canonical_sequence.upper()
         ]
-        if not mismatch.empty:
-            values = mismatch[[design_col, "usr_sequence_id"]].to_dict(orient="records")
-            raise SFXIError(f"Vec8 sequence does not match USR sequence for rows: {values}")
-    plan["display_label"] = plan[design_col].map(_display_label)
+        if mismatches:
+            raise SFXIError(
+                "SFXI vec8 sequence disagrees with the study-issued candidate binding for designs: "
+                f"{sorted(mismatches)}"
+            )
+    plan["display_label"] = plan["candidate_binding"].map(lambda binding: binding.display_label)
     plan["row_kind"] = "candidate"
     plan["score_status"] = "canonical_sfxi_vec8"
     plan["snapshot_time_h"] = float(cfg["snapshot_target_time_h"])
@@ -253,7 +240,7 @@ def _build_candidate_plan(*, vec8: pd.DataFrame, sequence_rows: pd.DataFrame, cf
     return _sort_designs(plan, design_col=design_col)
 
 
-def _render_one(*, baserender, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], scales: Mapping[str, Any]):
+def _render_one(*, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], scales: Mapping[str, Any]):
     design_col = str(cfg["design_col"])
     design_id = str(row[design_col])
     assay_design = assay[assay[design_col].astype(str) == design_id].copy()
@@ -310,7 +297,25 @@ def _render_one(*, baserender, assay: pd.DataFrame, row: pd.Series, cfg: Mapping
             show_event_labels=event_labels,
         )
 
-    diagnostics = _draw_sequence_panel(seq_ax, row=row, baserender=baserender, cfg=cfg)
+    binding = row["candidate_binding"]
+    if not isinstance(binding, PromoterCandidateBinding):
+        raise SFXIError("SFXI triptych render plan is missing its typed candidate binding.")
+    panel = cfg["sequence_panel"]
+    try:
+        rendered = render_candidate_sequence_panel(
+            binding,
+            style_profile=str(panel["profile"]),
+            style_overrides=dict(panel["style_overrides"]),
+            target_width_px=int(panel["target_width_px"]),
+            target_height_px=int(panel["target_height_px"]),
+            vertical_anchor=str(panel["vertical_anchor"]),
+            canvas_top_pad_px=int(panel["canvas_top_pad_px"]),
+        )
+    except PromoterSequencePanelError as exc:
+        raise SFXIError(f"Could not render bound promoter sequence: {exc}") from exc
+    seq_ax.imshow(rendered.image)
+    seq_ax.set_axis_off()
+    diagnostics = rendered.diagnostics
     fig.suptitle(str(row["display_label"]), x=0.5, y=0.984, ha="center", fontsize=19.0, fontweight="semibold")
     fig.subplots_adjust(left=0.062, right=0.988, bottom=0.060, top=0.902)
 
@@ -319,16 +324,19 @@ def _render_one(*, baserender, assay: pd.DataFrame, row: pd.Series, cfg: Mapping
         "display_label": str(row["display_label"]),
         "row_kind": str(row["row_kind"]),
         "score_status": str(row["score_status"]),
-        "sequence_source_id": str(row["usr_sequence_id"]),
-        "usr_dataset": str(row["usr_dataset"]),
-        "sequence_adapter_kind": str(row["sequence_adapter_kind"]),
+        "candidate_id": binding.candidate_id,
+        "sequence_sha256": binding.sequence_sha256,
+        "sequence_authority_dataset_id": binding.sequence_authority_dataset_id,
+        "sequence_authority_id": binding.sequence_authority_id,
+        "sequence_authority_sha256": binding.sequence_authority_sha256,
+        "sequence_adapter_kind": binding.baserender_adapter_kind,
         "snapshot_target_time_h": float(row["snapshot_time_h"]),
         "snapshot_time_source": str(row.get("snapshot_time_source", "unknown")),
         "snapshot_observed_time_h": float(snapshot_meta["time_used_h"]),
         "snapshot_fell_back": bool(snapshot_meta["fell_back"]),
         "snapshot_fallback_delta_h": snapshot_meta.get("fallback_delta_h"),
         "vec8_selected_time_h": _json_float_or_none(row.get("vec8_time_selected_h")),
-        "induction_time_h": _json_float_or_none(time_meta.get("induction_display_time_h")),
+        "acquisition_transition_time_h": _json_float_or_none(time_meta.get("acquisition_transition_display_time_h")),
         "x_min_h": x_limits[0],
         "x_max_h": x_limits[1],
         "sequence_panel": asdict(diagnostics),
@@ -337,10 +345,14 @@ def _render_one(*, baserender, assay: pd.DataFrame, row: pd.Series, cfg: Mapping
 
 
 def _time_metadata(assay: pd.DataFrame, *, cfg: Mapping[str, Any]) -> dict[str, float]:
-    configured = cfg.get("induction_time_h")
-    induction = float(configured) if configured is not None else infer_induction_time_h(assay, time_col="plot_time_h")
+    configured = cfg.get("acquisition_transition_time_h")
+    transition = (
+        float(configured)
+        if configured is not None
+        else infer_acquisition_transition_time_h(assay, time_col="plot_time_h")
+    )
     return {
-        "induction_display_time_h": float(induction) if induction is not None else math.nan,
+        "acquisition_transition_display_time_h": float(transition) if transition is not None else math.nan,
         "snapshot_display_time_h": float(cfg["snapshot_target_time_h"]),
     }
 
@@ -388,8 +400,8 @@ def _draw_time_panel(
         line_alpha=0.92,
         mean_marker_alpha=0.86,
         replicate_alpha=0.18,
-        add_sheet_lines=math.isfinite(float(time_meta["induction_display_time_h"])),
-        sheet_lines=[float(time_meta["induction_display_time_h"])],
+        add_sheet_lines=math.isfinite(float(time_meta["acquisition_transition_display_time_h"])),
+        sheet_lines=[float(time_meta["acquisition_transition_display_time_h"])],
         sheet_line_kwargs={"color": "#5F5F5F", "linestyle": "--", "linewidth": 2.15, "alpha": 0.98, "zorder": 0.4},
         log_y=False,
         xlabel="Time (h)",
@@ -517,7 +529,7 @@ def _compute_row_x_limits(
     *, assay: pd.DataFrame, time_meta: Mapping[str, float], cfg: Mapping[str, Any]
 ) -> list[float]:
     values = pd.to_numeric(assay["plot_time_h"], errors="coerce").dropna().astype(float).tolist()
-    for key in ("induction_display_time_h", "snapshot_display_time_h"):
+    for key in ("acquisition_transition_display_time_h", "snapshot_display_time_h"):
         value = float(time_meta[key])
         if math.isfinite(value):
             values.append(value)
@@ -543,7 +555,7 @@ def _normalize_treatments(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, s
 def _draw_time_event_labels(ax, *, time_meta: Mapping[str, float], font_size: float) -> None:
     transform = ax.get_xaxis_transform()
     for label, value, x_offset in (
-        ("induction", time_meta.get("induction_display_time_h"), -12),
+        ("acquisition transition", time_meta.get("acquisition_transition_display_time_h"), -12),
         ("snapshot", time_meta.get("snapshot_display_time_h"), 12),
     ):
         try:
@@ -673,9 +685,6 @@ def _require_columns(df: pd.DataFrame, columns: Sequence[str], *, where: str) ->
 
 
 __all__ = [
-    "DNADESIGN_SEQUENCE_PANEL_CONTRACT_ID",
-    "READER_SUPPORTED_SEQUENCE_PANEL_CONTRACT_VERSION",
     "TRIPTYCH_BUNDLE_CONTRACT_VERSION",
     "render_sfxi_triptych_sequence_bundle",
-    "require_dnadesign_sequence_panel_api",
 ]

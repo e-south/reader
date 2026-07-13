@@ -7,13 +7,15 @@ import pandas as pd
 
 from reader.errors import SFXIError
 
+from ..validation import require_intensity_delta_column
 from .constants import REQUIRED_VEC8_COLUMNS
 
 
 def require_vec8_columns(frame: pd.DataFrame) -> None:
+    require_intensity_delta_column(frame)
     missing = [column for column in REQUIRED_VEC8_COLUMNS if column not in frame.columns]
     if missing:
-        raise SFXIError(f"SFXI vec8 aggregate requires vec8 columns: {', '.join(missing)}.")
+        raise SFXIError(f"SFXI vec8 input requires columns: {', '.join(missing)}.")
 
 
 def require_normalized_frame(frame: pd.DataFrame) -> None:

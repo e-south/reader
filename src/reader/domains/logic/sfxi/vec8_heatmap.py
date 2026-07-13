@@ -20,7 +20,7 @@ _NUMERIC_COLUMNS = (
 
 
 def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, source_id: str) -> pd.DataFrame:
-    """Adapt one experiment's sfxi.vec8.v2 table to the heatmap renderer contract."""
+    """Adapt one experiment's sfxi.vec8.v3 table to the heatmap renderer contract."""
 
     require_vec8_columns(vec8)
     if vec8.empty:
@@ -28,8 +28,6 @@ def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, source_id: st
     normalized_source_id = _non_empty_text(source_id, field="source_id")
 
     frame = vec8.copy().reset_index(drop=True)
-    if "intensity_log2_offset_delta" not in frame.columns:
-        frame["intensity_log2_offset_delta"] = 0.0
     _require_non_empty_text_columns(frame, columns=("design_id", "reference_design_id"))
     for column in _NUMERIC_COLUMNS:
         frame[column] = _finite_numeric(frame[column], column=column)

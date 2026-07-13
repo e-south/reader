@@ -15,7 +15,7 @@ DESCRIPTOR = NotebookTemplateDescriptor(
         requires_any=(
             AssetRequirement(tag="sfxi"),
             AssetRequirement(record_contract="plate_reader.annotated.v1"),
-            AssetRequirement(record_contract_prefix="sfxi.vec8."),
+            AssetRequirement(record_contract="sfxi.vec8.v3"),
         )
     ),
 )

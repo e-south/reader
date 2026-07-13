@@ -145,28 +145,18 @@ def test_score_sfxi_setpoints_reports_missing_public_dnadesign_api(monkeypatch) 
 
     monkeypatch.setattr(importlib, "import_module", _blocked)
 
-    with pytest.raises(SFXIError, match=r"reader\[dnadesign\]"):
+    with pytest.raises(SFXIError, match="uv sync --locked --group dnadesign"):
         score_sfxi_setpoints(_vec8_df(), setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
 
 
-def test_score_sfxi_setpoints_backfills_missing_intensity_delta_provenance(monkeypatch) -> None:
-    _install_fake_dnadesign_api(monkeypatch)
+def test_score_sfxi_setpoints_rejects_missing_intensity_delta_provenance() -> None:
     vec8 = _vec8_df().drop(columns=["intensity_log2_offset_delta"])
 
-    scored = score_sfxi_setpoints(vec8, setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
-
-    assert list(scored["intensity_log2_offset_delta"]) == [0.0, 0.0]
-
-
-def test_score_sfxi_setpoints_rejects_missing_intensity_delta_when_expected_nonzero() -> None:
-    vec8 = _vec8_df().drop(columns=["intensity_log2_offset_delta"])
-
-    with pytest.raises(SFXIError, match="intensity_log2_offset_delta mismatch"):
+    with pytest.raises(SFXIError, match="requires column 'intensity_log2_offset_delta'"):
         score_sfxi_setpoints(
             vec8,
             setpoints={"and": [0.0, 0.0, 0.0, 1.0]},
             scaling_min_n=1,
-            intensity_log2_offset_delta=0.25,
         )
 
 
@@ -191,7 +181,7 @@ def test_score_sfxi_setpoints_wraps_transitive_public_api_import_failures(monkey
 
     monkeypatch.setattr(importlib, "import_module", _blocked)
 
-    with pytest.raises(SFXIError, match=r"reader\[dnadesign\]") as exc_info:
+    with pytest.raises(SFXIError, match="uv sync --locked --group dnadesign") as exc_info:
         score_sfxi_setpoints(_vec8_df(), setpoints={"and": [0.0, 0.0, 0.0, 1.0]}, scaling_min_n=1)
 
     assert isinstance(exc_info.value.__cause__, ImportError)

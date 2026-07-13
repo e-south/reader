@@ -65,7 +65,7 @@ def _write_experiment_with_vec8(
         out_name="vec8",
         record_id="sfxi_vec8/vec8",
         df=_vec8_df(design_prefix=design_prefix, v11=v11, delta=delta),
-        contract_id="sfxi.vec8.v2",
+        contract_id="sfxi.vec8.v3",
         inputs=[],
         config_digest=f"sha256:{experiment_id}",
     )
@@ -121,7 +121,7 @@ def test_write_sfxi_vec8_aggregate_writes_heatmap_tidy_csv_and_manifest(tmp_path
     assert manifest["mixed_intensity_log2_offset_delta"] is False
     source_payload = manifest["sources"][0]
     assert source_payload["record_id"] == "sfxi_vec8/vec8"
-    assert source_payload["record"]["contract_id"] == "sfxi.vec8.v2"
+    assert source_payload["record"]["contract_id"] == "sfxi.vec8.v3"
     assert source_payload["record"]["content_digest"].startswith("sha256:")
     assert source_payload["record"]["config_digest"] == "sha256:20260706_sfxi"
     assert source_payload["record"]["producer"] == {
@@ -147,14 +147,14 @@ def test_write_sfxi_vec8_aggregate_reports_mixed_delta_in_manifest(tmp_path: Pat
     assert manifest["mixed_intensity_log2_offset_delta"] is True
 
 
-def test_load_sfxi_vec8_sources_backfills_missing_v2_intensity_delta(tmp_path: Path) -> None:
-    path = tmp_path / "legacy_vec8.csv"
-    _vec8_df(design_prefix="legacy", v11=1.0).drop(columns=["intensity_log2_offset_delta"]).to_csv(path, index=False)
+def test_load_sfxi_vec8_sources_rejects_missing_intensity_delta(tmp_path: Path) -> None:
+    path = tmp_path / "incomplete_vec8.csv"
+    _vec8_df(design_prefix="incomplete", v11=1.0).drop(columns=["intensity_log2_offset_delta"]).to_csv(
+        path, index=False
+    )
 
-    aggregate = load_sfxi_vec8_sources([path])
-
-    assert aggregate.frame["intensity_log2_offset_delta"].tolist() == [0.0, 0.0]
-    assert aggregate.intensity_log2_offset_deltas == (0.0,)
+    with pytest.raises(SFXIError, match="requires column 'intensity_log2_offset_delta'"):
+        load_sfxi_vec8_sources([path])
 
 
 def test_render_sfxi_vec8_heatmap_uses_compact_display_labels(tmp_path: Path) -> None:
@@ -264,7 +264,7 @@ def test_sfxi_vec8_aggregate_rejects_missing_vec8_columns(tmp_path: Path) -> Non
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).drop(columns=["v11"]).to_csv(path, index=False)
 
-    with pytest.raises(SFXIError, match="requires vec8 columns: v11"):
+    with pytest.raises(SFXIError, match="requires columns: v11"):
         load_sfxi_vec8_sources([path])
 
 
@@ -272,7 +272,7 @@ def test_sfxi_vec8_aggregate_requires_design_id_without_genotype_alias(tmp_path:
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).rename(columns={"design_id": "genotype"}).to_csv(path, index=False)
 
-    with pytest.raises(SFXIError, match="requires vec8 columns: design_id"):
+    with pytest.raises(SFXIError, match="requires columns: design_id"):
         load_sfxi_vec8_sources([path])
 
 
@@ -281,7 +281,7 @@ def test_direct_table_sources_require_vec8_v2_provenance_columns(tmp_path: Path,
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).drop(columns=[missing_column]).to_csv(path, index=False)
 
-    with pytest.raises(SFXIError, match=f"requires vec8 columns: {missing_column}"):
+    with pytest.raises(SFXIError, match=f"requires columns: {missing_column}"):
         load_sfxi_vec8_sources([path])
 
 

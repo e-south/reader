@@ -9,7 +9,6 @@ from pathlib import Path
 import pandas as pd
 from pydantic import Field
 
-from reader.domains.logic.sfxi.vec8_heatmap import render_experiment_sfxi_vec8_heatmap
 from reader.errors import SFXIError
 from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
@@ -31,10 +30,14 @@ class SFXIVec8HeatmapPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {"vec8": dataframe_input("vec8", "sfxi.vec8.v2")}
+        return {"vec8": dataframe_input("vec8", "sfxi.vec8.v3")}
 
     def render(self, ctx, inputs, cfg: SFXIVec8HeatmapCfg) -> list[PlotFigure]:
         vec8: pd.DataFrame = inputs["vec8"]
+        from reader.domains.logic.sfxi.vec8_heatmap import (  # noqa: PLC0415
+            render_experiment_sfxi_vec8_heatmap,
+        )
+
         source_id = cfg.source_id or _source_id_from_context(ctx)
         title = cfg.title or f"{source_id} SFXI vec8 heatmap"
         fig = render_experiment_sfxi_vec8_heatmap(

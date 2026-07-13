@@ -140,7 +140,7 @@ def test_sfxi_setpoint_scatter_runtime_persists_plot_bundle_record(tmp_path: Pat
         out_name="vec8",
         record_id="sfxi_vec8/vec8",
         df=_vec8_df(),
-        contract_id="sfxi.vec8.v2",
+        contract_id="sfxi.vec8.v3",
         inputs=[],
         config_digest="sha256:test",
     )

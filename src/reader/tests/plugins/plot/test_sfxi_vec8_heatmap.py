@@ -4,9 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from reader.contracts import builtin_contract_catalog
 from reader.domains.logic.sfxi.vec8_heatmap import normalize_experiment_vec8_heatmap_frame
+from reader.errors import SFXIError
 from reader.plugins.plot.sfxi_vec8_heatmap import SFXIVec8HeatmapCfg, SFXIVec8HeatmapPlot
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.runtime import builtin_runtime
@@ -70,13 +72,12 @@ def test_sfxi_vec8_heatmap_plot_saves_artifact(tmp_path: Path) -> None:
     assert (tmp_path / "sfxi_vec8_heatmap.png").exists()
 
 
-def test_normalize_experiment_vec8_heatmap_frame_backfills_missing_intensity_delta() -> None:
-    frame = normalize_experiment_vec8_heatmap_frame(
-        _vec8_df().drop(columns=["intensity_log2_offset_delta"]),
-        source_id="exp_sfxi",
-    )
-
-    assert frame["intensity_log2_offset_delta"].tolist() == [0.0, 0.0]
+def test_normalize_experiment_vec8_heatmap_frame_rejects_missing_intensity_delta() -> None:
+    with pytest.raises(SFXIError, match="requires column 'intensity_log2_offset_delta'"):
+        normalize_experiment_vec8_heatmap_frame(
+            _vec8_df().drop(columns=["intensity_log2_offset_delta"]),
+            source_id="exp_sfxi",
+        )
 
 
 def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -> None:
@@ -89,7 +90,7 @@ def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -
         out_name="vec8",
         record_id="sfxi_vec8/vec8",
         df=_vec8_df(),
-        contract_id="sfxi.vec8.v2",
+        contract_id="sfxi.vec8.v3",
         inputs=[],
         config_digest="sha256:test",
     )

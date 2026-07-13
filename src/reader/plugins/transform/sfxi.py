@@ -48,7 +48,7 @@ class SFXITransform(Plugin):
 
     @classmethod
     def output_ports(cls):
-        return {"vec8": dataframe_output("vec8", "sfxi.vec8.v2")}
+        return {"vec8": dataframe_output("vec8", "sfxi.vec8.v3")}
 
     def run(self, ctx, inputs, cfg: SFXICfg):
         result = build_sfxi_plugin_result(ctx=ctx, df=inputs["df"], cfg=cfg)
