@@ -189,42 +189,6 @@ def test_sfxi_logic_geometry_experiment_runs_and_plots_from_clean_temp_copy(tmp_
 
 
 @pytest.mark.smoke
-def test_retron_sponge_experiment_generates_semantic_outputs_from_clean_temp_copy(tmp_path: Path) -> None:
-    cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
-    decl = load_decl(cfg_path)
-    workbench = resolve_workbench(decl)
-
-    _run(decl, include_pipeline=True, include_plots=True, include_exports=True)
-
-    layout = decl.experiment_semantics.layout
-    outputs = layout.outputs_dir
-    manifests = outputs / "manifests"
-    plots_dir = outputs / layout.plots_subdir
-    store = RecordStore(
-        outputs,
-        contracts=builtin_contract_catalog(),
-        plots_subdir=layout.plots_subdir,
-        exports_subdir=layout.exports_subdir,
-        create=False,
-    )
-
-    latest_ids = {record.record_id for record in store.iter_latest_records()}
-    expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
-    expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
-
-    assert (manifests / "records.json").exists()
-    assert "semantic_metrics/trace" in latest_ids
-    assert "semantic_metrics/summary" in latest_ids
-    assert expected_plot_ids.issubset(latest_ids)
-    assert expected_export_ids.issubset(latest_ids)
-    assert "plot:baseline_shifted_kinetics" in latest_ids
-    _assert_file_bundle_records_exist(store, expected_plot_ids | expected_export_ids)
-    assert any(plots_dir.glob("raw_kinetics*.pdf"))
-    assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()
-    assert (outputs / layout.exports_subdir / "retron" / "semantic_trace.csv").exists()
-
-
-@pytest.mark.smoke
 def test_cli_notebook_scaffold_on_staged_experiment_preserves_runnable_readiness(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2025/20250614_sensor_panel_M9_glu")
     runner = CliRunner()
@@ -290,7 +254,7 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
     assert validate_payload["summary"]["status"] == "ok"
 
     for command in (
-        ["run", str(cfg_path)],
+        ["run", str(cfg_path), "--compact"],
         ["plot", str(cfg_path)],
         ["export", str(cfg_path)],
     ):
@@ -319,6 +283,8 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
     workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
+    manifests = outputs / "manifests"
+    plots_dir = outputs / layout.plots_subdir
     store = RecordStore(
         outputs,
         contracts=builtin_contract_catalog(),
@@ -328,7 +294,14 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
     )
     expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
     expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
+
+    assert (manifests / "records.json").exists()
+    assert expected_plot_ids.issubset(record_ids)
+    assert expected_export_ids.issubset(record_ids)
     _assert_file_bundle_records_exist(store, expected_plot_ids | expected_export_ids)
+    assert any(plots_dir.glob("raw_kinetics*.pdf"))
+    assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()
+    assert (outputs / layout.exports_subdir / "retron" / "semantic_trace.csv").exists()
 
     journal = cfg_path.parent / "JOURNAL.md"
     assert journal.exists()
