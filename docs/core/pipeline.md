@@ -1,6 +1,14 @@
+---
+doc_id: reader-v7-config
+surface: config-reference
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Public Reader v7 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
+---
+
 # Configuring Reader v7
 
-`reader` now has three explicit layers:
+Reader v7 has three explicit layers:
 
 - config: experiment `config.yaml`
 - protocol: `reader.protocols`
@@ -21,7 +29,11 @@ protocol:
   id: plate_reader/dual_reporter_screen
   inputs:
     ingest:
-      mode: auto
+      mode: mixed
+      channel_map:
+        OD600: OD600
+        CFP: CFP
+        YFP: YFP
     fold_change:
       report_times: [8.0, 14.0]
 
@@ -86,7 +98,7 @@ Users do not select plugins directly. They choose:
 - optional export `include` / `exclude`
 - optional per-artifact `artifacts` config
 
-Unknown keys in the public config now fail fast. `reader/v7` no
+Unknown keys in the public config fail fast. `reader/v7` does not
 longer silently drops misspelled `protocol` keys, unknown plot/export output
 blocks, or malformed annotation collections.
 
@@ -97,7 +109,11 @@ protocol:
   id: plate_reader/dual_reporter_screen
   inputs:
     ingest:
-      mode: auto
+      mode: mixed
+      channel_map:
+        OD600: OD600
+        CFP: CFP
+        YFP: YFP
       sheet_names: ["Plate 1 - Sheet1", "Plate 2 - Sheet1"]
     fold_change:
       report_times: [8.0, 14.0]

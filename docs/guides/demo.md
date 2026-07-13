@@ -1,3 +1,11 @@
+---
+doc_id: reader-end-to-end-demo
+surface: tutorial
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Concrete Reader walkthrough from experiment discovery through records, plots, exports, and verification.
+---
+
 # End-to-end demo
 
 This walkthrough shows a typical flow from discovery to dataframe records, then plots/exports or notebooks. Prefer an explicit config path or experiment directory; `CONFIG|DIR|INDEX` works, but paths are deterministic and easier for agents to replay.

@@ -14,6 +14,7 @@ from reader.tests.support import REPO_ROOT, default_notebook_name, load_decl
 from reader.workbench import resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.engine import run_spec
+from reader.workbench.graph import FileRef
 from reader.workbench.records import RecordStore, record_paths
 
 pytestmark = pytest.mark.integration
@@ -122,6 +123,11 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     assert not (manifests / "exports_manifest.json").exists()
     assert "ingest/df" in latest_ids
     assert "plot:raw_kinetics" in latest_ids
+    ingest_record = store.read_dataframe("ingest/df")
+    assert len(ingest_record.inputs) == 1
+    assert ingest_record.inputs[0].label == "raw"
+    assert isinstance(ingest_record.inputs[0].ref, FileRef)
+    assert ingest_record.inputs[0].ref.path.name == "20250614_sensor_panel_m9_glu.xlsx"
     _assert_file_bundle_records_exist(store, {"plot:raw_kinetics"})
 
 

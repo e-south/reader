@@ -1,3 +1,11 @@
+---
+doc_id: reader-getting-started
+surface: tutorial
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Minimal setup and first-inspection path for a new Reader user.
+---
+
 # Getting started
 
 `reader` uses `uv` for environment management and command execution. Install the project, verify the checkout, then inspect an experiment before running anything.

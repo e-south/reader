@@ -1,3 +1,11 @@
+---
+doc_id: reader-dop-operating-model
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Decision sequence, ownership boundaries, and stop conditions for a Reader Data Operations Plan.
+---
+
 # Operating Model
 
 Use this page when changing the `reader` Data Operations Plan overlay or when a
@@ -47,7 +55,7 @@ Use this order for a DOP change:
 4. Link from the overview or skill only when the route is recurring.
 5. Run the docs, skill, and targeted registry checks before broad tests.
 
-Do not use a DOP change to widen `reader/v7`, revive legacy config keys, or
+Do not use a DOP change to widen `reader/v7`, restore removed config keys, or
 encode a guessed metadata interpretation. If a new assay needs different
 execution semantics, add or change a protocol after the intake contract is
 clear.

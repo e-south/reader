@@ -1,3 +1,11 @@
+---
+doc_id: reader-common-routes
+surface: task-router
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Short command routes for common Reader discovery, preflight, execution, output, and recovery tasks.
+---
+
 # Common tasks
 
 Use this page when you know what you want to do and need the shortest command path.
@@ -13,7 +21,9 @@ uv run reader ls --root experiments --details --readiness
 The first command lists discovered experiments. `--details` adds selected
 pipeline, plot, and export summaries. `--readiness` adds the current preflight
 state, including `config_error`, `template`, `draft`, `dependency_blocked`,
-`blocked`, `runnable`, `legacy_outputs_present`, and `records_ready`.
+`blocked`, `runnable`, `uncataloged_outputs_present`, and `records_ready`.
+`records_ready` requires at least one usable current record; the existence of an
+empty or invalid catalog is not sufficient.
 
 ## Inspect one experiment
 

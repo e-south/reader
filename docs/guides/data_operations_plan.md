@@ -1,3 +1,11 @@
+---
+doc_id: reader-data-operations-plan
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Entry point for classifying datasets and recording metadata, transfer, readiness, and verification decisions.
+---
+
 # Data Operations Plan
 
 Use this guide as the `reader`-local overlay for deciding what must be

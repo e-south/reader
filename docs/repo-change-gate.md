@@ -1,3 +1,11 @@
+---
+doc_id: reader-repo-change-gate
+surface: maintainer-runbook
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Minimum review and verification gate for tracked Reader code, docs, tests, and CLI changes.
+---
+
 # Repo Change Gate
 
 Use this as the minimum maintainer gate before landing tracked changes in `reader`.
@@ -23,7 +31,7 @@ Before finalizing a change:
 ## Non-Negotiable Invariants
 
 - Public config stays `reader/v7`.
-- Removed legacy keys do not come back through compatibility shims.
+- Removed config keys do not return through aliases or shims.
 - Protocols own assay-facing semantics.
 - Plugins remain mechanical adapters, not the public UX.
 - Generated outputs remain generated.

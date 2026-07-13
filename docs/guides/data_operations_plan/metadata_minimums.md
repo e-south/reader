@@ -1,3 +1,11 @@
+---
+doc_id: reader-dop-metadata-minimums
+surface: operator-reference
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Minimum metadata required before Reader can validate or execute each supported data class.
+---
+
 # Metadata Minimums
 
 Use this page when building or reviewing `config.yaml`, sample maps, metadata

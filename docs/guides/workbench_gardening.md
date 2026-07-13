@@ -2,7 +2,7 @@
 doc_id: reader-workbench-gardening
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-08
+last_verified: 2026-07-11
 summary: Maintainer workflow for bounded reader architecture, documentation, CLI, and verification gardening.
 ---
 
@@ -20,7 +20,7 @@ Use this guide for:
 - semantic monolith pressure around protocols, compiler surfaces, notebooks, or
   registries
 - assay lock-in risk in config, CLI, docs, or code organization
-- stale semantics, stale docs, or legacy behavior that no longer matches
+- stale semantics, stale docs, or obsolete behavior that no longer matches
   `reader/v7`
 - maintainer ergonomics and CLI or JSON surface hardening
 
@@ -163,8 +163,8 @@ Look for these failure modes:
   - CLI or JSON surfaces are brittle, inconsistent, or not fail-fast
 - directory drift
   - ownership boundaries in code placement no longer match the architecture
-- legacy creep
-  - removed behavior or hidden fallback is trying to return through shims or
+- obsolete-behavior creep
+  - removed behavior or hidden defaults are trying to return through shims or
     ambiguous docs
 
 Use the repo-local checklist at
@@ -190,7 +190,7 @@ many ownership boundaries at once, it is probably too large.
 When in doubt, prefer:
 
 - a doc-route repair over a new overview document
-- a fail-fast validation improvement over a compatibility shim
+- a fail-fast validation improvement that removes the need for a shim
 - a family-specific helper split over a generic abstraction that only moves the
   complexity
 - one representative CLI contract improvement over a broad surface rewrite

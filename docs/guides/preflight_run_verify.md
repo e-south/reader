@@ -1,3 +1,11 @@
+---
+doc_id: reader-preflight-run-verify
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Canonical non-mutating preflight, execution, and provenance-verification loop for one experiment.
+---
+
 # Preflight, run, verify
 
 Use this path when you need the shortest reliable route from inspection to

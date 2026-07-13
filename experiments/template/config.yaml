@@ -8,7 +8,11 @@ protocol:
   inputs:
     ingest:
       mode: mixed
-      add_sheet: true
+      channel_map:
+        "OD600:600": OD600
+        "CFP:433,475": CFP
+        "YFP:500,530": YFP
+      auto_pick: single
     response:
       logic_channel: YFP/CFP
       intensity_channel: YFP/OD600

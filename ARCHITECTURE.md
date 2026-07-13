@@ -1,3 +1,11 @@
+---
+doc_id: reader-architecture
+surface: architecture
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
+---
+
 # Architecture
 
 `reader` is a protocol-driven experimental workbench. The architecture is built around one constraint: experiment authors should declare assay intent once in `config.yaml`, while the runtime stays deterministic, inspectable, and extensible for maintainers.
@@ -70,7 +78,7 @@ The main ownership boundaries are:
 The deterministic execution path is:
 
 1. Load `reader/v7` YAML.
-2. Validate schema and reject removed legacy keys.
+2. Validate schema and reject removed config keys.
 3. Bind the experiment to a protocol.
 4. Compile authored config into a workbench declaration.
 5. Inspect or verify the compiled plan:
@@ -109,26 +117,25 @@ These are the invariants the codebase should preserve.
 - Records and artifacts must be traceable through `outputs/manifests/records.json`.
 - Discovery, validation, and dry-run surfaces must remain available without executing the full pipeline.
 
-## Known Architectural Debt
+## Current Architecture Pressure
 
-The deepest remaining debt is now concentration, not split semantic ownership.
+The compiled semantic program has one path from protocol binding through the
+runtime plan and inspection payloads. The following maintainability problems
+remain:
 
-The compiled semantic program is explicit end-to-end, from bound protocol
-through compiled plan to experiment semantics and inspection payloads. The
-remaining architecture pressure is that too much assay detail still collects in
-three places:
+- plate-reader protocol descriptors are concentrated in
+  `src/reader/protocols/_builtins_plate_reader_variants.py`
+- `src/reader/protocols/compiler.py` mixes shared compilation with some
+  assay-specific output assembly
+- retron aggregate figure planning and rendering live under
+  `src/reader/workbench/notebooks/`; dataframe preparation and shared retron
+  semantics belong to `src/reader/domains/plate_reader/analysis/`
+- the retron decomposition renderer remains a large figure-family module even
+  after its analysis-metadata reconstruction code was removed
 
-- `src/reader/protocols/builtins.py`
-- `src/reader/protocols/_builtins_plate_reader_variants.py`
-- `src/reader/protocols/compiler.py`
-- `src/reader/workbench/notebooks/` for retron-review flows
-
-The public builtin catalog is smaller than before because the heavier
-plate-reader variants now live in a family helper, and notebook launch
-preflight/runtime state is split from the planner. Even so, those surfaces are
-still large enough that future assay families can turn them into semantic
-monoliths if new logic is not pushed down into domain modules and
-family-specific helpers.
+New work should move one coherent responsibility at a time into a domain or
+family package. A split is useful when it creates an explicit contract or
+owner; splitting only to reduce line count is not sufficient.
 
 ## Extension Guide
 

@@ -1,3 +1,11 @@
+---
+doc_id: reader-plugin-development
+surface: maintainer-guide
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Maintainer guide for adding mechanical Reader plugins behind protocol-owned semantics and typed contracts.
+---
+
 # Extending reader with plugins
 
 Plugins are the execution layer of `reader`. They are for maintainers, not the
@@ -25,9 +33,12 @@ Built-in registration is explicit in
 [`src/reader/workbench/assets/plugin_manifest.py`](../../src/reader/workbench/assets/plugin_manifest.py).
 The runtime does not discover built-ins by scanning package trees.
 
-External plugins are still supported. `reader` loads third-party plugin
-descriptors from the [`reader.plugins` entry-point group](../../src/reader/workbench/registry.py)
-after it registers the built-in manifest.
+The registry has a `reader.plugins` entry-point hook for coordinated
+maintainer integrations. It is not a standalone public plugin SDK: the current
+descriptor and port imports live under `reader.workbench`, and an entry point
+cannot add `reader/v7` protocol semantics by itself. Do not advertise an
+external package as a Reader feature until Reader protocol code owns its
+authoring and compilation path.
 
 ## Ownership rules
 
@@ -56,9 +67,9 @@ design is probably heading in the wrong direction.
 The maintainer path is:
 
 1. Implement the plugin class under `src/reader/plugins/<category>/`.
-2. Register it in the built-in manifest, or expose an external
-   [`reader.plugins` entry point](../../src/reader/workbench/registry.py) that
-   resolves to an `AssetDescriptor`.
+2. Register it in the built-in manifest. A coordinated external integration
+   may instead expose a `reader.plugins` entry point that resolves to an
+   `AssetDescriptor`.
 3. Wire it into a
    [`protocol compiler`](../../src/reader/protocols/compiler.py) or recipe so
    the protocol owns when it runs and what semantic output it represents.
@@ -67,6 +78,11 @@ The maintainer path is:
 
 That last step matters. `reader` is intentionally protocol-driven. A new plugin
 is not a public feature until a protocol gives it a semantic role.
+
+For the external registry hook, the entry-point name must equal the descriptor
+plugin id in `category/key` form. Category-scoped registry loads skip unrelated
+entry points before importing their packages. This avoids import cost and side
+effects during commands that request only one plugin category.
 
 ## Minimal implementation pattern
 
@@ -136,12 +152,22 @@ Plugin I/O is declared through
 conventions.
 
 - Optional inputs use `optional=True`, not `?` suffixes.
-- Dataframe ports declare a contract id or `None`.
+- Dataframe outputs declare a registered contract id. A dataframe input may
+  omit its contract only when it intentionally accepts any registered
+  dataframe artifact.
 - Plot/export outputs use `file_bundle` ports.
-- Removed legacy conventions such as `"none"` and `"files"` are not valid.
+- Port contract ids such as `"none"` and `"files"` are invalid.
 
 Runtime validation then checks reads, writes, and contract compatibility before
 execution.
+
+An ingest plugin that discovers one optional file may implement
+`resolve_missing_file_inputs`. The engine accepts additions only for optional
+`file_path` ports, forbids replacing an explicit graph binding, verifies the
+resolved regular file remains under the experiment root after symlink
+resolution, and records that exact file reference as input provenance. The
+plugin's `run` method then consumes the resolved path like any declared input;
+it does not discover the file a second time.
 
 ## Plot and export guidance
 
@@ -156,8 +182,58 @@ They should be deterministic, assertive, and provenance-friendly:
 
 - read only declared inputs
 - fail fast on missing required columns or invalid config
-- write file bundles under `outputs/plots` or `outputs/exports`
+- return a nonempty explicit file output for every declared file port; Reader
+  does not infer outputs from directory changes
+- write plot bundles under `outputs/plots` and resolve export paths relative to
+  `outputs/exports`
 - let records/manifests explain what was produced
+
+Every newly persisted plot path has a typed description. The normal happy path
+is to give the compiled plot step the same id as its
+`ProtocolFigureSpec`; Reader then persists that figure summary for every file
+in the figure bundle. If an unmapped plugin writes files with different
+meanings through `FigurePlotPlugin`, describe each public `PlotFigure` before
+the shared sink writes it:
+
+```python
+from reader.plotting.sinks import PlotFigure
+
+return [
+    PlotFigure(
+        fig=kinetics_figure,
+        filename="kinetics",
+        description="Reporter kinetics over assay time.",
+    ),
+    PlotFigure(
+        fig=summary_figure,
+        filename="summary",
+        description="Endpoint summary by treatment.",
+    ),
+]
+```
+
+The shared plot adapter converts those descriptions into public
+[`PathDescription`](../../src/reader/workbench/records/model.py) values after
+saving. A lower-level custom `Plugin` may return those values directly:
+
+```python
+from reader.workbench.records import PathDescription
+
+return {
+    "artifacts": [
+        PathDescription(path=kinetics_path, description="Reporter kinetics over assay time."),
+        PathDescription(path=summary_path, description="Endpoint summary by treatment."),
+    ]
+}
+```
+
+An unmapped single-file plot may use its registered plugin summary. An unmapped
+multi-file plot without complete explicit descriptions fails. Reader rejects
+missing, duplicate, partial, and unmatched path-description metadata and never
+infers scientific meaning from filenames. New file-bundle records also reject
+missing paths and directories instead of cataloging them as files. Export
+bundles keep one operational plugin description because their files are not
+treated as scientific figures.
 
 For file output helpers, start with
 [`src/reader/plotting/sinks.py`](../../src/reader/plotting/sinks.py).

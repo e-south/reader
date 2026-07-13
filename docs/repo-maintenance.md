@@ -1,3 +1,11 @@
+---
+doc_id: reader-repo-maintenance
+surface: maintainer-runbook
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Broader Reader branch, CI, repository health, and delivery workflow beyond the minimum change gate.
+---
+
 # Repo Maintenance
 
 This document is the maintainer guide for repo-wide changes, publish flow, and ongoing repo hygiene.

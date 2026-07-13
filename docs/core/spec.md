@@ -1,3 +1,11 @@
+---
+doc_id: reader-package-spec
+surface: architecture-reference
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Detailed package map and implementation contracts beneath the top-level Reader architecture.
+---
+
 # reader specification
 
 This page is the maintainer-facing map of how `reader` is organized today. Use
@@ -109,11 +117,10 @@ More concretely:
    persists dataframe records and file-bundle provenance under
    `outputs/manifests/records.json`.
 
-The semantic program is now part of that compiled contract. Inspection surfaces
-should read the compiled program snapshot directly instead of reconstructing it
-through fallback branches. That removes one major split-ownership path, even
-though deeper staleness checks for same-protocol snapshots would still be a
-separate hardening step.
+The semantic program is part of that compiled contract. Its compiled snapshot
+is authoritative. Inspection surfaces read it directly and do not reconstruct
+semantic state through alternate branches. Same-protocol snapshot staleness is a
+separate hardening concern.
 
 ## Information architecture rules
 
@@ -131,9 +138,8 @@ separate hardening step.
 
 ## Current pressure points
 
-The package is no longer suffering from split semantic ownership between
-compiled plans and experiment semantics, but two maintainability hotspots
-remain:
+The compiled plan and experiment semantics share one program snapshot. Current
+maintainability pressure is concentrated in these areas:
 
 - Protocol concentration:
   [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py),
@@ -141,16 +147,23 @@ remain:
   [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py),
   [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py), and
   [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
-  still carry a large share of assay semantics. The plate-reader variants are
-  now in a private family helper instead of the public façade, but new assay
-  families should keep pushing descriptor, compiler, and semantic-coverage
-  logic down into family-specific helpers instead of back into shared catalog
-  files.
+  carry a large share of assay semantics. The plate-reader variants live in a
+  private family helper. New assay families should place descriptor, compiler,
+  and semantic-coverage logic in family-specific helpers rather than shared
+  catalog files.
 - Retron notebook concentration:
   [`src/reader/workbench/notebooks/`](../../src/reader/workbench/notebooks/)
-  remains the biggest local cluster of large files. Launch preflight/runtime
-  state is now split from the planner, but the retron review stack is still the
-  highest-risk area for future monolith drift.
+  owns aggregate figure planning and rendering. Aggregate dataframe
+  preparation and shared retron normalization, motif, family-order, and slug
+  semantics live in
+  [`src/reader/domains/plate_reader/analysis/`](../../src/reader/domains/plate_reader/analysis/).
+  The semantic-source loader uses verified records and does not repair older
+  summary or trace schemas, but the presentation cluster remains large.
+- Figure-family concentration:
+  [`src/reader/domains/plate_reader/plots/retron_sponge_summary_views/`](../../src/reader/domains/plate_reader/plots/retron_sponge_summary_views/)
+  contains a large decomposition renderer. Its inputs are strict and
+  analysis-owned, but further splits should follow figure contracts rather than
+  arbitrary line-count targets.
 
 ## Dependency management
 

@@ -1,4 +1,12 @@
-## Crosstalk pairs pipeline step
+---
+doc_id: reader-crosstalk-pairs
+surface: library-reference
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Contract, computation, and output reference for Reader crosstalk-pair ranking.
+---
+
+# Crosstalk pairs
 
 ### Contents
 

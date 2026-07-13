@@ -1,3 +1,11 @@
+---
+doc_id: reader-dop-transfer-verification
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Safe input transfer, checksum, staging, and post-transfer verification procedure for Reader workspaces.
+---
+
 # Transfer and Verification
 
 Use this page after the data class and metadata contract are clear.

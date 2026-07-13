@@ -1,3 +1,11 @@
+---
+doc_id: reader-experiment-bootstrap
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Workflow for creating an experiment workspace from classified inputs and verifying the first Reader run.
+---
+
 # Experiment Bootstrap
 
 Use this guide when creating a new `reader` experiment from raw assay data or
@@ -117,8 +125,16 @@ editing config:
 - whether the file is kinetic-only or multi-part
 - whether the data is a native workbook or an imported Google file
 
-If the channel labels differ from the template, add an explicit
-`protocol.inputs.ingest.channel_map` instead of relying on inferred names.
+For `mixed` or `snapshot_only` Synergy parsing, declare
+`protocol.inputs.ingest.channel_map` from workbook labels to canonical channel
+names. Reader validates snapshot labels against this map; list order does not
+assign channel identity. Matching preserves the declared wavelength suffix and
+is exact after whitespace normalization and removal of BioTek's anchored
+one-letter `A` or `B` block suffix immediately before `:`. In `mixed` mode,
+every mapped channel must occur in both snapshot and kinetic data; one source
+cannot hide missing measurements in the other. Auto-discovery accepts one
+modern `.xlsx` workbook by default. Use `auto_pick: latest` only when selecting
+the newest file is an intentional experiment policy.
 
 ## 5. Build metadata deliberately
 

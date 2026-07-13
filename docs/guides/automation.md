@@ -1,3 +1,11 @@
+---
+doc_id: reader-automation-json
+surface: operator-guide
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Machine-readable discovery, inspection, validation, and dry-run paths for Reader automation.
+---
+
 # Automation and JSON
 
 Use JSON output when another tool needs stable discovery, inspection, or
@@ -54,8 +62,12 @@ mutation.
 uv run reader records <config|dir|index> --format json
 ```
 
-Use `records` to inspect the manifest path, record summary counts, and optional
-revision history for one experiment.
+Use `records` to inspect the manifest path, record summary counts, persisted
+descriptions, and optional revision history for one experiment. New plot
+records map every path to the matching protocol figure summary or explicit
+producer metadata; export records retain the producing plugin's operational
+bundle description. Notebook deliverables read those persisted descriptions
+instead of deriving meaning from filenames.
 
 ## When not to use JSON
 

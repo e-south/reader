@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-08
+last_verified: 2026-07-13
 summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
 ---
 
@@ -22,6 +22,27 @@ A typical order is:
 4. `uv run reader steps` or `uv run reader explain` to inspect the compiled plan.
 5. `uv run reader validate` to run preflight checks.
 6. `uv run reader run`, `uv run reader plot`, `uv run reader export`, and `uv run reader notebook` to materialize outputs.
+
+Manifest-backed multi-experiment response summaries use a separate explicit
+lifecycle:
+
+```bash
+uv run reader response-window preflight REQUEST.yaml --format json
+uv run reader response-window build REQUEST.yaml --out-dir BUNDLE --format json
+uv run reader response-window verify BUNDLE --format json
+uv run reader response-window review BUNDLE --mode run
+uv run reader response-window promoter-evidence BUNDLE BINDINGS \
+  --out-dir EVIDENCE --experiment-id EXPERIMENT --design-id DESIGN \
+  --reduction-id REDUCTION --format json
+uv run reader response-window promoter-evidence-verify EVIDENCE --format json
+```
+
+These commands consume published experiment records. They do not bypass the
+normal experiment pipeline or infer treatment semantics from file names.
+Promoter evidence additionally consumes an explicit, study-owned candidate
+binding; Reader does not open the study candidate table or calculate an OPAL
+objective. Its optional v1 objective overlay accepts screen-only raw components
+and rejects production claims.
 
 `uv run reader` commands accept a config path, experiment directory, or an index from `uv run reader ls` (shown below as `CONFIG|DIR|INDEX`).
 
@@ -52,7 +73,8 @@ uv run reader ls --root experiments --details
 ```
 
 Add readiness state so the list tells you whether each experiment is
-draft/template, blocked, ready to run, or already has a records catalog:
+draft/template, blocked, ready to run, or has a usable non-empty records
+catalog:
 
 ```bash
 uv run reader ls --root experiments --details --readiness
@@ -71,7 +93,12 @@ walking every row or guessing which filters produced the current view.
 When `--readiness` is enabled, `selection.readiness` is `true`, each experiment
 entry gains a `readiness` block, and `summary.by_readiness` counts experiments by
 `config_error`, `draft`, `template`, `dependency_blocked`, `blocked`, `runnable`,
-`legacy_outputs_present`, or `records_ready`.
+`uncataloged_outputs_present`, or `records_ready`.
+
+Within each readiness block, `records.catalog` reports whether `records.json`
+exists and `records.available` reports whether it contains usable current
+records. An empty catalog is runnable, not records-ready. An invalid catalog is
+blocked and is reported without interpreting its record entries.
 
 Filter the list down to one assay family, one lifecycle, or just broken configs:
 
@@ -179,7 +206,7 @@ Inspect the experiment summary before reading the lower-level plan:
 uv run reader inspect CONFIG|DIR|INDEX
 ```
 
-The default table view now includes a readiness panel so you can see, in one place,
+The default table view includes a readiness panel so you can see, in one place,
 whether the config is blocked by files or dependencies, already has records,
 and which next command is appropriate.
 
@@ -261,9 +288,15 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 
 In JSON mode, `uv run reader records` keeps experiment identity at the top level, then
 adds the record-manifest path, a summary by record kind and producer, and the
-latest record entries. `--all` does not dump every historical revision; it adds
-per-record revision counts and a total revision summary so the output stays
-compact.
+latest record entries. New plot entries include one typed description for every
+path, sourced from the matching protocol figure or explicit producer metadata.
+Export entries carry the producing plugin's operational bundle description.
+Descriptorless file-bundle records are invalid; Reader does not infer meaning
+from filenames. `--all` does not
+dump every historical revision. It adds per-record revision counts and a total
+revision summary so the output stays compact. The table view summarizes
+multi-file bundles by count and location. JSON keeps the full structured
+`files` and `path_descriptions` arrays without a redundant joined path string.
 
 Useful flags:
 
@@ -410,7 +443,7 @@ for the source and provenance rules.
 Scaffold a marimo notebook (no pipeline execution). Template selection is
 ordered and protocol-constrained: explicit `--template`, then the first
 compiled notebook spec from `config.yaml`, then the bound protocol default.
-The selected template still has to be allowed by the protocol.
+The selected template must be allowed by the protocol.
 
 Notebooks are written under `outputs/notebooks/`.
 
@@ -447,7 +480,7 @@ Launch modes:
 Runtime notes:
 
 - `reader notebook` manages Marimo runtime state under `.cache/marimo/`.
-- It reuses a live reader-managed session for the same notebook only when the notebook file and reader runtime fingerprint still match.
+- It reuses a live reader-managed session for the same notebook only when the notebook file and Reader runtime fingerprint match.
 - If the notebook or runtime has drifted, it restarts the stale session instead of silently reusing it.
 - It prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
 - For agent review, prefer `--mode run --headless`, then open the printed URL in Chrome MCP.

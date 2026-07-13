@@ -1,3 +1,11 @@
+---
+doc_id: reader-dop-data-classes
+surface: operator-reference
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Reader data-class definitions and the evidence needed to choose one without guessing assay semantics.
+---
+
 # Data Classes
 
 Use this page first during intake. Choose the first class that fits the

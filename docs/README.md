@@ -1,3 +1,11 @@
+---
+doc_id: reader-docs-index
+surface: documentation-index
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Routes readers to the smallest current guide or reference for operating and maintaining reader.
+---
+
 # Documentation index
 
 Use this index to find the smallest doc that answers the current question.
@@ -44,9 +52,6 @@ outputs. Use the reference pages when you need exact CLI or config details.
   maintenance guidance.
 - [Workbench gardening](./guides/workbench_gardening.md): maintainer workflow
   for architecture, docs, and verification-surface cleanup.
-- [SFXI triptych sequence plot spec](./dev/sfxi_triptych_sequence_plugin_spec.md):
-  dev spec for promoting the SFXI triptych/BaseRender preview into a formal
-  plot plugin with a versioned dnadesign render contract.
 - [Plugin development](./core/plugins.md): add or extend ingest, transform,
   plot, export, and validator plugins.
 - [Architecture](../ARCHITECTURE.md): system structure, ownership boundaries, and invariants.
@@ -56,10 +61,15 @@ outputs. Use the reference pages when you need exact CLI or config details.
 - [Reliability](../RELIABILITY.md): preflight, run, verify, and recovery expectations.
 - [Security](../SECURITY.md): trust boundaries and safe defaults.
 - [Spec / architecture](./core/spec.md): deeper package layout and implementation notes.
-- [Dev journal](./dev/journal.md): change log for major design and architecture cuts.
 
 ## Library notes
 
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
 - [SPOP endpoint scoring in Reader](./lib/spop_endpoint_in_reader.md)
-- [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md)
+- [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md): measured vec8
+  generation, Reader-to-OPAL ownership, and current SFXI plot surfaces,
+  including the triptych sequence bundle.
+- [Plate-reader response-window analysis](./lib/plate_reader/response_window.md):
+  event-relative response and reference-relative fluorescence records.
+- [Reader-to-OPAL handoff](./lib/plate_reader/opal_handoff.md): public bundle,
+  study promotion, and OPAL ownership boundaries.

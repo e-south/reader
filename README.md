@@ -1,3 +1,11 @@
+---
+doc_id: reader-overview
+surface: repository-overview
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Short entry point for installing reader and finding the canonical operating and maintainer guides.
+---
+
 [![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/e-south/reader/graph/badge.svg)](https://codecov.io/gh/e-south/reader)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)

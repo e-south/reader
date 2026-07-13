@@ -1,3 +1,11 @@
+---
+doc_id: reader-reliability
+surface: reliability-contract
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Operational contract for Reader discovery, preflight, execution, provenance checks, and recovery.
+---
+
 # Reliability
 
 `reader` should be reliable in the operational sense, not just the implementation sense. A reliable workbench lets a user or agent predict what will run, verify inputs before mutation, and recover cleanly when something is wrong.
@@ -73,11 +81,13 @@ The verify phase should prove what happened, not ask the operator to infer it fr
 `reader` reliability depends on the following properties.
 
 - Config schema is strict.
-- Removed legacy keys fail fast.
+- Removed config keys fail fast.
 - Pipeline slicing is explicit.
 - Input/output ports are typed.
-- Records are persisted with provenance and content digests.
-- Plotting cache setup is explicit and writable.
+- Plot and export steps return explicit nonempty file outputs.
+- Dataframe records are persisted with provenance and verified content
+  digests; file bundles are path-confined and described.
+- Figure rendering does not depend on process-global object-identity caches.
 - JSON inspection surfaces are stable enough for automation.
 
 ## Recovery And Failure Handling
@@ -108,12 +118,23 @@ Reliability is incomplete without provenance.
 - record history
 - producer identity
 - producer plugin
-- inputs
-- config digest
-- content digest
+- runtime input references
+- effective plugin-config digest
+- dataframe artifact content digest
 - optional source-recipe provenance
 
-That provenance is what lets the workbench stay inspectable as experiments and plots accumulate.
+Raw file references do not yet carry source-content digests, and file bundles
+do not yet carry per-file content digests. Those gaps must remain visible in
+inspection and documentation until a stricter record schema supplies them.
+
+The current provenance keeps the workbench inspectable as experiments and
+plots accumulate without implying stronger source integrity than the catalog
+actually records.
+
+Experiment-scoped retron reviews resolve semantic summary and trace inputs from
+the source record catalog, require the current dataframe contracts, and verify
+artifact content digests. A nearby CSV export is not a substitute for the
+cataloged record.
 
 ## Throughput And Feedback Latency
 
@@ -136,18 +157,19 @@ Use [docs/guides/automation.md](./docs/guides/automation.md) for the compact JSO
 - Machine-readable contracts should not silently fall back to table output.
 - Generated outputs should be reproducible from config and code.
 - Records should remain the authoritative provenance surface.
+- New plot records require complete, duplicate-free path descriptions from an
+  exact protocol figure or explicit producer metadata.
 - Experiment directories should remain compact and legible.
 
 ## Current Reliability Debt
 
-The largest remaining reliability debt is no longer semantic ambiguity. It is
-change-surface concentration and documentation freshness.
-
-Operationally, the workbench is reliable when inspection and dry-run routes are
-used first. Structurally, the higher-risk failures now come from oversized
-maintainer surfaces such as the protocol kernel and retron notebook bundle, or
-from docs that stop matching those surfaces closely enough for operators and
-agents to trust them.
+- Large protocol and retron presentation modules raise the cost of reviewing a
+  local change and make incomplete test selection more likely.
+- Files representing formats or partitions of one protocol figure share its
+  figure-level summary. Multi-panel figures that need panel-specific accessible
+  descriptions require a separate presentation-layer contract.
+- A Marimo syntax check does not exercise reactive browser interactions; a
+  representative live notebook review remains necessary for UI changes.
 
 ## Related Docs
 

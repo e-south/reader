@@ -14,6 +14,7 @@ import json
 import re
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
@@ -26,6 +27,10 @@ from reader.workbench.spec_overrides import apply_step_overrides, parse_input_ov
 
 def _plain(text: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+
+
+def _write_openable_workbook(path: Path) -> None:
+    pd.DataFrame({"value": [1]}).to_excel(path, index=False)
 
 
 def _base_config() -> dict:
@@ -204,7 +209,7 @@ def test_logic_sfxi_plot_list_surfaces_setpoint_scatter(tmp_path: Path) -> None:
     assert payload["plots"][0]["id"] == "sfxi_setpoint_scatter"
     read = payload["plots"][0]["reads"][0]
     assert read["ref"] == {"record": "sfxi_vec8/vec8"}
-    assert read["contract"] == "sfxi.vec8.v2"
+    assert read["contract"] == "sfxi.vec8.v3"
 
 
 def test_logic_sfxi_plot_dry_run_reports_missing_dnadesign_public_api(tmp_path: Path, monkeypatch) -> None:
@@ -222,7 +227,7 @@ def test_logic_sfxi_plot_dry_run_reports_missing_dnadesign_public_api(tmp_path: 
     result = runner.invoke(app, ["plot", str(cfg), "--dry-run"])
 
     assert result.exit_code != 0
-    assert "reader[dnadesign]" in _plain(result.output)
+    assert "uv sync --locked --group dnadesign" in _plain(result.output)
 
 
 def test_logic_sfxi_validate_reports_missing_dnadesign_public_api(tmp_path: Path, monkeypatch) -> None:
@@ -245,7 +250,7 @@ def test_logic_sfxi_validate_reports_missing_dnadesign_public_api(tmp_path: Path
     assert result.exit_code == 1
     payload = json.loads(result.output)
     assert payload["summary"]["status"] == "error"
-    assert any("reader[dnadesign]" in message for message in payload["validation"]["errors"])
+    assert any("uv sync --locked --group dnadesign" in message for message in payload["validation"]["errors"])
 
 
 def test_retron_plot_list_json(tmp_path: Path) -> None:
@@ -625,7 +630,7 @@ def test_validate_checks_files_by_default(tmp_path: Path) -> None:
     file_path = inputs_dir / "metadata.xlsx"
     file_path.write_text("stub", encoding="utf-8")
     raw_path = inputs_dir / "run1.xlsx"
-    raw_path.write_text("stub", encoding="utf-8")
+    _write_openable_workbook(raw_path)
     runner = CliRunner()
     result = runner.invoke(app, ["validate", str(cfg_path)])
     assert result.exit_code == 0
