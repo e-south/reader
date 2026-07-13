@@ -139,8 +139,8 @@ authority record; mere presence on a plate is not reference authority.
 ## Time and intervention
 
 Reader acquisition time is not automatically time since an intervention. The
-request declares the pre- and post-intervention acquisition segments. The
-The v2 event contract uses the segment-gap midpoint as the event estimate and half
+request declares the pre- and post-intervention acquisition segments. The v2
+event contract uses the segment-gap midpoint as the event estimate and half
 the gap as symmetric timing uncertainty. Other estimate rules are rejected
 until they have an explicit asymmetric uncertainty contract. Reader records the
 interval, estimate, and event-relative time.
