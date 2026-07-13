@@ -292,8 +292,8 @@ latest record entries. New plot entries include one typed description for every
 path, sourced from the matching protocol figure or explicit producer metadata.
 Export entries carry the producing plugin's operational bundle description.
 Descriptorless file-bundle records are invalid; Reader does not infer meaning
-from filenames. `--all` does not
-dump every historical revision. It adds per-record revision counts and a total
+from filenames. `--all` does not dump every stored revision. It adds per-record
+revision counts and a total
 revision summary so the output stays compact. The table view summarizes
 multi-file bundles by count and location. JSON keeps the full structured
 `files` and `path_descriptions` arrays without a redundant joined path string.

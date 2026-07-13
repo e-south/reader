@@ -314,19 +314,23 @@ def test_file_bundle_without_description_is_rejected(tmp_path) -> None:
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     payload = {
         "schema_version": 3,
-        "record_id": "plot:legacy",
+        "record_id": "plot:unannotated",
         "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "legacy", "plugin": "plot/time_series"},
+        "producer": {"kind": "plot", "id": "unannotated", "plugin": "plot/time_series"},
         "created_at": "2026-07-10T00:00:00+00:00",
         "inputs": [],
-        "config_digest": "sha256:legacy",
-        "files": ["plots/legacy.png"],
+        "config_digest": "sha256:unannotated",
+        "files": ["plots/unannotated.png"],
     }
-    catalog = {"schema_version": 3, "latest": {"plot:legacy": payload}, "history": {"plot:legacy": [payload]}}
+    catalog = {
+        "schema_version": 3,
+        "latest": {"plot:unannotated": payload},
+        "history": {"plot:unannotated": [payload]},
+    }
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     with pytest.raises(RecordError, match="must include a non-empty description"):
-        store.read_record("plot:legacy")
+        store.read_record("plot:unannotated")
 
 
 def test_dataframe_record_load_rejects_content_digest_mismatch(tmp_path) -> None:

@@ -111,7 +111,7 @@ jobs:
     if: always()
 
     steps:
-      - name: Mirror the legacy required status context
+      - name: Aggregate required checks
         run: |
           echo "quality=${{ needs.quality.result }}"
           echo "default-tests=${{ needs.default-tests.result }}"

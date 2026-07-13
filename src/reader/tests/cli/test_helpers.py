@@ -32,8 +32,8 @@ def test_json_friendly_serializes_protocol_binding_value_ref() -> None:
 def test_append_journal_rejects_lowercase_filename(tmp_path: Path) -> None:
     job_path = tmp_path / "config.yaml"
     job_path.write_text("schema: reader/v7\n", encoding="utf-8")
-    legacy = tmp_path / "journal.md"
-    legacy.write_text("# Experiment Journal\n\nlegacy entry\n", encoding="utf-8")
+    lowercase_journal = tmp_path / "journal.md"
+    lowercase_journal.write_text("# Experiment Journal\n\nexisting entry\n", encoding="utf-8")
 
     with pytest.raises(ReaderError, match="Unsupported lowercase journal path"):
         append_journal(job_path, "uv run reader run config.yaml")

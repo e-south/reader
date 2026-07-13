@@ -87,7 +87,7 @@ def test_load_accepts_explicit_experiment_lifecycle(tmp_path: Path) -> None:
 
 def test_load_rejects_unknown_experiment_lifecycle(tmp_path: Path) -> None:
     data = _base_config()
-    data["experiment"]["lifecycle"] = "legacy"
+    data["experiment"]["lifecycle"] = "unsupported"
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError, match="experiment.lifecycle must be one of"):
         ReaderSpec.load(path)

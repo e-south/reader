@@ -262,11 +262,11 @@ def test_retron_notebook_table_preview_respects_byte_budget() -> None:
     assert len(preview.to_csv(index=False).encode("utf-8")) <= 150_000
 
 
-def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_for_aggregate_review(
+def test_retron_review_bundle_does_not_fabricate_unavailable_absolute_area_metrics_for_aggregate_review(
     tmp_path: Path,
 ) -> None:
-    legacy_summary = _write_csv(
-        tmp_path / "exports" / "legacy_summary.csv",
+    unsupported_summary = _write_csv(
+        tmp_path / "exports" / "unsupported_summary.csv",
         [
             {
                 "plate_id": "plate_a",
@@ -298,7 +298,7 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
             },
         ],
     )
-    legacy_trace = _write_csv(tmp_path / "exports" / "legacy_trace.csv", [_current_trace_row(value=0.1)])
+    unsupported_trace = _write_csv(tmp_path / "exports" / "unsupported_trace.csv", [_current_trace_row(value=0.1)])
     manifest_path = tmp_path / "review_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -307,10 +307,10 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
                 "sensor_target_map": {"spyP": ["CpxR"]},
                 "sources": [
                     {
-                        "label": "legacy",
-                        "experiment_id": "legacy_family",
-                        "summary": str(legacy_summary.relative_to(tmp_path)),
-                        "trace": str(legacy_trace.relative_to(tmp_path)),
+                        "label": "unsupported",
+                        "experiment_id": "unsupported_family",
+                        "summary": str(unsupported_summary.relative_to(tmp_path)),
+                        "trace": str(unsupported_trace.relative_to(tmp_path)),
                     }
                 ],
             },
@@ -346,7 +346,7 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
         )
 
 
-def test_load_retron_source_semantic_datasets_rejects_legacy_trace_contract(tmp_path: Path) -> None:
+def test_load_retron_source_semantic_datasets_rejects_incomplete_trace_contract(tmp_path: Path) -> None:
     trace_path = _write_csv(
         tmp_path / "exports" / "trace.csv",
         [
@@ -368,8 +368,8 @@ def test_load_retron_source_semantic_datasets_rejects_legacy_trace_contract(tmp_
         ],
     )
     source = RetronReviewSource(
-        label="legacy",
-        experiment_id="legacy_source",
+        label="incomplete",
+        experiment_id="incomplete_source",
         experiment_root=None,
         config_path=None,
         summary_path=tmp_path / "unused-summary.csv",
