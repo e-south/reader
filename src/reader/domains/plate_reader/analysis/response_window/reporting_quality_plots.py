@@ -30,10 +30,11 @@ def write_repeat_plot(
 ) -> dict[str, str]:
     reference_id = channels(display)["reference_design_id"]
     response_ratio = response_ratio_label(display)
+    figure_height = 5.6 if repeated.empty else max(5.6, repeated["design_id"].nunique() * 0.42)
     figure, axes = plt.subplots(
         1,
         2,
-        figsize=(12.5, max(5.6, repeated["design_id"].nunique() * 0.42)),
+        figsize=(12.5, figure_height),
         sharey=True,
         constrained_layout=True,
     )
