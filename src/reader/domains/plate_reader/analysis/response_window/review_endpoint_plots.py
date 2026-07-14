@@ -25,7 +25,7 @@ def state_summary_figure(*, selected: pd.Series, display: dict[str, object]) -> 
     display_channels = channels(display)
     reference_id = display_channels["reference_design_id"]
     response_ratio = response_ratio_label(display)
-    figure, axes = plt.subplots(1, 2, figsize=(9.5, 4.8), constrained_layout=True)
+    figure, axes = plt.subplots(1, 2, figsize=(9.5, 4.9), constrained_layout=True)
     x = np.arange(len(STATE_ORDER))
     specs = (
         (axes[0], "r", f"{response_ratio} response", response_axis_label(display)),
@@ -95,7 +95,7 @@ def quality_figure(*, selected: pd.Series, selected_wells: pd.DataFrame, display
         raise ValueError("selected response-window row has no well-level evidence.")
     x = np.arange(len(STATE_ORDER))
     replicates = selected_wells.groupby("state")["position"].nunique().reindex(STATE_ORDER).to_numpy(dtype=float)
-    figure, axes = plt.subplots(1, 3, figsize=(10.5, 4.5), constrained_layout=True)
+    figure, axes = plt.subplots(1, 3, figsize=(11.5, 4.5), constrained_layout=True)
     width = 0.36
     for axis, prefix, title, ylabel in (
         (

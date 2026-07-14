@@ -54,20 +54,16 @@ RETRON_SPONGE_FULL_PLOT_IDS = [
     "pareto_ranking",
 ]
 CROSSTALK_CONFIG = "experiments/2025/20250620_sensor_panel_crosstalk/config.yaml"
-SFXI_2026_VEC8_CONFIGS = tuple(
-    relative_path
-    for relative_path in (
-        "experiments/2026/20260117_sfxi_ref-pDual10/config.yaml",
-        "experiments/2026/20260119_sfxi_ref-pDual10/config.yaml",
-        "experiments/2026/20260121_sfxi_ref-pDual10/config.yaml",
-        "experiments/2026/20260619_sfxi_sensor-panel-m9-glu-1-10/config.yaml",
-        "experiments/2026/20260620_sfxi_sensor-panel-m9-glu-12-19/config.yaml",
-        "experiments/2026/20260621_sfxi_sensors-opal-20-28/config.yaml",
-        "experiments/2026/20260622_sfxi_sensor-panel-m9-glu-29-30-sulAp-spyp/config.yaml",
-        "experiments/2026/20260706_sfxi_sensor-panel-m9-glu-secg/config.yaml",
-        "experiments/2026/20260707_sfxi_sensor-panel-m9-glu-secg/config.yaml",
-    )
-    if (REPO_ROOT / relative_path).exists()
+SFXI_2026_VEC8_CONFIGS = (
+    "experiments/2026/20260117_sfxi_ref-pDual10/config.yaml",
+    "experiments/2026/20260119_sfxi_ref-pDual10/config.yaml",
+    "experiments/2026/20260121_sfxi_ref-pDual10/config.yaml",
+    "experiments/2026/20260619_sfxi_sensor-panel-m9-glu-1-10/config.yaml",
+    "experiments/2026/20260620_sfxi_sensor-panel-m9-glu-12-19/config.yaml",
+    "experiments/2026/20260621_sfxi_sensors-opal-20-28/config.yaml",
+    "experiments/2026/20260622_sfxi_sensor-panel-m9-glu-29-30-sulAp-spyp/config.yaml",
+    "experiments/2026/20260706_sfxi_sensor-panel-m9-glu-secg/config.yaml",
+    "experiments/2026/20260707_sfxi_sensor-panel-m9-glu-secg/config.yaml",
 )
 
 
@@ -110,17 +106,19 @@ def test_repo_non_active_configs_declare_explicit_lifecycle() -> None:
     assert all(lifecycle != "active" for lifecycle in NON_ACTIVE_LIFECYCLE_CONFIGS.values())
 
 
-def test_2026_sfxi_vec8_configs_pin_j23105_anchor_and_12h_snapshot() -> None:
-    assert SFXI_2026_VEC8_CONFIGS
-    for relative_path in SFXI_2026_VEC8_CONFIGS:
-        spec = ReaderSpec.load(REPO_ROOT / relative_path)
-        inputs = spec.protocol.inputs
+@pytest.mark.parametrize("relative_path", SFXI_2026_VEC8_CONFIGS)
+def test_2026_sfxi_vec8_configs_pin_j23105_anchor_and_12h_snapshot(relative_path: str) -> None:
+    config_path = REPO_ROOT / relative_path
+    if not config_path.is_file():
+        pytest.skip(f"{relative_path} is a local-workbench config not present in this checkout")
+    spec = ReaderSpec.load(config_path)
+    inputs = spec.protocol.inputs
 
-        assert spec.protocol.id == "logic/sfxi_screen"
-        assert inputs["reference"]["design_id"] == "J23105"
-        assert inputs["target_time_h"] == 12.0
-        assert inputs["time_mode"] == "nearest"
-        assert inputs["time_tolerance_h"] == 0.51
+    assert spec.protocol.id == "logic/sfxi_screen"
+    assert inputs["reference"]["design_id"] == "J23105"
+    assert inputs["target_time_h"] == 12.0
+    assert inputs["time_mode"] == "nearest"
+    assert inputs["time_tolerance_h"] == 0.51
 
 
 def test_repo_cli_inventory_details_matches_experiment_discovery() -> None:
