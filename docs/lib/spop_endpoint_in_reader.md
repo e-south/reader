@@ -8,7 +8,7 @@ summary: Reader-owned SPOP endpoint assay score, inputs, provenance, and downstr
 
 # SPOP Endpoint Scoring
 
-**Owner:** reader-maintainers  
+**Owner:** reader-maintainers
 **Last verified:** 2026-05-26
 
 SPOP (`sponging_percent_of_positive`) is a Reader-owned endpoint scalar for
