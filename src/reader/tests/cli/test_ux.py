@@ -852,7 +852,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     (plot_dir / "raw_kinetics.pdf").write_text("plot", encoding="utf-8")
 
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["inspect", str(cfg_path)])
+    result = runner.invoke(cli.app, ["inspect", str(cfg_path)], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "Experiment overview" in result.output
     assert "Readiness" in result.output
@@ -865,6 +865,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     assert "Exports" in result.output
     assert "Generated outputs" in result.output
     assert "Records" in result.output
+    assert "tidy.v1 • artifacts/ingest.ingest_synergy_h1/df.parquet" in result.output
     assert "raw_kinetics" in result.output
     assert "crosstalk_pairs_table" in result.output
 

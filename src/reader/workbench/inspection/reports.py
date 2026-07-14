@@ -9,6 +9,7 @@ from reader.workbench.graph import OutputRef, input_ref_display, output_ref_disp
 from reader.workbench.templates import resolve_notebook_template_descriptor
 
 from .common import flatten_binding_rows
+from .results import record_payload_detail_text
 from .runtime import render_read_binding
 from .semantics import semantic_program_table
 
@@ -171,7 +172,7 @@ def experiment_inspect_renderables(
                 str(record.get("record_id") or "—"),
                 str(record.get("kind") or "—"),
                 str(record.get("producer_label") or "—"),
-                str(record.get("detail") or "—"),
+                record_payload_detail_text(record),
             )
     else:
         records_table.add_row("—", "—", "—", "No records found under outputs/manifests/records.json.")

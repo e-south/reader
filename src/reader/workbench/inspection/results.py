@@ -10,18 +10,32 @@ from reader.workbench.records import DataFrameArtifactRecord, FileBundleRecord, 
 from .common import format_relative_path
 
 
+def _file_paths_detail_text(paths: list[str]) -> str:
+    if not paths:
+        return "—"
+    if len(paths) == 1:
+        return paths[0]
+    parents = {str(Path(path).parent) for path in paths}
+    if len(parents) == 1:
+        return f"{len(paths)} files • {next(iter(parents))}"
+    return f"{len(paths)} files • {len(parents)} directories • first: {paths[0]}"
+
+
 def record_detail_text(record, *, base: Path) -> str:
     if isinstance(record, DataFrameArtifactRecord):
         return f"{record.contract_id} • {format_relative_path(record.path, base=base)}"
-    if not record.files:
+    return _file_paths_detail_text([format_relative_path(path, base=base) for path in record.files])
+
+
+def record_payload_detail_text(record: dict[str, object]) -> str:
+    if record.get("kind") == "dataframe_artifact":
+        contract_id = str(record.get("contract_id") or "")
+        path = str(record.get("path") or "")
+        return " • ".join(value for value in (contract_id, path) if value) or "—"
+    files = record.get("files")
+    if not isinstance(files, list):
         return "—"
-    if len(record.files) == 1:
-        return format_relative_path(record.files[0], base=base)
-    parents = {format_relative_path(path.parent, base=base) for path in record.files}
-    if len(parents) == 1:
-        return f"{len(record.files)} files • {next(iter(parents))}"
-    first = format_relative_path(record.files[0], base=base)
-    return f"{len(record.files)} files • {len(parents)} directories • first: {first}"
+    return _file_paths_detail_text([str(path) for path in files if path])
 
 
 def record_payload(
