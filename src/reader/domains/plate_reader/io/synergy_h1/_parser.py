@@ -187,6 +187,13 @@ def parse_snapshot_and_timeseries(
     requested_sources = {
         source for source, requested in (("snapshot", include_snapshot), ("kinetic", include_kinetic)) if requested
     }
+    sheet_has_snapshot = result.groupby("sheet_index")["source"].transform(lambda values: (values == "snapshot").any())
+    sheet_min_time = result.groupby("sheet_index")["time"].transform("min")
+    overlapping_initial_kinetic = (
+        (result["source"] == "kinetic") & sheet_has_snapshot & (result["time"] == sheet_min_time)
+    )
+    result = result.loc[~overlapping_initial_kinetic]
+
     observed_sources = set(result["source"].astype(str).unique())
     missing_sources = requested_sources - observed_sources
     require(not missing_sources, f"Missing requested Synergy data sources: {sorted(missing_sources)}")
@@ -197,13 +204,6 @@ def parse_snapshot_and_timeseries(
             not missing_source_channels,
             f"{source.title()} data missing for channels: {sorted(missing_source_channels)}",
         )
-
-    sheet_has_snapshot = result.groupby("sheet_index")["source"].transform(lambda values: (values == "snapshot").any())
-    sheet_min_time = result.groupby("sheet_index")["time"].transform("min")
-    overlapping_initial_kinetic = (
-        (result["source"] == "kinetic") & sheet_has_snapshot & (result["time"] == sheet_min_time)
-    )
-    result = result.loc[~overlapping_initial_kinetic]
 
     return _finalize_measurements(
         result,

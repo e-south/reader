@@ -363,6 +363,51 @@ def test_mixed_parse_requires_each_channel_in_each_requested_source(tmp_path: Pa
         )
 
 
+def test_mixed_parse_rejects_kinetic_source_removed_by_initial_overlap(tmp_path: Path) -> None:
+    rows = _snapshot_rows()[:-1]
+    rows.extend(
+        [
+            ["OD600 B:600"],
+            [],
+            [None, "Time", "A1"],
+            [None, "00:00:00", "1.0"],
+        ]
+    )
+    workbook = _write_workbook(tmp_path / "mixed.xlsx", rows, sheet_name="Assay")
+
+    with pytest.raises(ValueError, match=r"Missing requested Synergy data sources: \['kinetic'\]"):
+        parse_snapshot_and_timeseries(
+            workbook,
+            channel_map={"OD600:600": "OD600"},
+            include_snapshot=True,
+            include_kinetic=True,
+        )
+
+
+def test_mixed_parse_keeps_later_kinetic_measurements_after_initial_overlap(tmp_path: Path) -> None:
+    rows = _snapshot_rows()[:-1]
+    rows.extend(
+        [
+            ["OD600 B:600"],
+            [],
+            [None, "Time", "A1"],
+            [None, "00:00:00", "1.0"],
+            [None, "00:10:00", "1.1"],
+        ]
+    )
+    workbook = _write_workbook(tmp_path / "mixed.xlsx", rows, sheet_name="Assay")
+
+    result = parse_snapshot_and_timeseries(
+        workbook,
+        channel_map={"OD600:600": "OD600"},
+        include_snapshot=True,
+        include_kinetic=True,
+    )
+
+    assert set(result["source"]) == {"snapshot", "kinetic"}
+    assert result.loc[result["source"] == "kinetic", "time"].tolist() == pytest.approx([1 / 6])
+
+
 @pytest.mark.parametrize("suffix", [".xls", ".csv"])
 def test_synergy_parser_accepts_only_xlsx(tmp_path: Path, suffix: str) -> None:
     path = tmp_path / f"raw{suffix}"
