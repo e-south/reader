@@ -31,7 +31,11 @@ from .model import (
 )
 
 _MISSING = object()
-_DUAL_REPORTER_CHANNEL_MAP = {"OD600": "OD600", "CFP": "CFP", "YFP": "YFP"}
+_DUAL_REPORTER_CHANNEL_MAP = {
+    "OD600:600": "OD600",
+    "CFP:433,475": "CFP",
+    "YFP:500,530": "YFP",
+}
 
 
 def _field(

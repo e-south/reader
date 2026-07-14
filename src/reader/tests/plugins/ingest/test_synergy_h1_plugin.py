@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
 from reader.plugins.ingest.synergy_h1 import SynergyH1, SynergyH1UnifiedCfg
+from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.workbench.graph import FileRef
 
 
@@ -79,3 +82,49 @@ def test_synergy_resolves_one_discovered_workbook_as_runtime_input(tmp_path: Pat
 
     assert resolved == {"raw": workbook}
     assert SynergyH1.resolve_missing_file_inputs(exp_dir=tmp_path, cfg=cfg, inputs={"raw": workbook}) == {}
+
+
+@pytest.mark.parametrize("protocol_id", ["plate_reader/dual_reporter_screen", "logic/sfxi_screen"])
+def test_synergy_builtin_protocol_defaults_parse_declared_biotek_channels(
+    tmp_path: Path,
+    protocol_id: str,
+) -> None:
+    workbook = tmp_path / "common-synergy-export.xlsx"
+    rows = [
+        ["Date", "2026-07-07"],
+        ["Time", "12:00:00"],
+        ["Results"],
+        [],
+        [None, None, "1"],
+        [None, "A", "1.0", "OD600:600"],
+        [None, None, "2.0", "CFP:433,475"],
+        [None, None, "3.0", "YFP:500,530"],
+    ]
+    for label, first_value, second_value in (
+        ("OD600 B:600", "1.0", "1.1"),
+        ("CFP B:433,475", "2.0", "2.1"),
+        ("YFP B:500,530", "3.0", "3.1"),
+    ):
+        rows.extend(
+            [
+                [label],
+                [],
+                [None, "Time", "A1"],
+                [None, "00:00:00", first_value],
+                [None, "00:10:00", second_value],
+            ]
+        )
+    pd.DataFrame(rows).to_excel(workbook, sheet_name="Assay", header=False, index=False)
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id=protocol_id))
+    cfg = SynergyH1UnifiedCfg.model_validate(protocol.effective_plugin_config(plugin_id="ingest/synergy_h1"))
+
+    result = SynergyH1().run(
+        SimpleNamespace(logger=logging.getLogger("reader.tests.synergy")),
+        {"raw": workbook},
+        cfg,
+    )["df"]
+
+    assert set(result["channel"]) == {"OD600", "CFP", "YFP"}
+    assert set(zip(result["source"], result["channel"], strict=True)) == {
+        (source, channel) for source in ("snapshot", "kinetic") for channel in ("OD600", "CFP", "YFP")
+    }
