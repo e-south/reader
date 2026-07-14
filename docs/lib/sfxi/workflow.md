@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-workflow
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-14
 summary: Configure, preflight, run, inspect, export, and open notebooks for a Reader SFXI experiment.
 ---
 
@@ -11,7 +11,8 @@ summary: Configure, preflight, run, inspect, export, and open notebooks for a Re
 This guide covers the Reader-owned path from `reader/v7` configuration to the
 typed vec8 record. For calculation details, use the
 [vec8 contract](./vec8.md). For optional figures, use
-[SFXI plot surfaces](./plots.md).
+[SFXI plot surfaces](./plots.md). For the shared plate-reader ingest boundary,
+use [Plate-reader metric outputs](../plate_reader/metric_outputs.md).
 
 ## Configure the protocol
 
@@ -107,12 +108,16 @@ workbook is an explicit presentation/export artifact.
 ```bash
 uv run reader notebook <config-or-experiment> \
   --template notebook/sfxi_eda \
-  --mode edit
+  --mode run
 ```
 
-The template reads experiment records and supports interactive vec8 review.
-Reader scaffolds it under `outputs/notebooks/`, so change the template or a
-hand-authored notebook when behavior must be durable. Do not hand-edit a
+The template reads experiment records and supports interactive vec8 review. A
+time selected in the notebook produces a non-persistent review table. It does
+not replace `sfxi_vec8/vec8` or write a second handoff. Use `reader export` when
+a durable workbook is required.
+
+Reader scaffolds the notebook under `outputs/notebooks/`, so change the template
+or a hand-authored notebook when behavior must be durable. Do not hand-edit a
 generated scaffold as the package implementation.
 
 ## Operating sequence

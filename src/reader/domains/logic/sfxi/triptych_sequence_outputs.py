@@ -129,6 +129,12 @@ def manifest_payload(
         "row_order": [record["design_id"] for record in records],
         "reference_rows": [record for record in records if record.get("row_kind") == "reference"],
         "snapshot_target_time_h": float(cfg["snapshot_target_time_h"]),
+        "treatment_contract": {
+            "logic_map_ref": str(cfg["logic_map_ref"]),
+            "column": str(cfg["treatment_column"]),
+            "corners": dict(cfg["treatment_map"]),
+            "case_sensitive": bool(cfg["treatment_case_sensitive"]),
+        },
         "dnadesign_contract_id": BASERENDER_CONTRACT_ID,
         "dnadesign_contract_version": BASERENDER_CONTRACT_VERSION,
         "candidate_bindings": {

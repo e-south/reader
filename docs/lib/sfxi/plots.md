@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-plots
 surface: plot-reference
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-14
 summary: Reader SFXI plot inputs, configuration, outputs, descriptions, and dependency boundaries.
 ---
 
@@ -120,6 +120,14 @@ snapshot. A sequence-annotation panel spans the bottom. The page title uses
 the design display label. Treatment colors and markers remain consistent
 across the assay panels.
 
+Treatment identity is not configured again for this plot. The compiler carries
+`protocol.inputs.logic_map_ref` into the plot, and the plot resolves the same
+`annotations.logic_maps` entry used by the SFXI vec8 transform. The four plot
+series use the stable states `00`, `10`, `01`, and `11`; the authored condition
+labels and treatment column come from that resolved map. The bundle manifest
+records the map reference, column, corner labels, and case-sensitivity policy.
+Missing states or a second plot-local treatment mapping are errors.
+
 Declare the binding manifest as a file resource, then opt into the figure:
 
 ```yaml
@@ -142,9 +150,10 @@ protocol:
 
 The plot rejects duplicate vec8 rows per design, missing or duplicate exact
 alias bindings, sequence mismatches, binding digest or schema drift, missing
-assay rows, unsupported sequence adapters, and an unavailable public
-dnadesign contract. It does not fall back to fuzzy, prefix, sequence-only, or
-direct USR joins, and it does not substitute a local sequence renderer.
+assay rows, treatment labels that do not satisfy the resolved SFXI logic map,
+unsupported sequence adapters, and an unavailable public dnadesign contract.
+It does not fall back to fuzzy, prefix, sequence-only, or direct USR joins, and
+it does not substitute a local sequence renderer.
 
 Rendering happens in a staging directory. Before publication, Reader verifies
 the complete poster, PDF, index, manifest, frame directory, and optional movie.

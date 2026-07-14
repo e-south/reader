@@ -206,14 +206,15 @@ def test_sfxi_notebook_surfaces_deliverables_with_progressive_disclosure() -> No
     assert "def _(eda_base_panel)" not in template
 
 
-def test_sfxi_notebook_export_panel_requires_valid_vec8_result() -> None:
+def test_sfxi_notebook_keeps_interactive_vec8_review_non_persistent() -> None:
     template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
-    assert (
-        "def _(Path, design_select, exports_dir, mo, sfxi_cfg, time_selected_h, time_target_h, vec8_result)" in template
-    )
-    assert '"Reference anchor"' in template
-    assert '"Snapshot time used (h)"' in template
+    assert "Review-time 8-vector" in template
+    assert "sfxi_vec8/vec8" in template
+    assert "reader export" in template
+    assert ".to_excel(" not in template
+    assert "json.dump(" not in template
+    assert "mkdir(" not in template
 
 
 def test_sfxi_notebook_treatment_condition_labels_respect_case_insensitive_config() -> None:

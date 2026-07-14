@@ -2,7 +2,7 @@
 doc_id: reader-docs-index
 surface: documentation-index
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-14
 summary: Routes readers to the smallest current guide or reference for operating and maintaining reader.
 ---
 
@@ -66,6 +66,9 @@ outputs. Use the reference pages when you need exact CLI or config details.
 
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
 - [SPOP endpoint scoring in Reader](./lib/spop_endpoint_in_reader.md)
+- [Plate-reader metric outputs](./lib/plate_reader/metric_outputs.md): shared
+  dual-reporter assay records and the independent SFXI and response-window
+  output routes.
 - [SFXI vec8 in reader](./lib/sfxi_vec8_in_reader.md): measured vec8
   generation, Reader-to-OPAL ownership, and current SFXI plot surfaces,
   including the triptych sequence bundle.

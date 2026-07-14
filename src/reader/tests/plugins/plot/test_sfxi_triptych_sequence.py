@@ -36,11 +36,20 @@ from reader.workbench.engine import run_spec
 from reader.workbench.experiment import (
     AnnotationSemantics,
     ExperimentSemantics,
+    LogicMaps,
+    LogicMapSpec,
     OutputLayout,
     ResourceCatalog,
     ResourceEntry,
 )
 from reader.workbench.graph import resolve_workbench
+
+_TREATMENT_MAP = {
+    "00": "EtOH 0%, 0 nM cipro",
+    "10": "EtOH 3%, 0 nM cipro",
+    "01": "EtOH 0%, 100 nM cipro",
+    "11": "EtOH 3%, 100 nM cipro",
+}
 
 
 def _vec8_df() -> pd.DataFrame:
@@ -68,7 +77,7 @@ def _vec8_df() -> pd.DataFrame:
 
 def _assay_df() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
-    treatments = ["negative", "3% EtOH", "100 nM ciprofloxacin", "3% EtOH + 100 nM ciprofloxacin"]
+    treatments = list(_TREATMENT_MAP.values())
     for treatment_idx, treatment in enumerate(treatments, start=1):
         for time in (0.0, 12.0, 24.0):
             for rep in (1, 2):
@@ -95,6 +104,18 @@ def _assay_df() -> pd.DataFrame:
                     }
                 )
     return pd.DataFrame(rows)
+
+
+def _normalized_render_config(**overrides: object) -> dict[str, object]:
+    return triptych_sequence._normalize_config(
+        {
+            "logic_map_ref": "induction_logic",
+            "treatment_column": "treatment_alias",
+            "treatment_map": _TREATMENT_MAP,
+            "treatment_case_sensitive": True,
+            **overrides,
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -245,7 +266,7 @@ def test_sfxi_triptych_requires_an_exact_design_binding(tmp_path: Path) -> None:
         triptych_sequence._build_candidate_plan(
             vec8=_vec8_df(),
             bindings=bindings,
-            cfg=triptych_sequence._normalize_config({}),
+            cfg=_normalized_render_config(),
         )
 
 
@@ -258,8 +279,35 @@ def test_sfxi_triptych_rejects_reader_sequence_drift_from_binding(tmp_path: Path
         triptych_sequence._build_candidate_plan(
             vec8=vec8,
             bindings=bindings,
-            cfg=triptych_sequence._normalize_config({}),
+            cfg=_normalized_render_config(),
         )
+
+
+def test_sfxi_triptych_requires_resolved_logic_map_treatment_semantics() -> None:
+    with pytest.raises(SFXIError, match="logic_map_ref must be a non-empty string"):
+        triptych_sequence._normalize_config({})
+
+
+def test_sfxi_triptych_maps_authored_labels_to_stable_states() -> None:
+    cfg = _normalized_render_config()
+
+    mapped = triptych_sequence._bind_treatment_states(assay=_assay_df(), cfg=cfg)
+
+    assert set(mapped[cfg["state_column"]].dropna()) == {"00", "10", "01", "11"}
+
+
+def test_sfxi_triptych_honors_logic_map_case_sensitivity() -> None:
+    lower_labels = {state: label.lower() for state, label in _TREATMENT_MAP.items()}
+    cfg = _normalized_render_config(treatment_case_sensitive=False, treatment_map=lower_labels)
+
+    mapped = triptych_sequence._bind_treatment_states(assay=_assay_df(), cfg=cfg)
+
+    assert set(mapped[cfg["state_column"]].dropna()) == {"00", "10", "01", "11"}
+
+
+def test_sfxi_triptych_rejects_duplicated_treatment_identity() -> None:
+    with pytest.raises(SFXIError, match="comes from the resolved logic-map contract"):
+        _normalized_render_config(treatments=[])
 
 
 def test_sfxi_triptych_frame_filename_keeps_colliding_label_slugs_unique() -> None:
@@ -447,7 +495,17 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
         experiment_semantics=ExperimentSemantics(
             protocol=ProtocolBinding(id="logic/sfxi_screen"),
             protocol_program=ProtocolSemanticProgram(protocol="logic/sfxi_screen"),
-            annotations=AnnotationSemantics(),
+            annotations=AnnotationSemantics(
+                logic_maps=LogicMaps(
+                    by_id={
+                        "induction_logic": LogicMapSpec(
+                            column="treatment_alias",
+                            corners=_TREATMENT_MAP,
+                            case_sensitive=True,
+                        )
+                    }
+                )
+            ),
             resources=ResourceCatalog(
                 by_id={"promoter_candidate_bindings": ResourceEntry(kind="file", path=binding_manifest)}
             ),
@@ -472,6 +530,7 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
                     },
                     with_={
                         "acquisition_transition_time_h": 12.0,
+                        "logic_map_ref": "induction_logic",
                     },
                 ),
             )
@@ -499,6 +558,12 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v2"
     assert manifest["candidate_bindings"]["manifest_sha256"].startswith("sha256:")
+    assert manifest["treatment_contract"] == {
+        "logic_map_ref": "induction_logic",
+        "column": "treatment_alias",
+        "corners": _TREATMENT_MAP,
+        "case_sensitive": True,
+    }
     assert manifest["row_order"] == ["pDual-10-test01"]
     record = manifest["records"][0]
     assert record["candidate_id"] == "candidate-spyp"

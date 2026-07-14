@@ -173,6 +173,25 @@ def test_logic_sfxi_triptych_reads_one_declared_candidate_binding_resource() -> 
 
     assert plot.reads["candidate_bindings"] == ResourceInputDecl(resource_id="promoter_candidate_bindings")
     assert "candidate_bindings_resource" not in plot.with_
+    assert plot.with_["logic_map_ref"] == "induction_logic"
+
+
+def test_logic_sfxi_triptych_rejects_a_second_treatment_mapping() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            analysis={
+                "sfxi_triptych_sequence": {
+                    "candidate_bindings_resource": "promoter_candidate_bindings",
+                    "treatment_map": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            },
+            outputs={"plots": {"profile": "none", "include": ["sfxi_triptych_sequence"]}},
+        )
+    )
+
+    with pytest.raises(ConfigError, match="must not duplicate SFXI treatment identity"):
+        protocol.compile()
 
 
 def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
@@ -181,6 +200,7 @@ def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
     vec8 = next(metric for metric in protocol.descriptor.metrics if metric.id == "vec8")
 
     assert vec8.formula == "v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star"
+    assert protocol.descriptor.ranking is None
 
 
 def test_protocol_semantic_execution_rejects_unknown_status() -> None:

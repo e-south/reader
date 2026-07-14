@@ -7,7 +7,6 @@ app = marimo.App(width="medium")
 @app.cell(hide_code=True)
 def _():
     from pathlib import Path
-    import json
 
     import marimo as mo
 
@@ -30,7 +29,6 @@ def _():
 
     return (
         Path,
-        json,
         mo,
         pl,
         load_notebook_workbench_context,
@@ -294,19 +292,12 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(decl, outputs_dir):
-    exports_cfg = decl.experiment_semantics.layout.exports_subdir
-    exports_dir = outputs_dir if exports_cfg in ("", ".", "./") else outputs_dir / str(exports_cfg)
-    return exports_dir
-
-
-@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## SFXI 8-vector Builder
+    ## SFXI 8-vector review
     Each design is summarized by an **8-vector**: four **logic** values (`v00..v11`) and four **intensity** values (`y*00..y*11`).
 
-    Method details are in `docs/lib/sfxi_vec8_in_reader.md`. This notebook recomputes the same transform used by `transform/sfxi` for one selected time slice.
+    Method details are in `docs/lib/sfxi_vec8_in_reader.md`. The table below is a review-time recomputation at the interactively selected time. The manifest-backed `sfxi_vec8/vec8` record remains the durable handoff.
     """)
 
 
@@ -795,7 +786,11 @@ def _(build_vec8_from_tidy, mo, sfxi_step_cfg, time_selected_h, tidy_pd):
 def _(mo, vec8_result):
     mo.vstack(
         [
-            mo.md("## 8-vector output"),
+            mo.md("## Review-time 8-vector"),
+            mo.md(
+                "This interactive table is not persisted. Generate the configured workbook from the canonical "
+                "record with `uv run reader export <config-or-experiment> --only logic_summary_workbook`."
+            ),
             mo.ui.table(vec8_result.vec8, page_size=10),
         ]
     )
@@ -810,56 +805,6 @@ def _(mo, vec8_result):
         f"**reference.stat:** `{_ref.get('stat')}`",
     ]
     mo.md("## Reference anchor\n" + "\n".join(_lines))
-
-
-@app.cell(hide_code=True)
-def _(Path, design_select, exports_dir, mo, sfxi_cfg, time_selected_h, time_target_h, vec8_result):
-    export_dir = exports_dir / sfxi_cfg.output_subdir
-    xlsx_name = Path(sfxi_cfg.vec8_filename).with_suffix(".xlsx").name
-    export_path = export_dir / xlsx_name
-    export_button = mo.ui.run_button(label="Export 8-vector (XLSX)", kind="success")
-    log_name = sfxi_cfg.log_filename
-    _ref = vec8_result.log.get("reference", {}) if hasattr(vec8_result, "log") else {}
-    mo.vstack(
-        [
-            mo.md("## Export 8-vector"),
-            mo.ui.table(
-                [
-                    {"Field": "Design", "Value": str(design_select.value)},
-                    {"Field": "Target time (h)", "Value": f"{float(time_target_h):.3f}"},
-                    {"Field": "Snapshot time used (h)", "Value": f"{float(time_selected_h):.3f}"},
-                    {"Field": "Reference anchor", "Value": str(_ref.get("design_id_resolved") or _ref.get("design_id"))},
-                ],
-                page_size=4,
-            ),
-            mo.md(f"Export path: `{export_path}`"),
-            export_button,
-            mo.md(f"Log will be written as `{log_name}` next to the XLSX."),
-        ]
-    )
-    return export_button, export_path, log_name
-
-
-@app.cell(hide_code=True)
-def _(export_button, export_path, json, log_name, mo, vec8_result):
-    if not export_button.value:
-        mo.stop(True)
-    export_path.parent.mkdir(parents=True, exist_ok=True)
-    vec8_df = vec8_result.vec8
-    try:
-        vec8_df.to_excel(export_path, index=False)
-    except Exception as exc:
-        mo.stop(
-            True,
-            mo.md(
-                f"XLSX export failed: `{exc}`. "
-                "Ensure `openpyxl` is installed (included in reader core deps; run `uv sync` if missing)."
-            ),
-        )
-    log_path = export_path.parent / log_name
-    with open(log_path, "w", encoding="utf-8") as fh:
-        json.dump(vec8_result.log, fh, indent=2, sort_keys=True, default=str)
-    mo.md(f"Exported 8-vector to `{export_path}` and log to `{log_path}`.")
 
 
 @app.cell(hide_code=True)

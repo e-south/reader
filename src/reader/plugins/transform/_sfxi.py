@@ -4,16 +4,16 @@ import numpy as np
 import pandas as pd
 
 from reader.domains.logic.sfxi.run import SFXIBuildResult, build_vec8_from_tidy
+from reader.domains.logic.sfxi.treatment_semantics import resolve_sfxi_treatment_semantics
 
 
 def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
-    if ctx.experiment is None:
-        raise ValueError("sfxi requires experiment semantics in the run context")
-    logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
-    run_cfg = cfg.model_dump()
-    run_cfg["treatment_map"] = dict(logic_map.corners)
-    run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive
-    run_cfg["treatment_column"] = cfg.treatment_column or logic_map.column
+    semantics = resolve_sfxi_treatment_semantics(
+        ctx=ctx,
+        logic_map_ref=cfg.logic_map_ref,
+        treatment_column=cfg.treatment_column,
+    )
+    run_cfg = semantics.inject(cfg.model_dump())
     return build_vec8_from_tidy(df.copy(), run_cfg)
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from ..model import ColumnRule, DataFrameContract
 
 
-def _sfxi_vec8_columns(*, intensity_delta_required: bool) -> list[ColumnRule]:
+def _sfxi_vec8_columns() -> list[ColumnRule]:
     return [
         ColumnRule("design_id", "string"),
         ColumnRule("sequence", "string", required=False, allow_nan=True),
@@ -22,7 +22,6 @@ def _sfxi_vec8_columns(*, intensity_delta_required: bool) -> list[ColumnRule]:
         ColumnRule(
             "intensity_log2_offset_delta",
             "float",
-            required=intensity_delta_required,
             nonnegative=True,
         ),
         ColumnRule("r_logic", "float", nonnegative=True),
@@ -40,17 +39,9 @@ def _sfxi_vec8_columns(*, intensity_delta_required: bool) -> list[ColumnRule]:
 
 CONTRACTS: tuple[DataFrameContract, ...] = (
     DataFrameContract(
-        id="sfxi.vec8.v2",
-        description="Per design vec8 table with logic shape, anchor-normalized intensity, and reference provenance",
-        columns=_sfxi_vec8_columns(intensity_delta_required=False),
-        unique_keys=[["design_id"]],
-        domain="logic",
-        kind="logic-summary",
-    ),
-    DataFrameContract(
         id="sfxi.vec8.v3",
         description=("Per design vec8 table with explicit intensity transform parameters and reference provenance"),
-        columns=_sfxi_vec8_columns(intensity_delta_required=True),
+        columns=_sfxi_vec8_columns(),
         unique_keys=[["design_id"]],
         domain="logic",
         kind="logic-summary",

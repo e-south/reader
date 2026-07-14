@@ -55,7 +55,7 @@ def render_marimo_routes(*, target: Path, url: str, runtime_root: Path) -> None:
             "Review routes:\n"
             f"  Static check: {check_cmd}\n"
             f"  Browser review: {url}\n"
-            "  Chrome MCP: open the URL in a fresh isolated page.\n\n"
+            "  In-app browser: open the URL in a fresh isolated page.\n\n"
             f"Managed runtime root: [path]{runtime_root}[/path]",
             border_style="accent",
             box=box.ROUNDED,
@@ -300,7 +300,7 @@ def notebook(
     headless: bool = typer.Option(
         False,
         "--headless",
-        help="Launch without opening a browser. Reader prints a loopback URL suitable for Chrome MCP review.",
+        help="Launch without opening a browser. Reader prints a loopback URL suitable for in-app review.",
     ),
     port: int | None = typer.Option(
         None,

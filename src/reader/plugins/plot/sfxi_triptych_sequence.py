@@ -34,25 +34,17 @@ class SFXITriptychSequencePanelCfg(_StrictModel):
     style_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
-class SFXITriptychTreatmentCfg(_StrictModel):
-    state: str
-    label: str
-    short_label: str
-    color: str
-
-
 class SFXITriptychSequenceCfg(PluginConfig):
+    logic_map_ref: str
     bundle_id: str = "sfxi_triptych_sequence"
     design_col: str = "design_id"
     sequence_col: str = "sequence"
     time_col: str = "time"
-    treatment_col: str = "treatment_alias"
     snapshot_target_time_h: float = 12.0
     acquisition_transition_time_h: float | None = None
     time_tolerance_h: float = 0.51
     channels: SFXITriptychChannelsCfg = Field(default_factory=SFXITriptychChannelsCfg)
     sequence_panel: SFXITriptychSequencePanelCfg = Field(default_factory=SFXITriptychSequencePanelCfg)
-    treatments: list[SFXITriptychTreatmentCfg] = Field(default_factory=list)
     time_series: dict[str, Any] = Field(default_factory=dict)
     axis_limits: dict[str, Any] = Field(default_factory=dict)
     movie_enabled: bool = False
@@ -106,15 +98,19 @@ class SFXITriptychSequencePlot(FigurePlotPlugin):
         vec8: pd.DataFrame = inputs["vec8"]
         assay: pd.DataFrame = inputs["assay"]
         candidate_bindings_manifest: Path = inputs["candidate_bindings"]
+        from reader.domains.logic.sfxi.treatment_semantics import (  # noqa: PLC0415
+            resolve_sfxi_treatment_semantics,
+        )
         from reader.domains.logic.sfxi.triptych_sequence import (  # noqa: PLC0415
             render_sfxi_triptych_sequence_bundle,
         )
 
+        semantics = resolve_sfxi_treatment_semantics(ctx=ctx, logic_map_ref=cfg.logic_map_ref)
         paths = render_sfxi_triptych_sequence_bundle(
             ctx=ctx,
             vec8=vec8,
             assay=assay,
             candidate_bindings_manifest=candidate_bindings_manifest,
-            config=cfg.model_dump(mode="python"),
+            config=semantics.inject(cfg.model_dump(mode="python")),
         )
         return {"artifacts": [str(path) for path in paths]}

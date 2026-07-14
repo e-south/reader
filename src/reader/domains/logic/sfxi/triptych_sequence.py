@@ -67,12 +67,14 @@ from reader.domains.promoter.sequence_panel import (
 )
 from reader.errors import SFXIError
 
-DEFAULT_TREATMENTS = (
-    {"state": "00", "label": "negative", "short_label": "00", "color": "#8E8E8E"},
-    {"state": "10", "label": "3% EtOH", "short_label": "EtOH", "color": "#4C78A8"},
-    {"state": "01", "label": "100 nM ciprofloxacin", "short_label": "Cipro", "color": "#F58518"},
-    {"state": "11", "label": "3% EtOH + 100 nM ciprofloxacin", "short_label": "Dual", "color": "#54A24B"},
-)
+STATE_ORDER = ("00", "10", "01", "11")
+STATE_COLORS = {
+    "00": "#8E8E8E",
+    "10": "#4C78A8",
+    "01": "#F58518",
+    "11": "#54A24B",
+}
+_STATE_COLUMN = "__reader_sfxi_state"
 
 
 def render_sfxi_triptych_sequence_bundle(
@@ -92,9 +94,10 @@ def render_sfxi_triptych_sequence_bundle(
     _require_columns(vec8, ["design_id"], where="sfxi triptych vec8")
     _require_columns(
         assay,
-        [cfg["design_col"], cfg["time_col"], "channel", "value", cfg["treatment_col"]],
+        [cfg["design_col"], cfg["time_col"], "channel", "value", cfg["treatment_column"]],
         where="sfxi triptych assay",
     )
+    assay = _bind_treatment_states(assay=assay, cfg=cfg)
     plan = _build_candidate_plan(vec8=vec8, bindings=bindings, cfg=cfg)
     if plan.empty:
         raise SFXIError("SFXI triptych sequence has no candidate rows to render.")
@@ -156,17 +159,32 @@ def render_sfxi_triptych_sequence_bundle(
 
 def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
     cfg = dict(config or {})
+    removed_keys = sorted({"treatment_col", "treatments"} & set(cfg))
+    if removed_keys:
+        raise SFXIError(
+            "SFXI triptych treatment identity comes from the resolved logic-map contract; "
+            f"remove duplicated setting(s): {removed_keys}"
+        )
     channels = dict(cfg.get("channels") or {})
     sequence_panel = dict(cfg.get("sequence_panel") or {})
     time_series = dict(cfg.get("time_series") or {})
     axis_limits = dict(cfg.get("axis_limits") or {})
-    treatments = list(cfg.get("treatments") or DEFAULT_TREATMENTS)
+    logic_map_ref = _required_string(cfg.get("logic_map_ref"), where="logic_map_ref")
+    treatment_column = _required_string(cfg.get("treatment_column"), where="treatment_column")
+    treatment_map, treatment_case_sensitive = _normalize_treatment_contract(
+        cfg.get("treatment_map"),
+        case_sensitive=cfg.get("treatment_case_sensitive"),
+    )
     return {
+        "logic_map_ref": logic_map_ref,
         "bundle_id": str(cfg.get("bundle_id") or "sfxi_triptych_sequence"),
         "design_col": str(cfg.get("design_col") or "design_id"),
         "sequence_col": str(cfg.get("sequence_col") or "sequence"),
         "time_col": str(cfg.get("time_col") or "time"),
-        "treatment_col": str(cfg.get("treatment_col") or "treatment_alias"),
+        "treatment_column": treatment_column,
+        "treatment_map": treatment_map,
+        "treatment_case_sensitive": treatment_case_sensitive,
+        "state_column": _STATE_COLUMN,
         "snapshot_target_time_h": _finite_float(cfg.get("snapshot_target_time_h"), default=12.0),
         "acquisition_transition_time_h": _finite_float(cfg.get("acquisition_transition_time_h"), default=None),
         "time_tolerance_h": _finite_float(cfg.get("time_tolerance_h"), default=0.51),
@@ -189,8 +207,32 @@ def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
         },
         "time_series": time_series,
         "axis_limits": axis_limits,
-        "treatments": _normalize_treatments(treatments),
+        "states": [
+            {
+                "state": state,
+                "label": treatment_map[state],
+                "short_label": state,
+                "color": STATE_COLORS[state],
+            }
+            for state in STATE_ORDER
+        ],
     }
+
+
+def _bind_treatment_states(*, assay: pd.DataFrame, cfg: Mapping[str, Any]) -> pd.DataFrame:
+    state_column = str(cfg["state_column"])
+    if state_column in assay.columns:
+        raise SFXIError(f"SFXI triptych assay uses reserved internal column {state_column!r}.")
+    treatment_column = str(cfg["treatment_column"])
+    treatment_map = dict(cfg["treatment_map"])
+    case_sensitive = bool(cfg["treatment_case_sensitive"])
+    reverse = {(label if case_sensitive else label.strip().casefold()): state for state, label in treatment_map.items()}
+    out = assay.copy()
+    treatment_values = out[treatment_column].astype(str)
+    if not case_sensitive:
+        treatment_values = treatment_values.str.strip().str.casefold()
+    out[state_column] = treatment_values.map(reverse)
+    return out
 
 
 def _frame_filename(*, row_number: int, display_label: object) -> str:
@@ -248,12 +290,12 @@ def _render_one(*, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], 
         raise SFXIError(f"No assay rows available for design_id={design_id!r}.")
     assay_design["plot_time_h"] = pd.to_numeric(assay_design[cfg["time_col"]], errors="coerce")
     assay_design["value"] = pd.to_numeric(assay_design["value"], errors="coerce")
-    assay_design = assay_design.dropna(subset=["plot_time_h", "value", "channel", cfg["treatment_col"]])
+    assay_design = assay_design.dropna(subset=["plot_time_h", "value", "channel", cfg["state_column"]])
 
-    treatments = list(cfg["treatments"])
-    treatment_order = [item["label"] for item in treatments]
-    color_map = {item["label"]: item["color"] for item in treatments}
-    short_label_map = {item["label"]: item["short_label"] for item in treatments}
+    states = list(cfg["states"])
+    treatment_order = [item["state"] for item in states]
+    color_map = {item["state"]: item["color"] for item in states}
+    label_map = {item["state"]: item["label"] for item in states}
     marker_map = marker_map_for_levels(treatment_order)
     time_meta = _time_metadata(assay_design, cfg=cfg)
 
@@ -270,7 +312,7 @@ def _render_one(*, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], 
         channel=str(cfg["channels"]["snapshot"]),
         snapshot_time_h=float(row["snapshot_time_h"]),
         tolerance_h=float(cfg["time_tolerance_h"]),
-        treatments=treatments,
+        states=states,
         cfg=cfg,
         y_limits=scales["y_limits"],
     )
@@ -289,7 +331,7 @@ def _render_one(*, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], 
             treatment_order=treatment_order,
             color_map=color_map,
             marker_map=marker_map,
-            label_map=short_label_map,
+            label_map=label_map,
             time_meta=time_meta,
             y_limits=scales["y_limits"],
             x_limits=x_limits,
@@ -374,12 +416,12 @@ def _draw_time_panel(
     cfg: Mapping[str, Any],
     show_event_labels: bool = False,
 ) -> None:
-    treatment_col = str(cfg["treatment_col"])
+    treatment_col = str(cfg["state_column"])
     data = assay[assay["channel"].astype(str) == channel].copy()
     observed = set(data[treatment_col].astype(str))
     missing = [label for label in treatment_order if label not in observed]
     if missing:
-        raise SFXIError(f"{channel} panel missing treatments: {missing}")
+        raise SFXIError(f"{channel} panel missing SFXI states: {_describe_states(missing, cfg=cfg)}")
     data = data[data[treatment_col].astype(str).isin(treatment_order)].copy()
     segment_col = _add_segment_column(data)
     ts_cfg = dict(cfg.get("time_series") or {})
@@ -433,11 +475,11 @@ def _draw_snapshot_panel(
     channel: str,
     snapshot_time_h: float,
     tolerance_h: float,
-    treatments: list[dict[str, str]],
+    states: list[dict[str, str]],
     cfg: Mapping[str, Any],
     y_limits: dict[str, list[float]],
 ) -> dict[str, Any]:
-    treatment_col = str(cfg["treatment_col"])
+    treatment_col = str(cfg["state_column"])
     key_cols = [str(cfg["design_col"]), treatment_col, "channel", "position"]
     key_cols = [column for column in key_cols if column in assay.columns]
     snapshot_df = assay.copy()
@@ -452,15 +494,15 @@ def _draw_snapshot_panel(
     if selection.rows.empty:
         raise SFXIError(f"No snapshot rows for channel={channel!r} near t={snapshot_time_h:.2f} h")
     stats = summarize_snapshot_values(df=selection.rows, group_cols=[treatment_col], err="sem")
-    order = [item["label"] for item in treatments]
+    order = [item["state"] for item in states]
     stats = stats.set_index(treatment_col).reindex(order)
     missing = stats[stats["mean"].isna()].index.astype(str).tolist()
     if missing:
-        raise SFXIError(f"Snapshot panel missing treatments: {missing}")
+        raise SFXIError(f"Snapshot panel missing SFXI states: {_describe_states(missing, cfg=cfg)}")
     positions = np.arange(len(order), dtype=float)
     means = stats["mean"].astype(float).to_numpy()
     sem = stats["sem"].astype(float).fillna(0.0).to_numpy()
-    colors = [item["color"] for item in treatments]
+    colors = [item["color"] for item in states]
     ax.bar(positions, means, yerr=sem, color=colors, edgecolor="#BDBDBD", linewidth=0.75, capsize=3, zorder=2)
     seed = _stable_seed("|".join(order) + f"|{snapshot_time_h:.6f}")
     rng = np.random.default_rng(seed)
@@ -478,7 +520,7 @@ def _draw_snapshot_panel(
             zorder=3,
         )
     ax.set_xticks(positions)
-    ax.set_xticklabels([_snapshot_tick_label(item["short_label"]) for item in treatments], ha="center", fontsize=11.5)
+    ax.set_xticklabels([_snapshot_tick_label(item["short_label"]) for item in states], ha="center", fontsize=11.5)
     ax.set_xlabel("")
     ax.set_ylabel(channel, fontsize=13.4)
     ax.set_ylim(y_limits[channel])
@@ -500,14 +542,14 @@ def _compute_render_scales(*, assay: pd.DataFrame, render_plan: pd.DataFrame, cf
         str(cfg["channels"]["ratio"]): [],
         str(cfg["channels"]["snapshot"]): [],
     }
-    treatment_labels = {item["label"] for item in cfg["treatments"]}
-    treatment_col = str(cfg["treatment_col"])
+    treatment_states = {item["state"] for item in cfg["states"]}
+    treatment_col = str(cfg["state_column"])
     design_col = str(cfg["design_col"])
     design_ids = set(render_plan[design_col].astype(str))
     sub = assay[assay[design_col].astype(str).isin(design_ids)].copy()
     for channel, values in values_by_channel.items():
         channel_rows = sub[
-            (sub["channel"].astype(str) == channel) & sub[treatment_col].astype(str).isin(treatment_labels)
+            (sub["channel"].astype(str) == channel) & sub[treatment_col].astype(str).isin(treatment_states)
         ]
         values.extend(pd.to_numeric(channel_rows["value"], errors="coerce").dropna().astype(float).tolist())
     axis_cfg = dict(cfg.get("axis_limits") or {})
@@ -539,17 +581,32 @@ def _compute_row_x_limits(
     return [float(min(0.0, min(values))), _nice_upper(max(values) + max(0.0, x_pad))]
 
 
-def _normalize_treatments(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for row in rows:
-        item = {key: str(row[key]) for key in ("state", "label", "short_label", "color") if key in row}
-        missing = sorted({"state", "label", "short_label", "color"} - set(item))
-        if missing:
-            raise SFXIError(f"SFXI triptych treatment row missing {missing}: {row}")
-        out.append(item)
-    if not out:
-        raise SFXIError("SFXI triptych requires at least one treatment row.")
-    return out
+def _normalize_treatment_contract(
+    raw_map: Any,
+    *,
+    case_sensitive: Any,
+) -> tuple[dict[str, str], bool]:
+    if not isinstance(raw_map, Mapping) or set(raw_map) != set(STATE_ORDER):
+        raise SFXIError("SFXI triptych treatment_map must have exactly the states 00, 10, 01, and 11.")
+    treatment_map = {state: _required_string(raw_map[state], where=f"treatment_map.{state}") for state in STATE_ORDER}
+    if not isinstance(case_sensitive, bool):
+        raise SFXIError("SFXI triptych treatment_case_sensitive must be true or false.")
+    labels = list(treatment_map.values())
+    normalized = labels if case_sensitive else [label.strip().casefold() for label in labels]
+    if len(set(normalized)) != len(STATE_ORDER):
+        raise SFXIError("SFXI triptych treatment_map labels must be unique under its case-sensitivity policy.")
+    return treatment_map, case_sensitive
+
+
+def _required_string(value: Any, *, where: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SFXIError(f"SFXI triptych {where} must be a non-empty string.")
+    return value.strip()
+
+
+def _describe_states(states: Sequence[str], *, cfg: Mapping[str, Any]) -> list[str]:
+    treatment_map = dict(cfg["treatment_map"])
+    return [f"{state}={treatment_map[state]!r}" for state in states]
 
 
 def _draw_time_event_labels(ax, *, time_meta: Mapping[str, float], font_size: float) -> None:

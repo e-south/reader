@@ -973,14 +973,14 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     payload = json.loads(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["protocol"] == "logic/sfxi_screen"
-    assert payload["semantics"]["program"]["summary"]["total"] == 4
-    assert compiled_program["summary"]["compiled"] == 4
+    assert payload["semantics"]["program"]["summary"]["total"] == 3
+    assert compiled_program["summary"]["compiled"] == 3
     assert compiled_program["summary"]["descriptive_only"] == 0
     assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
     assert compiled_program["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
     assert compiled_program["windows"][0]["execution"]["status"] == "compiled"
     assert compiled_program["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
-    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
+    assert compiled_program["ranking"] is None
 
 
 def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:

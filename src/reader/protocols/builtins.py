@@ -802,7 +802,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             _field(
                 "sfxi_triptych_sequence",
-                "SFXI triptych sequence bundle settings for kinetics, snapshot, and sequence panels.",
+                (
+                    "SFXI triptych sequence settings. Treatment states come from the same "
+                    "protocol.inputs.logic_map_ref used by the SFXI vec8 transform."
+                ),
                 allow_unknown=True,
                 children=(
                     _field(
@@ -1021,11 +1024,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 id="logic_summary_workbook",
                 summary="Workbook export of the SFXI vec8 summary.",
             ),
-        ),
-        ranking=ProtocolRankingSpec(
-            primary_metric="vec8",
-            direction="higher_is_better",
-            summary="Interpret SFXI through the vec8 summary surface and its downstream logic-specific analyses.",
         ),
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(

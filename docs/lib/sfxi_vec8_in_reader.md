@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-vec8
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-14
 summary: Canonical route to Reader SFXI vec8 semantics, operation, plots, and the OPAL handoff boundary.
 ---
 
@@ -11,6 +11,9 @@ summary: Canonical route to Reader SFXI vec8 semantics, operation, plots, and th
 Reader converts annotated plate-reader measurements into one measured
 Setpoint Fidelity x Intensity (SFXI) 8-vector per `design_id`. It persists that table as the typed record
 `sfxi_vec8/vec8` with contract `sfxi.vec8.v3`.
+
+For the shared assay-record boundary and the independent response-window route,
+start with [Plate-reader metric outputs](./plate_reader/metric_outputs.md).
 
 This page is the stable entry point. Detailed reference material is split by
 task so calculation rules, operating steps, plot behavior, and downstream
@@ -21,8 +24,6 @@ ownership can change independently.
 - [Vec8 contract](./sfxi/vec8.md): input requirements, time and corner
   selection, reference normalization, equations, output columns, and failure
   rules.
-- [Plate-reader response-window analysis](./plate_reader/response_window.md):
-  event-relative response and reference-relative fluorescence records.
 - [Experiment workflow](./sfxi/workflow.md): `reader/v7` configuration,
   preflight, execution, records, workbook export, and the SFXI marimo notebook.
 - [Plot surfaces](./sfxi/plots.md): the per-experiment heatmap, setpoint
@@ -48,7 +49,6 @@ snapshots; it does not run OPAL scoring.
 | sequence/X readiness | Exact study join to sequence, candidate identity, and OPAL X | Owning study and OPAL candidate table |
 | batch0 | Study-owned round-0 label input and evidence manifest | Owning study |
 | scalar SFXI objective | OPAL scoring over a measured vec8 | OPAL |
-| response window | Event-relative well reductions and reference-relative fluorescence summaries | Reader |
 
 A Reader `design_id` is not automatically an OPAL candidate ID. A Reader
 alias or `sequence` value also does not replace the study-owned sequence/X

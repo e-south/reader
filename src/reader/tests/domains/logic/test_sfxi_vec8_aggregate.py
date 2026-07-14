@@ -277,7 +277,7 @@ def test_sfxi_vec8_aggregate_requires_design_id_without_genotype_alias(tmp_path:
 
 
 @pytest.mark.parametrize("missing_column", ["time_selected_h", "reference_design_id", "r_logic", "flat_logic"])
-def test_direct_table_sources_require_vec8_v2_provenance_columns(tmp_path: Path, missing_column: str) -> None:
+def test_direct_table_sources_require_vec8_v3_provenance_columns(tmp_path: Path, missing_column: str) -> None:
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).drop(columns=[missing_column]).to_csv(path, index=False)
 
@@ -295,7 +295,7 @@ def test_direct_table_sources_require_vec8_v2_provenance_columns(tmp_path: Path,
         ("flat_logic", "not-a-bool", "boolean values"),
     ],
 )
-def test_direct_table_sources_validate_vec8_v2_provenance_values(
+def test_direct_table_sources_validate_vec8_v3_provenance_values(
     tmp_path: Path, column: str, bad_value: object, message: str
 ) -> None:
     path = tmp_path / "bad_vec8.csv"

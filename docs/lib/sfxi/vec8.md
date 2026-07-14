@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-vec8-contract
 surface: library-reference
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-14
 summary: Reader-owned SFXI vec8 input, selection, calculation, output, and failure contract.
 ---
 
@@ -58,9 +58,9 @@ metadata; it is not downstream sequence authority.
 
 `time_selected_h` is elapsed acquisition time. The vec8 contract does not
 record a stress-induction event and must not be described as stress-relative.
-The two-sheet transition in the cited SFXI experiments is not interpreted here.
-See the [plate-reader response-window analysis](../plate_reader/response_window.md)
-for event-relative assay summaries under a separate public contract.
+Workbook segment transitions are acquisition provenance, not stress events.
+Return to [plate-reader metric outputs](../plate_reader/metric_outputs.md) when
+choosing an event-relative analysis contract.
 
 Reader selects a snapshot independently for the logic and intensity channels:
 

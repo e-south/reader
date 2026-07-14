@@ -2,7 +2,7 @@
 doc_id: reader-notebooks-guide
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-14
 summary: Reader marimo notebook workflow, template selection, component ownership, and live-review checks.
 ---
 
@@ -115,11 +115,11 @@ Notes:
 * `reader notebook` manages Marimo runtime state under `.cache/marimo/` in the repo. It uses clean repo-local XDG and Matplotlib cache directories instead of leaking into user-global Marimo state.
 * `reader notebook` reuses an existing Reader-managed session for the same notebook only when the notebook file and Reader runtime fingerprint match. If either has drifted, it restarts the stale session instead of silently attaching to it.
 * It also prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
-* Use `--mode none` to scaffold without launching Marimo, `--mode run` to launch a read-only app, and `--headless` when an agent or browser automation should attach to the printed loopback URL.
+* Use `--mode none` to scaffold without launching Marimo, `--mode run` to launch the notebook as an app without the editor, and `--headless` when an agent or browser automation should attach to the printed loopback URL.
 * Use `--port <n>` only when you need a fixed loopback port. Otherwise let `reader` choose a clean port starting at `2718`.
 * For agent review, the low-friction path is:
   - `uv run reader notebook <config> --mode run --headless`
-  - open the printed URL in Chrome MCP
+  - open the printed URL in the in-app browser
   - or run `uv run marimo check <notebook.py>` for a static validation pass
 * Static HTML export is useful as an execution/shareability smoke check, but it is not an interaction check. Validate dropdowns, sliders, export buttons, and chart rerenders from a live `marimo run` app.
 * Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
@@ -129,7 +129,7 @@ Notes:
   - default selection uses the compiled notebook spec or the protocol default instead of hardcoded CLI branching
   - template applicability checks are declared on the template asset itself
 * `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
-* `notebook/sfxi_eda` reuses the neutral dual-reporter triptych for visualization, then layers SFXI-specific vec8 recomputation, reference anchoring, and XLSX/JSON export on top.
+* `notebook/sfxi_eda` reuses the neutral dual-reporter triptych for visualization, then layers a non-persistent SFXI vec8 recomputation and reference review on top. The typed `sfxi_vec8/vec8` record remains the handoff, and durable workbooks use `reader export`.
 * The SFXI template draws a neutral dashed acquisition-transition marker when
   `sheet_index` identifies a later workbook segment. This marker describes
   file provenance, not a biological intervention. Event-relative analyses
@@ -141,4 +141,6 @@ Notes:
 See the [Reader Marimo reference](./marimo_reference.md) for reactive,
 performance, progressive-disclosure, and figure-description rules. See
 [SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md) for the vec8 pipeline and
-SFXI notebook boundary.
+SFXI notebook boundary. See
+[Plate-reader metric outputs](../lib/plate_reader/metric_outputs.md) when an
+experiment may support more than one analysis output.

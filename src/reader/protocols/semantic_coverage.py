@@ -310,14 +310,13 @@ def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSem
                 "protocol.inputs.target_time_h",
                 "protocol.inputs.time_tolerance_h",
             ),
-            note="The SFXI vec8 transform materializes the protocol control rule, summary window, metric, and ranking surface.",
+            note="The SFXI vec8 transform materializes the protocol control rule, summary window, and vector metric.",
         )
         overrides.update(
             {
                 "logic_corner_map": vec8_binding,
                 "summary_timepoint": vec8_binding,
                 "vec8": vec8_binding,
-                "ranking": vec8_binding,
             }
         )
     return _semantic_program(protocol, overrides=overrides)
