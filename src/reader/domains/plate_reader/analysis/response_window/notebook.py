@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from importlib.metadata import version
 from pathlib import Path
+
+_MARIMO_NOTEBOOK_FORMAT_VERSION = "0.23.14"
 
 
 def write_review_notebook(out_dir: Path) -> Path:
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
     path = root / "review.py"
-    source = _NOTEBOOK_SOURCE.replace("__MARIMO_VERSION__", version("marimo"))
+    source = _NOTEBOOK_SOURCE.replace("__MARIMO_VERSION__", _MARIMO_NOTEBOOK_FORMAT_VERSION)
     path.write_text(source, encoding="utf-8")
     if path.stat().st_size == 0:
         raise RuntimeError("generated response-window review notebook is empty.")

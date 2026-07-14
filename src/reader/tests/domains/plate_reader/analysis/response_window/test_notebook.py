@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reader.domains.plate_reader.analysis.response_window.notebook import write_review_notebook
+from reader.domains.plate_reader.analysis.response_window import notebook as response_window_notebook
 
 
 def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) -> None:
-    path = write_review_notebook(tmp_path)
+    path = response_window_notebook.write_review_notebook(tmp_path)
     source = path.read_text(encoding="utf-8")
 
     assert 'app = marimo.App(width="medium")' in source
@@ -35,3 +35,14 @@ def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) ->
     assert "Review how promoter growth and fluorescence trajectories after" in source
     assert "Response state `r_i`" not in source
     assert "Reader does not apply a campaign target mask or calculate an OPAL score" not in source
+
+
+def test_review_notebook_generation_does_not_query_marimo_distribution(monkeypatch, tmp_path: Path) -> None:
+    def unexpected_version_lookup(_distribution: str) -> str:
+        raise AssertionError("review notebook generation must not query optional distribution metadata")
+
+    monkeypatch.setattr(response_window_notebook, "version", unexpected_version_lookup, raising=False)
+
+    path = response_window_notebook.write_review_notebook(tmp_path)
+
+    assert '__generated_with = "0.23.14"' in path.read_text(encoding="utf-8")
