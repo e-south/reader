@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
 
 from reader.contracts import ContractCatalog
 
+from . import verification_manifest_contract as manifest_contract
+from .contracts import ResponseWindowRequest, load_response_window_request
 from .display import validate_display_manifest
 from .provenance import sha256_file
 from .verification_invariants import verify_record_invariants
+from .verification_request import verify_request_parity
+from .verification_source_catalog import verify_source_catalog
 
-BUNDLE_SCHEMA_VERSION = "reader.response_window.bundle.v3"
+BUNDLE_SCHEMA_VERSION = "reader.response_window.bundle.v4"
 RECORD_CONTRACTS = {
     "wells": "plate_reader.response_window.wells.v2",
     "designs": "plate_reader.response_window.designs.v2",
@@ -36,6 +41,7 @@ _REQUIRED_COUNT_KEYS = {
     "reductions",
     "plots",
 }
+_SHA256 = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 def verify_bundle_payload(
@@ -50,13 +56,16 @@ def verify_bundle_payload(
     if not manifest_path.is_file():
         raise FileNotFoundError(f"response-window manifest not found: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != BUNDLE_SCHEMA_VERSION:
+    if not isinstance(manifest, dict):
+        raise ValueError(f"response-window bundle must use {BUNDLE_SCHEMA_VERSION!r}.")
+    if manifest.get("schema_version") != BUNDLE_SCHEMA_VERSION:
         raise ValueError(f"response-window bundle must use {BUNDLE_SCHEMA_VERSION!r}.")
     if manifest.get("contracts") != RECORD_CONTRACTS:
         raise ValueError("response-window record contracts disagree with the public bundle contract.")
     if manifest.get("state_order") != ["00", "10", "01", "11"]:
         raise ValueError("response-window bundle must declare state order [00, 10, 01, 11].")
     display = validate_display_manifest(manifest.get("display"))
+    manifest_contract.require_manifest_fields(manifest)
     expected_records = {
         record_id: {"contract_id": RECORD_CONTRACTS[record_id], "artifact_id": artifact_id}
         for record_id, artifact_id in RECORD_ARTIFACTS.items()
@@ -64,14 +73,15 @@ def verify_bundle_payload(
     if manifest.get("records") != expected_records:
         raise ValueError("response-window record artifact map disagrees with the public bundle contract.")
     artifacts = _verify_artifacts(bundle_root, manifest)
-    _verify_request_record(manifest, artifacts)
+    request = _verify_request_record(bundle_root, manifest, artifacts)
     required = (*RECORD_ARTIFACTS.values(), "request.yaml", "review.py", "tables/plot_manifest.csv")
     for artifact_id in required:
         if artifact_id not in artifacts:
             raise RuntimeError(f"response-window bundle lacks required artifact {artifact_id!r}.")
     counts = _integer_counts(manifest)
     frames = _verify_record_frames(bundle_root, counts, contracts=contracts)
-    _verify_source_records(manifest, counts, artifacts)
+    source_records = _verify_source_records(bundle_root, manifest, counts, artifacts)
+    verify_request_parity(manifest, request, frames=frames, source_records=source_records)
     verify_record_invariants(
         root=bundle_root,
         manifest=manifest,
@@ -83,10 +93,15 @@ def verify_bundle_payload(
     return manifest_path, manifest, counts
 
 
-def _verify_request_record(manifest: dict[str, object], artifacts: dict[str, dict[str, object]]) -> None:
+def _verify_request_record(
+    root: Path,
+    manifest: dict[str, object],
+    artifacts: dict[str, dict[str, object]],
+) -> ResponseWindowRequest:
     request = manifest.get("request")
     if not isinstance(request, dict):
         raise ValueError("response-window bundle lacks request provenance.")
+    manifest_contract.require_request_provenance_fields(request)
     artifact_id = request.get("artifact_id")
     if artifact_id != "request.yaml":
         raise ValueError("response-window request provenance must reference bundled request.yaml.")
@@ -95,6 +110,7 @@ def _verify_request_record(manifest: dict[str, object], artifacts: dict[str, dic
         raise ValueError("response-window request provenance lacks a valid sha256 digest.")
     if artifacts.get("request.yaml", {}).get("sha256") != digest:
         raise ValueError("response-window request digest disagrees with bundled request.yaml.")
+    return load_response_window_request(root / "request.yaml")
 
 
 def _verify_artifacts(root: Path, manifest: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -105,6 +121,7 @@ def _verify_artifacts(root: Path, manifest: dict[str, object]) -> dict[str, dict
     for artifact_id, raw in raw_artifacts.items():
         if not isinstance(artifact_id, str) or not isinstance(raw, dict):
             raise RuntimeError("response-window artifact metadata must use string keys and mappings.")
+        manifest_contract.require_artifact_fields(raw)
         relative = raw.get("path")
         size = raw.get("bytes")
         digest = raw.get("sha256")
@@ -159,10 +176,11 @@ def _verify_record_frames(
 
 
 def _verify_source_records(
+    root: Path,
     manifest: dict[str, object],
     counts: dict[str, int],
     artifacts: dict[str, dict[str, object]],
-) -> None:
+) -> tuple[dict[str, object], ...]:
     records = manifest.get("source_records")
     if not isinstance(records, list) or len(records) != counts["experiments"]:
         raise ValueError("response-window source-record provenance must match the experiment count.")
@@ -170,6 +188,7 @@ def _verify_source_records(
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("experiment_id"), str):
             raise ValueError("response-window source-record provenance is malformed.")
+        manifest_contract.require_source_record_fields(record)
         for field in ("config_artifact", "records_artifact"):
             artifact_id = record.get(field)
             if not isinstance(artifact_id, str) or artifact_id not in artifacts:
@@ -177,15 +196,18 @@ def _verify_source_records(
         digests = record.get("records")
         if not isinstance(digests, dict) or not digests:
             raise ValueError("response-window source-record provenance lacks record digests.")
+        manifest_contract.require_record_digest_keys(digests)
         if any(not _is_sha256(value) for value in digests.values()):
             raise ValueError("response-window source-record provenance contains an invalid digest.")
+        verify_source_catalog(root / str(record["records_artifact"]), digests)
         experiment_ids.append(str(record["experiment_id"]))
     if len(experiment_ids) != len(set(experiment_ids)):
         raise ValueError("response-window source-record experiment identities are not unique.")
+    return tuple(records)
 
 
 def _is_sha256(value: object) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) == 71
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
 
 
 __all__ = [

@@ -97,6 +97,12 @@ def _build_staged_bundle(
     objective_overlay_path: Path | None,
 ) -> None:
     bindings = load_promoter_candidate_bindings(bindings_root)
+    response_study_id = response_bundle.manifest.get("study_id")
+    if bindings.study_id != response_study_id:
+        raise ValueError(
+            "promoter-evidence study identity mismatch: "
+            f"response_window={response_study_id!r}, candidate_bindings={bindings.study_id!r}."
+        )
     binding = bindings.resolve(design_id)
     designs, _wells, traces, events = load_review_tables(response_bundle.root)
     selected = selected_handoff_row(
@@ -180,7 +186,10 @@ def _manifest(
         "sources": {
             "response_window": {
                 "schema_version": response_bundle.manifest["schema_version"],
+                "study_id": response_bundle.manifest["study_id"],
                 "request_id": response_bundle.manifest["request_id"],
+                "experiment_id": experiment_id,
+                "reduction_id": reduction_id,
                 "manifest_sha256": sha256_file(response_bundle.manifest_path),
             },
             "candidate_bindings": {
@@ -230,6 +239,9 @@ def _overlay_record(overlay: ObjectiveDisplayOverlay) -> dict[str, object]:
         "schema_version": OBJECTIVE_OVERLAY_SCHEMA_VERSION,
         "objective_id": overlay.objective_id,
         "claim_status": overlay.claim_status,
+        "experiment_id": overlay.experiment_id,
+        "reader_design_id": overlay.reader_design_id,
+        "reduction_id": overlay.reduction_id,
         "manifest_sha256": overlay.manifest_sha256,
         "components": [
             {

@@ -75,6 +75,7 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         assert sequence.get_title(loc="left") == "F  DenseGen TFBS annotation"
         assert sequence.get_subplotspec().colspan.start == 0
         assert sequence.get_subplotspec().colspan.stop == 3
+        assert abs(sequence.get_ylim()[1] - sequence.get_ylim()[0]) < 80
         assert mcolors.to_hex(figure.get_facecolor()) == "#ffffff"
         assert all(mcolors.to_hex(axis.get_facecolor()) == "#ffffff" for axis in figure.axes)
         assert figure._suptitle is not None
@@ -89,7 +90,7 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
             "Event-time sensitivity",
         }
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
-        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v1"
+        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v2"
     finally:
         plt.close(figure)
 
@@ -145,9 +146,11 @@ class _FakeBaseRender:
             ],
         }
         assert kwargs["adapter_kind"] == "densegen_tfbs"
-        assert kwargs["target_height_px"] == 430
+        assert kwargs["target_height_px"] == 310
+        image = np.full((80, 400, 4), 255, dtype=np.uint8)
+        image[20:60, 50:350, :3] = 0
         return SimpleNamespace(
-            image=np.full((80, 400, 4), 255, dtype=np.uint8),
+            image=image,
             diagnostics=SimpleNamespace(
                 contract_id="dnadesign.baserender.sequence_panel.v1",
                 contract_version="1",

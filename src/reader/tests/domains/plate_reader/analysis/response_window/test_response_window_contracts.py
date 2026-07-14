@@ -9,7 +9,8 @@ from reader.domains.plate_reader.analysis.response_window.contracts import (
 
 def _payload() -> dict[str, object]:
     return {
-        "schema_version": "reader.response_window.request.v2",
+        "schema_version": "reader.response_window.request.v3",
+        "study_id": "stress_ethanol_cipro_growth",
         "request_id": "stress-response-window-v1",
         "experiment_ids": ["20260101_example", "20260102_example"],
         "state_order": ["00", "10", "01", "11"],
@@ -39,8 +40,6 @@ def _payload() -> dict[str, object]:
             "response_record_id": "ratio_response/df",
             "magnitude_record_id": "ratio_magnitude/df",
             "trajectory_record_id": "annotated/df",
-            "reference_authority_record_id": "reference/df",
-            "reference_authority_contract_id": "sfxi.vec8.v3",
             "response_channel": "response_ratio",
             "magnitude_channel": "magnitude_ratio",
             "growth_channel": "growth",
@@ -108,6 +107,7 @@ def test_request_parses_explicit_contract() -> None:
     request = ResponseWindowRequest.from_mapping(_payload())
 
     assert request.primary_reduction.id == "event_logmean_6_12h_post"
+    assert request.study_id == "stress_ethanol_cipro_growth"
     assert request.state_order == ("00", "10", "01", "11")
     assert request.source.reference_design_id == "reference"
     assert request.source.state_map_ref == "stress_states"
@@ -115,6 +115,23 @@ def test_request_parses_explicit_contract() -> None:
     assert request.quality.max_interior_gap_h == 0.75
     assert request.display.state_labels["01"] == "Ciprofloxacin"
     assert request.display.reference_anchor.design_id == "reference"
+
+
+def test_request_rejects_blank_study_identity() -> None:
+    payload = _payload()
+    payload["study_id"] = " "
+
+    with pytest.raises(ValueError, match="study_id"):
+        ResponseWindowRequest.from_mapping(payload)
+
+
+def test_request_rejects_metric_specific_reference_authority_fields() -> None:
+    payload = _payload()
+    payload["source"]["reference_authority_record_id"] = "sfxi_vec8/vec8"  # type: ignore[index]
+    payload["source"]["reference_authority_contract_id"] = "sfxi.vec8.v3"  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="unknown fields"):
+        ResponseWindowRequest.from_mapping(payload)
 
 
 def test_request_rejects_implicit_or_reordered_state_ontology() -> None:

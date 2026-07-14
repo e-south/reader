@@ -8,6 +8,8 @@ from reader.domains.promoter.candidate_bindings import PromoterCandidateBinding
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}")
 _FIELDS = {
+    "reader_design_id",
+    "candidate_id",
     "sequence_sha256",
     "sequence_authority_dataset_id",
     "sequence_authority_id",
@@ -27,6 +29,8 @@ def selected_binding_record(binding: PromoterCandidateBinding) -> dict[str, obje
     """Project binding provenance without exporting the canonical sequence."""
 
     return {
+        "reader_design_id": binding.reader_design_id,
+        "candidate_id": binding.candidate_id,
         "sequence_sha256": "sha256:" + binding.sequence_sha256,
         "sequence_authority_dataset_id": binding.sequence_authority_dataset_id,
         "sequence_authority_id": binding.sequence_authority_id,
@@ -45,6 +49,8 @@ def verify_selected_binding(
     value: object,
     *,
     baserender_adapter_kind: object,
+    reader_design_id: str,
+    candidate_id: str,
 ) -> None:
     """Verify exact selected-binding provenance and adapter-specific null policy."""
 
@@ -59,6 +65,10 @@ def verify_selected_binding(
         or value["binding_method"] != "exact_alias"
     ):
         raise ValueError("promoter-evidence selected-binding provenance is malformed.")
+    if value["reader_design_id"] != reader_design_id:
+        raise ValueError("promoter-evidence selection design disagrees with selected binding.")
+    if value["candidate_id"] != candidate_id:
+        raise ValueError("promoter-evidence selection candidate disagrees with selected binding.")
     if baserender_adapter_kind == "densegen_tfbs":
         if any(not _is_nonempty(value[field]) for field in _DENSEGEN_FIELDS):
             raise ValueError("DenseGen promoter evidence requires selected-binding plan, run, and library provenance.")

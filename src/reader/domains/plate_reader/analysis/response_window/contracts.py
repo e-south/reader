@@ -12,7 +12,7 @@ import yaml
 
 from .display import ResponseWindowDisplaySpec
 
-REQUEST_SCHEMA_VERSION = "reader.response_window.request.v2"
+REQUEST_SCHEMA_VERSION = "reader.response_window.request.v3"
 
 ReductionMethod = Literal["geometric_time_mean", "integrated_linear_mean"]
 ResponseBasis = Literal["post_window", "post_minus_pre"]
@@ -65,8 +65,6 @@ class ResponseSourceSpec:
     response_record_id: str
     magnitude_record_id: str
     trajectory_record_id: str
-    reference_authority_record_id: str
-    reference_authority_contract_id: str
     response_channel: str
     magnitude_channel: str
     growth_channel: str
@@ -79,8 +77,6 @@ class ResponseSourceSpec:
             "response_record_id",
             "magnitude_record_id",
             "trajectory_record_id",
-            "reference_authority_record_id",
-            "reference_authority_contract_id",
             "response_channel",
             "magnitude_channel",
             "growth_channel",
@@ -242,6 +238,7 @@ class QualitySpec:
 @dataclass(frozen=True)
 class ResponseWindowRequest:
     schema_version: str
+    study_id: str
     request_id: str
     experiment_ids: tuple[str, ...]
     state_order: tuple[str, str, str, str]
@@ -260,6 +257,7 @@ class ResponseWindowRequest:
     def from_mapping(cls, value: object) -> ResponseWindowRequest:
         fields = {
             "schema_version",
+            "study_id",
             "request_id",
             "experiment_ids",
             "state_order",
@@ -306,6 +304,7 @@ class ResponseWindowRequest:
             raise ValueError("display reference anchor must match source.reference_design_id.")
         return cls(
             schema_version=schema,
+            study_id=_nonempty(payload["study_id"], context="study_id"),
             request_id=_nonempty(payload["request_id"], context="request_id"),
             experiment_ids=experiment_ids,
             state_order=state_order,

@@ -127,7 +127,6 @@ def _load_source(
         source_spec.response_record_id,
         source_spec.magnitude_record_id,
         source_spec.trajectory_record_id,
-        source_spec.reference_authority_record_id,
     }
     records = {record_id: store.read_dataframe(record_id) for record_id in sorted(record_ids)}
     for record in records.values():

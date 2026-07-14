@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 
 from reader.domains.plate_reader.analysis.response_window import bundle as bundle_module
 from reader.domains.plate_reader.analysis.response_window.provenance import sha256_file
@@ -16,6 +17,7 @@ from reader.response_window import (
     verify_response_window_bundle,
 )
 from reader.runtime import builtin_runtime
+from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
 
 
 def test_verify_bundle_enforces_record_and_artifact_contracts(tmp_path: Path) -> None:
@@ -60,6 +62,18 @@ def test_verify_bundle_rejects_cross_table_state_drift(tmp_path: Path) -> None:
         verify_response_window_bundle(root)
 
 
+def test_verify_bundle_rejects_one_conflicting_well_reduction_row(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    path = root / RECORD_ARTIFACTS["wells"]
+    wells = pd.read_parquet(path)
+    wells.loc[wells.index[0], "reduction_method"] = "integrated_linear_mean"
+    wells.to_parquet(path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["wells"])
+
+    with pytest.raises(ValueError, match="conflicting semantics"):
+        verify_response_window_bundle(root)
+
+
 def test_verify_bundle_rejects_missing_display_contract(tmp_path: Path) -> None:
     root = _bundle_fixture(tmp_path)
     manifest_path = root / "manifest.json"
@@ -68,6 +82,157 @@ def test_verify_bundle_rejects_missing_display_contract(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="bundle.display"):
+        verify_response_window_bundle(root)
+
+
+def test_verify_bundle_rejects_study_identity_drift(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["study_id"] = "another_promoter_study"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="study identity"):
+        verify_response_window_bundle(root)
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        ("manifest", "manifest fields"),
+        ("request", "request provenance fields"),
+        ("artifact", "artifact metadata fields"),
+        ("source_record", "source-record fields"),
+        ("record_digest", "source record identities"),
+    ],
+)
+def test_verify_bundle_rejects_unknown_contract_fields(tmp_path: Path, target: str, message: str) -> None:
+    root = _bundle_fixture(tmp_path)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if target == "manifest":
+        manifest["unexpected_field"] = "value"
+    elif target == "request":
+        manifest["request"]["unexpected_digest"] = "sha256:" + "a" * 64
+    elif target == "artifact":
+        manifest["artifacts"]["request.yaml"]["unexpected_digest"] = "sha256:" + "a" * 64
+    elif target == "source_record":
+        manifest["source_records"][0]["unexpected_alias"] = "design"
+    else:
+        digest = "sha256:" + "a" * 64
+        manifest["source_records"][0]["records"]["unexpected/df"] = digest
+        catalog_path = root / "sources" / "experiment" / "records.json"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog["latest"]["unexpected/df"] = {
+            "record_id": "unexpected/df",
+            "contract_id": "plate_reader.annotated.v1",
+            "content_digest": digest,
+        }
+        catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+        _refresh_artifact_manifest(root, "sources/experiment/records.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) | {
+            "source_records": manifest["source_records"]
+        }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        verify_response_window_bundle(root)
+
+
+@pytest.mark.parametrize(
+    ("drift", "message"),
+    [
+        ("experiment_ids", "experiment identities"),
+        ("source_record_ids", "source record identities"),
+        ("event_id", "event identity"),
+        ("event_kind", "event kind"),
+        ("event_declaration", "event declaration"),
+        ("reduction_set", "reduction semantics"),
+        ("reduction_method", "reduction semantics"),
+        ("reduction_window", "reduction semantics"),
+        ("replicate_stat", "aggregation semantics"),
+        ("bootstrap_samples", "aggregation semantics"),
+        ("confidence_level", "aggregation semantics"),
+        ("positive_floor", "positive floor"),
+        ("max_interior_gap_h", "interior-gap limit"),
+        ("min_replicates_per_state", "replicate minimum"),
+    ],
+)
+def test_verify_bundle_rejects_request_payload_drift(tmp_path: Path, drift: str, message: str) -> None:
+    root = _bundle_fixture(tmp_path)
+    request_path = root / "request.yaml"
+    request = yaml.safe_load(request_path.read_text(encoding="utf-8"))
+    if drift == "experiment_ids":
+        request["experiment_ids"] = ["different-experiment"]
+    elif drift == "source_record_ids":
+        request["source"]["response_record_id"] = "different/response"
+    elif drift == "event_id":
+        request["event"]["event_id"] = "different-event"
+    elif drift == "event_kind":
+        request["event"]["event_kind"] = "different-kind"
+    elif drift == "event_declaration":
+        request["event"]["declaration"] = "A different event declaration."
+    elif drift == "reduction_set":
+        request["reductions"].append(
+            {
+                "id": "sensitivity",
+                "window_start_event_h": 1.0,
+                "window_end_event_h": 2.0,
+                "method": "integrated_linear_mean",
+                "response_basis": "post_window",
+                "role": "sensitivity",
+            }
+        )
+    elif drift == "reduction_method":
+        request["reductions"][0]["method"] = "integrated_linear_mean"
+    elif drift == "reduction_window":
+        request["reductions"][0]["window_start_event_h"] = 1.25
+    elif drift == "replicate_stat":
+        request["aggregation"]["replicate_stat"] = "mean"
+    elif drift == "bootstrap_samples":
+        request["aggregation"]["bootstrap_samples"] = 101
+    elif drift == "confidence_level":
+        request["aggregation"]["confidence_level"] = 0.9
+    elif drift == "positive_floor":
+        request["quality"]["positive_floor"] = 2.0
+    elif drift == "max_interior_gap_h":
+        request["quality"]["max_interior_gap_h"] = 0.25
+    else:
+        request["quality"]["min_replicates_per_state"] = 3
+    request_path.write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
+    _refresh_artifact_manifest(root, "request.yaml")
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["request"]["sha256"] = manifest["artifacts"]["request.yaml"]["sha256"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        verify_response_window_bundle(root)
+
+
+@pytest.mark.parametrize(
+    ("drift", "message"),
+    [
+        ("selected_record_id", "record identity"),
+        ("selected_contract", "record contract"),
+        ("selected_digest", "record digest"),
+    ],
+)
+def test_verify_bundle_rejects_source_catalog_drift(tmp_path: Path, drift: str, message: str) -> None:
+    root = _bundle_fixture(tmp_path)
+    catalog_path = root / "sources" / "experiment" / "records.json"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    selected = catalog["latest"]["ratio_response/df"]
+    if drift == "selected_record_id":
+        selected["record_id"] = "different/response"
+    elif drift == "selected_contract":
+        selected["contract_id"] = "tidy.v1"
+    else:
+        selected["content_digest"] = "sha256:" + "f" * 64
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    _refresh_artifact_manifest(root, "sources/experiment/records.json")
+
+    with pytest.raises(ValueError, match=message):
         verify_response_window_bundle(root)
 
 
@@ -92,7 +257,7 @@ def test_bundle_build_removes_staging_directory_on_interrupt(tmp_path: Path, mon
     assert list(tmp_path.glob(".latest.staging-*")) == []
 
 
-def _bundle_fixture(tmp_path: Path) -> Path:
+def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_growth") -> Path:
     root = tmp_path / "bundle"
     (root / "tables").mkdir(parents=True)
     (root / "plots").mkdir()
@@ -100,10 +265,66 @@ def _bundle_fixture(tmp_path: Path) -> Path:
     frames = _record_frames()
     for record_id, artifact_id in RECORD_ARTIFACTS.items():
         frames[record_id].to_parquet(root / artifact_id, index=False)
-    (root / "request.yaml").write_text("schema_version: reader.response_window.request.v2\n", encoding="utf-8")
+    request = _payload()
+    request["study_id"] = study_id
+    request["request_id"] = "test-request"
+    request["experiment_ids"] = ["experiment"]
+    request["display"] = {
+        "study_label": "Example response study",
+        "event_label": "Stress addition",
+        "state_labels": {
+            "00": "No stress",
+            "10": "Ethanol",
+            "01": "Ciprofloxacin",
+            "11": "Ethanol + ciprofloxacin",
+        },
+        "examples": [
+            {"design_id": "reference", "label": "Reference anchor", "role": "reference_anchor"},
+            {"design_id": "design", "label": "Response example", "role": "response_example"},
+        ],
+    }
+    request["source"]["response_channel"] = "YFP/CFP"
+    request["source"]["magnitude_channel"] = "YFP/OD600"
+    request["source"]["growth_channel"] = "OD600"
+    request["event"]["event_id"] = "event"
+    request["event"]["declaration"] = "declared event"
+    request["reductions"] = [
+        {
+            "id": "primary",
+            "window_start_event_h": 1.0,
+            "window_end_event_h": 2.0,
+            "method": "geometric_time_mean",
+            "response_basis": "post_window",
+            "role": "primary",
+        }
+    ]
+    request["aggregation"] = {
+        "replicate_stat": "median",
+        "bootstrap_samples": 100,
+        "confidence_level": 0.95,
+        "random_seed": 17,
+    }
+    (root / "request.yaml").write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
     (root / "review.py").write_text("import marimo\n", encoding="utf-8")
     (root / "sources" / "experiment" / "config.yaml").write_text("schema: reader/v7\n", encoding="utf-8")
-    (root / "sources" / "experiment" / "records.json").write_text("{}\n", encoding="utf-8")
+    source_digests = {
+        "annotated/df": "sha256:" + "1" * 64,
+        "ratio_magnitude/df": "sha256:" + "2" * 64,
+        "ratio_response/df": "sha256:" + "3" * 64,
+    }
+    source_catalog = {
+        "schema_version": 3,
+        "history": {},
+        "latest": {
+            record_id: {
+                "record_id": record_id,
+                "contract_id": "plate_reader.annotated.v1",
+                "content_digest": digest,
+            }
+            for record_id, digest in source_digests.items()
+        },
+    }
+    (root / "sources" / "experiment" / "records.json").write_text(json.dumps(source_catalog), encoding="utf-8")
     (root / "plots" / "test.png").write_bytes(b"png")
     pd.DataFrame(
         [
@@ -125,7 +346,9 @@ def _bundle_fixture(tmp_path: Path) -> Path:
     request_digest = artifacts["request.yaml"]["sha256"]
     manifest = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
+        "study_id": study_id,
         "request_id": "test-request",
+        "created_at": "2026-07-14T00:00:00+00:00",
         "request": {"artifact_id": "request.yaml", "sha256": request_digest},
         "state_order": ["00", "10", "01", "11"],
         "display": _display(),
@@ -137,10 +360,10 @@ def _bundle_fixture(tmp_path: Path) -> Path:
         },
         "counts": {
             "experiments": 1,
-            "well_rows": 8,
+            "well_rows": 16,
             "design_rows": 2,
-            "bootstrap_draw_rows": 2,
-            "trace_rows": 24,
+            "bootstrap_draw_rows": 200,
+            "trace_rows": 48,
             "unique_design_ids": 2,
             "repeated_design_ids": 0,
             "reductions": 1,
@@ -151,7 +374,7 @@ def _bundle_fixture(tmp_path: Path) -> Path:
                 "experiment_id": "experiment",
                 "config_artifact": "sources/experiment/config.yaml",
                 "records_artifact": "sources/experiment/records.json",
-                "records": {"record": "sha256:" + "1" * 64},
+                "records": source_digests,
             }
         ],
         "artifacts": artifacts,
@@ -167,11 +390,20 @@ def _record_frames() -> dict[str, pd.DataFrame]:
     traces: list[dict[str, object]] = []
     for design_id, is_reference in (("reference", True), ("design", False)):
         designs.append(_design_row(design_id, is_reference=is_reference))
-        draws.append(_draw_row(design_id, is_reference=is_reference))
+        draws.extend(_draw_row(design_id, draw_index=index, is_reference=is_reference) for index in range(100))
         for state in ("00", "10", "01", "11"):
-            wells.append(_well_row(design_id, state=state, is_reference=is_reference))
-            for signal_kind in ("response", "magnitude", "growth"):
-                traces.append(_trace_row(design_id, state=state, signal_kind=signal_kind, is_reference=is_reference))
+            for position in ("A1", "A2"):
+                wells.append(_well_row(design_id, state=state, position=position, is_reference=is_reference))
+                for signal_kind in ("response", "magnitude", "growth"):
+                    traces.append(
+                        _trace_row(
+                            design_id,
+                            state=state,
+                            position=position,
+                            signal_kind=signal_kind,
+                            is_reference=is_reference,
+                        )
+                    )
     return {
         "wells": pd.DataFrame(wells),
         "designs": pd.DataFrame(designs),
@@ -196,12 +428,12 @@ def _record_frames() -> dict[str, pd.DataFrame]:
     }
 
 
-def _well_row(design_id: str, *, state: str, is_reference: bool) -> dict[str, object]:
+def _well_row(design_id: str, *, state: str, position: str, is_reference: bool) -> dict[str, object]:
     row: dict[str, object] = {
         "experiment_id": "experiment",
         "design_id": design_id,
         "state": state,
-        "position": "A1",
+        "position": position,
         "response_well": 0.1,
         "magnitude_well": 0.2,
         "reduction_id": "primary",
@@ -233,7 +465,7 @@ def _design_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
         "response_basis": "post_window",
         "reduction_role": "primary",
         "replicate_stat": "median",
-        "bootstrap_samples": 1,
+        "bootstrap_samples": 100,
         "confidence_level": 0.95,
         "event_id": "event",
         "event_time_estimate_assay_h": 1.25,
@@ -241,7 +473,7 @@ def _design_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
         "window_start_event_h": 1.0,
         "window_end_event_h": 2.0,
         "is_reference": is_reference,
-        "min_replicates_per_state": 1,
+        "min_replicates_per_state": 2,
         "min_observed_points_per_trace": 3,
         "max_interior_gap_h": 0.5,
         "min_pre_observed_points_per_trace": 0,
@@ -255,16 +487,16 @@ def _design_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
             row[f"{prefix}{state}_ci_low"] = -0.1
             row[f"{prefix}{state}_ci_high"] = 0.1
             row[f"{prefix}{state}_event_half_range"] = 0.05
-        row[f"n{state}"] = 1
+        row[f"n{state}"] = 2
     return row
 
 
-def _draw_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
+def _draw_row(design_id: str, *, draw_index: int, is_reference: bool) -> dict[str, object]:
     row: dict[str, object] = {
         "experiment_id": "experiment",
         "design_id": design_id,
         "reduction_id": "primary",
-        "draw_index": 0,
+        "draw_index": draw_index,
         "is_reference": is_reference,
     }
     for index, state in enumerate(("00", "10", "01", "11")):
@@ -273,11 +505,18 @@ def _draw_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
     return row
 
 
-def _trace_row(design_id: str, *, state: str, signal_kind: str, is_reference: bool) -> dict[str, object]:
+def _trace_row(
+    design_id: str,
+    *,
+    state: str,
+    position: str,
+    signal_kind: str,
+    is_reference: bool,
+) -> dict[str, object]:
     return {
         "experiment_id": "experiment",
         "design_id": design_id,
-        "position": "A1",
+        "position": position,
         "state": state,
         "time": 1.25,
         "time_from_event_h": 0.0,

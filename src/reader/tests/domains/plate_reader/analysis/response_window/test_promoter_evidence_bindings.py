@@ -45,6 +45,14 @@ def test_load_candidate_bindings_accepts_the_declared_manifest_resource(tmp_path
     assert bindings.resolve("spyP").candidate_id == "candidate-spyp"
 
 
+def test_load_candidate_bindings_preserves_the_issuing_study_identity(tmp_path: Path) -> None:
+    root = _write_binding_fixture(tmp_path, study_id="another_promoter_study")
+
+    bindings = load_promoter_candidate_bindings(root)
+
+    assert bindings.study_id == "another_promoter_study"
+
+
 def test_reader_selects_only_reader_design_namespace(tmp_path: Path) -> None:
     root = _write_binding_fixture(tmp_path)
     frame = pd.read_parquet(root / "bindings.parquet")
@@ -272,7 +280,12 @@ def test_candidate_bindings_reject_unsafe_manifest_source_references(tmp_path: P
         load_promoter_candidate_bindings(root)
 
 
-def _write_binding_fixture(tmp_path: Path, *, reader_design_id: str = "spyP") -> Path:
+def _write_binding_fixture(
+    tmp_path: Path,
+    *,
+    reader_design_id: str = "spyP",
+    study_id: str = "stress_ethanol_cipro_growth",
+) -> Path:
     root = tmp_path / "bindings"
     root.mkdir()
     sequence = "ACGTACGT"
@@ -310,7 +323,7 @@ def _write_binding_fixture(tmp_path: Path, *, reader_design_id: str = "spyP") ->
         {
             b"schema_id": BINDING_SCHEMA_ID.encode(),
             b"schema_version": b"1",
-            b"study_id": b"stress_ethanol_cipro_growth",
+            b"study_id": study_id.encode(),
             b"record_id": b"promoter_candidate_bindings/bindings",
         }
     )
@@ -318,7 +331,7 @@ def _write_binding_fixture(tmp_path: Path, *, reader_design_id: str = "spyP") ->
     manifest = {
         "schema_id": BINDING_SCHEMA_ID,
         "schema_version": "1",
-        "study_id": "stress_ethanol_cipro_growth",
+        "study_id": study_id,
         "created_at": "2026-07-13T00:00:00+00:00",
         "record": {
             "record_id": "promoter_candidate_bindings/bindings",
@@ -339,17 +352,17 @@ def _write_binding_fixture(tmp_path: Path, *, reader_design_id: str = "spyP") ->
 
 def _rewrite_binding_table(root: Path, frame: pd.DataFrame) -> None:
     table_path = root / "bindings.parquet"
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     table = pa.Table.from_pandas(frame, preserve_index=False).replace_schema_metadata(
         {
             b"schema_id": BINDING_SCHEMA_ID.encode(),
             b"schema_version": b"1",
-            b"study_id": b"stress_ethanol_cipro_growth",
+            b"study_id": str(manifest["study_id"]).encode(),
             b"record_id": b"promoter_candidate_bindings/bindings",
         }
     )
     pq.write_table(table, table_path)
-    manifest_path = root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["record"]["sha256"] = sha256_file(table_path).removeprefix("sha256:")
     manifest["record"]["row_count"] = len(frame)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")

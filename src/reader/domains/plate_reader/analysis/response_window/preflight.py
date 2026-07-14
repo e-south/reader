@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .contracts import load_response_window_request
+from .materialize import materialize_experiment
 from .provenance import sha256_file
 from .sources import ExperimentSource, ExperimentSourceLoader
 
@@ -30,6 +31,7 @@ class ExperimentPreflight:
 @dataclass(frozen=True)
 class ResponseWindowPreflight:
     ready: bool
+    study_id: str
     request_id: str
     request_path: Path
     request_sha256: str
@@ -59,6 +61,8 @@ def preflight_response_window_request(
     sources = tuple(
         source_loader(experiment_id, request.source, request.event) for experiment_id in request.experiment_ids
     )
+    for source in sources:
+        materialize_experiment(source, request=request)
     observed_design_ids = tuple(
         sorted({str(value) for source in sources for value in source.response["design_id"].unique()})
     )
@@ -66,6 +70,7 @@ def preflight_response_window_request(
     missing_examples = tuple(sorted(required_examples - set(observed_design_ids)))
     return ResponseWindowPreflight(
         ready=not missing_examples,
+        study_id=request.study_id,
         request_id=request.request_id,
         request_path=request_file,
         request_sha256=sha256_file(request_file),

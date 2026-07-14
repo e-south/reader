@@ -20,6 +20,7 @@ def test_response_window_modules_stay_bounded() -> None:
         "promoter_evidence_components.py": 220,
         "promoter_evidence_figure.py": 220,
         "promoter_evidence_overlay.py": 240,
+        "promoter_evidence_overlay_verification.py": 100,
         "promoter_evidence_selected_binding.py": 120,
         "promoter_evidence_verification.py": 260,
         "reporting.py": 190,
@@ -33,6 +34,10 @@ def test_response_window_modules_stay_bounded() -> None:
         "uncertainty.py": 120,
         "verification.py": 220,
         "verification_invariants.py": 200,
+        "verification_manifest_contract.py": 100,
+        "verification_request.py": 100,
+        "verification_request_payload.py": 180,
+        "verification_source_catalog.py": 80,
         "visual_labels.py": 150,
     }
     observed = {name: len((PACKAGE / name).read_text(encoding="utf-8").splitlines()) for name in limits}

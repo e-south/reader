@@ -37,6 +37,7 @@ def test_response_window_preflight_emits_machine_readable_readiness(monkeypatch,
     assert invocation.exit_code == 0
     payload = json.loads(invocation.output)
     assert payload["ready"] is True
+    assert payload["study_id"] == "stress_ethanol_cipro_growth"
     assert payload["experiments"][0]["event_time_uncertainty_h"] == 0.25
     assert payload["primary_reduction_id"] == "post_6_12h"
 
@@ -52,7 +53,8 @@ def test_response_window_verify_emits_bundle_contract(monkeypatch, tmp_path: Pat
 
     assert invocation.exit_code == 0
     payload = json.loads(invocation.output)
-    assert payload["schema_version"] == "reader.response_window.bundle.v3"
+    assert payload["schema_version"] == "reader.response_window.bundle.v4"
+    assert payload["study_id"] == "stress_ethanol_cipro_growth"
     assert payload["counts"] == {"experiments": 1, "plots": 5}
 
 
@@ -101,7 +103,7 @@ def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, t
 
     assert invocation.exit_code == 0
     payload = json.loads(invocation.output)
-    assert payload["schema_version"] == "reader.response_window.promoter_evidence_bundle.v1"
+    assert payload["schema_version"] == "reader.response_window.promoter_evidence_bundle.v2"
     assert payload["selection"]["candidate_id"] == "candidate"
     assert payload["png"] == str(bundle.png_path)
     assert payload["pdf"] == str(bundle.pdf_path)
@@ -125,10 +127,11 @@ def _preflight(tmp_path: Path) -> ResponseWindowPreflight:
     )
     return ResponseWindowPreflight(
         ready=True,
+        study_id="stress_ethanol_cipro_growth",
         request_id="stress-response-window-v1",
         request_path=tmp_path / "request.yaml",
         request_sha256="sha256:" + "2" * 64,
-        schema_version="reader.response_window.request.v2",
+        schema_version="reader.response_window.request.v3",
         state_order=("00", "10", "01", "11"),
         primary_reduction_id="post_6_12h",
         reduction_ids=("post_6_12h", "post_8_14h"),
@@ -144,7 +147,8 @@ def _bundle(tmp_path: Path) -> ResponseWindowBundle:
         manifest_path=tmp_path / "manifest.json",
         notebook_path=tmp_path / "review.py",
         manifest={
-            "schema_version": "reader.response_window.bundle.v3",
+            "schema_version": "reader.response_window.bundle.v4",
+            "study_id": "stress_ethanol_cipro_growth",
             "request_id": "stress-response-window-v1",
         },
         counts={"experiments": 1, "plots": 5},
@@ -159,7 +163,7 @@ def _promoter_bundle(tmp_path: Path) -> PromoterEvidenceBundle:
         png_path=root / "promoter_evidence.png",
         pdf_path=root / "promoter_evidence.pdf",
         manifest={
-            "schema_version": "reader.response_window.promoter_evidence_bundle.v1",
+            "schema_version": "reader.response_window.promoter_evidence_bundle.v2",
             "claim_status": "objective_neutral",
             "selection": {
                 "experiment_id": "experiment",

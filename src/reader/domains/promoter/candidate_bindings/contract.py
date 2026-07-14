@@ -7,7 +7,6 @@ from pathlib import Path
 
 BINDING_SCHEMA_ID = "dnadesign.study.promoter_candidate_bindings.v1"
 BINDING_SCHEMA_VERSION = "1"
-BINDING_STUDY_ID = "stress_ethanol_cipro_growth"
 BINDING_ARTIFACT_ID = "bindings.parquet"
 BINDING_RECORD_ID = "promoter_candidate_bindings/bindings"
 READER_ALIAS_NAMESPACE = "reader.design_id"
@@ -101,7 +100,6 @@ __all__ = [
     "BINDING_RECORD_ID",
     "BINDING_SCHEMA_ID",
     "BINDING_SCHEMA_VERSION",
-    "BINDING_STUDY_ID",
     "READER_ALIAS_NAMESPACE",
     "PromoterCandidateBinding",
     "PromoterCandidateBindings",

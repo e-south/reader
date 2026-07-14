@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +13,7 @@ from .promoter_evidence_bundle_contract import (
     PROMOTER_EVIDENCE_NON_CLAIM,
     PromoterEvidenceBundle,
 )
-from .promoter_evidence_overlay import OBJECTIVE_OVERLAY_SCHEMA_VERSION
+from .promoter_evidence_overlay_verification import verify_overlay_record
 from .promoter_evidence_selected_binding import verify_selected_binding
 from .provenance import sha256_file
 
@@ -50,13 +49,15 @@ def verify_promoter_evidence_bundle(path: Path) -> PromoterEvidenceBundle:
         raise ValueError("promoter-evidence bundle has an unsupported claim status.")
     if manifest["non_claim_boundary"] != PROMOTER_EVIDENCE_NON_CLAIM:
         raise ValueError("promoter-evidence bundle must preserve its objective-neutral claim boundary.")
-    _verify_selection(manifest["selection"])
-    _verify_sources(manifest["sources"])
+    selection = _verify_selection(manifest["selection"])
+    _verify_sources(manifest["sources"], selection=selection)
     verify_selected_binding(
         manifest["selected_binding"],
         baserender_adapter_kind=manifest["sources"]["baserender"]["adapter_kind"],
+        reader_design_id=selection["design_id"],
+        candidate_id=selection["candidate_id"],
     )
-    _verify_overlay_record(manifest["objective_overlay"], claim_status=claim_status)
+    verify_overlay_record(manifest["objective_overlay"], claim_status=claim_status, selection=selection)
     artifacts = manifest["artifacts"]
     if not isinstance(artifacts, dict) or set(artifacts) != set(PROMOTER_EVIDENCE_ARTIFACT_IDS):
         raise ValueError(f"promoter-evidence artifacts must be exactly {sorted(PROMOTER_EVIDENCE_ARTIFACT_IDS)}.")
@@ -94,24 +95,43 @@ def _verify_artifact(root: Path, artifact_id: str, value: object) -> None:
         raise ValueError("promoter-evidence PNG signature is invalid.")
 
 
-def _verify_selection(value: object) -> None:
+def _verify_selection(value: object) -> dict[str, str]:
     fields = {"experiment_id", "design_id", "candidate_id", "reduction_id"}
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError(f"promoter-evidence selection fields must be exactly {sorted(fields)}.")
     if any(not isinstance(item, str) or not item.strip() for item in value.values()):
         raise ValueError("promoter-evidence selection values must be non-empty strings.")
+    return {str(key): str(item) for key, item in value.items()}
 
 
-def _verify_sources(value: object) -> None:
+def _verify_sources(value: object, *, selection: dict[str, str]) -> None:
     if not isinstance(value, dict) or set(value) != {"response_window", "candidate_bindings", "baserender"}:
         raise ValueError("promoter-evidence sources must name response_window, candidate_bindings, and baserender.")
     response = value["response_window"]
     binding = value["candidate_bindings"]
     baserender = value["baserender"]
-    if not isinstance(response, dict) or set(response) != {"schema_version", "request_id", "manifest_sha256"}:
+    if not isinstance(response, dict) or set(response) != {
+        "schema_version",
+        "study_id",
+        "request_id",
+        "experiment_id",
+        "reduction_id",
+        "manifest_sha256",
+    }:
         raise ValueError("promoter-evidence response-window source metadata is malformed.")
-    if response["schema_version"] != "reader.response_window.bundle.v3" or not _is_sha256(response["manifest_sha256"]):
-        raise ValueError("promoter-evidence source must be a verified response-window bundle v3.")
+    if (
+        response["schema_version"] != "reader.response_window.bundle.v4"
+        or not _is_nonempty_text(response["study_id"])
+        or not _is_nonempty_text(response["request_id"])
+        or not _is_nonempty_text(response["experiment_id"])
+        or not _is_nonempty_text(response["reduction_id"])
+        or not _is_sha256(response["manifest_sha256"])
+    ):
+        raise ValueError("promoter-evidence source must be a verified response-window bundle v4.")
+    if response["experiment_id"] != selection["experiment_id"]:
+        raise ValueError("promoter-evidence selection experiment disagrees with response-window source.")
+    if response["reduction_id"] != selection["reduction_id"]:
+        raise ValueError("promoter-evidence selection reduction disagrees with response-window source.")
     binding_fields = {
         "schema_id",
         "schema_version",
@@ -126,10 +146,12 @@ def _verify_sources(value: object) -> None:
     if (
         binding["schema_id"] != "dnadesign.study.promoter_candidate_bindings.v1"
         or binding["schema_version"] != "1"
-        or binding["study_id"] != "stress_ethanol_cipro_growth"
+        or not _is_nonempty_text(binding["study_id"])
         or any(not _is_sha256(binding[key]) for key in binding if key.endswith("sha256"))
     ):
         raise ValueError("promoter-evidence source must be the supported candidate-binding contract.")
+    if binding["study_id"] != response["study_id"]:
+        raise ValueError("promoter-evidence source study identities disagree.")
     diagnostic_fields = {
         "contract_id",
         "contract_version",
@@ -165,53 +187,6 @@ def _verify_sources(value: object) -> None:
         raise ValueError("promoter-evidence BaseRender diagnostics contain invalid values.")
 
 
-def _verify_overlay_record(value: object, *, claim_status: str) -> None:
-    if value is None:
-        if claim_status != "objective_neutral":
-            raise ValueError("non-neutral promoter evidence requires an objective overlay record.")
-        return
-    fields = {
-        "schema_version",
-        "objective_id",
-        "claim_status",
-        "manifest_sha256",
-        "components",
-    }
-    if not isinstance(value, dict) or set(value) != fields:
-        raise ValueError(f"promoter-evidence objective overlay fields must be exactly {sorted(fields)}.")
-    if (
-        value["schema_version"] != OBJECTIVE_OVERLAY_SCHEMA_VERSION
-        or not _is_nonempty_text(value["objective_id"])
-        or value["claim_status"] != claim_status
-        or claim_status == "objective_neutral"
-        or not _is_sha256(value["manifest_sha256"])
-    ):
-        raise ValueError("promoter-evidence objective overlay identity or claim status is invalid.")
-    _verify_components(value["components"])
-
-
-def _verify_components(value: object) -> None:
-    if not isinstance(value, list) or not 1 <= len(value) <= 6:
-        raise ValueError(
-            "promoter-evidence objective overlay components must contain between one and six raw components."
-        )
-    fields = {"component_id", "label", "value", "unit"}
-    ids: list[str] = []
-    for component in value:
-        if (
-            not isinstance(component, dict)
-            or set(component) != fields
-            or not _is_nonempty_text(component["component_id"])
-            or not _is_nonempty_text(component["label"])
-            or not _is_nonempty_text(component["unit"])
-            or not _is_finite(component["value"])
-        ):
-            raise ValueError("promoter-evidence objective component is malformed.")
-        ids.append(component["component_id"])
-    if len(ids) != len(set(ids)):
-        raise ValueError("promoter-evidence objective component identities must be unique.")
-
-
 def _created_at(value: object) -> None:
     if not isinstance(value, str):
         raise ValueError("promoter-evidence created_at must be an ISO-8601 timestamp.")
@@ -229,10 +204,6 @@ def _is_sha256(value: object) -> bool:
 
 def _is_nonempty_text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
-
-
-def _is_finite(value: object) -> bool:
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value))
 
 
 def _is_int_at_least(value: object, minimum: int) -> bool:

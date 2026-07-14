@@ -22,7 +22,6 @@ from .contract import (
     BINDING_RECORD_ID,
     BINDING_SCHEMA_ID,
     BINDING_SCHEMA_VERSION,
-    BINDING_STUDY_ID,
     READER_ALIAS_NAMESPACE,
     PromoterCandidateBindings,
 )
@@ -62,21 +61,17 @@ def load_promoter_candidate_bindings(source: Path) -> PromoterCandidateBindings:
     }
     if set(manifest) != fields:
         raise ValueError(f"Promoter candidate-binding manifest fields must be exactly {sorted(fields)}.")
-    if (
-        manifest["schema_id"] != BINDING_SCHEMA_ID
-        or str(manifest["schema_version"]) != BINDING_SCHEMA_VERSION
-        or manifest["study_id"] != BINDING_STUDY_ID
-    ):
+    if manifest["schema_id"] != BINDING_SCHEMA_ID or str(manifest["schema_version"]) != BINDING_SCHEMA_VERSION:
         raise ValueError(
-            f"Promoter candidate bindings must use {BINDING_SCHEMA_ID!r} at version "
-            f"{BINDING_SCHEMA_VERSION!r} for study {BINDING_STUDY_ID!r}."
+            f"Promoter candidate bindings must use {BINDING_SCHEMA_ID!r} at version {BINDING_SCHEMA_VERSION!r}."
         )
+    study_id = _nonempty(manifest["study_id"], context="binding manifest.study_id")
     _created_at(manifest["created_at"])
     _verify_baserender_contract(manifest["baserender_contract"])
     record_id, records_path, records_sha256, expected_rows = _record(manifest["record"], root=root)
     candidate_table_id, candidate_selection_sha256 = _candidate_table(manifest["candidate_table"])
     source_artifacts = _source_artifacts(manifest["source_artifacts"])
-    _verify_parquet_metadata(records_path)
+    _verify_parquet_metadata(records_path, study_id=study_id)
     frame = pd.read_parquet(records_path)
     if tuple(frame.columns) != BINDING_COLUMNS:
         raise ValueError(f"Promoter candidate-binding columns must be exactly {list(BINDING_COLUMNS)}.")
@@ -107,7 +102,7 @@ def load_promoter_candidate_bindings(source: Path) -> PromoterCandidateBindings:
         records_sha256="sha256:" + records_sha256,
         schema_id=BINDING_SCHEMA_ID,
         schema_version=BINDING_SCHEMA_VERSION,
-        study_id=BINDING_STUDY_ID,
+        study_id=study_id,
         record_id=record_id,
         candidate_table_id=candidate_table_id,
         candidate_selection_sha256=candidate_selection_sha256,
@@ -185,12 +180,12 @@ def _source_artifacts(value: object) -> tuple[dict[str, str], ...]:
     return tuple(result)
 
 
-def _verify_parquet_metadata(path: Path) -> None:
+def _verify_parquet_metadata(path: Path, *, study_id: str) -> None:
     metadata = pq.read_schema(path).metadata or {}
     expected = {
         b"schema_id": BINDING_SCHEMA_ID.encode(),
         b"schema_version": BINDING_SCHEMA_VERSION.encode(),
-        b"study_id": BINDING_STUDY_ID.encode(),
+        b"study_id": study_id.encode(),
         b"record_id": BINDING_RECORD_ID.encode(),
     }
     if any(metadata.get(key) != value for key, value in expected.items()):

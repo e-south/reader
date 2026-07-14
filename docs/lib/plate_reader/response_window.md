@@ -2,15 +2,19 @@
 doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-13
+last_verified: 2026-07-14
 summary: Reader contract for event-relative response and reference-relative fluorescence summaries.
 ---
 
 # Plate-reader response-window analysis
 
 `response-window` converts manifest-backed plate-reader trajectories into
-event-relative state summaries. It is independent of SFXI. Experiment names do
-not select the reduction contract; only the versioned request does.
+event-relative state summaries. Only the versioned request selects the source
+records, study identity, reference, event, and reductions. Experiment names and
+other analysis outputs do not select this contract.
+
+For the shared assay-record boundary and sibling analysis routes, see
+[Plate-reader metric outputs](metric_outputs.md).
 
 ## Public service
 
@@ -49,12 +53,14 @@ uv run reader response-window promoter-evidence-verify \
 
 The analysis Python facade is `reader.response_window`. Review and promoter
 evidence publication use `reader.response_window_review`.
-Both surfaces accept `reader.response_window.request.v2` and publish
-`reader.response_window.bundle.v3`. No downstream repository imports Reader
+Both surfaces accept `reader.response_window.request.v3` and publish
+`reader.response_window.bundle.v4`. No downstream repository imports Reader
 internals.
 
 `preflight` verifies request syntax, source contracts, artifact digests,
-intervention bounds, and configured review examples without writing a bundle.
+intervention bounds, and configured review examples. It also runs every
+declared reduction, aggregation, and QC check in memory without writing a
+bundle, so `ready: true` means the same measured payload can be built.
 `build` publishes atomically and verifies before returning. `verify` repeats the
 public bundle contract independently. `review` verifies first and then opens the
 generated notebook. JSON output is available on the non-interactive commands for
@@ -63,9 +69,10 @@ agents and automation.
 `promoter-evidence` first verifies the response-window bundle, then consumes a
 separate study-owned candidate-binding artifact. It publishes one white-canvas
 300-dpi PNG, one PDF, and a digest-bearing
-`reader.response_window.promoter_evidence_bundle.v1` manifest. Its verifier
+`reader.response_window.promoter_evidence_bundle.v2` manifest. Its verifier
 checks the claim boundary, source contract identities, artifact paths, byte
-counts, and digests independently.
+counts, digests, and exact experiment/design/candidate/reduction selection
+parity independently.
 The manifest also records the selected row's sequence-authority digest,
 source/design family, binding method, and adapter-specific DenseGen
 plan/run/library provenance. DenseGen fields are explicitly `null` for
@@ -78,7 +85,8 @@ resolution, well-level interpolation and reduction, replicate aggregation and
 joint bootstrap draws, same-state reference subtraction, QC, plots, and the
 review notebook.
 
-A downstream study owns treatment targets, candidate identity,
+A downstream study owns the request's study identity, treatment and event
+declarations, fluorescence reference, treatment targets, candidate identity,
 repeat-measurement aggregation across experiments, and label promotion. OPAL
 owns objective evaluation, model fitting, acquisition, and ledgers.
 
@@ -110,13 +118,14 @@ fluorescence_well(i) = (1 / 6 h) integral[6 h, 12 h]
 
 r_i = median(response_well(i))
 b_i = median(fluorescence_well_design(i))
-      - median(fluorescence_well_pDual-10(i))
+      - median(fluorescence_well_reference(i))
 ```
 
-Thus `b_i = 0` means the design and pDual-10 have equal reduced fluorescence
-in the same assay condition. Positive and negative values mean higher and
-lower fluorescence than pDual-10, respectively. The reference subtraction is
-state matched; no-stress reference values are not reused for stressed states.
+Thus `b_i = 0` means the design and declared reference have equal reduced
+fluorescence in the same assay condition. Positive and negative values mean
+higher and lower fluorescence than that reference, respectively. The reference
+subtraction is state matched; no-stress reference values are not reused for
+stressed states. The stress-study request names `pDual-10` as its reference.
 
 The stress-study binding maps the fixed state order as follows:
 
@@ -127,14 +136,14 @@ The stress-study binding maps the fixed state order as follows:
 | `01` | ciprofloxacin |
 | `11` | ethanol plus ciprofloxacin |
 
-The request must declare `state_order: [00, 10, 01, 11]`, an explicit
-`state_map_ref`, and a `reader.response_window.display.v1` vocabulary. The
-display block names each condition, the intervention, the fluorescence anchor,
-and the response examples used for review. Reader rejects missing examples,
-reordered or implicit state ontologies, and a display anchor that disagrees
-with the measurement reference. The
-configured reference design is also checked against a named, contract-validated
-authority record; mere presence on a plate is not reference authority.
+The request must declare `study_id`, `state_order: [00, 10, 01, 11]`, an
+explicit `state_map_ref`, the exact `reference_design_id`, and a
+`reader.response_window.display.v1` vocabulary. The display block names each
+condition, the intervention, the fluorescence reference, and the response
+examples used for review. The versioned request is the authority for that
+reference. Reader rejects missing examples, reordered or implicit state
+ontologies, a display reference that disagrees with the measurement reference,
+or a reference design absent from a selected magnitude record.
 
 ## Time and intervention
 
@@ -168,13 +177,17 @@ bounded, and ratios at or below the declared positive floor fail.
 | `tables/traces.parquet` | `plate_reader.response_window.traces.v2` | event-relative trace observation |
 | `tables/events.parquet` | `plate_reader.response_window.events.v2` | experiment event declaration |
 
-`manifest.json` records contract versions, source-record digests, request
-digest, row counts, and every artifact digest. The public verifier checks
-root-bounded artifact paths, exact Parquet schemas, row counts, condition
-coverage, cross-table identities, reduction semantics, reference identity,
-bootstrap counts, review-plot metadata, and artifact digests before returning a
-bundle. The normalized request and source config/catalog snapshots are bundled,
-so provenance remains checkable after the bundle moves.
+`manifest.json` records `study_id`, contract versions, source-record digests,
+the request digest, row counts, and every artifact digest. The public verifier
+requires manifest/request parity for study, request, experiment universe,
+state, display, reference, event, every reduction, replicate statistic,
+bootstrap count, confidence level, and persisted QC constraints. Selected
+source record IDs, contracts, and content digests must
+match each bundled Reader record catalog. It also checks root-bounded artifact
+paths, exact Parquet schemas, row counts, condition coverage, cross-table
+identities, bootstrap counts, review-plot metadata, and artifact digests before
+returning a bundle. The normalized request and source config/catalog snapshots
+are bundled, so provenance remains checkable after the bundle moves.
 
 ## Review evidence
 
@@ -198,12 +211,11 @@ declares a premise, decision value, rationale, alt text, and non-claim boundary.
 
 ## Promoter evidence composite
 
-The promoter-evidence composite is a new response-window surface, not an SFXI
-triptych variant. One viewport contains:
+The response-window promoter-evidence composite contains:
 
 1. an explicit header with experiment, reduction, candidate, and exact binding;
 2. growth, `log2(YFP/CFP)`, and `log2(YFP/OD600)` trajectories, including the
-   same-state pDual-10 fluorescence anchor;
+   same-state declared fluorescence reference;
 3. separate `r_i` and `b_i` dot-and-whisker panels, with bootstrap SD and
    event-time sensitivity drawn and labeled separately;
 4. an objective-neutral provenance and QC card; and
@@ -217,8 +229,7 @@ package, open a candidate table or USR dataset, infer an alias, or compute RMF.
 ### Candidate-binding input
 
 The required study artifact uses
-`dnadesign.study.promoter_candidate_bindings.v1` at version `1` for
-`stress_ethanol_cipro_growth`:
+`dnadesign.study.promoter_candidate_bindings.v1` at version `1`:
 
 ```text
 manifest.json
@@ -232,13 +243,15 @@ pair occurs exactly once, while several aliases may identify one candidate.
 Rows carry the canonical sequence and digest, candidate and sequence authority,
 BaseRender adapter fields, DenseGen or GenBank annotations, and explicit
 resolution status and method. Reader selects only the `reader.design_id`
-namespace and resolves one exact alias for the requested design.
+namespace and resolves one exact alias for the requested design. The binding
+manifest's `study_id` must equal the verified response-window bundle's
+`study_id`.
 
-The SFXI triptych may consume the same binding artifact for candidate and
-sequence context. That reuse shares study identity infrastructure only; it does
-not share reductions, vector names, plot contracts, or objective math. Model
-features and OPAL readiness are separate keyed contracts and are not fields in
-the candidate-binding artifact.
+Other assay outputs may consume the same binding artifact for candidate and
+sequence context. This shares study identity infrastructure, not reductions,
+vector names, plot contracts, or objective math. Model features and OPAL
+readiness are separate keyed contracts and are not fields in the
+candidate-binding artifact.
 
 Reader rejects missing or duplicated typed aliases, fuzzy resolution methods,
 candidate/sequence digest disagreement, unsupported adapters, extra columns,
@@ -258,15 +271,16 @@ derives, calibrates, or promotes them.
 
 ## Fail-fast boundary
 
-Materialization rejects incomplete state support, missing or unauthorized references,
-non-finite values, insufficient replicate or time coverage, duplicate reduction
-identities, and source-record drift. It does not infer treatment masks,
-candidate sequences, or an OPAL objective.
+Materialization rejects incomplete state support, missing or unauthorized
+references, non-finite values, insufficient replicate or time coverage,
+duplicate reduction identities, and source-record drift. It does not infer
+treatment masks, candidate sequences, or an OPAL objective.
 
 Promoter-evidence publication additionally rejects a response selection that
 does not resolve to exactly one design row, a binding whose Reader alias differs
-from that selection, an overlay whose experiment/design/reduction differs from
-the selection, and BaseRender diagnostics that disagree with the binding.
+from that selection, a binding issued for another study, an overlay whose
+experiment/design/reduction differs from the selection, and BaseRender
+diagnostics that disagree with the binding.
 
 ## Stress-study binding
 
@@ -274,6 +288,8 @@ The study request lives in dnadesign at
 `src/dnadesign/studies/units/stress_ethanol_cipro_growth/decision/opal/response_metastudy/config/reader_response_window.yaml`.
 It names eight existing experiments and five reductions. The primary reduction
 is the 6-12 hour post-event geometric log mean; adjacent windows, normalized
-linear AUC, and pre-window delta remain sensitivity analyses.
+linear AUC, and pre-window delta remain sensitivity analyses. The request
+declares `study_id: stress_ethanol_cipro_growth`; that identity must match the
+bundle manifest and any candidate-binding artifact used for promoter evidence.
 
 See [Reader-to-OPAL handoff](opal_handoff.md) for the cross-repository boundary.

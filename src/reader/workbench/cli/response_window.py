@@ -46,9 +46,12 @@ def verify_promoter_evidence_bundle(path: Path):
     return import_module("reader.response_window_review").verify_promoter_evidence_bundle(path)
 
 
-@response_window_app.command("preflight", help="Verify request syntax and every manifest-backed source record.")
+@response_window_app.command(
+    "preflight",
+    help="Verify sources and non-publishing reduction, aggregation, and QC readiness.",
+)
 def preflight(
-    request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v2 YAML file.")],
+    request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v3 YAML file.")],
     reader_root: Annotated[Path, typer.Option("--reader-root", help="Reader repository root.")] = Path("."),
     output_format: Annotated[
         str,
@@ -70,7 +73,7 @@ def preflight(
 
 @response_window_app.command("build", help="Materialize an atomic, verified response-window bundle.")
 def build(
-    request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v2 YAML file.")],
+    request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v3 YAML file.")],
     out_dir: Annotated[Path, typer.Option("--out-dir", help="Generated bundle destination.")],
     reader_root: Annotated[Path, typer.Option("--reader-root", help="Reader repository root.")] = Path("."),
     overwrite: Annotated[bool, typer.Option("--overwrite", help="Atomically replace an existing bundle.")] = False,
@@ -128,7 +131,7 @@ def review(
     help="Publish one objective-neutral response-window and sequence evidence figure.",
 )
 def promoter_evidence(
-    response_bundle_root: Annotated[Path, typer.Argument(help="Verified reader.response_window.bundle.v3 directory.")],
+    response_bundle_root: Annotated[Path, typer.Argument(help="Verified reader.response_window.bundle.v4 directory.")],
     bindings_root: Annotated[
         Path,
         typer.Argument(help="Verified study-issued promoter candidate-binding directory."),
@@ -187,6 +190,7 @@ def promoter_evidence_verify(
 def _emit_bundle(bundle: ResponseWindowBundle, *, output_format: str, heading: str) -> None:
     payload = {
         "schema_version": bundle.manifest["schema_version"],
+        "study_id": bundle.manifest["study_id"],
         "request_id": bundle.manifest["request_id"],
         "bundle_root": str(bundle.root),
         "manifest": str(bundle.manifest_path),
@@ -200,6 +204,7 @@ def _emit_bundle(bundle: ResponseWindowBundle, *, output_format: str, heading: s
     summary.add_column("Field", style="accent")
     summary.add_column("Value")
     summary.add_row("Request", str(payload["request_id"]))
+    summary.add_row("Study", str(payload["study_id"]))
     summary.add_row("Schema", str(payload["schema_version"]))
     summary.add_row("Bundle", str(bundle.root))
     summary.add_row("Notebook", str(bundle.notebook_path))

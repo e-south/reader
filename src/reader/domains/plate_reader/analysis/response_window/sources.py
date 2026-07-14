@@ -41,7 +41,6 @@ class ExperimentSource:
     response_path: Path
     magnitude_path: Path
     trajectory_path: Path
-    reference_authority_path: Path
     response: pd.DataFrame
     magnitude: pd.DataFrame
     trajectory: pd.DataFrame
@@ -80,7 +79,6 @@ def load_experiment_source(
         (source_spec.response_record_id, ANNOTATED_CONTRACT),
         (source_spec.magnitude_record_id, ANNOTATED_CONTRACT),
         (source_spec.trajectory_record_id, ANNOTATED_CONTRACT),
-        (source_spec.reference_authority_record_id, source_spec.reference_authority_contract_id),
     )
     record_paths: dict[str, Path] = {}
     digests: dict[str, str] = {}
@@ -150,18 +148,6 @@ def load_experiment_source(
     reference_id = source_spec.reference_design_id
     if reference_id not in set(magnitude["design_id"].astype(str)):
         raise ValueError(f"{experiment_id}: reference design {reference_id!r} is absent from magnitude records.")
-    reference_authority = pd.read_parquet(record_paths[source_spec.reference_authority_record_id])
-    contracts.validate(
-        reference_authority,
-        contract_id=source_spec.reference_authority_contract_id,
-        where=f"{experiment_id}:reference-authority",
-    )
-    authority_ids = set(reference_authority["reference_design_id"].astype(str))
-    if authority_ids != {reference_id}:
-        raise ValueError(
-            f"{experiment_id}: configured reference {reference_id!r} disagrees with "
-            f"authority record values {sorted(authority_ids)}."
-        )
 
     return ExperimentSource(
         experiment_id=experiment_id,
@@ -171,7 +157,6 @@ def load_experiment_source(
         response_path=record_paths[source_spec.response_record_id],
         magnitude_path=record_paths[source_spec.magnitude_record_id],
         trajectory_path=record_paths[source_spec.trajectory_record_id],
-        reference_authority_path=record_paths[source_spec.reference_authority_record_id],
         response=response,
         magnitude=magnitude,
         trajectory=trajectory,

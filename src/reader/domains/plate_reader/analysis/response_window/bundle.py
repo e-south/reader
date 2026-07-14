@@ -187,6 +187,7 @@ def _build_staged_bundle(
         }
     manifest = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
+        "study_id": request.study_id,
         "request_id": request.request_id,
         "state_order": list(request.state_order),
         "display": display,

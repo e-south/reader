@@ -12,9 +12,10 @@ from .sources import STATE_ORDER
 from .visual_labels import (
     STATE_COLORS,
     STATE_MARKERS,
-    anchored_fluorescence_axis_label,
+    channels,
     condition_ticks,
-    response_axis_label,
+    magnitude_ratio_label,
+    response_ratio_label,
 )
 
 
@@ -114,10 +115,16 @@ def draw_handoff_axis(
     axis.set_xticks(x, condition_ticks(display, width=11), fontsize=7.2)
     if prefix == "r":
         axis.set_title("D1  Response handoff, r_i", loc="left", fontsize=10, fontweight="semibold")
-        axis.set_ylabel(response_axis_label(display))
+        axis.set_ylabel(f"log2({response_ratio_label(display)})")
     else:
-        axis.set_title("D2  pDual-10-relative fluorescence, b_i", loc="left", fontsize=10, fontweight="semibold")
-        axis.set_ylabel(anchored_fluorescence_axis_label(display))
+        reference_id = channels(display)["reference_design_id"]
+        axis.set_title(
+            f"D2  {reference_id}-relative fluorescence, b_i",
+            loc="left",
+            fontsize=10,
+            fontweight="semibold",
+        )
+        axis.set_ylabel(f"{reference_id}-relative\nlog2({magnitude_ratio_label(display)})")
     style_data_axis(axis, grid_axis="y")
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from reader.domains.promoter.candidate_bindings import PromoterCandidateBinding
@@ -136,12 +137,14 @@ def _draw_sequence_axis(axis: plt.Axes, *, binding: PromoterCandidateBinding) ->
         binding,
         style_profile="promoter_compact_slide.v1",
         target_width_px=2200,
-        target_height_px=430,
+        target_height_px=310,
         vertical_anchor="center",
         canvas_top_pad_px=0,
     )
     diagnostics = rendered.diagnostics
-    axis.imshow(rendered.image)
+    image = np.asarray(rendered.image)
+    axis.imshow(image)
+    _focus_sequence_content(axis, image)
     axis.set_axis_off()
     title = {
         "densegen_tfbs": "F  DenseGen TFBS annotation",
@@ -149,6 +152,27 @@ def _draw_sequence_axis(axis: plt.Axes, *, binding: PromoterCandidateBinding) ->
     }[binding.baserender_adapter_kind]
     axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
     return diagnostics
+
+
+def _focus_sequence_content(axis: plt.Axes, image: np.ndarray) -> None:
+    """Remove BaseRender canvas padding without resampling sequence evidence."""
+
+    if image.ndim != 3 or image.shape[2] < 3:
+        return
+    visible = np.any(image[..., :3] < 248, axis=2)
+    if image.shape[2] >= 4:
+        visible &= image[..., 3] > 8
+    min_row_ink = max(12, int(round(image.shape[1] * 0.01)))
+    rows = np.flatnonzero(visible.sum(axis=1) >= min_row_ink)
+    if not len(rows):
+        rows = np.flatnonzero(visible.any(axis=1))
+    if not len(rows):
+        return
+    height = image.shape[0]
+    y_pad = max(8, int(round(height * 0.04)))
+    top = max(0, int(rows.min()) - y_pad)
+    bottom = min(height - 1, int(rows.max()) + y_pad)
+    axis.set_ylim(bottom + 0.5, top - 0.5)
 
 
 def _spaced(value: object) -> str:

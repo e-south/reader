@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-13
+last_verified: 2026-07-14
 summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
 ---
 
@@ -39,6 +39,9 @@ uv run reader response-window promoter-evidence-verify EVIDENCE --format json
 
 These commands consume published experiment records. They do not bypass the
 normal experiment pipeline or infer treatment semantics from file names.
+The response service accepts `reader.response_window.request.v3`, publishes
+`reader.response_window.bundle.v4`, and publishes promoter evidence under
+`reader.response_window.promoter_evidence_bundle.v2`.
 Promoter evidence additionally consumes an explicit, study-owned candidate
 binding; Reader does not open the study candidate table or calculate an OPAL
 objective. Its optional v1 objective overlay accepts screen-only raw components
@@ -473,7 +476,7 @@ uv run reader notebook CONFIG|DIR|INDEX --name EDA_custom.py
 Launch modes:
 
 - `--mode edit` (default): open Marimo editor
-- `--mode run`: run as a read-only app
+- `--mode run`: run as an app without the editor
 - `--mode none`: create only (no launch)
 - `--headless`: keep the server in the terminal and print a loopback URL for browser automation
 - `--port <n>`: request a specific loopback port instead of the reader-managed clean-port selection
@@ -484,7 +487,7 @@ Runtime notes:
 - It reuses a live reader-managed session for the same notebook only when the notebook file and Reader runtime fingerprint match.
 - If the notebook or runtime has drifted, it restarts the stale session instead of silently reusing it.
 - It prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
-- For agent review, prefer `--mode run --headless`, then open the printed URL in Chrome MCP.
+- For agent review, prefer `--mode run --headless`, then open the printed URL in the in-app browser.
 - Static HTML export can catch execution failures, but it does not validate live widget behavior. Use a served Marimo app for dropdown, slider, export-button, and chart-rerender checks.
 
 See templates:

@@ -65,10 +65,13 @@ def test_build_promoter_evidence_publishes_white_png_pdf_and_digest_manifest(
         "candidate_id": "candidate-spyp",
         "reduction_id": "primary",
     }
-    assert manifest["sources"]["response_window"]["schema_version"] == "reader.response_window.bundle.v3"
+    assert manifest["sources"]["response_window"]["schema_version"] == "reader.response_window.bundle.v4"
+    assert manifest["sources"]["response_window"]["study_id"] == "stress_ethanol_cipro_growth"
     assert manifest["sources"]["candidate_bindings"]["schema_id"] == ("dnadesign.study.promoter_candidate_bindings.v1")
     assert manifest["sources"]["candidate_bindings"]["study_id"] == "stress_ethanol_cipro_growth"
     assert manifest["selected_binding"] == {
+        "reader_design_id": "design",
+        "candidate_id": "candidate-spyp",
         "sequence_sha256": "sha256:" + hashlib.sha256(b"ACGTACGT").hexdigest(),
         "sequence_authority_dataset_id": "source-dataset",
         "sequence_authority_id": "source-row-1",
@@ -114,9 +117,55 @@ def test_build_promoter_evidence_records_a_study_supplied_screen_only_overlay(
         "schema_version",
         "objective_id",
         "claim_status",
+        "experiment_id",
+        "reader_design_id",
+        "reduction_id",
         "manifest_sha256",
         "components",
     }
+
+
+def test_promoter_evidence_preserves_any_issuing_study_identity(tmp_path: Path, monkeypatch) -> None:
+    response_root = _bundle_fixture(tmp_path, study_id="another_promoter_study")
+    binding_root = _write_binding_fixture(
+        tmp_path,
+        reader_design_id="design",
+        study_id="another_promoter_study",
+    )
+    out_dir = tmp_path / "other-study-evidence"
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        out_dir=out_dir,
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+
+    verified = verify_promoter_evidence_bundle(out_dir)
+    assert verified.manifest["sources"]["candidate_bindings"]["study_id"] == "another_promoter_study"
+
+
+def test_promoter_evidence_rejects_binding_from_another_study(tmp_path: Path, monkeypatch) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(
+        tmp_path,
+        reader_design_id="design",
+        study_id="another_promoter_study",
+    )
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    with pytest.raises(ValueError, match="study identity"):
+        build_promoter_evidence_bundle(
+            response_bundle_root=response_root,
+            bindings_root=binding_root,
+            out_dir=tmp_path / "mismatched-study-evidence",
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+        )
 
 
 def test_genbank_evidence_records_explicit_null_densegen_provenance(tmp_path: Path, monkeypatch) -> None:
@@ -186,6 +235,14 @@ def test_promoter_evidence_verifier_rejects_artifact_and_claim_drift(
         ("selected_binding_method", "selected-binding provenance"),
         ("selected_densegen_missing", "requires selected-binding"),
         ("selected_adapter_mismatch", "null DenseGen"),
+        ("selected_candidate", "selection candidate"),
+        ("source_experiment", "selection experiment"),
+        ("source_reduction", "selection reduction"),
+        ("overlay_selection", "overlay selection"),
+        ("selection_candidate", "selection candidate"),
+        ("selection_design", "selection design"),
+        ("selection_experiment", "selection experiment"),
+        ("selection_reduction", "selection reduction"),
         ("overlay_too_many", "between one and six"),
         ("overlay_empty_objective", "identity or claim status"),
         ("overlay_empty_label", "component is malformed"),
@@ -234,6 +291,22 @@ def test_promoter_evidence_verifier_rejects_semantic_manifest_drift(
         manifest["selected_binding"]["densegen_plan"] = None
     elif drift == "selected_adapter_mismatch":
         manifest["sources"]["baserender"]["adapter_kind"] = "usr_genbank_annotations_v1"
+    elif drift == "selected_candidate":
+        manifest["selected_binding"]["candidate_id"] = "different-candidate"
+    elif drift == "source_experiment":
+        manifest["sources"]["response_window"]["experiment_id"] = "different-experiment"
+    elif drift == "source_reduction":
+        manifest["sources"]["response_window"]["reduction_id"] = "different-reduction"
+    elif drift == "overlay_selection":
+        manifest["objective_overlay"]["reader_design_id"] = "different-design"
+    elif drift == "selection_candidate":
+        manifest["selection"]["candidate_id"] = "different-candidate"
+    elif drift == "selection_design":
+        manifest["selection"]["design_id"] = "different-design"
+    elif drift == "selection_experiment":
+        manifest["selection"]["experiment_id"] = "different-experiment"
+    elif drift == "selection_reduction":
+        manifest["selection"]["reduction_id"] = "different-reduction"
     elif drift == "overlay_too_many":
         manifest["objective_overlay"]["components"] *= 7
     elif drift == "overlay_empty_objective":
