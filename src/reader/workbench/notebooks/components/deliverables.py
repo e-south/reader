@@ -99,14 +99,18 @@ def _dataframe_row(record: DataFrameArtifactRecord, *, outputs_dir: Path) -> dic
 
 def _file_rows(record: FileBundleRecord, *, outputs_dir: Path) -> list[dict[str, Any]]:
     descriptions_by_path = {item.path: item.description for item in record.path_descriptions}
+    bundle_description = record.description or "Description unavailable in this record."
     rows = []
     for path in record.files:
+        description = (
+            descriptions_by_path.get(path, bundle_description) if record.producer.kind == "plot" else bundle_description
+        )
         rows.append(
             {
                 "Record ID": record.record_id,
                 "Producer": _producer_label(record),
                 "Plugin": record.producer.plugin or "",
-                "Description": descriptions_by_path[path] if record.producer.kind == "plot" else record.description,
+                "Description": description,
                 "File": path.name,
                 "Path": _display_path(path, outputs_dir=outputs_dir),
                 "Exists": _exists_label(path),

@@ -18,7 +18,7 @@ import pytest
 from reader.contracts import builtin_contract_catalog
 from reader.errors import ContractError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
-from reader.workbench.records import PathDescription, RecordStore, discover_dataframe_records
+from reader.workbench.records import FileBundleRecord, PathDescription, RecordStore, discover_dataframe_records
 
 
 def test_records_catalog_invalid_json_raises(tmp_path) -> None:
@@ -75,6 +75,26 @@ def test_record_payload_unknown_schema_version_raises(tmp_path) -> None:
 
     with pytest.raises(RecordError, match="record payload schema_version must be 3"):
         store.read_record("ingest/df")
+
+
+@pytest.mark.parametrize("schema_version", [None, "4", 5, []])
+def test_file_bundle_record_rejects_unknown_or_malformed_schema_version(tmp_path, schema_version) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    payload = {
+        "schema_version": schema_version,
+        "record_id": "plot:qc",
+        "kind": "file_bundle",
+    }
+    catalog = {
+        "schema_version": 3,
+        "latest": {"plot:qc": payload},
+        "history": {"plot:qc": [payload]},
+    }
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    with pytest.raises(RecordError, match="file-bundle record payload schema_version must be one of"):
+        store.read_record("plot:qc")
 
 
 def test_record_payload_rejects_ambiguous_provenance_input(tmp_path) -> None:
@@ -143,6 +163,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
         "Grouped time-series traces for the configured channels and treatment groups."
     )
     persisted = json.loads(store.records_path.read_text(encoding="utf-8"))
+    assert persisted["latest"]["plot:qc_plot"]["schema_version"] == 4
     assert persisted["latest"]["plot:qc_plot"]["description"] == bundle.description
     assert persisted["latest"]["plot:qc_plot"]["path_descriptions"] == [
         {
@@ -309,11 +330,39 @@ def test_plot_file_bundle_rejects_invalid_path_description_coverage(tmp_path, de
         )
 
 
-def test_file_bundle_without_description_is_rejected(tmp_path) -> None:
+def test_v3_file_bundle_without_descriptions_remains_readable(tmp_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     payload = {
         "schema_version": 3,
+        "record_id": "plot:unannotated",
+        "kind": "file_bundle",
+        "producer": {"kind": "plot", "id": "unannotated", "plugin": "plot/time_series"},
+        "created_at": "2026-07-10T00:00:00+00:00",
+        "inputs": [],
+        "config_digest": "sha256:unannotated",
+        "files": ["plots/unannotated.png"],
+    }
+    catalog = {
+        "schema_version": 3,
+        "latest": {"plot:unannotated": payload},
+        "history": {"plot:unannotated": [payload]},
+    }
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    record = store.read_record("plot:unannotated")
+
+    assert isinstance(record, FileBundleRecord)
+    assert record.schema_version == 3
+    assert record.description is None
+    assert record.path_descriptions == ()
+
+
+def test_v4_file_bundle_without_description_is_rejected(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    payload = {
+        "schema_version": 4,
         "record_id": "plot:unannotated",
         "kind": "file_bundle",
         "producer": {"kind": "plot", "id": "unannotated", "plugin": "plot/time_series"},

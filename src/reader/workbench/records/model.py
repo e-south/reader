@@ -12,6 +12,10 @@ from reader.errors import RecordError
 from reader.workbench.graph import ProvenanceInput, provenance_input_from_dict, provenance_input_to_dict
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 
+DATAFRAME_RECORD_SCHEMA_VERSION = 3
+FILE_BUNDLE_RECORD_SCHEMA_VERSION = 4
+_SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS = frozenset({3, FILE_BUNDLE_RECORD_SCHEMA_VERSION})
+
 
 @dataclass(frozen=True)
 class RecordRecipeSource:
@@ -133,19 +137,32 @@ class PathDescription:
 @dataclass(frozen=True)
 class FileBundleRecord(WorkbenchRecord):
     files: tuple[Path, ...]
-    description: str
+    description: str | None
     path_descriptions: tuple[PathDescription, ...] = ()
+    schema_version: int = FILE_BUNDLE_RECORD_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if self.kind != "file_bundle":
             raise RecordError(f"FileBundleRecord must use kind 'file_bundle', got {self.kind!r}")
+        if (
+            not isinstance(self.schema_version, int)
+            or self.schema_version not in _SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS
+        ):
+            raise RecordError(
+                "FileBundleRecord schema_version must be one of "
+                f"{sorted(_SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS)} (got {self.schema_version!r})"
+            )
         if not self.files:
             raise RecordError("FileBundleRecord must contain at least one file")
-        object.__setattr__(
-            self,
-            "description",
-            _normalized_description(self.description, where="FileBundleRecord description"),
-        )
+        if self.description is None:
+            if self.schema_version == FILE_BUNDLE_RECORD_SCHEMA_VERSION:
+                raise RecordError("FileBundleRecord description must be a non-empty string")
+        else:
+            object.__setattr__(
+                self,
+                "description",
+                _normalized_description(self.description, where="FileBundleRecord description"),
+            )
         try:
             path_descriptions = tuple(self.path_descriptions)
         except TypeError as exc:
@@ -153,7 +170,11 @@ class FileBundleRecord(WorkbenchRecord):
         if any(not isinstance(item, PathDescription) for item in path_descriptions):
             raise RecordError("FileBundleRecord path description entries must be PathDescription values")
         object.__setattr__(self, "path_descriptions", path_descriptions)
-        if self.producer.kind == "plot" and not path_descriptions:
+        if (
+            self.schema_version == FILE_BUNDLE_RECORD_SCHEMA_VERSION
+            and self.producer.kind == "plot"
+            and not path_descriptions
+        ):
             raise RecordError("plot file bundles must describe every file")
         described_paths = [item.path for item in path_descriptions]
         duplicate_paths = sorted(
@@ -225,7 +246,9 @@ def _encode_path(path: Path, *, outputs_dir: Path) -> str:
 
 def record_to_dict(record: DataFrameArtifactRecord | FileBundleRecord, *, outputs_dir: Path) -> dict[str, Any]:
     base = {
-        "schema_version": 3,
+        "schema_version": (
+            DATAFRAME_RECORD_SCHEMA_VERSION if isinstance(record, DataFrameArtifactRecord) else record.schema_version
+        ),
         "record_id": record.record_id,
         "kind": record.kind,
         "producer": record.producer.to_dict(),
@@ -244,7 +267,8 @@ def record_to_dict(record: DataFrameArtifactRecord | FileBundleRecord, *, output
         )
         return base
     base["files"] = [_encode_path(path, outputs_dir=outputs_dir) for path in record.files]
-    base["description"] = record.description
+    if record.description is not None:
+        base["description"] = record.description
     if record.path_descriptions:
         base["path_descriptions"] = [
             {
@@ -260,8 +284,6 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
     if not isinstance(payload, dict):
         raise RecordError("record payload must be a JSON object")
     schema_version = payload.get("schema_version")
-    if schema_version != 3:
-        raise RecordError(f"record payload schema_version must be 3 (got {schema_version!r})")
     record_id = payload.get("record_id")
     kind = payload.get("kind")
     producer_payload = payload.get("producer")
@@ -272,6 +294,17 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
         raise RecordError("record payload must include non-empty string 'record_id'")
     if kind not in {"dataframe_artifact", "file_bundle"}:
         raise RecordError(f"record {record_id!r} has unknown kind {kind!r}")
+    if kind == "dataframe_artifact" and schema_version != DATAFRAME_RECORD_SCHEMA_VERSION:
+        raise RecordError(
+            f"record payload schema_version must be {DATAFRAME_RECORD_SCHEMA_VERSION} (got {schema_version!r})"
+        )
+    if kind == "file_bundle" and (
+        not isinstance(schema_version, int) or schema_version not in _SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS
+    ):
+        raise RecordError(
+            "file-bundle record payload schema_version must be one of "
+            f"{sorted(_SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS)} (got {schema_version!r})"
+        )
     if not isinstance(producer_payload, dict):
         raise RecordError(f"record {record_id!r} must include producer metadata")
     producer_kind = producer_payload.get("kind")
@@ -343,8 +376,12 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
     if not isinstance(files, list) or any(not isinstance(item, str) or not item for item in files):
         raise RecordError(f"record {record_id!r} must include non-empty string file paths")
     description = payload.get("description")
-    if not isinstance(description, str) or not description.strip():
+    if schema_version == FILE_BUNDLE_RECORD_SCHEMA_VERSION and (
+        not isinstance(description, str) or not description.strip()
+    ):
         raise RecordError(f"file-bundle record {record_id!r} must include a non-empty description")
+    if description is not None and not isinstance(description, str):
+        raise RecordError(f"file-bundle record {record_id!r} description must be a string when provided")
     path_descriptions_payload = payload.get("path_descriptions", [])
     if not isinstance(path_descriptions_payload, list):
         raise RecordError(f"record {record_id!r} path_descriptions must be a list when provided")
@@ -371,5 +408,6 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
         config_digest=config_digest,
         files=tuple(_decode_path(path, outputs_dir=outputs_dir) for path in files),
         description=description,
+        schema_version=schema_version,
         path_descriptions=tuple(path_descriptions),
     )

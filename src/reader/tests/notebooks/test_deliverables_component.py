@@ -104,7 +104,7 @@ def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_note
     assert deliverables.notebook_rows[0]["Path"] == "notebooks/EDA_20260708.py"
 
 
-def test_collect_notebook_deliverables_rejects_descriptorless_plot_catalog(tmp_path: Path) -> None:
+def test_collect_notebook_deliverables_reports_descriptorless_v3_plot_catalog(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
     runtime = builtin_runtime()
     store = runtime.record_store(outputs)
@@ -128,9 +128,18 @@ def test_collect_notebook_deliverables_rejects_descriptorless_plot_catalog(tmp_p
 
     deliverables = collect_notebook_deliverables(outputs)
 
-    assert deliverables.plot_rows == ()
-    assert deliverables.issue_rows[0]["Surface"] == "records"
-    assert "plot file bundles must describe every file" in deliverables.issue_rows[0]["Issue"]
+    assert deliverables.plot_rows == (
+        {
+            "Record ID": "plot:missing_descriptions",
+            "Producer": "plot:missing_descriptions",
+            "Plugin": "plot/time_series",
+            "Description": "Bundle-level description only.",
+            "File": "missing_descriptions.png",
+            "Path": "plots/missing_descriptions.png",
+            "Exists": "no",
+        },
+    )
+    assert deliverables.issue_rows == ()
 
 
 def test_render_notebook_deliverables_panel_uses_lazy_accordion() -> None:

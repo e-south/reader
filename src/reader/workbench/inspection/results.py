@@ -42,7 +42,7 @@ def record_payload(
 
 def record_description(record, *, runtime) -> str:
     if isinstance(record, FileBundleRecord):
-        return record.description
+        return record.description or "Description unavailable in this record."
     plugin_id = record.producer.plugin
     if not plugin_id:
         return "Description unavailable because the record has no plugin id."

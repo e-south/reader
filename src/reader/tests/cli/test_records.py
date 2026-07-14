@@ -113,6 +113,47 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     assert "detail" not in bundle
 
 
+def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        encoding="utf-8",
+    )
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    record = {
+        "schema_version": 3,
+        "record_id": "plot:qc",
+        "kind": "file_bundle",
+        "producer": {"kind": "plot", "id": "qc", "plugin": "plot/time_series"},
+        "created_at": "2026-07-10T00:00:00+00:00",
+        "inputs": [],
+        "config_digest": "sha256:qc",
+        "files": ["plots/qc.png"],
+    }
+    store.records_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "latest": {"plot:qc": record},
+                "history": {"plot:qc": [record]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    text_result = runner.invoke(app, ["records", str(config)])
+    json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
+
+    assert text_result.exit_code == 0
+    assert "plot:qc" in text_result.output
+    assert json_result.exit_code == 0
+    payload = json.loads(json_result.output)
+    assert payload["records"][0]["schema_version"] == 3
+    assert payload["records"][0]["description"] == "Description unavailable in this record."
+
+
 def test_records_all_shows_revision_counts(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
