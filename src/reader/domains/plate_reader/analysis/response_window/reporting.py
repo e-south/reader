@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
 
 from .display import validate_display_manifest
 from .reporting_plots import (
@@ -20,6 +19,27 @@ from .sources import STATE_ORDER
 _RESPONSE_COLUMNS = tuple(f"r{state}" for state in STATE_ORDER)
 _FLUORESCENCE_COLUMNS = tuple(f"b{state}" for state in STATE_ORDER)
 _VALUE_COLUMNS = _RESPONSE_COLUMNS + _FLUORESCENCE_COLUMNS
+
+
+def _spearman_rank_correlation(left: np.ndarray, right: np.ndarray) -> float:
+    """Return tie-aware rank correlation, with explicit constant-series behavior."""
+
+    if left.ndim != 1 or right.ndim != 1 or left.shape != right.shape:
+        raise ValueError("Spearman rank correlation requires equally sized one-dimensional arrays.")
+    if not np.isfinite(left).all() or not np.isfinite(right).all():
+        raise ValueError("Spearman rank correlation requires finite values.")
+    if np.array_equal(left, right):
+        return 1.0
+
+    left_ranks = pd.Series(left).rank(method="average").to_numpy(dtype=float)
+    right_ranks = pd.Series(right).rank(method="average").to_numpy(dtype=float)
+    left_centered = left_ranks - left_ranks.mean()
+    right_centered = right_ranks - right_ranks.mean()
+    scale = float(np.linalg.norm(left_centered) * np.linalg.norm(right_centered))
+    if scale == 0.0:
+        return float("nan")
+    correlation = float(np.dot(left_centered, right_centered) / scale)
+    return float(np.clip(correlation, -1.0, 1.0))
 
 
 def write_review_artifacts(
@@ -98,7 +118,7 @@ def _reduction_stability(designs: pd.DataFrame, *, primary_reduction_id: str) ->
         for column in _VALUE_COLUMNS:
             left = primary[column].to_numpy(dtype=float)
             right = aligned[column].to_numpy(dtype=float)
-            correlation = 1.0 if np.array_equal(left, right) else float(spearmanr(left, right).statistic)
+            correlation = _spearman_rank_correlation(left, right)
             rows.append(
                 {
                     "reduction_id": str(reduction_id),
