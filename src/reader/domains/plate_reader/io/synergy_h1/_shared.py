@@ -134,8 +134,16 @@ def resolve_channel(
         return mapped
 
     if channels:
-        canonical_to_declared = {canonical_channel(channel).lower(): channel for channel in channels}
-        return canonical_to_declared.get(normalized_label)
+        declared = [(canonical_channel(channel).lower(), channel) for channel in channels]
+        matches = [channel for normalized, channel in declared if normalized == normalized_label]
+        if not matches and not channel_map_ci and ":" in normalized_label:
+            base_label = normalized_label.partition(":")[0]
+            matches = [channel for normalized, channel in declared if normalized == base_label]
+        require(
+            len(matches) <= 1,
+            f"Ambiguous configured channels for raw label {raw_label!r}: {matches}",
+        )
+        return matches[0] if matches else None
 
     if channel_map_ci:
         return None

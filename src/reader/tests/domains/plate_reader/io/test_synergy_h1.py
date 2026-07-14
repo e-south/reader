@@ -297,6 +297,48 @@ def test_kinetic_normalizes_biotek_a_b_channel_suffix(tmp_path: Path) -> None:
     assert set(result["channel"]) == {"YFP"}
 
 
+def test_kinetic_without_map_matches_wavelength_label_to_declared_base_channel(tmp_path: Path) -> None:
+    rows = _kinetic_rows(value="1.0")
+    rows[2] = ["YFP:500,530"]
+    workbook = _write_workbook(tmp_path / "kinetic.xlsx", rows, sheet_name="Assay")
+
+    result = parse_kinetic_only(workbook, channels=["YFP"])
+
+    assert set(result["channel"]) == {"YFP"}
+
+
+def test_kinetic_without_map_rejects_multiple_raw_labels_for_one_base_channel(tmp_path: Path) -> None:
+    rows = _kinetic_rows(value="1.0")
+    rows[2] = ["YFP:500,530"]
+    rows.extend(
+        [
+            ["YFP:510,540"],
+            [],
+            [None, "Time", "A1"],
+            [None, "00:00:00", "2.0"],
+        ]
+    )
+    workbook = _write_workbook(tmp_path / "kinetic.xlsx", rows, sheet_name="Assay")
+
+    with pytest.raises(
+        ValueError,
+        match=r"Ambiguous map-free kinetic channel 'YFP'.*'YFP:500,530'.*'YFP:510,540'.*channel_map",
+    ):
+        parse_kinetic_only(workbook, channels=["YFP"])
+
+
+def test_kinetic_without_map_rejects_ambiguous_declared_base_channels(tmp_path: Path) -> None:
+    rows = _kinetic_rows(value="1.0")
+    rows[2] = ["YFP:500,530"]
+    workbook = _write_workbook(tmp_path / "kinetic.xlsx", rows, sheet_name="Assay")
+
+    with pytest.raises(
+        ValueError,
+        match=r"Ambiguous configured channels for raw label 'YFP:500,530': \['YFP', 'yfp'\]",
+    ):
+        parse_kinetic_only(workbook, channels=["YFP", "yfp"])
+
+
 def test_kinetic_rejects_wrong_wavelength_declaration(tmp_path: Path) -> None:
     rows = _kinetic_rows(value="1.0")
     rows[2] = ["YFP B:999,999"]
