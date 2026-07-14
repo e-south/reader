@@ -254,6 +254,77 @@ def test_plot_payload_is_projected_filtered_and_bounded() -> None:
     assert (payload.get_column("SSC-A") > 0).all()
 
 
+def test_plot_event_filters_can_use_channels_omitted_from_the_payload() -> None:
+    events = pl.DataFrame(
+        {
+            "sample_id": ["s1", "s1", "s2"],
+            "x": [1.0, -1.0, 3.0],
+            "y": [2.0, 3.0, float("nan")],
+            "signal": [10.0, 20.0, 30.0],
+        }
+    )
+
+    payload = prepare_plot_events(
+        events,
+        columns=("sample_id", "signal"),
+        x_channel="x",
+        y_channel="y",
+        max_events=10,
+        positive_x=True,
+    )
+
+    assert payload.columns == ["sample_id", "signal"]
+    assert payload.rows() == [("s1", 10.0)]
+
+
+def test_plot_event_clipping_can_use_a_group_omitted_from_the_payload() -> None:
+    events = pl.DataFrame(
+        {
+            "batch": ["a", "a", "b", "b"],
+            "x": [1.0, 100.0, 2.0, 50.0],
+            "y": [1.0, 100.0, 2.0, 50.0],
+            "signal": [10.0, 20.0, 30.0, 40.0],
+        }
+    )
+
+    payload = prepare_plot_events(
+        events,
+        columns=("x", "y", "signal"),
+        x_channel="x",
+        y_channel="y",
+        max_events=10,
+        low_clip_quantile=0.5,
+        clip_group_column="batch",
+    )
+
+    assert payload.columns == ["x", "y", "signal"]
+    assert payload.rows() == [(100.0, 100.0, 20.0), (50.0, 50.0, 40.0)]
+
+
+def test_plot_event_sampling_can_use_a_group_omitted_from_the_payload() -> None:
+    events = pl.DataFrame(
+        {
+            "sample_id": ["a"] * 9 + ["b"],
+            "x": [float(value + 1) for value in range(10)],
+            "y": [float(value + 1) for value in range(10)],
+            "signal": [float(value) for value in range(9)] + [100.0],
+        }
+    )
+
+    payload = prepare_plot_events(
+        events,
+        columns=("x", "y", "signal"),
+        x_channel="x",
+        y_channel="y",
+        max_events=2,
+        group_columns=("sample_id",),
+    )
+
+    assert payload.columns == ["x", "y", "signal"]
+    assert payload.height == 2
+    assert 100.0 in payload.get_column("signal")
+
+
 def test_plot_payload_projection_downsamples_without_changing_source() -> None:
     wide = prepare_event_table(
         _tidy_events(),
@@ -270,6 +341,26 @@ def test_plot_payload_projection_downsamples_without_changing_source() -> None:
     assert payload.columns == ["sample_id", "FSC-A", "FSC-H"]
     assert payload.height <= 3
     assert wide.height == 6
+
+
+def test_plot_payload_sampling_can_use_a_group_omitted_from_the_payload() -> None:
+    events = pl.DataFrame(
+        {
+            "sample_id": ["a"] * 9 + ["b"],
+            "signal": [float(value) for value in range(9)] + [100.0],
+        }
+    )
+
+    payload = prepare_plot_payload(
+        events,
+        columns=("signal",),
+        max_events=2,
+        group_columns=("sample_id", "missing"),
+    )
+
+    assert payload.columns == ["signal"]
+    assert payload.height == 2
+    assert 100.0 in payload.get_column("signal")
 
 
 def test_plot_payload_uses_the_existing_seeded_row_selection() -> None:

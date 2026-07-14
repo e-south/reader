@@ -27,15 +27,29 @@ def prepare_plot_events(
 
     selected_columns = list(dict.fromkeys(columns))
     _require_columns(event_table, (*selected_columns, x_channel, y_channel))
-    work = event_table.select(selected_columns)
+    if low_clip_quantile is not None and not 0.0 <= low_clip_quantile < 1.0:
+        raise ValueError("low_clip_quantile must be in [0, 1).")
+    active_clip_group = clip_group_column if low_clip_quantile is not None else None
+    if active_clip_group is not None:
+        _require_columns(event_table, (active_clip_group,))
+    available_group_columns = [column for column in dict.fromkeys(group_columns) if column in event_table.columns]
+    working_columns = list(
+        dict.fromkeys(
+            (
+                *selected_columns,
+                x_channel,
+                y_channel,
+                *available_group_columns,
+                *([active_clip_group] if active_clip_group is not None else []),
+            )
+        )
+    )
+    work = event_table.select(working_columns)
     x = pl.col(x_channel).cast(pl.Float64, strict=False)
     y = pl.col(y_channel).cast(pl.Float64, strict=False)
     work = work.filter(x.is_finite() & y.is_finite())
     if low_clip_quantile is not None:
-        if not 0.0 <= low_clip_quantile < 1.0:
-            raise ValueError("low_clip_quantile must be in [0, 1).")
         if clip_group_column is not None:
-            _require_columns(work, (clip_group_column,))
             x_low = x.quantile(low_clip_quantile, interpolation="linear").over(clip_group_column)
             y_low = y.quantile(low_clip_quantile, interpolation="linear").over(clip_group_column)
         else:
@@ -46,7 +60,7 @@ def prepare_plot_events(
         work = work.filter(x > 0)
     if positive_y:
         work = work.filter(y > 0)
-    return _downsample(work, max_events=max_events, group_columns=group_columns)
+    return _downsample(work, max_events=max_events, group_columns=group_columns).select(selected_columns)
 
 
 def prepare_plot_payload(
@@ -60,11 +74,13 @@ def prepare_plot_payload(
 
     selected_columns = list(dict.fromkeys(columns))
     _require_columns(event_table, selected_columns)
+    available_group_columns = [column for column in dict.fromkeys(group_columns) if column in event_table.columns]
+    working_columns = list(dict.fromkeys((*selected_columns, *available_group_columns)))
     return _downsample(
-        event_table.select(selected_columns),
+        event_table.select(working_columns),
         max_events=max_events,
         group_columns=group_columns,
-    )
+    ).select(selected_columns)
 
 
 def _downsample(
