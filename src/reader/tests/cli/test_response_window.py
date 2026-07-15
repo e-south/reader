@@ -60,21 +60,33 @@ def test_response_window_verify_emits_bundle_contract(monkeypatch, tmp_path: Pat
 
 def test_response_window_review_verifies_before_launch(monkeypatch, tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
-    calls: list[tuple[str, Path, bool, int | None]] = []
+    reader_root = tmp_path / "reader-project"
+    calls: list[tuple[str, Path, bool, int | None, Path | None]] = []
     monkeypatch.setattr(response_window_cli, "verify_response_window_bundle", lambda _path: bundle)
     monkeypatch.setattr(
         response_window_cli,
         "_launch_marimo",
-        lambda mode, target, *, has_fcs, headless, port: calls.append((mode, target, headless, port)),
+        lambda mode, target, *, has_fcs, headless, port, repo_root: calls.append(
+            (mode, target, headless, port, repo_root)
+        ),
     )
 
     invocation = CliRunner().invoke(
         cli.app,
-        ["response-window", "review", str(tmp_path), "--headless", "--port", "9123"],
+        [
+            "response-window",
+            "review",
+            str(tmp_path),
+            "--reader-root",
+            str(reader_root),
+            "--headless",
+            "--port",
+            "9123",
+        ],
     )
 
     assert invocation.exit_code == 0
-    assert calls == [("run", bundle.notebook_path, True, 9123)]
+    assert calls == [("run", bundle.notebook_path, True, 9123, reader_root)]
 
 
 def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, tmp_path: Path) -> None:

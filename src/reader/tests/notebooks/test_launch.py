@@ -41,6 +41,42 @@ def test_plan_marimo_launch_uses_repo_local_runtime_dirs(tmp_path: Path) -> None
     assert "--no-token" in plan.cmd
 
 
+def test_plan_marimo_launch_uses_explicit_repo_root_for_external_notebook(tmp_path: Path) -> None:
+    repo_root, _ = _make_repo(tmp_path)
+    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook.parent.mkdir()
+    notebook.write_text("import marimo\n", encoding="utf-8")
+
+    plan = launch.plan_marimo_launch(
+        mode="run",
+        target=notebook,
+        headless=True,
+        base_env={},
+        repo_root=repo_root,
+    )
+
+    assert plan.target == notebook.resolve()
+    assert plan.repo_root == repo_root.resolve()
+    assert plan.runtime_paths.root == repo_root / ".cache" / "marimo"
+    assert plan.env["PYTHONPATH"] == str(repo_root)
+
+
+def test_plan_marimo_launch_rejects_invalid_explicit_repo_root(tmp_path: Path) -> None:
+    repo_root, notebook = _make_repo(tmp_path)
+    invalid_root = repo_root / "not-a-project-root"
+
+    with pytest.raises(ConfigError, match="does not contain pyproject.toml"):
+        launch.plan_marimo_launch(
+            mode="run",
+            target=notebook,
+            headless=True,
+            base_env={},
+            repo_root=invalid_root,
+        )
+
+    assert not (repo_root / ".cache" / "marimo").exists()
+
+
 def test_plan_marimo_launch_missing_target_fails_before_creating_runtime_dirs(tmp_path: Path) -> None:
     repo_root, notebook = _make_repo(tmp_path)
     missing = notebook.with_name("missing.py")
@@ -52,8 +88,8 @@ def test_plan_marimo_launch_missing_target_fails_before_creating_runtime_dirs(tm
 
 
 def test_plan_marimo_launch_reuses_live_session_for_same_notebook(monkeypatch, tmp_path: Path) -> None:
-    _, notebook = _make_repo(tmp_path)
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    repo_root, notebook = _make_repo(tmp_path)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     monkeypatch.setattr(launch, "_target_signature", lambda target: (11, 22))
     monkeypatch.setattr(launch, "_runtime_fingerprint", lambda repo_root: "fp-current")
     record = launch.MarimoSessionRecord(
@@ -84,8 +120,8 @@ def test_plan_marimo_launch_restarts_stale_same_notebook_session_on_runtime_drif
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _, notebook = _make_repo(tmp_path)
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    repo_root, notebook = _make_repo(tmp_path)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     record = launch.MarimoSessionRecord(
         pid=2222,
         port=2718,
@@ -125,10 +161,10 @@ def test_plan_marimo_launch_restarts_stale_same_notebook_session_on_runtime_drif
 
 
 def test_plan_marimo_launch_prunes_same_experiment_sessions(monkeypatch, tmp_path: Path) -> None:
-    _, notebook = _make_repo(tmp_path)
+    repo_root, notebook = _make_repo(tmp_path)
     old_notebook = notebook.with_name("EDA_old.py")
     old_notebook.write_text("import marimo\n", encoding="utf-8")
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     record = launch.MarimoSessionRecord(
         pid=2222,
         port=2718,
@@ -170,9 +206,12 @@ def test_plan_marimo_launch_rejects_busy_explicit_port(monkeypatch, tmp_path: Pa
         )
 
 
-def test_register_and_unregister_managed_session_round_trip(monkeypatch, tmp_path: Path) -> None:
-    _, notebook = _make_repo(tmp_path)
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+def test_register_external_notebook_session_with_explicit_repo_root(monkeypatch, tmp_path: Path) -> None:
+    repo_root, _ = _make_repo(tmp_path)
+    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook.parent.mkdir()
+    notebook.write_text("import marimo\n", encoding="utf-8")
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     monkeypatch.setattr(launch, "_pid_is_live", lambda pid: True)
 
     launch.register_managed_session(
@@ -182,6 +221,7 @@ def test_register_and_unregister_managed_session_round_trip(monkeypatch, tmp_pat
         host="127.0.0.1",
         mode="edit",
         target=notebook,
+        repo_root=repo_root,
     )
 
     records = launch._load_registry(runtime_paths.registry_path)
@@ -190,7 +230,8 @@ def test_register_and_unregister_managed_session_round_trip(monkeypatch, tmp_pat
     assert record.pid == 1234
     assert record.port == 2718
     assert record.notebook == str(notebook.resolve())
-    assert record.experiment_root == str(notebook.parents[2].resolve())
+    assert record.experiment_root == str(notebook.parent.resolve())
+    assert record.repo_root == str(repo_root.resolve())
 
     launch.unregister_managed_session(registry_path=runtime_paths.registry_path, pid=1234)
 

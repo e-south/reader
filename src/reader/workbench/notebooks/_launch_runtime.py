@@ -27,6 +27,15 @@ def find_repo_root(start: Path) -> Path:
     raise ConfigError(f"Could not find repository root from {start}")
 
 
+def resolve_repo_root(target: Path, *, repo_root: Path | None = None) -> Path:
+    if repo_root is None:
+        return find_repo_root(target)
+    resolved_root = repo_root.expanduser().resolve()
+    if not (resolved_root / "pyproject.toml").is_file():
+        raise ConfigError(f"Reader repository root does not contain pyproject.toml: {resolved_root}")
+    return resolved_root
+
+
 def find_experiment_root(start: Path) -> Path:
     for base in [start.resolve()] + list(start.resolve().parents):
         if (base / "config.yaml").exists():
@@ -34,8 +43,7 @@ def find_experiment_root(start: Path) -> Path:
     return start.resolve().parent
 
 
-def runtime_paths_for_target(target: Path) -> MarimoRuntimePaths:
-    repo_root = find_repo_root(target)
+def runtime_paths_for_repo_root(repo_root: Path) -> MarimoRuntimePaths:
     root = repo_root / ".cache" / "marimo"
     xdg_config_home = root / "xdg-config"
     xdg_state_home = root / "xdg-state"

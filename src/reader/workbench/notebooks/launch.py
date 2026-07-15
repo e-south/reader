@@ -36,13 +36,13 @@ from ._launch_runtime import (
     find_experiment_root as _find_experiment_root,
 )
 from ._launch_runtime import (
-    find_repo_root as _find_repo_root,
+    resolve_repo_root as _resolve_repo_root,
 )
 from ._launch_runtime import (
     runtime_fingerprint as _runtime_fingerprint,
 )
 from ._launch_runtime import (
-    runtime_paths_for_target as _runtime_paths_for_target,
+    runtime_paths_for_repo_root as _runtime_paths_for_repo_root,
 )
 from ._launch_runtime import (
     target_signature as _target_signature,
@@ -61,6 +61,7 @@ class MarimoLaunchPlan:
     port: int
     host: str
     target: Path
+    repo_root: Path
     runtime_paths: MarimoRuntimePaths
     reused_session: MarimoSessionRecord | None = None
     terminated_sessions: tuple[MarimoSessionRecord, ...] = ()
@@ -115,18 +116,18 @@ def _terminate_pid(pid: int, *, grace_seconds: float = 1.0) -> bool:
     return not _pid_is_live(pid)
 
 
-def _resolve_launch_context(target: Path) -> _LaunchContext:
+def _resolve_launch_context(target: Path, *, repo_root: Path | None = None) -> _LaunchContext:
     resolved_target = target.resolve()
     experiment_root = _find_experiment_root(resolved_target)
-    repo_root = _find_repo_root(resolved_target)
+    resolved_repo_root = _resolve_repo_root(resolved_target, repo_root=repo_root)
     notebook_mtime_ns, notebook_size_bytes = _target_signature(resolved_target)
     return _LaunchContext(
         resolved_target=resolved_target,
         experiment_root=experiment_root,
-        repo_root=repo_root,
+        repo_root=resolved_repo_root,
         notebook_mtime_ns=notebook_mtime_ns,
         notebook_size_bytes=notebook_size_bytes,
-        runtime_fingerprint=_runtime_fingerprint(repo_root),
+        runtime_fingerprint=_runtime_fingerprint(resolved_repo_root),
     )
 
 
@@ -162,9 +163,10 @@ def plan_marimo_launch(
     headless: bool = False,
     preferred_port: int | None = None,
     base_env: dict[str, str] | None = None,
+    repo_root: Path | None = None,
 ) -> MarimoLaunchPlan:
-    context = _resolve_launch_context(target)
-    runtime_paths = _runtime_paths_for_target(context.resolved_target)
+    context = _resolve_launch_context(target, repo_root=repo_root)
+    runtime_paths = _runtime_paths_for_repo_root(context.repo_root)
     env = _build_env(context.repo_root, runtime_paths=runtime_paths, base_env=base_env)
     records = _prune_registry(_load_registry(runtime_paths.registry_path), pid_is_live=_pid_is_live)
 
@@ -187,6 +189,7 @@ def plan_marimo_launch(
                 port=record.port,
                 host=record.host,
                 target=context.resolved_target,
+                repo_root=context.repo_root,
                 runtime_paths=runtime_paths,
                 reused_session=record,
             )
@@ -221,6 +224,7 @@ def plan_marimo_launch(
         port=port,
         host=DEFAULT_HOST,
         target=context.resolved_target,
+        repo_root=context.repo_root,
         runtime_paths=runtime_paths,
         terminated_sessions=tuple(terminated_sessions),
     )
@@ -234,10 +238,12 @@ def register_managed_session(
     host: str,
     mode: str,
     target: Path,
+    repo_root: Path,
 ) -> None:
     records = _prune_registry(_load_registry(registry_path), pid_is_live=_pid_is_live)
     target_mtime_ns, target_size_bytes = _target_signature(target)
-    runtime_fingerprint = _runtime_fingerprint(_find_repo_root(target))
+    resolved_repo_root = _resolve_repo_root(target, repo_root=repo_root)
+    runtime_fingerprint = _runtime_fingerprint(resolved_repo_root)
     record = MarimoSessionRecord(
         pid=pid,
         port=port,
@@ -245,7 +251,7 @@ def register_managed_session(
         mode=mode,
         notebook=str(target.resolve()),
         experiment_root=str(_find_experiment_root(target)),
-        repo_root=str(_find_repo_root(target)),
+        repo_root=str(resolved_repo_root),
         launched_at=time.time(),
         notebook_mtime_ns=target_mtime_ns,
         notebook_size_bytes=target_size_bytes,

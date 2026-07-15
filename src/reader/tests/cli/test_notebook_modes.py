@@ -112,6 +112,7 @@ def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> Non
             port=2718,
             host="127.0.0.1",
             target=kwargs["target"],
+            repo_root=tmp_path,
             runtime_paths=SimpleNamespace(
                 root=tmp_path / ".cache" / "marimo", registry_path=tmp_path / "sessions.json"
             ),
@@ -173,6 +174,7 @@ def test_launch_marimo_uses_active_interpreter(monkeypatch, tmp_path: Path) -> N
             port=2718,
             host="127.0.0.1",
             target=kwargs["target"],
+            repo_root=tmp_path,
             runtime_paths=SimpleNamespace(
                 root=tmp_path / ".cache" / "marimo", registry_path=tmp_path / "sessions.json"
             ),

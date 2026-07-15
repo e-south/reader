@@ -112,6 +112,7 @@ def verify(
 @response_window_app.command("review", help="Verify a bundle, then open its generated Marimo review notebook.")
 def review(
     bundle_root: Annotated[Path, typer.Argument(help="Published response-window bundle directory.")],
+    reader_root: Annotated[Path, typer.Option("--reader-root", help="Reader repository root.")] = Path("."),
     mode: Annotated[str, typer.Option("--mode", help="Marimo mode: run | edit (default: run).")] = "run",
     headless: Annotated[bool, typer.Option("--headless", help="Do not open a browser window.")] = False,
     port: Annotated[int | None, typer.Option("--port", help="Preferred local Marimo port.")] = None,
@@ -123,7 +124,14 @@ def review(
         bundle = verify_response_window_bundle(bundle_root)
     except (FileNotFoundError, ReaderError, RuntimeError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
-    _launch_marimo(normalized_mode, bundle.notebook_path, has_fcs=False, headless=headless, port=port)
+    _launch_marimo(
+        normalized_mode,
+        bundle.notebook_path,
+        has_fcs=False,
+        headless=headless,
+        port=port,
+        repo_root=reader_root,
+    )
 
 
 @response_window_app.command(

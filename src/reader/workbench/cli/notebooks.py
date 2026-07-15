@@ -70,6 +70,7 @@ def _launch_marimo(
     has_fcs: bool,
     headless: bool = False,
     port: int | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     launch = _load("reader.workbench.notebooks.launch")
     plan = launch.plan_marimo_launch(
@@ -78,6 +79,7 @@ def _launch_marimo(
         headless=headless,
         preferred_port=port,
         base_env=os.environ.copy(),
+        repo_root=repo_root,
     )
     if plan.terminated_sessions:
         shared.console.print(
@@ -120,6 +122,7 @@ def _launch_marimo(
         host=plan.host,
         mode=mode,
         target=target,
+        repo_root=plan.repo_root,
     )
     try:
         returncode = proc.wait()
