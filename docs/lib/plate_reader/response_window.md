@@ -136,7 +136,7 @@ The stress-study binding maps the fixed state order as follows:
 | `01` | ciprofloxacin |
 | `11` | ethanol plus ciprofloxacin |
 
-The request must declare `study_id`, `state_order: [00, 10, 01, 11]`, an
+The request must declare `study_id`, `state_order: ["00", "10", "01", "11"]`, an
 explicit `state_map_ref`, the exact `reference_design_id`, and a
 `reader.response_window.display.v1` vocabulary. The display block names each
 condition, the intervention, the fluorescence reference, and the response
