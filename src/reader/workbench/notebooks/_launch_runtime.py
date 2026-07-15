@@ -96,7 +96,6 @@ def build_env(
     if existing_pythonpath:
         pythonpath_parts.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
-    env["READER_MARIMO_RUNTIME_PATCH"] = "1"
     env["XDG_CONFIG_HOME"] = str(runtime_paths.xdg_config_home)
     env["XDG_STATE_HOME"] = str(runtime_paths.xdg_state_home)
     env["XDG_CACHE_HOME"] = str(runtime_paths.xdg_cache_home)

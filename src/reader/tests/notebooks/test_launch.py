@@ -33,7 +33,7 @@ def test_plan_marimo_launch_uses_repo_local_runtime_dirs(tmp_path: Path) -> None
     assert plan.env["XDG_STATE_HOME"] == str(repo_root / ".cache" / "marimo" / "xdg-state")
     assert plan.env["XDG_CACHE_HOME"] == str(repo_root / ".cache" / "marimo" / "xdg-cache")
     assert plan.env["MPLCONFIGDIR"] == str(repo_root / ".cache" / "marimo" / "matplotlib")
-    assert plan.env["READER_MARIMO_RUNTIME_PATCH"] == "1"
+    assert "READER_MARIMO_RUNTIME_PATCH" not in plan.env
     assert str(repo_root) in plan.env["PYTHONPATH"]
     assert "--host" in plan.cmd
     assert "--port" in plan.cmd

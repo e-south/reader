@@ -107,7 +107,7 @@ def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> Non
     def _fake_plan_marimo_launch(**kwargs):
         return SimpleNamespace(
             cmd=(sys.executable, "-m", "marimo", "edit", str(kwargs["target"])),
-            env={"READER_MARIMO_RUNTIME_PATCH": "1"},
+            env={},
             url="http://127.0.0.1:2718",
             port=2718,
             host="127.0.0.1",
@@ -166,7 +166,6 @@ def test_launch_marimo_uses_active_interpreter(monkeypatch, tmp_path: Path) -> N
                 str(kwargs["target"]),
             ),
             env={
-                "READER_MARIMO_RUNTIME_PATCH": "1",
                 "PYTHONPATH": str(Path(__file__).resolve().parents[4]),
                 "XDG_CONFIG_HOME": str(tmp_path / ".cache" / "marimo" / "xdg-config"),
             },
@@ -206,7 +205,7 @@ def test_launch_marimo_uses_active_interpreter(monkeypatch, tmp_path: Path) -> N
     assert cmd[1:3] == ("-m", "marimo")
     env = called.get("env")
     assert isinstance(env, dict)
-    assert env.get("READER_MARIMO_RUNTIME_PATCH") == "1"
+    assert "READER_MARIMO_RUNTIME_PATCH" not in env
     assert "XDG_CONFIG_HOME" in env
     assert "registered" in called
     assert "unregistered" in called
