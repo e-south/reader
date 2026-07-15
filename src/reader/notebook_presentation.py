@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
-import yaml
+from reader.workbench.config import load_reader_config_document
 
 _DATE_PREFIX = re.compile(r"^(?P<date>\d{8})(?:[_-]+(?P<name>.+))?$")
 _WORD_BREAK = re.compile(r"[_-]+")
@@ -18,10 +18,7 @@ _UPPERCASE_TOKENS = frozenset(
         "iptg",
         "od600",
         "rfp",
-        "rmf",
         "rna",
-        "secg",
-        "sfxi",
         "yfp",
     }
 )
@@ -53,9 +50,7 @@ def experiment_display_title_from_config(
 ) -> str:
     """Resolve the authored or fallback title from a Reader experiment config."""
 
-    payload = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
-    if not isinstance(payload, Mapping):
-        raise ValueError("experiment config must be a mapping.")
+    payload = load_reader_config_document(Path(config_path))
     experiment = payload.get("experiment")
     if not isinstance(experiment, Mapping):
         raise ValueError("experiment config must define an experiment mapping.")
@@ -77,10 +72,12 @@ def experiment_display_title_from_config(
 def experiment_selector_options(experiment_titles: Mapping[str, str]) -> dict[str, str]:
     """Map readable selector labels to stable experiment IDs."""
 
-    normalized = {
-        _required_text(experiment_id, field="experiment_id"): _required_text(title, field="experiment_title")
-        for experiment_id, title in experiment_titles.items()
-    }
+    normalized: dict[str, str] = {}
+    for raw_experiment_id, title in experiment_titles.items():
+        experiment_id = _required_text(raw_experiment_id, field="experiment_id")
+        if experiment_id in normalized:
+            raise ValueError(f"duplicate experiment IDs after normalization: {experiment_id!r}.")
+        normalized[experiment_id] = _required_text(title, field="experiment_title")
     title_counts = Counter(normalized.values())
     options: dict[str, str] = {}
     for experiment_id in sorted(normalized):

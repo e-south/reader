@@ -1,3 +1,4 @@
+from .load import load_reader_config_document
 from .model import (
     AnnotationCollectionSpec,
     AnnotationLabelSpec,
@@ -34,4 +35,5 @@ __all__ = [
     "ReaderSpec",
     "ResourceSpec",
     "ResourcesSpec",
+    "load_reader_config_document",
 ]

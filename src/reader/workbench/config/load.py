@@ -35,7 +35,9 @@ def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.MappingNode, 
 _UniqueKeyLoader.add_constructor(BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping)
 
 
-def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
+def load_reader_config_document(path: Path) -> dict[str, Any]:
+    """Load a Reader config document with strict YAML and schema identity checks."""
+
     try:
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     except yaml.YAMLError as exc:
@@ -48,6 +50,11 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
     schema = data.get("schema")
     if schema != "reader/v7":
         raise ConfigError(f"Config schema must be 'reader/v7'. This repo only supports reader/v7 (found {schema!r}).")
+    return data
+
+
+def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
+    data = load_reader_config_document(path)
 
     removed_top_level_keys = {
         "steps",

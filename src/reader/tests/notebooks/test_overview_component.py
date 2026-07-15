@@ -89,7 +89,7 @@ def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: 
     )
 
     assert overview.experiment_id == experiment_id
-    assert overview.experiment_title == "2026-07-06 · SFXI Sensor Panel M9 Glu SECG"
+    assert overview.experiment_title == "2026-07-06 · Sfxi Sensor Panel M9 Glu Secg"
 
 
 def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> None:
