@@ -3,10 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import pandas as pd
+
+from reader.domains.plate_reader.plots.common import bootstrap_mean_interval
 
 DEFAULT_TRIPTYCH_PANEL_SIZE = 260
 DEFAULT_TRIPTYCH_SPACING = 16
+DEFAULT_TRAJECTORY_CI = 95.0
+DEFAULT_TRAJECTORY_BOOTSTRAPS = 300
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,7 @@ class DualReporterTriptychData:
     growth_channel: str
     ratio_channel: str
     snapshot_channel: str
+    trajectory_ci: float
 
 
 def build_triptych_data(
@@ -34,6 +40,8 @@ def build_triptych_data(
     snapshot_time: float,
     treatment_order: list[str] | tuple[str, ...] | None = None,
     time_atol: float = 1e-9,
+    trajectory_ci: float = DEFAULT_TRAJECTORY_CI,
+    trajectory_bootstraps: int = DEFAULT_TRAJECTORY_BOOTSTRAPS,
 ) -> DualReporterTriptychData:
     """Prepare the neutral dual-reporter triptych data contract.
 
@@ -42,6 +50,10 @@ def build_triptych_data(
     a snapshot channel.
     """
     snapshot_channel = snapshot_channel or ratio_channel
+    if not 0.0 < float(trajectory_ci) < 100.0:
+        raise ValueError("dual_reporter_triptych: trajectory_ci must lie strictly between 0 and 100")
+    if int(trajectory_bootstraps) < 1:
+        raise ValueError("dual_reporter_triptych: trajectory_bootstraps must be positive")
     required_channels = [growth_channel, ratio_channel, snapshot_channel]
     _require_columns(df, ["channel", "value", time_col, treatment_col], where="dual_reporter_triptych")
 
@@ -63,12 +75,15 @@ def build_triptych_data(
     observed = set(work[treatment_col].dropna().astype(str).unique().tolist())
     missing_treatments = tuple(value for value in order if value not in observed)
 
-    od600_time = _summarize_time(
-        work, channel=growth_channel, time_col=time_col, treatment_col=treatment_col, order=order
-    )
-    ratio_time = _summarize_time(
-        work, channel=ratio_channel, time_col=time_col, treatment_col=treatment_col, order=order
-    )
+    summary_options = {
+        "time_col": time_col,
+        "treatment_col": treatment_col,
+        "order": order,
+        "ci": float(trajectory_ci),
+        "ci_boot": int(trajectory_bootstraps),
+    }
+    od600_time = _summarize_time(work, channel=growth_channel, **summary_options)
+    ratio_time = _summarize_time(work, channel=ratio_channel, **summary_options)
     snapshot_stats, snapshot_points = _summarize_snapshot(
         work,
         channel=snapshot_channel,
@@ -89,6 +104,7 @@ def build_triptych_data(
         growth_channel=str(growth_channel),
         ratio_channel=str(ratio_channel),
         snapshot_channel=str(snapshot_channel),
+        trajectory_ci=float(trajectory_ci),
     )
 
 
@@ -103,6 +119,7 @@ def build_dual_reporter_triptych_chart(
     width: int = DEFAULT_TRIPTYCH_PANEL_SIZE,
     height: int | None = None,
     spacing: int = DEFAULT_TRIPTYCH_SPACING,
+    treatment_title: str | None = None,
 ) -> Any:
     if data.od600_time.empty:
         raise ValueError("dual_reporter_triptych: no OD600 time-series data available")
@@ -117,7 +134,7 @@ def build_dual_reporter_triptych_chart(
         f"{treatment_col}:N",
         sort=order,
         scale=alt.Scale(domain=order),
-        legend=alt.Legend(orient="bottom", title="Treatment"),
+        legend=alt.Legend(orient="bottom", title=treatment_title or _display_column_title(treatment_col)),
     )
 
     od600_chart = _time_chart(
@@ -129,6 +146,7 @@ def build_dual_reporter_triptych_chart(
         y_title=data.growth_channel,
         color=color,
         order=order,
+        treatment_title=treatment_title or _display_column_title(treatment_col),
         snapshot_time=data.snapshot_time,
         acquisition_transition_time_h=acquisition_transition_time_h,
         width=width,
@@ -143,6 +161,7 @@ def build_dual_reporter_triptych_chart(
         y_title=data.ratio_channel,
         color=color,
         order=order,
+        treatment_title=treatment_title or _display_column_title(treatment_col),
         snapshot_time=data.snapshot_time,
         acquisition_transition_time_h=acquisition_transition_time_h,
         width=width,
@@ -155,12 +174,13 @@ def build_dual_reporter_triptych_chart(
         treatment_col=treatment_col,
         y_title=f"{data.snapshot_channel} snapshot",
         order=order,
+        treatment_title=treatment_title or _display_column_title(treatment_col),
         width=width,
         height=panel_height,
     )
     return (
         alt.hconcat(od600_chart, ratio_chart, snapshot_chart, spacing=spacing)
-        .resolve_scale(color="shared")
+        .resolve_scale(color="shared", strokeDash="shared")
         .configure(background="white")
         .configure_view(fill="white")
         .configure_axis(
@@ -304,15 +324,29 @@ def _summarize_time(
     time_col: str,
     treatment_col: str,
     order: list[str],
+    ci: float,
+    ci_boot: int,
 ) -> pd.DataFrame:
     work = df[df["channel"].astype(str) == str(channel)].copy()
     if work.empty:
         return pd.DataFrame(columns=[time_col, treatment_col, "y_mean", "y_sd", "y_n", "y_lo", "y_hi"])
-    stats = work.groupby([time_col, treatment_col], dropna=False)["value"].agg(["mean", "std", "count"]).reset_index()
-    stats = stats.rename(columns={"mean": "y_mean", "std": "y_sd", "count": "y_n"})
-    stats["y_sd"] = stats["y_sd"].fillna(0.0)
-    stats["y_lo"] = stats["y_mean"] - stats["y_sd"]
-    stats["y_hi"] = stats["y_mean"] + stats["y_sd"]
+    rng = np.random.default_rng(0)
+    records: list[dict[str, object]] = []
+    for (time_value, treatment), series in work.groupby([time_col, treatment_col], dropna=False, sort=True)["value"]:
+        values = series.to_numpy(dtype=float, copy=False)
+        mean, lower, upper = bootstrap_mean_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
+        records.append(
+            {
+                time_col: time_value,
+                treatment_col: treatment,
+                "y_mean": mean,
+                "y_sd": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+                "y_n": len(values),
+                "y_lo": lower,
+                "y_hi": upper,
+            }
+        )
+    stats = pd.DataFrame.from_records(records)
     return _sort_by_treatment(stats, treatment_col=treatment_col, order=order, extra_sort=[time_col])
 
 
@@ -329,13 +363,13 @@ def _summarize_snapshot(
     work = df[df["channel"].astype(str) == str(channel)].copy()
     if work.empty:
         empty_stats = pd.DataFrame(columns=[treatment_col, "y_mean", "y_sd", "y_n", "y_lo", "y_hi"])
-        empty_points = pd.DataFrame(columns=[treatment_col, "value"])
+        empty_points = pd.DataFrame(columns=[treatment_col, "value", "replicate_index"])
         return empty_stats, empty_points
     mask = (work[time_col] - float(snapshot_time)).abs() <= float(time_atol)
     snapped = work[mask].copy()
     if snapped.empty:
         empty_stats = pd.DataFrame(columns=[treatment_col, "y_mean", "y_sd", "y_n", "y_lo", "y_hi"])
-        empty_points = pd.DataFrame(columns=[treatment_col, "value"])
+        empty_points = pd.DataFrame(columns=[treatment_col, "value", "replicate_index"])
         return empty_stats, empty_points
     stats = snapped.groupby(treatment_col, dropna=False)["value"].agg(["mean", "std", "count"]).reset_index()
     stats = stats.rename(columns={"mean": "y_mean", "std": "y_sd", "count": "y_n"})
@@ -343,12 +377,17 @@ def _summarize_snapshot(
     stats["y_lo"] = stats["y_mean"] - stats["y_sd"]
     stats["y_hi"] = stats["y_mean"] + stats["y_sd"]
     stats = _sort_by_treatment(stats, treatment_col=treatment_col, order=order, extra_sort=[])
+    snapped["__source_order"] = np.arange(len(snapped), dtype=int)
+    stable_identity = [column for column in ("position", "well", "source_name", "sheet_name") if column in snapped]
+    point_columns = [treatment_col, "value", *stable_identity, "__source_order"]
     points = _sort_by_treatment(
-        snapped[[treatment_col, "value"]].copy(),
+        snapped[point_columns].copy(),
         treatment_col=treatment_col,
         order=order,
-        extra_sort=["value"],
+        extra_sort=[*stable_identity, "__source_order"],
     )
+    points["replicate_index"] = points.groupby(treatment_col, sort=False).cumcount()
+    points = points.drop(columns="__source_order")
     return stats, points
 
 
@@ -362,11 +401,14 @@ def _time_chart(
     y_title: str,
     color: Any,
     order: list[str],
+    treatment_title: str,
     snapshot_time: float,
     acquisition_transition_time_h: float | None,
     width: int,
     height: int,
 ) -> Any:
+    dash_patterns = ([1, 0], [7, 2], [2, 2], [8, 2, 2, 2])
+    dash_range = [dash_patterns[index % len(dash_patterns)] for index in range(len(order))]
     base = alt.Chart(frame).encode(
         x=alt.X(f"{time_col}:Q", title="Time (h)", axis=alt.Axis(labelOverlap=False)),
         color=color,
@@ -378,6 +420,15 @@ def _time_chart(
     )
     line = base.mark_line().encode(
         y=alt.Y("y_mean:Q", title=y_title),
+        strokeDash=alt.StrokeDash(
+            f"{treatment_col}:N",
+            sort=order,
+            scale=alt.Scale(
+                domain=order,
+                range=dash_range,
+            ),
+            legend=alt.Legend(orient="bottom", title=treatment_title),
+        ),
         tooltip=_time_tooltips(alt, time_col=time_col, treatment_col=treatment_col),
     )
     layers = [band, line]
@@ -411,10 +462,11 @@ def _snapshot_chart(
     treatment_col: str,
     y_title: str,
     order: list[str],
+    treatment_title: str,
     width: int,
     height: int,
 ) -> Any:
-    axis = alt.Axis(labelLimit=0, labelOverlap=False, labelAngle=-45)
+    axis = alt.Axis(labelLimit=0, labelOverlap=False, labelAngle=0, title=treatment_title)
     base = alt.Chart(frame).encode(
         x=alt.X(f"{treatment_col}:N", sort=order, scale=alt.Scale(domain=order), axis=axis),
         y=alt.Y("y_mean:Q", title=y_title),
@@ -426,19 +478,18 @@ def _snapshot_chart(
         ],
     )
     layers = [
-        base.mark_bar().encode(
-            color=alt.Color(f"{treatment_col}:N", sort=order, scale=alt.Scale(domain=order), legend=None)
-        ),
         base.mark_rule(color="black").encode(y=alt.Y("y_lo:Q"), y2=alt.Y2("y_hi:Q")),
         base.mark_tick(color="black", orient="horizontal", size=8, thickness=1.5).encode(y=alt.Y("y_lo:Q")),
         base.mark_tick(color="black", orient="horizontal", size=8, thickness=1.5).encode(y=alt.Y("y_hi:Q")),
+        base.mark_tick(color="#334155", orient="horizontal", size=24, thickness=2.5),
     ]
     if not points.empty:
         layers.append(
             alt.Chart(points)
-            .mark_point(filled=True, strokeWidth=0, size=50)
+            .mark_point(filled=True, fill="white", stroke="#94a3b8", strokeWidth=1.2, size=52)
             .encode(
                 x=alt.X(f"{treatment_col}:N", sort=order, scale=alt.Scale(domain=order), axis=axis),
+                xOffset=alt.XOffset("replicate_index:O"),
                 y=alt.Y("value:Q"),
                 tooltip=[
                     alt.Tooltip(f"{treatment_col}:N", title="Treatment"),
@@ -447,6 +498,10 @@ def _snapshot_chart(
             )
         )
     return alt.layer(*layers).properties(width=width, height=height, title=y_title)
+
+
+def _display_column_title(value: str) -> str:
+    return str(value).replace("_", " ").strip().capitalize()
 
 
 def _time_tooltips(alt: Any, *, time_col: str, treatment_col: str) -> list[Any]:

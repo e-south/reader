@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from reader.notebook_presentation import experiment_display_title
+
 
 @dataclass(frozen=True)
 class NotebookOverview:
@@ -29,7 +31,10 @@ def build_notebook_overview(
 ) -> NotebookOverview:
     resolved_experiment_id = _required_text(experiment_id, "experiment_id")
     resolved_protocol_id = _required_text(protocol_id, "protocol_id")
-    title = str(experiment_title or "").strip() or resolved_experiment_id
+    title = experiment_display_title(
+        experiment_id=resolved_experiment_id,
+        authored_title=experiment_title,
+    )
     pipeline_rows = tuple(
         {"Order": idx, "Step ID": str(step_id)} for idx, step_id in enumerate(pipeline_step_ids, start=1)
     )
@@ -65,6 +70,7 @@ def render_notebook_overview_panel(
     *,
     design_treatment_rows: Sequence[Mapping[str, Any]],
     design_treatment_note: str = "",
+    include_heading: bool = True,
 ) -> Any:
     at_a_glance_rows = (
         {"Field": "Experiment ID", "Value": overview.experiment_id},
@@ -98,13 +104,13 @@ def render_notebook_overview_panel(
         ),
         "Paths": _render_table(mo, path_rows, "No output paths are available."),
     }
-    return mo.vstack(
-        [
-            mo.md(f"# {overview.experiment_title}"),
-            mo.ui.table(list(at_a_glance_rows), page_size=len(at_a_glance_rows)),
-            mo.accordion(detail_sections, multiple=True, lazy=True),
-        ]
-    )
+    items = [
+        mo.ui.table(list(at_a_glance_rows), page_size=len(at_a_glance_rows)),
+        mo.accordion(detail_sections, multiple=True, lazy=True),
+    ]
+    if include_heading:
+        items.insert(0, mo.md(f"# {overview.experiment_title}"))
+    return mo.vstack(items)
 
 
 def _unique_column_values(df: Any, col: str) -> tuple[str, ...]:

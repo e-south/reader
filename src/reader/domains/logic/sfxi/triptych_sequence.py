@@ -359,6 +359,16 @@ def _render_one(*, assay: pd.DataFrame, row: pd.Series, cfg: Mapping[str, Any], 
     seq_ax.set_axis_off()
     diagnostics = rendered.diagnostics
     fig.suptitle(str(row["display_label"]), x=0.5, y=0.984, ha="center", fontsize=19.0, fontweight="semibold")
+    trajectory_ci = float((cfg.get("time_series") or {}).get("ci", 95.0))
+    fig.text(
+        0.5,
+        0.934,
+        f"Time series: mean with {trajectory_ci:g}% bootstrap CI  ·  Snapshot: observed wells, mean, and sample SD",
+        ha="center",
+        va="center",
+        fontsize=8.4,
+        color="#475569",
+    )
     fig.subplots_adjust(left=0.062, right=0.988, bottom=0.060, top=0.902)
 
     record = {
@@ -455,6 +465,7 @@ def _draw_time_panel(
         marked_time_kwargs={"color": "#5F5F5F", "linestyle": "--", "linewidth": 2.15, "alpha": 0.98, "zorder": 0.6},
         line_width=2.2,
         mean_marker_size=30.0,
+        mean_marker_every=int(ts_cfg.get("mean_marker_every", 12)),
         axis_label_size=13.4,
         tick_label_size=12.3,
         legend_fontsize=8.5,
@@ -493,7 +504,7 @@ def _draw_snapshot_panel(
     )
     if selection.rows.empty:
         raise SFXIError(f"No snapshot rows for channel={channel!r} near t={snapshot_time_h:.2f} h")
-    stats = summarize_snapshot_values(df=selection.rows, group_cols=[treatment_col], err="sem")
+    stats = summarize_snapshot_values(df=selection.rows, group_cols=[treatment_col], err="sd")
     order = [item["state"] for item in states]
     stats = stats.set_index(treatment_col).reindex(order)
     missing = stats[stats["mean"].isna()].index.astype(str).tolist()
@@ -501,24 +512,25 @@ def _draw_snapshot_panel(
         raise SFXIError(f"Snapshot panel missing SFXI states: {_describe_states(missing, cfg=cfg)}")
     positions = np.arange(len(order), dtype=float)
     means = stats["mean"].astype(float).to_numpy()
-    sem = stats["sem"].astype(float).fillna(0.0).to_numpy()
+    sd = stats["std"].astype(float).fillna(0.0).to_numpy()
     colors = [item["color"] for item in states]
-    ax.bar(positions, means, yerr=sem, color=colors, edgecolor="#BDBDBD", linewidth=0.75, capsize=3, zorder=2)
-    seed = _stable_seed("|".join(order) + f"|{snapshot_time_h:.6f}")
-    rng = np.random.default_rng(seed)
+    ax.vlines(positions, means - sd, means + sd, color="#475569", linewidth=1.2, zorder=2)
+    ax.scatter(positions, means - sd, marker="_", s=52, color="#475569", linewidths=1.2, zorder=2)
+    ax.scatter(positions, means + sd, marker="_", s=52, color="#475569", linewidths=1.2, zorder=2)
     for idx, treatment in enumerate(order):
         points = selection.rows[selection.rows[treatment_col].astype(str) == treatment]
-        jitter = rng.uniform(-0.09, 0.09, size=len(points))
+        jitter = np.linspace(-0.09, 0.09, len(points)) if len(points) > 1 else np.asarray([0.0])
         ax.scatter(
             positions[idx] + jitter,
             points["value"].astype(float),
             s=18,
             facecolors="white",
-            edgecolors="#4D4D4D",
-            linewidths=0.55,
+            edgecolors="#94A3B8",
+            linewidths=0.8,
             alpha=0.92,
             zorder=3,
         )
+        ax.hlines(means[idx], positions[idx] - 0.18, positions[idx] + 0.18, color=colors[idx], linewidth=2.4, zorder=4)
     ax.set_xticks(positions)
     ax.set_xticklabels([_snapshot_tick_label(item["short_label"]) for item in states], ha="center", fontsize=11.5)
     ax.set_xlabel("")
@@ -552,6 +564,15 @@ def _compute_render_scales(*, assay: pd.DataFrame, render_plan: pd.DataFrame, cf
             (sub["channel"].astype(str) == channel) & sub[treatment_col].astype(str).isin(treatment_states)
         ]
         values.extend(pd.to_numeric(channel_rows["value"], errors="coerce").dropna().astype(float).tolist())
+        if channel == str(cfg["channels"]["snapshot"]):
+            snapshot_stats = (
+                channel_rows.assign(value=pd.to_numeric(channel_rows["value"], errors="coerce"))
+                .dropna(subset=["value"])
+                .groupby([design_col, treatment_col, str(cfg["time_col"])], dropna=False)["value"]
+                .agg(["mean", "std"])
+            )
+            whisker_upper = snapshot_stats["mean"] + snapshot_stats["std"].fillna(0.0)
+            values.extend(whisker_upper.astype(float).tolist())
     axis_cfg = dict(cfg.get("axis_limits") or {})
     pad_fraction = float(axis_cfg.get("y_padding_fraction", 0.08))
     upper_quantile = float(axis_cfg.get("upper_quantile", 1.0))

@@ -5,9 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.collections import LineCollection, PathCollection
 from typer.testing import CliRunner
 
 from reader.domains.logic.sfxi import triptych_sequence, triptych_sequence_outputs
@@ -303,6 +306,70 @@ def test_sfxi_triptych_honors_logic_map_case_sensitivity() -> None:
     mapped = triptych_sequence._bind_treatment_states(assay=_assay_df(), cfg=cfg)
 
     assert set(mapped[cfg["state_column"]].dropna()) == {"00", "10", "01", "11"}
+
+
+def test_sfxi_triptych_snapshot_shows_observed_wells_without_bars() -> None:
+    cfg = _normalized_render_config()
+    mapped = triptych_sequence._bind_treatment_states(assay=_assay_df(), cfg=cfg)
+    mapped["plot_time_h"] = mapped["time"]
+    figure, axis = plt.subplots()
+
+    try:
+        triptych_sequence._draw_snapshot_panel(
+            axis,
+            assay=mapped,
+            channel="YFP/CFP",
+            snapshot_time_h=12.0,
+            tolerance_h=0.01,
+            states=list(cfg["states"]),
+            cfg=cfg,
+            y_limits={"YFP/CFP": [0.0, 3.0]},
+        )
+
+        assert not axis.patches
+        replicate_clouds = [
+            item
+            for item in axis.collections
+            if isinstance(item, PathCollection)
+            and len(item.get_offsets()) == 2
+            and len(item.get_edgecolors())
+            and mcolors.to_hex(item.get_edgecolors()[0]) == "#94a3b8"
+        ]
+        assert len(replicate_clouds) == 4
+        assert sum(len(item.get_offsets()) for item in replicate_clouds) == 8
+        assert all(mcolors.to_hex(item.get_facecolors()[0]) == "#ffffff" for item in replicate_clouds)
+        summary_values = [
+            float(item.get_segments()[0][0, 1])
+            for item in axis.collections
+            if isinstance(item, LineCollection)
+            and len(item.get_segments()) == 1
+            and np.isclose(abs(np.diff(item.get_segments()[0][:, 0])[0]), 0.36)
+        ]
+        expected = (
+            mapped.loc[mapped["channel"].eq("YFP/CFP") & mapped["time"].eq(12.0)]
+            .groupby(cfg["state_column"])["value"]
+            .mean()
+            .reindex(("00", "10", "01", "11"))
+            .to_numpy(dtype=float)
+        )
+        np.testing.assert_allclose(summary_values, expected)
+    finally:
+        plt.close(figure)
+
+
+def test_sfxi_triptych_global_scale_contains_snapshot_sd_whiskers() -> None:
+    cfg = _normalized_render_config()
+    mapped = triptych_sequence._bind_treatment_states(assay=_assay_df(), cfg=cfg)
+    mask = mapped["channel"].eq("YFP/CFP") & mapped["time"].eq(12.0) & mapped[cfg["state_column"]].eq("00")
+    mapped.loc[mask, "value"] = [0.0, 100.0]
+    scales = triptych_sequence._compute_render_scales(
+        assay=mapped,
+        render_plan=pd.DataFrame({cfg["design_col"]: ["pDual-10-test01"]}),
+        cfg=cfg,
+    )
+
+    whisker_upper = 50.0 + np.std([0.0, 100.0], ddof=1)
+    assert scales["y_limits"]["YFP/CFP"][1] >= whisker_upper
 
 
 def test_sfxi_triptych_rejects_duplicated_treatment_identity() -> None:

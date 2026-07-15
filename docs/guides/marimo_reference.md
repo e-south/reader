@@ -2,7 +2,7 @@
 doc_id: reader-marimo-reference
 surface: agent-reference
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-14
 summary: Reader-specific Marimo authoring, performance, accessibility, and validation contract.
 ---
 
@@ -141,6 +141,19 @@ Reader notebooks should present information in this order:
 Use lazy accordions or tabs for supporting detail. Keep the primary result and
 its interpretation boundary visible without opening every panel. Do not bury a
 blocking validation error inside a collapsed section.
+
+When a compact endpoint panel has observed replicate values, show those values
+as neutral hollow points and the published aggregate as a short line. Name the
+interval statistic explicitly. Do not use a bar as a redundant encoding of an
+aggregate, combine independent uncertainty sources into one error bar, or draw
+pseudo-replicates for a quantity defined from independent sample aggregates.
+
+Use `experiment.title` as the visible notebook title when it is authored. If it
+is absent, Reader derives a deterministic display title from `experiment.id`;
+the ID remains the machine identity and belongs in compact provenance detail,
+not in the main heading. For an experiment review, prefer one concise purpose
+sentence, one selector row, one primary figure viewport, and a small accordion
+for handoff values, metadata, outputs, and raw records.
 
 ## Validation
 

@@ -60,6 +60,45 @@ def test_dual_reporter_triptych_builds_three_panel_data() -> None:
     assert set(result.ratio_time["treatment"]) == {"water", "EtOH"}
     assert list(result.snapshot_stats["treatment"]) == ["water", "EtOH"]
     assert result.snapshot_points.shape[0] == 4
+    assert result.trajectory_ci == 95.0
+    first_interval = result.od600_time.iloc[0]
+    assert first_interval["y_mean"] - first_interval["y_sd"] < first_interval["y_lo"]
+    assert first_interval["y_hi"] < first_interval["y_mean"] + first_interval["y_sd"]
+
+
+def test_dual_reporter_triptych_offsets_snapshot_points_by_well_not_value() -> None:
+    frame = _dual_reporter_df()
+    mask_a1 = (
+        frame["treatment"].eq("water")
+        & frame["time"].eq(1.0)
+        & frame["channel"].eq("YFP/CFP")
+        & frame["position"].eq("A1")
+    )
+    mask_a2 = (
+        frame["treatment"].eq("water")
+        & frame["time"].eq(1.0)
+        & frame["channel"].eq("YFP/CFP")
+        & frame["position"].eq("A2")
+    )
+    frame.loc[mask_a1, "value"] = 9.0
+    frame.loc[mask_a2, "value"] = 1.0
+
+    result = build_triptych_data(
+        frame,
+        time_col="time",
+        treatment_col="treatment",
+        growth_channel="OD600",
+        ratio_channel="YFP/CFP",
+        snapshot_channel="YFP/CFP",
+        snapshot_time=1.0,
+        treatment_order=["water", "EtOH"],
+    )
+
+    water = result.snapshot_points.loc[result.snapshot_points["treatment"].eq("water")]
+    assert water[["position", "value", "replicate_index"]].to_dict("records") == [
+        {"position": "A1", "value": 9.0, "replicate_index": 0},
+        {"position": "A2", "value": 1.0, "replicate_index": 1},
+    ]
 
 
 def test_dual_reporter_triptych_explicit_treatment_order_is_closed() -> None:
@@ -105,13 +144,30 @@ def test_dual_reporter_triptych_chart_uses_square_panels_and_full_treatment_doma
         data=result,
         time_col="time",
         treatment_col="treatment",
+        treatment_title="Condition state",
     )
     spec = chart.to_dict()
 
     assert spec["spacing"] == 16
     assert [panel["width"] for panel in spec["hconcat"]] == [260, 260, 260]
     assert [panel["height"] for panel in spec["hconcat"]] == [260, 260, 260]
-    assert spec["hconcat"][2]["layer"][0]["encoding"]["x"]["scale"]["domain"] == ["water", "EtOH", "AND"]
+    for panel in spec["hconcat"][:2]:
+        line_layer = next(layer for layer in panel["layer"] if layer["mark"]["type"] == "line")
+        assert line_layer["encoding"]["strokeDash"]["legend"]["title"] == "Condition state"
+        assert len(line_layer["encoding"]["strokeDash"]["scale"]["range"]) == 3
+    assert spec["resolve"]["scale"]["strokeDash"] == "shared"
+    snapshot_layers = spec["hconcat"][2]["layer"]
+    assert snapshot_layers[0]["encoding"]["x"]["scale"]["domain"] == ["water", "EtOH", "AND"]
+    assert snapshot_layers[0]["encoding"]["x"]["axis"]["title"] == "Condition state"
+    assert all(layer["mark"]["type"] != "bar" for layer in snapshot_layers)
+    mean_layer = next(layer for layer in snapshot_layers if layer["mark"].get("size") == 24)
+    assert mean_layer["encoding"]["y"]["field"] == "y_mean"
+    assert mean_layer["mark"]["color"] == "#334155"
+    assert "color" not in mean_layer["encoding"]
+    point_layer = next(layer for layer in snapshot_layers if layer["mark"]["type"] == "point")
+    assert point_layer["mark"]["fill"] == "white"
+    assert point_layer["mark"]["stroke"] == "#94a3b8"
+    assert point_layer["encoding"]["xOffset"]["field"] == "replicate_index"
 
 
 def test_dual_reporter_triptych_design_context_summarizes_identity_columns() -> None:
@@ -170,6 +226,7 @@ def test_dual_reporter_triptych_template_is_protocol_neutral() -> None:
     assert "Selected design" in body
     assert "Triptych context" not in body
     assert "summarize_design_context" in body
+    assert "bootstrap CI" in body
     assert "Export 8-vector" not in body
 
 

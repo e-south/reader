@@ -128,11 +128,27 @@ def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_war
                     _latest_mtime = _mtime
                     _latest_label = _label
             _default_label = _latest_label or record_labels[0]
-        mo.md(f"This run has {len(record_labels)} dataframe record(s). Select one to explore:")
+        _record_names = {
+            "promote_to_tidy_plus_map/df": "Annotated plate-reader data",
+            "ratio_yfp_od600/df": "YFP / OD600 ratios",
+            "ratio_yfp_cfp/df": "YFP / CFP ratios",
+            "ratio_cfp_od600/df": "CFP / OD600 ratios",
+            "sfxi_vec8/vec8": "Published SFXI 8-vector",
+        }
+        _record_options = {}
+        for _label in record_labels:
+            _record_id = str(record_info[_label].get("record_id") or _label)
+            _display = _record_names.get(_record_id, _record_id.replace("_", " ").replace("/", " · "))
+            if _display in _record_options:
+                _display = f"{_display} · {_label}"
+            _record_options[_display] = _label
+        _default_option = next(
+            _display for _display, _label in _record_options.items() if _label == _default_label
+        )
         record_dropdown = mo.ui.dropdown(
-            options=record_labels,
-            value=_default_label,
-            label="Dataset (dataframe record)",
+            options=_record_options,
+            value=_default_option,
+            label="Source data",
             full_width=True,
         )
     return record_dropdown
@@ -170,6 +186,18 @@ def _(pl, record_path):
 
 
 @app.cell(hide_code=True)
+def _(df_error, mo, selected_label):
+    if df_error:
+        mo.stop(
+            True,
+            mo.callout(
+                mo.md(f"Could not load source data `{selected_label}`: {df_error}"),
+                kind="danger",
+            ),
+        )
+
+
+@app.cell(hide_code=True)
 def _(build_design_treatment_summary_rows, df):
     design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
     return design_treatment_rows, design_treatment_note
@@ -182,27 +210,15 @@ def _(design_treatment_note, design_treatment_rows, mo, notebook_overview, rende
         notebook_overview,
         design_treatment_rows=design_treatment_rows,
         design_treatment_note=design_treatment_note,
+        include_heading=False,
     )
     return eda_overview_panel
 
 
 @app.cell(hide_code=True)
-def _(df_error, mo, record_dropdown, record_note):
-    _elements = [mo.md("## Dataset selection")]
-    if record_dropdown is None:
-        _elements.append(mo.md(record_note or "No datasets found."))
-    else:
-        _elements.append(record_dropdown)
-        if df_error:
-            _elements.append(mo.md(f"**Load error:** `{df_error}`"))
-    eda_dataset_panel = mo.vstack(_elements)
-    return eda_dataset_panel
-
-
-@app.cell(hide_code=True)
 def _(df, df_error, mo, pl, selected_label):
     _columns = list(df.columns) if hasattr(df, "columns") else []
-    _elements = [mo.md("## Dataset table explorer")]
+    _elements = []
     if df_error:
         _elements.append(mo.md(f"Failed to load `{selected_label}`: {df_error}"))
     elif df is None:
@@ -227,22 +243,14 @@ def _(deliverables, mo, render_notebook_deliverables_panel):
 
 
 @app.cell(hide_code=True)
-def _(deliverables_panel, eda_dataset_panel, eda_table_panel, mo):
-    sfxi_raw_data_panel = mo.accordion(
-        {
-            "Outputs and deliverables": deliverables_panel,
-            "Dataset selection": eda_dataset_panel,
-            "Dataset table": eda_table_panel,
-        },
-        multiple=True,
-        lazy=True,
+def _(mo, notebook_overview):
+    mo.md(
+        f"""
+        # {notebook_overview.experiment_title}
+
+        Review one promoter's growth, reporter ratio, and SFXI 8-vector at the selected acquisition time.
+        """
     )
-    return sfxi_raw_data_panel
-
-
-@app.cell(hide_code=True)
-def _(eda_overview_panel):
-    eda_overview_panel
 
 
 @app.cell(hide_code=True)
@@ -289,16 +297,6 @@ def _():
         resolve_workbench,
         REQUIRED_COLS,
     )
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md("""
-    ## SFXI 8-vector review
-    Each design is summarized by an **8-vector**: four **logic** values (`v00..v11`) and four **intensity** values (`y*00..y*11`).
-
-    Method details are in `docs/lib/sfxi_vec8_in_reader.md`. The table below is a review-time recomputation at the interactively selected time. The manifest-backed `sfxi_vec8/vec8` record remains the durable handoff.
-    """)
 
 
 @app.cell(hide_code=True)
@@ -392,7 +390,7 @@ def _(df, mo, pd, pl):
 
 
 @app.cell(hide_code=True)
-def _(mo, np, pd, sfxi_cfg, tidy_pd):
+def _(mo, pd, sfxi_cfg, tidy_pd):
     label_col = sfxi_cfg.design_by[0]
     time_col = sfxi_cfg.time_column
 
@@ -400,34 +398,9 @@ def _(mo, np, pd, sfxi_cfg, tidy_pd):
     if not design_vals:
         mo.stop(True, mo.md("No design values found for SFXI selection."))
 
-    time_series = pd.to_numeric(tidy_pd[time_col], errors="coerce").dropna()
-    time_vals = sorted({float(_v) for _v in time_series.tolist()})
-    if not time_vals:
+    if pd.to_numeric(tidy_pd[time_col], errors="coerce").dropna().empty:
         mo.stop(True, mo.md("No numeric time values found for SFXI selection."))
-    time_min = float(time_vals[0])
-    time_max = float(time_vals[-1])
-    if len(time_vals) > 1:
-        if np is not None:
-            _diffs = np.diff(np.array(time_vals, dtype=float))
-            _diffs = _diffs[_diffs > 0]
-            time_step = float(np.min(_diffs)) if _diffs.size else 0.25
-        else:
-            _diffs = [b - a for a, b in zip(time_vals[:-1], time_vals[1:]) if b > a]
-            time_step = min(_diffs) if _diffs else 0.25
-    else:
-        time_step = 0.25
-
-    default_time = sfxi_cfg.target_time_h if sfxi_cfg.target_time_h is not None else time_max
-    if np is not None:
-        try:
-            if np.isnan(default_time):
-                default_time = time_max
-        except Exception:
-            pass
-    if default_time < time_min or default_time > time_max:
-        default_time = time_max
-
-    return label_col, time_col, design_vals, time_min, time_max, time_step, default_time
+    return label_col, time_col, design_vals
 
 
 @app.cell(hide_code=True)
@@ -510,7 +483,7 @@ def _(mo, np, pd, sfxi_cfg, tidy_pd, time_col):
         )
 
     treatment_col = logic_treatment_col
-    sfxi_condition_order = [f"{_corner}: {sfxi_cfg.treatment_map[_corner]}" for _corner in ("00", "10", "01", "11")]
+    sfxi_condition_order = ["00", "10", "01", "11"]
     def _condition_key(value):
         text = str(value)
         if case_sensitive:
@@ -518,88 +491,59 @@ def _(mo, np, pd, sfxi_cfg, tidy_pd, time_col):
         return text.strip().casefold()
 
     sfxi_condition_map = {
-        _condition_key(sfxi_cfg.treatment_map[_corner]): f"{_corner}: {sfxi_cfg.treatment_map[_corner]}"
+        _condition_key(sfxi_cfg.treatment_map[_corner]): _corner
         for _corner in ("00", "10", "01", "11")
     }
     return common_times, sfxi_condition_map, sfxi_condition_order, treatment_col
 
 
 @app.cell(hide_code=True)
-def _(default_time, design_vals, label_col, mo, sfxi_cfg, time_max, time_min, time_step):
+def _(common_times, design_vals, label_col, mo, record_dropdown, sfxi_cfg):
     design_select = mo.ui.dropdown(
         options=design_vals,
         value=design_vals[0],
         label=f"Design ({label_col})",
         full_width=True,
     )
-    time_mode = mo.ui.dropdown(
-        options=["nearest", "last_before", "first_after", "exact"],
-        value=sfxi_cfg.time_mode,
-        label="Time mode",
+    _target_time = sfxi_cfg.target_time_h
+    if _target_time is None:
+        _default_time = common_times[-1]
+    else:
+        _default_time = min(common_times, key=lambda _time: abs(float(_time) - float(_target_time)))
+    _time_options = {}
+    for _time in common_times:
+        _time_label = f"{float(_time):.2f} h"
+        if _time_label in _time_options:
+            _time_label = f"{float(_time):.3f} h"
+        _time_options[_time_label] = float(_time)
+    _default_time_label = next(
+        _label for _label, _time in _time_options.items() if _time == float(_default_time)
+    )
+    time_select = mo.ui.dropdown(
+        options=_time_options,
+        value=_default_time_label,
+        label="Acquisition time",
         full_width=True,
     )
-    time_slider = mo.ui.slider(
-        start=time_min,
-        stop=time_max,
-        value=default_time,
-        step=time_step,
-        debounce=True,
-        show_value=True,
-        label="Target time (h)",
-        full_width=True,
-    )
+    _controls = [design_select, time_select]
+    _widths = [1.35, 1.0]
+    if record_dropdown is not None:
+        _controls.insert(0, record_dropdown)
+        _widths.insert(0, 1.25)
     mo.hstack(
-        [
-            design_select,
-            time_mode,
-            time_slider,
-        ]
+        _controls,
+        widths=_widths,
+        gap=0.75,
+        align="end",
+        wrap=True,
     )
-    return design_select, time_mode, time_slider
+    return design_select, time_select
 
 
 @app.cell(hide_code=True)
-def _(common_times, mo, np, time_mode, time_slider):
-    time_target_h = float(time_slider.value)
-    mode = str(time_mode.value)
-
-    def _choose_common_time(times, target, mode):
-        if not times:
-            return None
-        time_list = sorted(float(_t) for _t in times)
-        if target is None:
-            return time_list[-1]
-        target = float(target)
-        if mode == "exact":
-            if np is not None:
-                for _t in time_list:
-                    if np.isclose(_t, target, rtol=0, atol=1e-12):
-                        return _t
-            else:
-                for _t in time_list:
-                    if abs(_t - target) <= 1e-12:
-                        return _t
-            return None
-        if mode == "nearest":
-            return min(time_list, key=lambda _t: abs(_t - target))
-        if mode == "last_before":
-            candidates = [_t for _t in time_list if _t <= target]
-            return max(candidates) if candidates else None
-        if mode == "first_after":
-            candidates = [_t for _t in time_list if _t >= target]
-            return min(candidates) if candidates else None
-        return None
-
-    time_selected_h = _choose_common_time(common_times, time_target_h, mode)
-    if time_selected_h is None:
-        mo.stop(
-            True,
-            mo.md(
-                f"No common time matches target {time_target_h:.3f} h (mode={mode}). "
-                "Try a different time mode or adjust the slider."
-            ),
-        )
-    return time_target_h, time_selected_h
+def _(time_select):
+    time_selected_h = float(time_select.value)
+    return time_selected_h
 
 
 @app.cell(hide_code=True)
@@ -674,15 +618,21 @@ def _(design_select, label_col, mo, subset_pd, summarize_design_context):
 
 
 @app.cell(hide_code=True)
-def _(mo, time_mode, time_selected_h, time_target_h):
-    delta = abs(float(time_selected_h) - float(time_target_h))
-    lines = [
-        f"**Target time (slider): {float(time_target_h):.3f} h**",
-        f"**Canonical snapshot time used: {float(time_selected_h):.3f} h**",
+def _(mo, time_selected_h):
+    snapshot_selection_panel = mo.md(
+        f"**Observed acquisition time: {float(time_selected_h):.3f} h**"
+    )
+    return snapshot_selection_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, sfxi_cfg):
+    _lines = [
+        f"**{_state}** — {sfxi_cfg.treatment_map[_state]}"
+        for _state in ("00", "10", "01", "11")
     ]
-    if delta > 0:
-        lines.append(f"Δ from target (mode={time_mode.value}): {delta:.3f} h")
-    mo.md("## Snapshot selection\n" + "\n".join(lines))
+    sfxi_state_key_panel = mo.md("### SFXI state key\n" + "  \n".join(_lines))
+    return sfxi_state_key_panel
 
 
 @app.cell(hide_code=True)
@@ -746,7 +696,6 @@ def _(
     pd,
     time_col,
     sfxi_triptych_treatment_col,
-    triptych_context,
     triptych_data,
 ):
     if alt is None:
@@ -759,12 +708,17 @@ def _(
             data=triptych_data,
             time_col=time_col,
             treatment_col=sfxi_triptych_treatment_col,
+            treatment_title="SFXI state",
             acquisition_transition_time_h=acquisition_transition_time_h,
         )
     except Exception as exc:
         mo.stop(True, mo.md(f"Dual-reporter triptych render failed: `{exc}`"))
     _chart_view = mo.ui.altair_chart(_chart, chart_selection=False, legend_selection=False)
-    _chart_panel = mo.vstack([triptych_context, _chart_view], gap=0.35).style(
+    _plot_key = mo.md(
+        f"*Time series: mean with {triptych_data.trajectory_ci:g}% bootstrap CI. "
+        "Snapshot: observed wells, mean line, and sample-SD whiskers.*"
+    )
+    _chart_panel = mo.vstack([_chart_view, _plot_key], gap=0.2).style(
         {"min-height": "520px", "width": "100%", "max-width": "100%"}
     )
     mo.output.replace(_chart_panel)
@@ -784,16 +738,17 @@ def _(build_vec8_from_tidy, mo, sfxi_step_cfg, time_selected_h, tidy_pd):
 
 @app.cell(hide_code=True)
 def _(mo, vec8_result):
-    mo.vstack(
+    sfxi_handoff_panel = mo.vstack(
         [
-            mo.md("## Review-time 8-vector"),
             mo.md(
-                "This interactive table is not persisted. Generate the configured workbook from the canonical "
-                "record with `uv run reader export <config-or-experiment> --only logic_summary_workbook`."
+                "The review-time values are not persisted. The manifest-backed `sfxi_vec8/vec8` record is the "
+                "durable handoff; generate its workbook with "
+                "`uv run reader export <config-or-experiment> --only logic_summary_workbook`."
             ),
             mo.ui.table(vec8_result.vec8, page_size=10),
         ]
     )
+    return sfxi_handoff_panel
 
 
 @app.cell(hide_code=True)
@@ -804,17 +759,45 @@ def _(mo, vec8_result):
         f"**reference.design_id_resolved:** `{_ref.get('design_id_resolved')}`",
         f"**reference.stat:** `{_ref.get('stat')}`",
     ]
-    mo.md("## Reference anchor\n" + "\n".join(_lines))
+    reference_anchor_panel = mo.md("\n".join(_lines))
+    return reference_anchor_panel
 
 
 @app.cell(hide_code=True)
-def _(mo, sfxi_raw_data_panel):
-    mo.vstack(
-        [
-            mo.md("## Raw records and generated outputs"),
-            sfxi_raw_data_panel,
-        ]
+def _(
+    deliverables_panel,
+    eda_overview_panel,
+    eda_table_panel,
+    mo,
+    record_note,
+    record_warning,
+    reference_anchor_panel,
+    sfxi_handoff_panel,
+    snapshot_selection_panel,
+    sfxi_state_key_panel,
+    triptych_context,
+):
+    _source_items = []
+    if record_warning:
+        _source_items.append(mo.md(record_warning))
+    elif record_note:
+        _source_items.append(mo.md(record_note))
+    _source_items.extend([eda_table_panel, deliverables_panel])
+    sfxi_details = mo.accordion(
+        {
+            "Selected design and snapshot": mo.vstack(
+                [triptych_context, snapshot_selection_panel, sfxi_state_key_panel, reference_anchor_panel],
+                gap=0.5,
+            ),
+            "SFXI 8-vector handoff": sfxi_handoff_panel,
+            "Experiment provenance": eda_overview_panel,
+            "Source data and outputs": mo.vstack(_source_items, gap=0.5),
+        },
+        multiple=False,
+        lazy=True,
     )
+    sfxi_details
+    return sfxi_details
 
 
 if __name__ == "__main__":

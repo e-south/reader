@@ -120,6 +120,7 @@ def draw_time_series_panel(
     marked_time_kwargs: dict | None = None,
     line_width: float = 1.8,
     mean_marker_size: float = 36.0,
+    mean_marker_every: int = 1,
     replicate_marker_size: float = 18.0,
     axis_label_size: float = 10.0,
     tick_label_size: float = 8.0,
@@ -178,9 +179,10 @@ def draw_time_series_panel(
                 alpha=line_alpha,
                 zorder=1.5,
             )
+            marker_rows = segment_df.iloc[:: max(1, int(mean_marker_every))]
             ax.scatter(
-                segment_df[x_col],
-                segment_df["mean"],
+                marker_rows[x_col],
+                marker_rows["mean"],
                 s=mean_marker_size,
                 zorder=2.5,
                 marker=marker_map[hue],

@@ -354,7 +354,11 @@ def _(
     except Exception as exc:
         mo.stop(True, mo.md(f"Triptych render failed: `{exc}`"))
     _chart_view = mo.ui.altair_chart(_chart, chart_selection=False, legend_selection=False)
-    _chart_panel = mo.vstack([triptych_context, _chart_view], gap=0.35).style(
+    _plot_key = mo.md(
+        f"*Time series: mean with {triptych_data.trajectory_ci:g}% bootstrap CI. "
+        "Snapshot: observed wells, mean line, and sample-SD whiskers.*"
+    )
+    _chart_panel = mo.vstack([triptych_context, _chart_view, _plot_key], gap=0.25).style(
         {"min-height": "520px", "width": "100%", "max-width": "100%"}
     )
     mo.output.replace(_chart_panel)

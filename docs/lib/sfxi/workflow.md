@@ -111,10 +111,14 @@ uv run reader notebook <config-or-experiment> \
   --mode run
 ```
 
-The template reads experiment records and supports interactive vec8 review. A
-time selected in the notebook produces a non-persistent review table. It does
-not replace `sfxi_vec8/vec8` or write a second handoff. Use `reader export` when
-a durable workbook is required.
+The template reads experiment records and supports interactive vec8 review. Its
+acquisition-time selector lists only times observed across every required SFXI
+state, so each selection is a valid snapshot. Time-series lines show means with
+95% bootstrap confidence intervals. Snapshot panels show exact well values as
+hollow points, a short mean line, and sample-standard-deviation whiskers. A
+selected time produces a non-persistent review table; it does not replace
+`sfxi_vec8/vec8` or write a second handoff. Use `reader export` when a durable
+workbook is required.
 
 Reader scaffolds the notebook under `outputs/notebooks/`, so change the template
 or a hand-authored notebook when behavior must be durable. Do not hand-edit a

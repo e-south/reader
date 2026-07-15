@@ -172,10 +172,9 @@ def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
     assert "allow_scan=__ALLOW_RECORD_SCAN__" in template
 
 
-def test_triptych_notebook_templates_debounce_snapshot_time_slider() -> None:
+def test_triptych_notebook_templates_keep_compact_reactive_controls() -> None:
     for template_name in ("notebook/dual_reporter_triptych", "notebook/sfxi_eda"):
         template = resolve_notebook_template_descriptor(template_name).load_body()
-        assert "debounce=True" in template
         assert "chart_selection=False" in template
         assert "legend_selection=False" in template
         assert "min-height" in template
@@ -184,6 +183,9 @@ def test_triptych_notebook_templates_debounce_snapshot_time_slider() -> None:
         assert "Triptych context" not in template
         assert "Design alias" in template
         assert "Sequence" in template
+        assert "bootstrap CI" in template
+    assert "debounce=True" in resolve_notebook_template_descriptor("notebook/dual_reporter_triptych").load_body()
+    assert 'label="Acquisition time"' in resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
 
 def test_sfxi_notebook_uses_protocol_bound_transform_config() -> None:
@@ -200,21 +202,40 @@ def test_sfxi_notebook_surfaces_deliverables_with_progressive_disclosure() -> No
     assert "render_notebook_deliverables_panel" in template
     assert "render_notebook_deliverables_panel(mo, deliverables)" in template
     assert "render_notebook_overview_panel" in template
+    assert "include_heading=False" in template
     assert "data_ready" not in template
-    assert "sfxi_raw_data_panel = mo.accordion" in template
-    assert "Raw records and generated outputs" in template
+    assert "sfxi_details = mo.accordion" in template
+    assert '"Experiment provenance": eda_overview_panel' in template
+    assert '"Source data and outputs": mo.vstack' in template
+    assert "multiple=False" in template
     assert "def _(eda_base_panel)" not in template
 
 
 def test_sfxi_notebook_keeps_interactive_vec8_review_non_persistent() -> None:
     template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
-    assert "Review-time 8-vector" in template
+    assert "review-time values are not persisted" in template
+    assert "SFXI 8-vector handoff" in template
     assert "sfxi_vec8/vec8" in template
     assert "reader export" in template
     assert ".to_excel(" not in template
     assert "json.dump(" not in template
     assert "mkdir(" not in template
+
+
+def test_sfxi_notebook_keeps_one_compact_primary_surface() -> None:
+    template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
+
+    assert "# {notebook_overview.experiment_title}" in template
+    assert "Review one promoter's growth, reporter ratio, and SFXI 8-vector" in template
+    assert "SFXI 8-vector review" not in template
+    assert "_controls = [design_select, time_select]" in template
+    assert "_controls.insert(0, record_dropdown)" in template
+    assert "widths=_widths" in template
+    assert 'align="end"' in template
+    assert "wrap=True" in template
+    assert "mo.vstack([triptych_context, _chart_view]" not in template
+    assert "mo.output.replace(_chart_panel)" in template
 
 
 def test_sfxi_notebook_treatment_condition_labels_respect_case_insensitive_config() -> None:
@@ -229,10 +250,17 @@ def test_sfxi_notebook_triptych_uses_closed_corner_condition_labels() -> None:
     template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
     assert "sfxi_condition_order" in template
-    assert 'f"{_corner}: {sfxi_cfg.treatment_map[_corner]}"' in template
+    assert 'sfxi_condition_order = ["00", "10", "01", "11"]' in template
+    assert "_condition_key(sfxi_cfg.treatment_map[_corner]): _corner" in template
     assert 'sfxi_triptych_treatment_col = "sfxi_condition"' in template
     assert "sfxi_triptych_rows[sfxi_triptych_treatment_col].isin(sfxi_condition_order)" in template
     assert "treatment_order=sfxi_condition_order" in template
+    assert 'treatment_title="SFXI state"' in template
+    assert "### SFXI state key" in template
+    assert '"Annotated plate-reader data"' in template
+    assert 'label="Acquisition time"' in template
+    assert "time_selected_h = float(time_select.value)" in template
+    assert "time_slider" not in template
 
 
 def test_notebook_template_catalog_exposes_domain_semantics() -> None:

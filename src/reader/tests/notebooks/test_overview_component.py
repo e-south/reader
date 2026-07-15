@@ -76,6 +76,22 @@ def test_build_notebook_overview_requires_identity_and_protocol(tmp_path: Path) 
         )
 
 
+def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: Path) -> None:
+    experiment_id = "20260706_sfxi_sensor-panel-m9-glu-secg"
+    overview = build_notebook_overview(
+        experiment_id=experiment_id,
+        experiment_title=experiment_id,
+        protocol_id="logic/sfxi_screen",
+        experiment_root=tmp_path,
+        outputs_dir=tmp_path / "outputs",
+        notebooks_dir=tmp_path / "outputs" / "notebooks",
+        pipeline_step_ids=(),
+    )
+
+    assert overview.experiment_id == experiment_id
+    assert overview.experiment_title == "2026-07-06 · SFXI Sensor Panel M9 Glu SECG"
+
+
 def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> None:
     mo = _FakeMarimo()
     overview = build_notebook_overview(

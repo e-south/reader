@@ -118,7 +118,12 @@ Figure description: each design page has three assay panels across the top:
 growth kinetics, reporter-ratio kinetics, and a selected-time treatment
 snapshot. A sequence-annotation panel spans the bottom. The page title uses
 the design display label. Treatment colors and markers remain consistent
-across the assay panels.
+across the assay panels. Time-series lines show treatment means and the bands
+show the configured bootstrap confidence interval for those means. Condition
+markers are sampled along each line rather than repeated at every acquisition.
+The snapshot shows every observed well as a hollow point, the treatment mean as
+a short colored line, and sample standard deviation as a whisker. It does not
+use bar height as a second encoding of the mean.
 
 Treatment identity is not configured again for this plot. The compiler carries
 `protocol.inputs.logic_map_ref` into the plot, and the plot resolves the same
