@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +10,7 @@ import pytest
 import yaml
 
 from reader.domains.plate_reader.analysis.response_window import bundle as bundle_module
+from reader.domains.plate_reader.analysis.response_window.notebook import write_review_notebook
 from reader.domains.plate_reader.analysis.response_window.provenance import sha256_file
 from reader.errors import ContractError
 from reader.response_window import (
@@ -27,6 +30,22 @@ def test_verify_bundle_enforces_record_and_artifact_contracts(tmp_path: Path) ->
 
     assert bundle.root == root.resolve()
     assert bundle.counts["experiments"] == 1
+
+
+def test_single_experiment_review_exports_without_cross_experiment_capability(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    output = tmp_path / "review.html"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "marimo", "export", "html", str(root / "review.py"), "-o", str(output)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert output.is_file()
 
 
 def test_verify_bundle_rejects_artifact_drift(tmp_path: Path) -> None:
@@ -426,7 +445,7 @@ def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_gro
         "random_seed": 17,
     }
     (root / "request.yaml").write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
-    (root / "review.py").write_text("import marimo\n", encoding="utf-8")
+    write_review_notebook(root)
     (root / "sources" / "experiment" / "config.yaml").write_text(
         "schema: reader/v7\nexperiment:\n  id: experiment\n  title: Example promoter experiment\n",
         encoding="utf-8",

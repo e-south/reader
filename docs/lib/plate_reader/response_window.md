@@ -2,8 +2,8 @@
 doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-14
-summary: Reader contract for event-relative response and reference-relative fluorescence summaries.
+last_verified: 2026-07-15
+summary: Event-relative response summaries, verified review collections, and experiment-level evidence navigation.
 ---
 
 # Plate-reader response-window analysis
@@ -200,8 +200,51 @@ are bundled, so provenance remains checkable after the bundle moves.
 ## Review evidence
 
 Generated `review.py` uses Marimo's medium-width layout, one responsive control
-row, and a dropdown for the review view. Only controls relevant to the selected
-view remain in that row. The trajectory view shows replicate medians with a
+row, and a dropdown for the review view. A review collection is the exact
+experiment universe recorded in the verified bundle. Reader does not infer that
+universe from protocol IDs, directory names, or shared slug fragments.
+
+The notebook offers two identity-preserving navigation routes:
+
+- **One experiment:** select an experiment, then an exact Reader `design_id`.
+- **Across experiments:** keep one exact Reader `design_id` selected and show
+  every experiment in the review collection that contains it.
+
+Both routes share one focused-design memory. Changing experiments retains the
+exact Reader design when the new experiment contains it. If it does not, the
+local selector shows a deterministic fallback without erasing the remembered
+design, so returning to a compatible experiment restores the intended focus.
+Selecting a design in the across-experiment route updates the same focus. The
+experiment, condition, and review-view controls have independent reactive
+ownership and therefore do not reset when that focus changes.
+The selected response-summary ID is remembered independently and is retained
+across compatible experiment or design changes; an unavailable summary uses a
+temporary deterministic fallback without overwriting that preference.
+
+The second route includes only non-reference designs present in at least two
+experiments under the primary reduction. This is navigation, not a declaration
+that the experiments are biologically comparable. Reader labels the entity
+"Reader design"; candidate, genotype, sequence, and repeat authority require a
+separate study binding or study policy. Condition labels come from the verified
+display contract while stable state codes remain visible.
+When a bundle has no repeated non-reference design, Reader omits the
+across-experiment view and preserves every experiment-local view. Within an
+across-experiment selection, the response-summary selector offers only
+definitions present identically in every displayed experiment; partial
+reductions are omitted and semantic drift fails closed.
+
+`experiment.title` is the presentation authority when a source config provides
+it. Otherwise Reader applies a domain-neutral fallback to the stable
+experiment ID. The fallback does not carry study- or metric-specific acronym
+rules, so study-facing collections should author concise titles explicitly.
+
+Only controls relevant to the selected view remain in the control row. View
+contracts declare whether selection is experiment-local, multi-experiment, or
+collection-wide; whether one reduction or all reductions are shown; and whether
+one condition is selected. The primary figure stays visible, while exact rows,
+coverage, interpretation, and bundle provenance are loaded in a lazy accordion.
+
+The trajectory view shows replicate medians with a
 central 90% replicate interval rather than individual-well lines, then places
 the four response and four anchored-fluorescence handoff values directly below
 the trajectories. The response handoff shows observed reduced well values as
@@ -215,6 +258,23 @@ pDual-10 anchor. Dedicated handoff, response-example, reduction-sensitivity,
 and QC views remain available through the same viewport. Compact heatmaps use
 square cells; row-dense static matrices may remain rectangular to avoid
 unbounded page height.
+
+The across-experiment view keeps each experiment on its own sampling grid and
+uses one line style and one endpoint row per experiment. It does not pool traces
+or calculate an across-experiment mean. Response summaries show observed well
+values as hollow points plus the published experiment aggregate. Anchored
+fluorescence remains an independent design/reference comparison and therefore
+has no fabricated paired-well points. Bootstrap intervals and event-time
+sensitivity are displayed separately.
+Trajectory lines and bands are pointwise replicate summaries. Endpoint panels
+instead reduce each well over the declared window and then aggregate wells;
+the figure states this distinction because those operations need not produce
+the same numerical curve-derived value.
+
+Assay-neutral navigation mechanics live in `reader.notebook_review`. That module
+indexes exact review-collection memberships and has no plate-reader, SFXI,
+response-window, study, or campaign semantics. The response-window package owns
+its design-row adapter, condition selector, validation, and plots.
 
 Figure canvases remain white under either Marimo theme. State labels and axes
 use the study vocabulary, while the numerical records remain

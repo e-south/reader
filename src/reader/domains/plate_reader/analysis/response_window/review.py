@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -10,6 +10,8 @@ import pandas as pd
 
 from .display import validate_display_manifest
 from .plot_style import apply_publication_style
+from .review_collection import cross_experiment_design_rows
+from .review_cross_experiment import cross_experiment_state_figure
 from .review_endpoint_plots import (
     measured_response_examples_figure,
     quality_figure,
@@ -17,100 +19,13 @@ from .review_endpoint_plots import (
     state_summary_figure,
 )
 from .review_time_series import time_series_figure
-from .visual_labels import (
-    STATE_COLORS,
-    anchored_fluorescence_axis_label,
-    channels,
-    response_axis_label,
-    response_summary_label,
+from .review_views import (
+    REVIEW_VIEW_SPECS,
+    VIEW_LABELS,
+    ReviewViewSpec,
+    review_view_spec,
 )
-
-
-@dataclass(frozen=True)
-class ReviewViewSpec:
-    view_id: str
-    label: str
-    premise: str
-    decision_value: str
-    interpretation: str
-    alt_text: str
-    non_claim_boundary: str
-
-
-REVIEW_VIEW_SPECS = (
-    ReviewViewSpec(
-        view_id="time_series",
-        label="Time series and window",
-        premise="The selected post-stress interval connects observed trajectories to the eight-value handoff",
-        decision_value="Shows whether the reduced response and fluorescence values are supported by sustained, replicate-observed trajectories.",
-        interpretation="Solid curves are replicate medians, translucent bands are the central 90% of design wells, and the dashed curve is the same-state {reference_id} fluorescence anchor. Gray shading marks event-time uncertainty; amber marks the selected response window. The lower panels keep bootstrap intervals and event-time sensitivity separate, with observed well points shown only for rᵢ.",
-        alt_text="Three aligned square trajectory panels show {growth} growth, {response_axis} response, and {magnitude_ratio} fluorescence in four conditions using replicate medians and central 90% replicate intervals. Two square dot-and-whisker panels show the four response and four {reference_id}-relative fluorescence values produced by the selected post-stress window. Hollow points are observed response-well reductions; anchored fluorescence compares independent design and reference aggregates and therefore has no per-well b points. A compact card records the window and assay support.",
-        non_claim_boundary="The selected interval is a prespecified assay summary, not proof of when biology begins to respond.",
-    ),
-    ReviewViewSpec(
-        view_id="state_summary",
-        label="State handoff values",
-        premise="The selected window preserves response and anchored fluorescence by condition",
-        decision_value="Shows the eight measured values and their assay-derived uncertainty before study scoring.",
-        interpretation="Response is {response_axis}; fluorescence is {anchored_axis}. Hollow points are observed response-well reductions. Colored bootstrap intervals and gray event-time sensitivity marks remain separate; anchored fluorescence has no fabricated per-well b points.",
-        alt_text="Two dot-and-whisker panels show four condition-specific {response_axis} responses and four {anchored_axis} fluorescence summaries. The response panel includes observed well reductions. Both panels show asymmetric bootstrap intervals separately from gray event-time sensitivity marks.",
-        non_claim_boundary="These assay summaries are not campaign scores or validated responsive promoters.",
-    ),
-    ReviewViewSpec(
-        view_id="measured_response_examples",
-        label="Measured response examples",
-        premise="Measured response examples provide direction checks across all four conditions",
-        decision_value="Checks that familiar response examples retain their expected signed directions under the selected reduction.",
-        interpretation="Each panel preserves raw condition summaries; no per-design min-max transform is applied.",
-        alt_text="Two heatmaps show four-condition {response_axis} response and {anchored_axis} fluorescence for the configured measured response examples and their anchor rows across Reader experiments.",
-        non_claim_boundary="SpyP and sulAp are interpretation references, not required or optimal campaign archetypes.",
-    ),
-    ReviewViewSpec(
-        view_id="reduction_sensitivity",
-        label="Reduction sensitivity",
-        premise="Prespecified reductions retain the same condition-level response structure",
-        decision_value="Reveals whether a window, integration, or pre-event subtraction choice changes the handoff materially.",
-        interpretation="Rows are prespecified reductions; columns are the four assay conditions on explicit response and fluorescence scales.",
-        alt_text="Two heatmaps compare the selected design's four {response_axis} responses and four {anchored_axis} fluorescence values across prespecified post-event windows, reduction methods, and response bases.",
-        non_claim_boundary="Agreement among reductions does not establish which interval is biologically optimal.",
-    ),
-    ReviewViewSpec(
-        view_id="quality",
-        label="Quality and uncertainty",
-        premise="The handoff exposes uncertainty and replicate support for every condition",
-        decision_value="Separates replicate-bootstrap variation, event-bound sensitivity, and independent-well support.",
-        interpretation="Uncertainty is reported separately for {response_axis} response and {anchored_axis} fluorescence.",
-        alt_text="Three grouped-bar panels show replicate-bootstrap variation, event-bound sensitivity, and independent-well counts for each of the four assay conditions.",
-        non_claim_boundary="These empirical intervals are not calibrated biological effect thresholds.",
-    ),
-)
-VIEW_LABELS = {spec.label: spec.view_id for spec in REVIEW_VIEW_SPECS}
-_VIEW_SPECS_BY_ID = {spec.view_id: spec for spec in REVIEW_VIEW_SPECS}
-
-
-def review_view_spec(view_id: str, *, display: dict[str, object]) -> ReviewViewSpec:
-    display = validate_display_manifest(display)
-    try:
-        spec = _VIEW_SPECS_BY_ID[view_id]
-    except KeyError as exc:
-        raise ValueError(f"unknown response-window review view: {view_id!r}.") from exc
-    values = channels(display)
-    context = {
-        "event_label_lower": str(display["event_label"]).lower(),
-        "growth": values["growth"],
-        "magnitude_ratio": values["magnitude_ratio"],
-        "reference_id": values["reference_design_id"],
-        "response_axis": response_axis_label(display),
-        "anchored_axis": anchored_fluorescence_axis_label(display),
-    }
-    return replace(
-        spec,
-        premise=spec.premise.format_map(context),
-        decision_value=spec.decision_value.format_map(context),
-        interpretation=spec.interpretation.format_map(context),
-        alt_text=spec.alt_text.format_map(context),
-        non_claim_boundary=spec.non_claim_boundary.format_map(context),
-    )
+from .visual_labels import STATE_COLORS, response_summary_label
 
 
 def load_review_tables(bundle_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -127,28 +42,51 @@ def load_review_tables(bundle_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, p
 def render_review_figure(
     *,
     view_id: str,
-    experiment_id: str,
-    design_id: str,
     reduction_id: str,
     designs: pd.DataFrame,
     wells: pd.DataFrame,
     traces: pd.DataFrame,
     events: pd.DataFrame,
     display: dict[str, object],
+    experiment_id: str | None = None,
+    design_id: str | None = None,
+    state: str | None = None,
+    experiment_labels: Mapping[str, str] | None = None,
 ) -> plt.Figure:
     display = validate_display_manifest(display)
     review_view_spec(view_id, display=display)
-    if view_id == "measured_response_examples":
+    if view_id == "multi_experiment_evidence":
+        if design_id is None or state is None or experiment_labels is None:
+            raise ValueError(
+                "multi-experiment response-window review requires a Reader design, condition, and experiment labels."
+            )
+        selected = cross_experiment_design_rows(
+            designs,
+            design_id=design_id,
+            reduction_id=reduction_id,
+        )
+        figure = cross_experiment_state_figure(
+            selected=selected,
+            state=state,
+            experiment_labels=experiment_labels,
+            wells=wells,
+            traces=traces,
+            events=events,
+            display=display,
+        )
+    elif view_id == "measured_response_examples":
         figure = measured_response_examples_figure(
             rows=measured_response_example_rows(designs, display=display, reduction_id=reduction_id),
             display=display,
         )
     elif view_id == "reduction_sensitivity":
+        experiment_id, design_id = _required_local_selection(experiment_id, design_id)
         rows = designs.loc[
             designs["experiment_id"].astype(str).eq(experiment_id) & designs["design_id"].astype(str).eq(design_id)
         ]
         figure = reduction_sensitivity_figure(rows=rows, display=display)
     else:
+        experiment_id, design_id = _required_local_selection(experiment_id, design_id)
         selected = selected_handoff_row(
             designs,
             experiment_id=experiment_id,
@@ -185,6 +123,12 @@ def render_review_figure(
         else:
             raise AssertionError(f"unhandled validated review view: {view_id!r}.")
     return apply_publication_style(figure)
+
+
+def _required_local_selection(experiment_id: str | None, design_id: str | None) -> tuple[str, str]:
+    if experiment_id is None or design_id is None:
+        raise ValueError("experiment-local response-window review requires an experiment and Reader design.")
+    return experiment_id, design_id
 
 
 def selected_handoff_row(

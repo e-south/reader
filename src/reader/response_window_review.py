@@ -20,6 +20,13 @@ from reader.domains.plate_reader.analysis.response_window.review import (
     review_view_spec,
     selected_handoff_row,
 )
+from reader.domains.plate_reader.analysis.response_window.review_collection import (
+    cross_experiment_design_rows,
+    response_window_review_collection,
+)
+from reader.domains.plate_reader.analysis.response_window.review_reduction_options import (
+    common_cross_experiment_reductions,
+)
 from reader.domains.promoter.candidate_bindings import (
     BINDING_SCHEMA_ID,
     PromoterCandidateBinding,
@@ -43,11 +50,14 @@ __all__ = [
     "PromoterCandidateBindings",
     "ReviewViewSpec",
     "build_promoter_evidence_bundle",
+    "common_cross_experiment_reductions",
+    "cross_experiment_design_rows",
     "load_promoter_candidate_bindings",
     "load_objective_display_overlay",
     "load_review_tables",
     "measured_response_example_rows",
     "render_review_figure",
+    "response_window_review_collection",
     "response_summary_options",
     "review_view_spec",
     "selected_handoff_row",

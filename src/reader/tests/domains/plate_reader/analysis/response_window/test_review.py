@@ -8,6 +8,7 @@ from reader.domains.plate_reader.analysis.response_window.review import (
     VIEW_LABELS,
     render_review_figure,
     response_summary_options,
+    review_view_spec,
 )
 from reader.domains.plate_reader.analysis.response_window.review_endpoint_plots import (
     measured_response_examples_figure,
@@ -18,7 +19,26 @@ from reader.domains.plate_reader.analysis.response_window.review_endpoint_plots 
 
 def test_review_vocabulary_distinguishes_examples_from_reference_anchor() -> None:
     assert VIEW_LABELS["Measured response examples"] == "measured_response_examples"
+    assert VIEW_LABELS["Across experiments"] == "multi_experiment_evidence"
     assert "Reference examples" not in VIEW_LABELS
+
+
+def test_review_view_specs_declare_navigation_semantics() -> None:
+    local = review_view_spec("time_series", display=_display())
+    cross_experiment = review_view_spec("multi_experiment_evidence", display=_display())
+    sensitivity = review_view_spec("reduction_sensitivity", display=_display())
+
+    assert (local.selection_scope, local.reduction_mode, local.condition_mode) == (
+        "experiment_design",
+        "selected",
+        "all",
+    )
+    assert (cross_experiment.selection_scope, cross_experiment.reduction_mode, cross_experiment.condition_mode) == (
+        "multi_experiment_design",
+        "selected",
+        "selected",
+    )
+    assert (sensitivity.selection_scope, sensitivity.reduction_mode) == ("experiment_design", "all")
 
 
 def test_response_summary_options_use_compact_labels_and_stable_ids() -> None:
