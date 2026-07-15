@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import matplotlib.colors as mcolors
@@ -7,13 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
-from matplotlib.markers import MarkerStyle
 
 from reader.domains.plate_reader.analysis.response_window import promoter_evidence_figure as figure_module
 from reader.domains.plate_reader.analysis.response_window.promoter_evidence_overlay import (
     load_objective_display_overlay,
 )
-from reader.domains.plate_reader.analysis.response_window.visual_labels import STATE_MARKERS
 from reader.domains.promoter import sequence_panel as sequence_panel_module
 from reader.domains.promoter.candidate_bindings import (
     PromoterCandidateBinding,
@@ -33,6 +32,7 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         design_id="design",
         reduction_id="event_logmean_6_12h_post",
         selected=_selected(),
+        wells=_wells(reduction_id="event_logmean_6_12h_post"),
         traces=_traces(),
         events=pd.DataFrame([{"experiment_id": "experiment", "event_time_uncertainty_h": 0.2}]),
         display=_display(),
@@ -41,54 +41,70 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
 
     try:
         assert diagnostics.adapter_kind == "densegen_tfbs"
-        assert len(figure.axes) == 8
-        header, growth, response, fluorescence, response_handoff, fluorescence_handoff, provenance, sequence = (
-            figure.axes
-        )
+        assert len(figure.axes) == 7
+        header, growth, response, fluorescence, handoff, sequence, provenance = figure.axes
         assert header.get_gid() == "promoter-evidence-header"
         header_text = "\n".join(text.get_text() for text in header.texts)
         assert "Experiment  experiment" in header_text
-        assert "Reduction  event_logmean_6_12h_post" in header_text
+        assert "Response summary  6-12 h log mean (primary)" in header_text
+        assert "dashed/hollow = pDual-10 anchor" in header_text
         assert [axis.get_title(loc="left") for axis in (growth, response, fluorescence)] == [
             "A  Growth by condition",
             "B  YFP / CFP response",
             "C  YFP / OD600 with pDual-10 anchor",
         ]
-        assert response_handoff.get_title(loc="left") == "D1  Response handoff, r_i"
-        assert fluorescence_handoff.get_title(loc="left") == "D2  pDual-10-relative fluorescence, b_i"
-        assert provenance.get_title(loc="left") == "E  Provenance and QC"
-        assert response_handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
-        assert response_handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
-        assert fluorescence_handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
-        assert fluorescence_handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
-        for axis in (response_handoff, fluorescence_handoff):
-            for state, marker in STATE_MARKERS.items():
-                gid = f"handoff-value-{state}"
-                state_points = axis.findobj(lambda artist, expected_gid=gid: artist.get_gid() == expected_gid)
-                assert len(state_points) == 1
-                expected = MarkerStyle(marker).get_path().transformed(MarkerStyle(marker).get_transform()).vertices
-                np.testing.assert_allclose(state_points[0].get_paths()[0].vertices, expected)
+        assert all(axis.get_box_aspect() == 1.0 for axis in (growth, response, fluorescence, handoff))
+        assert handoff.get_title(loc="left") == "D  Eight-value handoff"
+        assert sequence.get_title(loc="left") == "E  DenseGen TFBS annotation"
+        assert provenance.get_title(loc="left") == "F  Provenance and QC"
+        assert handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
+        assert handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
+        assert len(fluorescence.findobj(lambda artist: artist.get_gid() == "anchor-replicate-interval")) == 4
+        assert [tick.get_text() for tick in handoff.get_yticklabels()] == [
+            "r₀₀",
+            "r₁₀",
+            "r₀₁",
+            "r₁₁",
+            "b₀₀",
+            "b₁₀",
+            "b₀₁",
+            "b₁₁",
+        ]
+        for state in ("00", "10", "01", "11"):
+            response_points = handoff.findobj(lambda artist, gid=f"replicate-values-r{state}": artist.get_gid() == gid)
+            assert len(response_points) == 1
+            assert len(response_points[0].get_offsets()) == 3
+            assert not handoff.findobj(lambda artist, gid=f"replicate-values-b{state}": artist.get_gid() == gid)
+            for prefix in ("r", "b"):
+                assert handoff.findobj(lambda artist, gid=f"handoff-summary-{prefix}{state}": artist.get_gid() == gid)
         provenance_text = "\n".join(text.get_text() for text in provenance.texts)
         assert "Objective-neutral evidence" in provenance_text
         assert "RMF is not calculated by Reader" in provenance_text
         assert "Binding  exact alias" in provenance_text
-        assert sequence.get_title(loc="left") == "F  DenseGen TFBS annotation"
-        assert sequence.get_subplotspec().colspan.start == 0
-        assert sequence.get_subplotspec().colspan.stop == 3
+        assert sequence.get_position().x0 > handoff.get_position().x1
+        assert provenance.get_position().x0 > handoff.get_position().x1
+        assert sequence.get_position().y0 > provenance.get_position().y1
         assert abs(sequence.get_ylim()[1] - sequence.get_ylim()[0]) < 80
         assert mcolors.to_hex(figure.get_facecolor()) == "#ffffff"
         assert all(mcolors.to_hex(axis.get_facecolor()) == "#ffffff" for axis in figure.axes)
         assert figure._suptitle is not None
-        assert "design · candidate-spyp" in figure._suptitle.get_text()
+        assert figure._suptitle.get_text() == "Promoter response evidence · spyP promoter"
         assert len(figure._suptitle.get_text()) < 100
         figure.canvas.draw()
         renderer = figure.canvas.get_renderer()
         header_legend = header.get_legend()
         assert header_legend is not None
-        assert {text.get_text() for text in header_legend.get_texts()} >= {
-            "Bootstrap SD",
-            "Event-time sensitivity",
+        assert {text.get_text() for text in header_legend.get_texts()} == {
+            "No stress",
+            "Ethanol",
+            "Ciprofloxacin",
+            "Ethanol + ciprofloxacin",
         }
+        handoff_notes = "\n".join(text.get_text() for text in handoff.texts)
+        assert "Central 90% bootstrap interval" in handoff_notes
+        assert "observed rᵢ wells" in handoff_notes
+        assert "independent aggregates" in handoff_notes
+        assert "Event-time sensitivity" in handoff_notes
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
         assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v2"
     finally:
@@ -107,6 +123,7 @@ def test_promoter_evidence_figure_labels_supplied_raw_objective_values_as_screen
         design_id="design",
         reduction_id="primary",
         selected=_selected(),
+        wells=_wells(reduction_id="primary"),
         traces=_traces(),
         events=pd.DataFrame([{"experiment_id": "experiment", "event_time_uncertainty_h": 0.2}]),
         display=_display(),
@@ -120,6 +137,53 @@ def test_promoter_evidence_figure_labels_supplied_raw_objective_values_as_screen
         assert "Response separation  0.8 raw log2 units" in text
         assert "ON fluorescence floor  0.3 pDual-10-relative log2 fluorescence" in text
         assert "calibrated score" not in text.lower()
+    finally:
+        plt.close(figure)
+
+
+def test_promoter_evidence_figure_fits_six_component_overlay(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+    overlay_path = _write_overlay(tmp_path)
+    payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+    payload["components"].extend(
+        {
+            "component_id": f"screen_component_{index}",
+            "label": f"Screen component {index}",
+            "value": float(index),
+            "unit": "raw log2 units",
+        }
+        for index in range(4, 7)
+    )
+    overlay_path.write_text(json.dumps(payload), encoding="utf-8")
+    overlay = load_objective_display_overlay(overlay_path)
+
+    figure, _diagnostics = figure_module.promoter_evidence_figure(
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+        selected=_selected(),
+        wells=_wells(reduction_id="primary"),
+        traces=_traces(),
+        events=pd.DataFrame([{"experiment_id": "experiment", "event_time_uncertainty_h": 0.2}]),
+        display=_display(),
+        binding=_binding(),
+        objective_overlay=overlay,
+    )
+
+    try:
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        provenance = figure.axes[6]
+        axis_box = provenance.get_window_extent(renderer)
+        for text in provenance.texts:
+            text_box = text.get_window_extent(renderer)
+            assert text_box.y0 >= axis_box.y0 - 1.0
+            assert text_box.y1 <= axis_box.y1 + 1.0
+            assert text_box.x0 >= axis_box.x0 - 1.0
+            assert text_box.x1 <= axis_box.x1 + 1.0
     finally:
         plt.close(figure)
 
@@ -237,6 +301,10 @@ def _selected() -> pd.Series:
     values: dict[str, object] = {
         "reference_design_id": "pDual-10",
         "confidence_level": 0.9,
+        "replicate_stat": "median",
+        "reduction_method": "geometric_time_mean",
+        "response_basis": "post_window",
+        "reduction_role": "primary",
         "window_start_event_h": 6.0,
         "window_end_event_h": 12.0,
     }
@@ -245,9 +313,35 @@ def _selected() -> pd.Series:
         values[f"b{state}"] = -0.4 + index * 0.2
         values[f"r{state}_bootstrap_sd"] = 0.08
         values[f"b{state}_bootstrap_sd"] = 0.06
+        values[f"r{state}_ci_low"] = float(values[f"r{state}"]) - 0.12
+        values[f"r{state}_ci_high"] = float(values[f"r{state}"]) + 0.09
+        values[f"b{state}_ci_low"] = float(values[f"b{state}"]) - 0.10
+        values[f"b{state}_ci_high"] = float(values[f"b{state}"]) + 0.07
         values[f"r{state}_event_half_range"] = 0.03
         values[f"b{state}_event_half_range"] = 0.02
+        values[f"n{state}"] = 3
     return pd.Series(values)
+
+
+def _wells(*, reduction_id: str) -> pd.DataFrame:
+    selected = _selected()
+    records: list[dict[str, object]] = []
+    for state in ("00", "10", "01", "11"):
+        center = float(selected[f"r{state}"])
+        for source_design in ("design", "pDual-10"):
+            for index, offset in enumerate((-0.1, 0.0, 0.1), start=1):
+                records.append(
+                    {
+                        "experiment_id": "experiment",
+                        "design_id": source_design,
+                        "reduction_id": reduction_id,
+                        "state": state,
+                        "position": f"{source_design}-{index}",
+                        "response_well": center + offset,
+                        "magnitude_well": 2.0 + offset,
+                    }
+                )
+    return pd.DataFrame.from_records(records)
 
 
 def _traces() -> pd.DataFrame:

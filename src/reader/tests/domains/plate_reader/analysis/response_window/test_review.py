@@ -47,7 +47,7 @@ def test_state_summary_uses_explicit_assay_labels_on_white_canvas() -> None:
         design_id="design",
         reduction_id="primary",
         designs=_designs(),
-        wells=pd.DataFrame(),
+        wells=_wells(),
         traces=pd.DataFrame(),
         events=pd.DataFrame(),
         display=_display(),
@@ -68,7 +68,7 @@ def test_state_summary_uses_explicit_assay_labels_on_white_canvas() -> None:
         ]
         assert figure._suptitle is not None
         assert figure._suptitle.get_text() == (
-            "The selected window preserves response and anchored fluorescence by condition"
+            "Observed wells and interval summaries preserve the four-condition handoff"
         )
         figure.canvas.draw()
         renderer = figure.canvas.get_renderer()
@@ -78,9 +78,10 @@ def test_state_summary_uses_explicit_assay_labels_on_white_canvas() -> None:
         for axis in figure.axes[:2]:
             tick_boxes = [tick.get_window_extent(renderer) for tick in axis.get_xticklabels()]
             assert all(left.x1 < right.x0 for left, right in zip(tick_boxes, tick_boxes[1:], strict=False))
-            mark_zorders = [patch.get_zorder() for patch in axis.patches]
-            grid_zorders = [line.get_zorder() for line in axis.get_ygridlines() if line.get_visible()]
-            assert grid_zorders and max(grid_zorders) < min(mark_zorders)
+            assert not axis.patches
+        for state in ("00", "10", "01", "11"):
+            assert figure.axes[0].findobj(lambda artist, gid=f"replicate-values-r{state}": artist.get_gid() == gid)
+            assert not figure.axes[1].findobj(lambda artist, gid=f"replicate-values-b{state}": artist.get_gid() == gid)
     finally:
         plt.close(figure)
 
@@ -160,6 +161,10 @@ def test_quality_figure_labels_do_not_collide_and_grids_stay_behind_bars() -> No
             mark_zorders = [patch.get_zorder() for patch in axis.patches]
             grid_zorders = [line.get_zorder() for line in axis.get_ygridlines() if line.get_visible()]
             assert grid_zorders and max(grid_zorders) < min(mark_zorders)
+        assert [text.get_text() for text in figure.legends[0].get_texts()] == [
+            "Bootstrap SD",
+            "Event-time sensitivity (half-range)",
+        ]
     finally:
         plt.close(figure)
 
@@ -194,12 +199,37 @@ def _designs() -> pd.DataFrame:
         "design_id": "design",
         "reduction_id": "primary",
         "reference_design_id": "pDual-10",
+        "replicate_stat": "median",
     }
     for index, state in enumerate(("00", "10", "01", "11")):
         row[f"r{state}"] = float(index)
         row[f"b{state}"] = float(index) / 2.0
         row[f"r{state}_bootstrap_sd"] = 0.1
         row[f"b{state}_bootstrap_sd"] = 0.1
+        row[f"r{state}_ci_low"] = float(row[f"r{state}"]) - 0.2
+        row[f"r{state}_ci_high"] = float(row[f"r{state}"]) + 0.15
+        row[f"b{state}_ci_low"] = float(row[f"b{state}"]) - 0.2
+        row[f"b{state}_ci_high"] = float(row[f"b{state}"]) + 0.15
         row[f"r{state}_event_half_range"] = 0.05
         row[f"b{state}_event_half_range"] = 0.05
+        row[f"n{state}"] = 3
     return pd.DataFrame([row])
+
+
+def _wells() -> pd.DataFrame:
+    selected = _designs().iloc[0]
+    return pd.DataFrame.from_records(
+        [
+            {
+                "experiment_id": "experiment",
+                "design_id": "design",
+                "reduction_id": "primary",
+                "state": state,
+                "position": f"A{replicate}",
+                "response_well": float(selected[f"r{state}"]) + offset,
+                "magnitude_well": 2.0 + offset,
+            }
+            for state in ("00", "10", "01", "11")
+            for replicate, offset in enumerate((-0.1, 0.0, 0.1), start=1)
+        ]
+    )

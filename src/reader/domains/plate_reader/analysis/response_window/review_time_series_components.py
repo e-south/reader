@@ -6,16 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 
 from .plot_style import style_data_axis
 from .sources import STATE_ORDER
 from .visual_labels import (
     STATE_COLORS,
     STATE_MARKERS,
-    anchored_fluorescence_axis_label,
-    condition_ticks,
-    response_axis_label,
 )
 
 
@@ -56,6 +52,7 @@ def style_trajectory_axis(
     event_label: str,
     uncertainty: float,
     selected: pd.Series,
+    annotate_spans: bool = False,
 ) -> None:
     axis.axvspan(-uncertainty, uncertainty, color="#9ca3af", alpha=0.20, zorder=1)
     axis.axvspan(
@@ -66,99 +63,45 @@ def style_trajectory_axis(
         zorder=1,
     )
     axis.axvline(0.0, color="#111827", linewidth=0.9, zorder=3)
-    axis.set_title(title)
+    axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
     axis.set_xlabel(f"Hours from {event_label.lower()}")
     axis.set_ylabel(ylabel)
-    axis.set_box_aspect(0.9)
+    axis.set_box_aspect(1.0)
     style_data_axis(axis, grid_axis="both")
-
-
-def draw_handoff_axis(axis: plt.Axes, *, selected: pd.Series, display: dict[str, object]) -> None:
-    x = np.arange(len(STATE_ORDER))
-    width = 0.34
-    response = np.asarray([selected[f"r{state}"] for state in STATE_ORDER], dtype=float)
-    fluorescence = np.asarray([selected[f"b{state}"] for state in STATE_ORDER], dtype=float)
-    axis.bar(
-        x - width / 2.0,
-        response,
-        width,
-        yerr=_combined_error(selected, "r"),
-        capsize=3,
-        color="#2563eb",
-        label=f"Response r_i: {response_axis_label(display)}",
-        zorder=3,
-    )
-    axis.bar(
-        x + width / 2.0,
-        fluorescence,
-        width,
-        yerr=_combined_error(selected, "b"),
-        capsize=3,
-        color="#0f766e",
-        label=f"Anchored fluorescence b_i: {anchored_fluorescence_axis_label(display)}",
-        zorder=3,
-    )
-    axis.axhline(0.0, color="#111827", linewidth=0.9, zorder=2)
-    axis.set_xticks(x, condition_ticks(display, width=14))
-    axis.set_ylabel("Window-reduced value (log2 units)")
-    axis.set_title("The response window reduces the trajectories to eight condition-specific values", pad=38)
-    axis.legend(
-        frameon=False,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.01),
-        ncols=2,
-        fontsize=7.5,
-    )
-    style_data_axis(axis, grid_axis="y")
+    if annotate_spans:
+        axis.text(
+            0.02,
+            0.97,
+            "Gray: event interval\nAmber: selected window",
+            transform=axis.transAxes,
+            ha="left",
+            va="top",
+            fontsize=6.4,
+            color="#475569",
+        )
 
 
 def legend_handles(
     *,
     state_labels: dict[str, object],
-    reference_id: str,
-    include_anchor: bool,
-    confidence_level: float,
-    event_label: str,
-) -> list[Line2D | Patch]:
-    handles: list[Line2D | Patch] = [
-        *(
-            Line2D(
-                [],
-                [],
-                color=STATE_COLORS[state],
-                marker=STATE_MARKERS[state],
-                markersize=4,
-                linewidth=2,
-                label=str(state_labels[state]),
-            )
-            for state in STATE_ORDER
-        ),
-        Patch(facecolor="#2563eb", alpha=0.14, label=f"Central {confidence_level:.0%} of design wells"),
-    ]
-    if include_anchor:
-        handles.append(
-            Line2D(
-                [],
-                [],
-                color="#111827",
-                linewidth=1.5,
-                linestyle="--",
-                label=f"{reference_id} median anchor",
-            )
+) -> list[Line2D]:
+    return [
+        Line2D(
+            [],
+            [],
+            color=STATE_COLORS[state],
+            marker=STATE_MARKERS[state],
+            markersize=4,
+            linewidth=2,
+            label=str(state_labels[state]),
         )
-    handles.extend(
-        [
-            Patch(facecolor="#9ca3af", alpha=0.20, label=f"{event_label} interval"),
-            Patch(facecolor="#f59e0b", alpha=0.14, label="Response window"),
-        ]
-    )
-    return handles
+        for state in STATE_ORDER
+    ]
 
 
-def _combined_error(selected: pd.Series, prefix: str) -> np.ndarray:
-    bootstrap = np.asarray([selected[f"{prefix}{state}_bootstrap_sd"] for state in STATE_ORDER], dtype=float)
-    event = np.asarray([selected[f"{prefix}{state}_event_half_range"] for state in STATE_ORDER], dtype=float)
-    return np.hypot(bootstrap, event)
-
-
-__all__ = ["draw_handoff_axis", "legend_handles", "signal_rows", "style_trajectory_axis", "trace_interval"]
+__all__ = [
+    "legend_handles",
+    "signal_rows",
+    "style_trajectory_axis",
+    "trace_interval",
+]

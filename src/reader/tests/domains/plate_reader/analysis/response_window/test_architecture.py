@@ -28,6 +28,7 @@ def test_response_window_modules_stay_bounded() -> None:
         "reporting_quality_plots.py": 180,
         "review.py": 280,
         "review_endpoint_plots.py": 260,
+        "review_replicates.py": 220,
         "review_time_series.py": 180,
         "review_time_series_components.py": 180,
         "sources.py": 340,

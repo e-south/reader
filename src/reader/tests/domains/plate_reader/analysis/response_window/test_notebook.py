@@ -24,6 +24,11 @@ def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) ->
     assert "verify_response_window_bundle(bundle_root)" in source
     assert "plt.close(figure)" in source
     assert 'bundle_manifest["display"]' in source
+    assert "experiment_display_title_from_config" in source
+    assert "experiment_selector_options(experiment_titles)" in source
+    assert "expected_experiment_id=experiment_id" in source
+    assert "experiment_titles[experiment.value]" in source
+    assert "value=next(iter(experiment_options))" in source
     assert 'view.value == "measured_response_examples"' in source
     assert 'label="Response summary"' in source
     assert "response_summary_options(available_reductions)" in source
@@ -32,7 +37,7 @@ def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) ->
     assert "Evidence interpretation" in source
     assert "Figure description" in source
     assert "from reader.response_window_review import" in source
-    assert "Review how promoter growth and fluorescence trajectories after" in source
+    assert "Connect promoter growth and fluorescence after" in source
     assert "Response state `r_i`" not in source
     assert "Reader does not apply a campaign target mask or calculate an OPAL score" not in source
 

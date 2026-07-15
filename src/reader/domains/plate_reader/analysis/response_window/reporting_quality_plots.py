@@ -123,7 +123,7 @@ def write_uncertainty_plot(
             x - width / 2,
             rows["p90_bootstrap_sd"],
             width,
-            label="Replicate bootstrap",
+            label="Bootstrap SD",
             color="#2563eb",
             zorder=3,
         )
@@ -131,7 +131,7 @@ def write_uncertainty_plot(
             x + width / 2,
             rows["p90_event_half_range"],
             width,
-            label="Event interval",
+            label="Event-time sensitivity (half-range)",
             color="#f59e0b",
             zorder=3,
         )
@@ -152,7 +152,7 @@ def write_uncertainty_plot(
         premise="Replicate variation and event-time uncertainty are distinct contributions to endpoint uncertainty.",
         decision_value="Shows which source limits the precision of each response or anchored-fluorescence state.",
         rationale="The handoff must preserve uncertainty rather than presenting one reduced number as exact assay truth.",
-        alt_text=f"Two grouped-bar panels show the ninetieth-percentile replicate-bootstrap standard deviation and event-interval half-range for {response_ratio_label(display)} response and {channels(display)['reference_design_id']}-relative {channels(display)['magnitude_ratio']} fluorescence in all four conditions.",
+        alt_text=f"Two grouped-bar panels show the ninetieth-percentile bootstrap standard deviation and event-time sensitivity half-range for {response_ratio_label(display)} response and {channels(display)['reference_design_id']}-relative {channels(display)['magnitude_ratio']} fluorescence in all four conditions.",
         non_claim_boundary="These empirical review summaries are not calibrated measurement-error distributions.",
         data_table="tables/uncertainty_summary.csv",
         path="plots/uncertainty_sources.png",

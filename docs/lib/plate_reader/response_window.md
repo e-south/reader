@@ -196,7 +196,14 @@ row, and a dropdown for the review view. Only controls relevant to the selected
 view remain in that row. The trajectory view shows replicate medians with a
 central 90% replicate interval rather than individual-well lines, then places
 the four response and four anchored-fluorescence handoff values directly below
-the trajectories. Dedicated handoff, response-example, reduction-sensitivity,
+the trajectories. The response handoff shows observed reduced well values as
+hollow points and the published aggregate as a short line. Anchored
+fluorescence compares independent design and reference aggregates, so Reader
+does not fabricate per-well `b_i` points. Asymmetric bootstrap intervals and
+event-time sensitivity remain separate. In the anchored-fluorescence
+trajectory, solid lines and filled markers identify the selected design;
+dashed lines, hollow markers, and lighter replicate intervals identify the
+pDual-10 anchor. Dedicated handoff, response-example, reduction-sensitivity,
 and QC views remain available through the same viewport. Compact heatmaps use
 square cells; row-dense static matrices may remain rectangular to avoid
 unbounded page height.
@@ -213,13 +220,15 @@ declares a premise, decision value, rationale, alt text, and non-claim boundary.
 
 The response-window promoter-evidence composite contains:
 
-1. an explicit header with experiment, reduction, candidate, and exact binding;
+1. a readable experiment and response-summary header, with exact identities in
+   provenance;
 2. growth, `log2(YFP/CFP)`, and `log2(YFP/OD600)` trajectories, including the
    same-state declared fluorescence reference;
-3. separate `r_i` and `b_i` dot-and-whisker panels, with bootstrap SD and
-   event-time sensitivity drawn and labeled separately;
+3. one square, symbolic eight-value handoff with observed `r_i` wells, the
+   published response and fluorescence aggregates, asymmetric bootstrap
+   intervals, and event-time sensitivity drawn and labeled separately;
 4. an objective-neutral provenance and QC card; and
-5. a full-width BaseRender sequence panel titled according to its actual
+5. a BaseRender sequence panel beside the handoff, titled according to its actual
    `densegen_tfbs` or `usr_genbank_annotations_v1` adapter.
 
 Reader calls only the versioned public `dnadesign.baserender` sequence-panel

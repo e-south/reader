@@ -306,7 +306,10 @@ def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_gro
     }
     (root / "request.yaml").write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
     (root / "review.py").write_text("import marimo\n", encoding="utf-8")
-    (root / "sources" / "experiment" / "config.yaml").write_text("schema: reader/v7\n", encoding="utf-8")
+    (root / "sources" / "experiment" / "config.yaml").write_text(
+        "schema: reader/v7\nexperiment:\n  id: experiment\n  title: Example promoter experiment\n",
+        encoding="utf-8",
+    )
     source_digests = {
         "annotated/df": "sha256:" + "1" * 64,
         "ratio_magnitude/df": "sha256:" + "2" * 64,
@@ -429,12 +432,14 @@ def _record_frames() -> dict[str, pd.DataFrame]:
 
 
 def _well_row(design_id: str, *, state: str, position: str, is_reference: bool) -> dict[str, object]:
+    state_index = ("00", "10", "01", "11").index(state)
+    replicate_offset = -0.1 if position == "A1" else 0.1
     row: dict[str, object] = {
         "experiment_id": "experiment",
         "design_id": design_id,
         "state": state,
         "position": position,
-        "response_well": 0.1,
+        "response_well": float(state_index) + replicate_offset,
         "magnitude_well": 0.2,
         "reduction_id": "primary",
         "reduction_method": "geometric_time_mean",

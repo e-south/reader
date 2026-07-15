@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from reader.domains.plate_reader.analysis.response_window.review_time_series import time_series_figure
@@ -12,15 +13,16 @@ def test_time_series_uses_median_bands_and_shows_the_eight_value_handoff() -> No
         design_id="design",
         reduction_id="primary",
         selected=_selected(),
+        wells=_wells(),
         traces=_traces(),
         events=pd.DataFrame([{"experiment_id": "experiment", "event_time_uncertainty_h": 0.2}]),
         display=_display(),
     )
 
     try:
-        assert len(figure.axes) == 4
+        assert len(figure.axes) == 6
         trajectory_axes = figure.axes[:3]
-        handoff_axis = figure.axes[3]
+        response_axis, fluorescence_axis, support_axis = figure.axes[3:]
         assert [
             len([line for line in axis.lines if line.get_gid() == "response-window-median"]) for axis in trajectory_axes
         ] == [4, 4, 8]
@@ -28,19 +30,47 @@ def test_time_series_uses_median_bands_and_shows_the_eight_value_handoff() -> No
             len([collection for collection in axis.collections if collection.get_gid() == "replicate-interval"])
             for axis in trajectory_axes
         ] == [4, 4, 4]
-        assert len(handoff_axis.patches) == 8
-        assert handoff_axis.get_title() == (
-            "The response window reduces the trajectories to eight condition-specific values"
-        )
-        assert [tick.get_text() for tick in handoff_axis.get_xticklabels()] == [
-            "No stress\n(00)",
-            "Ethanol\n(10)",
-            "Ciprofloxacin\n(01)",
-            "Ethanol +\nciprofloxacin\n(11)",
-        ]
+        assert [
+            len([collection for collection in axis.collections if collection.get_gid() == "anchor-replicate-interval"])
+            for axis in trajectory_axes
+        ] == [0, 0, 4]
+        assert response_axis.get_title(loc="left") == "D  Response handoff, rᵢ"
+        assert fluorescence_axis.get_title(loc="left") == "E  pDual-10-relative fluorescence, bᵢ"
+        assert support_axis.get_title(loc="left") == "F  Window and support"
+        assert all(axis.get_box_aspect() == 1.0 for axis in figure.axes)
+        assert [tick.get_text() for tick in response_axis.get_xticklabels()] == ["00", "10", "01", "11"]
+        assert response_axis.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
+        assert response_axis.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
+        assert fluorescence_axis.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
+        assert fluorescence_axis.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
+        response_ci = response_axis.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")[0]
+        for index, state in enumerate(("00", "10", "01", "11")):
+            np.testing.assert_allclose(
+                response_ci.get_segments()[index],
+                [[index, _selected()[f"r{state}_ci_low"]], [index, _selected()[f"r{state}_ci_high"]]],
+            )
+        for state in ("00", "10", "01", "11"):
+            response_points = response_axis.findobj(
+                lambda artist, gid=f"replicate-values-r{state}": artist.get_gid() == gid
+            )
+            assert len(response_points) == 1
+            assert len(response_points[0].get_offsets()) == 3
+            assert not fluorescence_axis.findobj(
+                lambda artist, gid=f"replicate-values-b{state}": artist.get_gid() == gid
+            )
+            assert response_axis.findobj(lambda artist, gid=f"handoff-summary-r{state}": artist.get_gid() == gid)
+            assert fluorescence_axis.findobj(lambda artist, gid=f"handoff-summary-b{state}": artist.get_gid() == gid)
+        support_text = "\n".join(text.get_text() for text in support_axis.texts)
+        assert "0.5–1.5 h after stress addition" in support_text
+        assert "00 3/3" in support_text
+        assert "central 90%" in support_text
+        assert "observed rᵢ wells" in support_text
+        assert "independent design/reference" in support_text
+        assert "dashed/hollow: pDual-10 anchor" in support_text
         legend_labels = [text.get_text() for text in figure.legends[0].get_texts()]
-        assert "Central 90% of design wells" in legend_labels
-        assert "pDual-10 median anchor" in legend_labels
+        assert legend_labels == ["No stress", "Ethanol", "Ciprofloxacin", "Ethanol + ciprofloxacin"]
+        assert "Stress addition interval" not in legend_labels
+        assert "Response window" not in legend_labels
         assert {
             line.get_marker() for line in trajectory_axes[0].lines if line.get_gid() == "response-window-median"
         } == {
@@ -49,11 +79,6 @@ def test_time_series_uses_median_bands_and_shows_the_eight_value_handoff() -> No
             "^",
             "D",
         }
-        figure.canvas.draw()
-        renderer = figure.canvas.get_renderer()
-        handoff_legend = handoff_axis.get_legend()
-        assert handoff_legend is not None
-        assert handoff_legend.get_window_extent(renderer).y0 >= handoff_axis.bbox.y1
     finally:
         plt.close(figure)
 
@@ -62,20 +87,50 @@ def _selected() -> pd.Series:
     values: dict[str, object] = {
         "reference_design_id": "pDual-10",
         "confidence_level": 0.9,
+        "replicate_stat": "median",
         "window_start_event_h": 0.5,
         "window_end_event_h": 1.5,
         "reduction_method": "geometric_time_mean",
         "response_basis": "post_window",
         "reduction_role": "primary",
+        "min_replicates_per_state": 3,
+        "min_observed_points_per_trace": 4,
+        "max_interior_gap_h": 0.5,
     }
     for index, state in enumerate(("00", "10", "01", "11")):
         values[f"r{state}"] = -1.0 + index * 0.3
         values[f"b{state}"] = -0.4 + index * 0.2
         values[f"r{state}_bootstrap_sd"] = 0.08
         values[f"b{state}_bootstrap_sd"] = 0.06
+        values[f"r{state}_ci_low"] = float(values[f"r{state}"]) - 0.12
+        values[f"r{state}_ci_high"] = float(values[f"r{state}"]) + 0.09
+        values[f"b{state}_ci_low"] = float(values[f"b{state}"]) - 0.10
+        values[f"b{state}_ci_high"] = float(values[f"b{state}"]) + 0.07
         values[f"r{state}_event_half_range"] = 0.03
         values[f"b{state}_event_half_range"] = 0.02
+        values[f"n{state}"] = 3
     return pd.Series(values)
+
+
+def _wells() -> pd.DataFrame:
+    selected = _selected()
+    records: list[dict[str, object]] = []
+    for state in ("00", "10", "01", "11"):
+        center = float(selected[f"r{state}"])
+        for source_design in ("design", "pDual-10"):
+            for index, offset in enumerate((-0.1, 0.0, 0.1), start=1):
+                records.append(
+                    {
+                        "experiment_id": "experiment",
+                        "design_id": source_design,
+                        "reduction_id": "primary",
+                        "state": state,
+                        "position": f"{source_design}-{index}",
+                        "response_well": center + offset,
+                        "magnitude_well": 2.0 + offset,
+                    }
+                )
+    return pd.DataFrame.from_records(records)
 
 
 def _traces() -> pd.DataFrame:

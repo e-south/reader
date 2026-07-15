@@ -7,16 +7,16 @@ import numpy as np
 import pandas as pd
 
 from .plot_style import style_data_axis
+from .review_replicates import draw_horizontal_replicate_summary
 from .review_time_series_components import signal_rows, style_trajectory_axis, trace_interval
 from .sources import STATE_ORDER
 from .visual_labels import (
     STATE_COLORS,
     STATE_MARKERS,
     channels,
-    condition_ticks,
-    magnitude_ratio_label,
-    response_ratio_label,
 )
+
+_SUBSCRIPT_DIGITS = str.maketrans("01", "₀₁")
 
 
 def draw_trajectory_axis(
@@ -32,6 +32,7 @@ def draw_trajectory_axis(
     event_label: str,
     title: str,
     ylabel: str,
+    annotate_spans: bool = False,
 ) -> None:
     rows = signal_rows(traces, signal_kind=signal_kind, design_id=design_id, reference_id=reference_id)
     for (source_design, state), trace in rows.groupby(["design_id", "state"], sort=True):
@@ -41,17 +42,16 @@ def draw_trajectory_axis(
             log_transform=signal_kind != "growth",
             confidence_level=confidence_level,
         )
-        if not is_anchor:
-            band = axis.fill_between(
-                summary["time_from_event_h"],
-                summary["lower"],
-                summary["upper"],
-                color=STATE_COLORS[str(state)],
-                alpha=0.14,
-                linewidth=0,
-                zorder=2,
-            )
-            band.set_gid("replicate-interval")
+        band = axis.fill_between(
+            summary["time_from_event_h"],
+            summary["lower"],
+            summary["upper"],
+            color=STATE_COLORS[str(state)],
+            alpha=0.06 if is_anchor else 0.14,
+            linewidth=0,
+            zorder=2,
+        )
+        band.set_gid("anchor-replicate-interval" if is_anchor else "replicate-interval")
         (line,) = axis.plot(
             summary["time_from_event_h"],
             summary["median"],
@@ -73,59 +73,135 @@ def draw_trajectory_axis(
         event_label=event_label,
         uncertainty=uncertainty,
         selected=selected,
+        annotate_spans=annotate_spans,
     )
     axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
-    axis.set_box_aspect(0.78)
+    axis.set_box_aspect(1.0)
 
 
-def draw_handoff_axis(
+def draw_eight_value_handoff_axis(
     axis: plt.Axes,
     *,
     selected: pd.Series,
     display: dict[str, object],
-    prefix: str,
+    replicate_rows: pd.DataFrame,
+    reference_counts: dict[str, int],
 ) -> None:
-    x = np.arange(len(STATE_ORDER))
-    values = np.asarray([selected[f"{prefix}{state}"] for state in STATE_ORDER], dtype=float)
-    bootstrap = np.asarray([selected[f"{prefix}{state}_bootstrap_sd"] for state in STATE_ORDER], dtype=float)
-    event = np.asarray([selected[f"{prefix}{state}_event_half_range"] for state in STATE_ORDER], dtype=float)
-    event_marks = axis.vlines(x, values - event, values + event, color="#9ca3af", linewidth=6, alpha=0.38, zorder=2)
+    components = tuple((prefix, state) for prefix in ("r", "b") for state in STATE_ORDER)
+    y = np.asarray((8.0, 7.0, 6.0, 5.0, 3.0, 2.0, 1.0, 0.0))
+    values = np.asarray([selected[f"{prefix}{state}"] for prefix, state in components], dtype=float)
+    ci_low = np.asarray(
+        [selected[f"{prefix}{state}_ci_low"] for prefix, state in components],
+        dtype=float,
+    )
+    ci_high = np.asarray(
+        [selected[f"{prefix}{state}_ci_high"] for prefix, state in components],
+        dtype=float,
+    )
+    event = np.asarray(
+        [selected[f"{prefix}{state}_event_half_range"] for prefix, state in components],
+        dtype=float,
+    )
+    colors = [STATE_COLORS[state] for _prefix, state in components]
+
+    event_marks = axis.hlines(
+        y,
+        values - event,
+        values + event,
+        color="#9ca3af",
+        linewidth=6,
+        alpha=0.38,
+        zorder=2,
+    )
     event_marks.set_gid("event-time-sensitivity")
-    bootstrap_marks = axis.vlines(
-        x,
-        values - bootstrap,
-        values + bootstrap,
-        color=[STATE_COLORS[state] for state in STATE_ORDER],
+    bootstrap_marks = axis.hlines(
+        y,
+        ci_low,
+        ci_high,
+        color=colors,
         linewidth=1.8,
         zorder=3,
     )
     bootstrap_marks.set_gid("bootstrap-uncertainty")
-    for index, state in enumerate(STATE_ORDER):
-        points = axis.scatter(
-            x[index],
-            values[index],
-            color=STATE_COLORS[state],
-            marker=STATE_MARKERS[state],
-            edgecolors="white",
-            linewidths=0.7,
-            zorder=4,
+    for index, (prefix, state) in enumerate(components):
+        state_replicates = replicate_rows.loc[
+            replicate_rows["component"].astype(str).eq(f"{prefix}{state}"), "value"
+        ].to_numpy(dtype=float)
+        draw_horizontal_replicate_summary(
+            axis,
+            y=float(y[index]),
+            values=state_replicates,
+            summary=float(values[index]),
+            state=state,
+            component=f"{prefix}{state}",
         )
-        points.set_gid(f"handoff-value-{state}")
-    axis.axhline(0, color="#111827", linewidth=0.8, zorder=1)
-    axis.set_xticks(x, condition_ticks(display, width=11), fontsize=7.2)
-    if prefix == "r":
-        axis.set_title("D1  Response handoff, r_i", loc="left", fontsize=10, fontweight="semibold")
-        axis.set_ylabel(f"log2({response_ratio_label(display)})")
-    else:
-        reference_id = channels(display)["reference_design_id"]
-        axis.set_title(
-            f"D2  {reference_id}-relative fluorescence, b_i",
-            loc="left",
-            fontsize=10,
-            fontweight="semibold",
-        )
-        axis.set_ylabel(f"{reference_id}-relative\nlog2({magnitude_ratio_label(display)})")
-    style_data_axis(axis, grid_axis="y")
+
+    axis.axvline(0, color="#111827", linewidth=0.8, zorder=1)
+    axis.axhline(4.0, color="#d1d5db", linewidth=0.8, zorder=1)
+    axis.set_yticks(
+        y,
+        [f"{prefix}{state.translate(_SUBSCRIPT_DIGITS)}" for prefix, state in components],
+        fontsize=8,
+    )
+    axis.set_ylim(-0.75, 8.75)
+    axis.set_xlabel("Window-reduced value (log₂ units)")
+    axis.set_title("D  Eight-value handoff", loc="left", fontsize=10, fontweight="semibold")
+    axis.text(
+        0.02,
+        0.965,
+        "rᵢ  response",
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7,
+        color="#475569",
+    )
+    reference_id = channels(display)["reference_design_id"]
+    axis.text(
+        0.02,
+        0.43,
+        f"bᵢ  {reference_id}-relative fluorescence",
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7,
+        color="#475569",
+    )
+    axis.text(
+        0.0,
+        -0.18,
+        f"Hollow circles: observed rᵢ wells  ·  Colored line: {str(selected['replicate_stat']).lower()}",
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=6.5,
+        color="#475569",
+    )
+    axis.text(
+        0.0,
+        -0.225,
+        f"Central {float(selected['confidence_level']):.0%} bootstrap interval: thin color  ·  "
+        "Event-time sensitivity: thick gray",
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=6.2,
+        color="#475569",
+    )
+    axis.text(
+        0.0,
+        -0.27,
+        "bᵢ compares independent aggregates; reference n = "
+        + "/".join(str(reference_counts[state]) for state in STATE_ORDER)
+        + " for states 00/10/01/11",
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=6.2,
+        color="#475569",
+    )
+    axis.set_box_aspect(1.0)
+    style_data_axis(axis, grid_axis="x")
 
 
-__all__ = ["draw_handoff_axis", "draw_trajectory_axis"]
+__all__ = ["draw_eight_value_handoff_axis", "draw_trajectory_axis"]

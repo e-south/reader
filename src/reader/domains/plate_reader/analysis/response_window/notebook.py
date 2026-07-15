@@ -41,8 +41,12 @@ def _():
         selected_handoff_row,
     )
     from reader.response_window import verify_response_window_bundle
+    from reader.notebook_presentation import (
+        experiment_display_title_from_config,
+        experiment_selector_options,
+    )
 
-    return Path, VIEW_LABELS, load_review_tables, measured_response_example_rows, mo, plt, render_review_figure, response_summary_options, review_view_spec, selected_handoff_row, verify_response_window_bundle
+    return Path, VIEW_LABELS, experiment_display_title_from_config, experiment_selector_options, load_review_tables, measured_response_example_rows, mo, plt, render_review_figure, response_summary_options, review_view_spec, selected_handoff_row, verify_response_window_bundle
 
 
 @app.cell
@@ -61,18 +65,26 @@ def _(bundle_manifest):
 
 
 @app.cell
-def _(design_rows, mo):
-    experiment_options = sorted(design_rows["experiment_id"].astype(str).unique().tolist())
-    if not experiment_options:
+def _(bundle_root, design_rows, experiment_display_title_from_config, experiment_selector_options, mo):
+    experiment_ids = sorted(design_rows["experiment_id"].astype(str).unique().tolist())
+    if not experiment_ids:
         raise ValueError("Response-window bundle contains no experiments.")
+    experiment_titles = {
+        experiment_id: experiment_display_title_from_config(
+            bundle_root / "sources" / experiment_id / "config.yaml",
+            expected_experiment_id=experiment_id,
+        )
+        for experiment_id in experiment_ids
+    }
+    experiment_options = experiment_selector_options(experiment_titles)
     experiment = mo.ui.dropdown(
         options=experiment_options,
-        value=experiment_options[0],
+        value=next(iter(experiment_options)),
         label="Experiment",
         searchable=True,
         full_width=True,
     )
-    return experiment, experiment_options
+    return experiment, experiment_ids, experiment_options, experiment_titles
 
 
 @app.cell
@@ -125,15 +137,20 @@ def _(VIEW_LABELS, mo):
 
 
 @app.cell
-def _(design, display_contract, experiment, mo, reduction, view):
+def _(design, display_contract, experiment, experiment_titles, mo, reduction, view):
     _channels = display_contract["channels"]
+    _study_title = str(display_contract["study_label"])
+    _experiment_title = experiment_titles[experiment.value]
+    _title = _study_title if view.value == "measured_response_examples" else _experiment_title
+    _study_line = "" if _title == _study_title else f"**Study:** {_study_title}"
     introduction = mo.md(
         f"""
-        # {display_contract['study_label']}
+        # {_title}
+        {_study_line}
 
-        Review how promoter growth and fluorescence trajectories after {str(display_contract['event_label']).lower()}
-        are reduced into four condition-specific `{_channels['response_ratio']}` responses and four
-        `{_channels['reference_design_id']}`-relative `{_channels['magnitude_ratio']}` fluorescence values.
+        Connect promoter growth and fluorescence after {str(display_contract['event_label']).lower()} to four
+        `{_channels['response_ratio']}` responses and four `{_channels['reference_design_id']}`-relative
+        `{_channels['magnitude_ratio']}` fluorescence values.
         """
     )
     control_items = [view, experiment, design, reduction]
@@ -249,10 +266,9 @@ def _(
         }
     )
     figure_view = mo.as_html(figure).style({"max-width": "100%", "overflow": "hidden"})
-    figure_description = mo.md(f"*Figure description:* {view_contract.alt_text}")
     plt.close(figure)
-    mo.vstack([figure_view, figure_description, evidence], gap=1.0)
-    return evidence, evidence_columns, figure_description, figure_view, selected
+    mo.vstack([figure_view, evidence], gap=0.75)
+    return evidence, evidence_columns, figure_view, selected
 
 
 if __name__ == "__main__":

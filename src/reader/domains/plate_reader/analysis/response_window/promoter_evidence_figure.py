@@ -13,10 +13,12 @@ from .plot_style import apply_publication_style
 from .promoter_evidence_bundle_contract import PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION
 from .promoter_evidence_cards import draw_header_axis, draw_provenance_axis
 from .promoter_evidence_components import (
-    draw_handoff_axis,
+    draw_eight_value_handoff_axis,
     draw_trajectory_axis,
 )
 from .promoter_evidence_overlay import ObjectiveDisplayOverlay
+from .review_replicates import reference_replicate_counts, response_replicate_rows
+from .visual_labels import response_summary_label
 
 
 def promoter_evidence_figure(
@@ -25,10 +27,12 @@ def promoter_evidence_figure(
     design_id: str,
     reduction_id: str,
     selected: pd.Series,
+    wells: pd.DataFrame,
     traces: pd.DataFrame,
     events: pd.DataFrame,
     display: dict[str, object],
     binding: PromoterCandidateBinding,
+    experiment_title: str | None = None,
     objective_overlay: ObjectiveDisplayOverlay | None = None,
 ) -> tuple[plt.Figure, object]:
     """Render trajectories, handoff values, provenance, and one BaseRender panel."""
@@ -53,24 +57,36 @@ def promoter_evidence_figure(
     reference_id = str(selected["reference_design_id"])
     uncertainty = float(event.iloc[0]["event_time_uncertainty_h"])
     experiment_traces = traces.loc[traces["experiment_id"].astype(str).eq(experiment_id)].copy()
-
-    figure = plt.figure(figsize=(13.2, 8.5), constrained_layout=True)
-    figure.set_gid(PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION)
-    grid = figure.add_gridspec(4, 3, height_ratios=(0.44, 2.7, 1.55, 1.15))
-    header_axis = figure.add_subplot(grid[0, :])
-    trajectories = [figure.add_subplot(grid[1, index]) for index in range(3)]
-    response_axis = figure.add_subplot(grid[2, 0])
-    fluorescence_axis = figure.add_subplot(grid[2, 1])
-    provenance_axis = figure.add_subplot(grid[2, 2])
-    sequence_axis = figure.add_subplot(grid[3, :])
-    draw_header_axis(
-        header_axis,
+    replicate_rows = response_replicate_rows(
+        selected=selected,
+        wells=wells,
+        experiment_id=experiment_id,
+        design_id=design_id,
+        reduction_id=reduction_id,
+    )
+    reference_counts = reference_replicate_counts(
+        selected=selected,
+        wells=wells,
         experiment_id=experiment_id,
         reduction_id=reduction_id,
-        binding=binding,
+    )
+
+    figure_height, lower_row_height, evidence_heights = _layout_for_overlay(objective_overlay)
+    figure = plt.figure(figsize=(13.2, figure_height), constrained_layout=True)
+    figure.set_gid(PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION)
+    grid = figure.add_gridspec(3, 3, height_ratios=(0.44, 2.7, lower_row_height))
+    header_axis = figure.add_subplot(grid[0, :])
+    trajectories = [figure.add_subplot(grid[1, index]) for index in range(3)]
+    handoff_axis = figure.add_subplot(grid[2, 0])
+    evidence_grid = grid[2, 1:].subgridspec(2, 1, height_ratios=evidence_heights)
+    sequence_axis = figure.add_subplot(evidence_grid[0, 0])
+    provenance_axis = figure.add_subplot(evidence_grid[1, 0])
+    draw_header_axis(
+        header_axis,
+        experiment_label=experiment_title or experiment_id,
+        reduction_label=response_summary_label(selected),
         state_labels=state_labels,
         reference_id=reference_id,
-        confidence_level=confidence_level,
     )
     specs = (
         ("growth", "A  Growth by condition", str(channels["growth"])),
@@ -81,7 +97,7 @@ def promoter_evidence_figure(
             f"log2({_spaced(channels['magnitude_ratio'])})",
         ),
     )
-    for axis, (signal_kind, title, ylabel) in zip(trajectories, specs, strict=True):
+    for index, (axis, (signal_kind, title, ylabel)) in enumerate(zip(trajectories, specs, strict=True)):
         draw_trajectory_axis(
             axis,
             traces=experiment_traces,
@@ -94,18 +110,26 @@ def promoter_evidence_figure(
             event_label=str(display["event_label"]),
             title=title,
             ylabel=ylabel,
+            annotate_spans=index == 0,
         )
-    draw_handoff_axis(response_axis, selected=selected, display=display, prefix="r")
-    draw_handoff_axis(fluorescence_axis, selected=selected, display=display, prefix="b")
+    draw_eight_value_handoff_axis(
+        handoff_axis,
+        selected=selected,
+        display=display,
+        replicate_rows=replicate_rows,
+        reference_counts=reference_counts,
+    )
     draw_provenance_axis(
         provenance_axis,
         binding=binding,
+        experiment_id=experiment_id,
+        design_id=design_id,
         reduction_id=reduction_id,
         objective_overlay=objective_overlay,
     )
     diagnostics = _draw_sequence_axis(sequence_axis, binding=binding)
     figure.suptitle(
-        _compact_title(binding=binding, design_id=design_id),
+        _compact_title(binding=binding),
         fontsize=12,
         fontweight="semibold",
     )
@@ -147,8 +171,8 @@ def _draw_sequence_axis(axis: plt.Axes, *, binding: PromoterCandidateBinding) ->
     _focus_sequence_content(axis, image)
     axis.set_axis_off()
     title = {
-        "densegen_tfbs": "F  DenseGen TFBS annotation",
-        "usr_genbank_annotations_v1": "F  GenBank source annotation",
+        "densegen_tfbs": "E  DenseGen TFBS annotation",
+        "usr_genbank_annotations_v1": "E  GenBank source annotation",
     }[binding.baserender_adapter_kind]
     axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
     return diagnostics
@@ -179,13 +203,18 @@ def _spaced(value: object) -> str:
     return str(value).replace("/", " / ")
 
 
-def _compact_title(*, binding: PromoterCandidateBinding, design_id: str) -> str:
-    values = [binding.display_label]
-    if binding.display_label.casefold() != design_id.casefold():
-        values.append(design_id)
-    candidate = binding.candidate_id
-    values.append(candidate if len(candidate) <= 20 else candidate[:12] + "…")
-    return " · ".join(values)
+def _compact_title(*, binding: PromoterCandidateBinding) -> str:
+    return f"Promoter response evidence · {binding.display_label}"
+
+
+def _layout_for_overlay(
+    overlay: ObjectiveDisplayOverlay | None,
+) -> tuple[float, float, tuple[float, float]]:
+    if overlay is None:
+        return 9.4, 2.7, (1.55, 0.45)
+    if len(overlay.components) <= 3:
+        return 9.8, 3.0, (1.65, 1.0)
+    return 10.6, 3.6, (1.55, 2.05)
 
 
 __all__ = ["PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION", "promoter_evidence_figure"]

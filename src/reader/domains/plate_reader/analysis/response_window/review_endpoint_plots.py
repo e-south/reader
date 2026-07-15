@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .plot_style import style_data_axis
+from .review_replicates import draw_vertical_replicate_summary, response_replicate_rows
 from .sources import STATE_ORDER
 from .visual_labels import (
     STATE_COLORS,
@@ -21,10 +22,25 @@ from .visual_labels import (
 )
 
 
-def state_summary_figure(*, selected: pd.Series, display: dict[str, object]) -> plt.Figure:
+def state_summary_figure(
+    *,
+    experiment_id: str,
+    design_id: str,
+    reduction_id: str,
+    selected: pd.Series,
+    wells: pd.DataFrame,
+    display: dict[str, object],
+) -> plt.Figure:
     display_channels = channels(display)
     reference_id = display_channels["reference_design_id"]
     response_ratio = response_ratio_label(display)
+    replicate_rows = response_replicate_rows(
+        selected=selected,
+        wells=wells,
+        experiment_id=experiment_id,
+        design_id=design_id,
+        reduction_id=reduction_id,
+    )
     figure, axes = plt.subplots(1, 2, figsize=(9.5, 4.9), constrained_layout=True)
     x = np.arange(len(STATE_ORDER))
     specs = (
@@ -38,25 +54,37 @@ def state_summary_figure(*, selected: pd.Series, display: dict[str, object]) -> 
     )
     for axis, prefix, title, ylabel in specs:
         values = np.asarray([selected[f"{prefix}{state}"] for state in STATE_ORDER], dtype=float)
-        bootstrap = np.asarray([selected[f"{prefix}{state}_bootstrap_sd"] for state in STATE_ORDER], dtype=float)
+        ci_low = np.asarray([selected[f"{prefix}{state}_ci_low"] for state in STATE_ORDER], dtype=float)
+        ci_high = np.asarray([selected[f"{prefix}{state}_ci_high"] for state in STATE_ORDER], dtype=float)
         event = np.asarray([selected[f"{prefix}{state}_event_half_range"] for state in STATE_ORDER], dtype=float)
-        axis.bar(x, values, color=[STATE_COLORS[state] for state in STATE_ORDER], alpha=0.88, zorder=3)
-        axis.errorbar(
+        axis.vlines(x, values - event, values + event, color="#9ca3af", linewidth=6, alpha=0.38, zorder=2)
+        axis.vlines(
             x,
-            values,
-            yerr=np.hypot(bootstrap, event),
-            fmt="none",
-            ecolor="#111827",
-            capsize=4,
-            zorder=4,
+            ci_low,
+            ci_high,
+            color=[STATE_COLORS[state] for state in STATE_ORDER],
+            linewidth=1.8,
+            zorder=3,
         )
+        for index, state in enumerate(STATE_ORDER):
+            state_values = replicate_rows.loc[
+                replicate_rows["component"].astype(str).eq(f"{prefix}{state}"), "value"
+            ].to_numpy(dtype=float)
+            draw_vertical_replicate_summary(
+                axis,
+                x=float(x[index]),
+                values=state_values,
+                summary=float(values[index]),
+                state=state,
+                component=f"{prefix}{state}",
+            )
         axis.axhline(0.0, color="#111827", linewidth=0.9, zorder=2)
         axis.set_xticks(x, condition_ticks(display, width=14))
         axis.set_ylabel(ylabel)
         axis.set_title(title)
         axis.set_box_aspect(0.9)
         style_data_axis(axis, grid_axis="y")
-    figure.suptitle("The selected window preserves response and anchored fluorescence by condition")
+    figure.suptitle("Observed wells and interval summaries preserve the four-condition handoff")
     return figure
 
 
@@ -113,15 +141,11 @@ def quality_figure(*, selected: pd.Series, selected_wells: pd.DataFrame, display
     ):
         bootstrap = np.asarray([selected[f"{prefix}{state}_bootstrap_sd"] for state in STATE_ORDER], dtype=float)
         event = np.asarray([selected[f"{prefix}{state}_event_half_range"] for state in STATE_ORDER], dtype=float)
-        axis.bar(
-            x - width / 2,
-            bootstrap,
-            width,
-            color="#2563eb",
-            label="Replicate bootstrap",
-            zorder=3,
-        )
-        axis.bar(x + width / 2, event, width, color="#f59e0b", label="Event interval", zorder=3)
+        for offset, values, color, label in (
+            (-1, bootstrap, "#2563eb", "Bootstrap SD"),
+            (1, event, "#f59e0b", "Event-time sensitivity (half-range)"),
+        ):
+            axis.bar(x + offset * width / 2, values, width, color=color, label=label, zorder=3)
         axis.set_ylabel(ylabel)
         axis.set_title(title)
         axis.set_xticks(

@@ -43,8 +43,8 @@ REVIEW_VIEW_SPECS = (
         label="Time series and window",
         premise="The selected post-stress interval connects observed trajectories to the eight-value handoff",
         decision_value="Shows whether the reduced response and fluorescence values are supported by sustained, replicate-observed trajectories.",
-        interpretation="Solid curves are replicate medians, translucent bands are the central 90% of design wells, and the dashed curve is the same-state {reference_id} fluorescence anchor.",
-        alt_text="Three aligned trajectory panels show {growth} growth, {response_axis} response, and {magnitude_ratio} fluorescence in four conditions using replicate medians and central 90% replicate intervals; a compact lower panel shows the four response and four {reference_id}-relative fluorescence values produced by the selected post-stress window.",
+        interpretation="Solid curves are replicate medians, translucent bands are the central 90% of design wells, and the dashed curve is the same-state {reference_id} fluorescence anchor. Gray shading marks event-time uncertainty; amber marks the selected response window. The lower panels keep bootstrap intervals and event-time sensitivity separate, with observed well points shown only for rᵢ.",
+        alt_text="Three aligned square trajectory panels show {growth} growth, {response_axis} response, and {magnitude_ratio} fluorescence in four conditions using replicate medians and central 90% replicate intervals. Two square dot-and-whisker panels show the four response and four {reference_id}-relative fluorescence values produced by the selected post-stress window. Hollow points are observed response-well reductions; anchored fluorescence compares independent design and reference aggregates and therefore has no per-well b points. A compact card records the window and assay support.",
         non_claim_boundary="The selected interval is a prespecified assay summary, not proof of when biology begins to respond.",
     ),
     ReviewViewSpec(
@@ -52,9 +52,9 @@ REVIEW_VIEW_SPECS = (
         label="State handoff values",
         premise="The selected window preserves response and anchored fluorescence by condition",
         decision_value="Shows the eight measured values and their assay-derived uncertainty before study scoring.",
-        interpretation="Response is {response_axis}; fluorescence is {anchored_axis}.",
-        alt_text="Two bar panels show the selected design's four condition-specific {response_axis} responses and {anchored_axis} fluorescence values with combined replicate and event-bound error bars.",
-        non_claim_boundary="The bars are assay summaries, not campaign scores or validated responsive promoters.",
+        interpretation="Response is {response_axis}; fluorescence is {anchored_axis}. Hollow points are observed response-well reductions. Colored bootstrap intervals and gray event-time sensitivity marks remain separate; anchored fluorescence has no fabricated per-well b points.",
+        alt_text="Two dot-and-whisker panels show four condition-specific {response_axis} responses and four {anchored_axis} fluorescence summaries. The response panel includes observed well reductions. Both panels show asymmetric bootstrap intervals separately from gray event-time sensitivity marks.",
+        non_claim_boundary="These assay summaries are not campaign scores or validated responsive promoters.",
     ),
     ReviewViewSpec(
         view_id="measured_response_examples",
@@ -161,12 +161,20 @@ def render_review_figure(
                 design_id=design_id,
                 reduction_id=reduction_id,
                 selected=selected,
+                wells=wells,
                 traces=traces,
                 events=events,
                 display=display,
             )
         elif view_id == "state_summary":
-            figure = state_summary_figure(selected=selected, display=display)
+            figure = state_summary_figure(
+                experiment_id=experiment_id,
+                design_id=design_id,
+                reduction_id=reduction_id,
+                selected=selected,
+                wells=wells,
+                display=display,
+            )
         elif view_id == "quality":
             selected_wells = wells.loc[
                 wells["experiment_id"].astype(str).eq(experiment_id)

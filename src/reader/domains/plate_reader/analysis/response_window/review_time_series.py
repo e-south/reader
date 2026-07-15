@@ -5,12 +5,16 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from .review_replicates import reference_replicate_counts, response_replicate_rows
 from .review_time_series_components import (
-    draw_handoff_axis,
     legend_handles,
     signal_rows,
     style_trajectory_axis,
     trace_interval,
+)
+from .review_time_series_handoff import (
+    draw_reduced_value_axis,
+    draw_window_support_axis,
 )
 from .visual_labels import STATE_COLORS, STATE_MARKERS
 
@@ -21,6 +25,7 @@ def time_series_figure(
     design_id: str,
     reduction_id: str,
     selected: pd.Series,
+    wells: pd.DataFrame,
     traces: pd.DataFrame,
     events: pd.DataFrame,
     display: dict[str, object],
@@ -31,6 +36,19 @@ def time_series_figure(
     event_row = event.iloc[0]
     reference_id = str(selected["reference_design_id"])
     experiment_traces = traces.loc[traces["experiment_id"].astype(str).eq(experiment_id)].copy()
+    replicate_rows = response_replicate_rows(
+        selected=selected,
+        wells=wells,
+        experiment_id=experiment_id,
+        design_id=design_id,
+        reduction_id=reduction_id,
+    )
+    reference_counts = reference_replicate_counts(
+        selected=selected,
+        wells=wells,
+        experiment_id=experiment_id,
+        reduction_id=reduction_id,
+    )
     channels = display["channels"]
     state_labels = display["state_labels"]
     if not isinstance(channels, dict) or not isinstance(state_labels, dict):
@@ -39,25 +57,27 @@ def time_series_figure(
     if not 0.0 < confidence_level < 1.0:
         raise ValueError("response-window confidence level must lie strictly between zero and one.")
 
-    figure = plt.figure(figsize=(10.5, 6.8), constrained_layout=True)
+    figure = plt.figure(figsize=(11.4, 8.4), constrained_layout=True)
     figure.set_gid(f"response-window:{reduction_id}")
-    grid = figure.add_gridspec(2, 3, height_ratios=(2.7, 1.35))
+    grid = figure.add_gridspec(2, 3)
     axes = [figure.add_subplot(grid[0, index]) for index in range(3)]
-    handoff_axis = figure.add_subplot(grid[1, :])
+    response_axis = figure.add_subplot(grid[1, 0])
+    fluorescence_axis = figure.add_subplot(grid[1, 1])
+    support_axis = figure.add_subplot(grid[1, 2])
     response_ratio = _spaced(channels["response_ratio"])
     magnitude_ratio = _spaced(channels["magnitude_ratio"])
     specs = (
-        ("growth", "Growth by condition", str(channels["growth"]), False),
-        ("response", f"{response_ratio} response by condition", f"log2({response_ratio})", True),
+        ("growth", "A  Growth by condition", str(channels["growth"]), False),
+        ("response", f"B  {response_ratio} response", f"log2({response_ratio})", True),
         (
             "magnitude",
-            f"{magnitude_ratio} fluorescence with {reference_id} anchor",
+            f"C  {magnitude_ratio} with {reference_id} anchor",
             f"log2({magnitude_ratio})",
             True,
         ),
     )
     uncertainty = float(event_row["event_time_uncertainty_h"])
-    for axis, (signal_kind, title, ylabel, log_transform) in zip(axes, specs, strict=True):
+    for index, (axis, (signal_kind, title, ylabel, log_transform)) in enumerate(zip(axes, specs, strict=True)):
         signal = signal_rows(
             experiment_traces,
             signal_kind=signal_kind,
@@ -67,17 +87,16 @@ def time_series_figure(
         for (source_design, state), trace in signal.groupby(["design_id", "state"], sort=True):
             is_anchor = str(source_design) == reference_id and design_id != reference_id
             summary = trace_interval(trace, log_transform=log_transform, confidence_level=confidence_level)
-            if not is_anchor:
-                band = axis.fill_between(
-                    summary["time_from_event_h"],
-                    summary["lower"],
-                    summary["upper"],
-                    color=STATE_COLORS[str(state)],
-                    alpha=0.14,
-                    linewidth=0.0,
-                    zorder=2,
-                )
-                band.set_gid("replicate-interval")
+            band = axis.fill_between(
+                summary["time_from_event_h"],
+                summary["lower"],
+                summary["upper"],
+                color=STATE_COLORS[str(state)],
+                alpha=0.06 if is_anchor else 0.14,
+                linewidth=0.0,
+                zorder=2,
+            )
+            band.set_gid("anchor-replicate-interval" if is_anchor else "replicate-interval")
             (line,) = axis.plot(
                 summary["time_from_event_h"],
                 summary["median"],
@@ -99,21 +118,43 @@ def time_series_figure(
             event_label=str(display["event_label"]),
             uncertainty=uncertainty,
             selected=selected,
+            annotate_spans=index == 0,
         )
-    draw_handoff_axis(handoff_axis, selected=selected, display=display)
+    draw_reduced_value_axis(
+        response_axis,
+        selected=selected,
+        display=display,
+        prefix="r",
+        replicate_rows=replicate_rows,
+    )
+    draw_reduced_value_axis(
+        fluorescence_axis,
+        selected=selected,
+        display=display,
+        prefix="b",
+        replicate_rows=replicate_rows,
+    )
+    draw_window_support_axis(
+        support_axis,
+        selected=selected,
+        display=display,
+        event_time_uncertainty_h=uncertainty,
+        reference_counts=reference_counts,
+    )
     figure.legend(
         handles=legend_handles(
             state_labels=state_labels,
-            reference_id=reference_id,
-            include_anchor=design_id != reference_id,
-            confidence_level=confidence_level,
-            event_label=str(display["event_label"]),
         ),
         loc="outside lower center",
         ncol=4,
         frameon=False,
+        fontsize=7.2,
     )
-    figure.suptitle("The selected post-stress interval connects observed trajectories to the eight-value handoff")
+    figure.suptitle(
+        "The selected post-stress interval connects observed trajectories to the eight-value handoff",
+        fontsize=12,
+        fontweight="semibold",
+    )
     return figure
 
 
