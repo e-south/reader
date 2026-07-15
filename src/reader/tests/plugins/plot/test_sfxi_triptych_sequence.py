@@ -291,6 +291,15 @@ def test_sfxi_triptych_requires_resolved_logic_map_treatment_semantics() -> None
         triptych_sequence._normalize_config({})
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_sfxi_triptych_rejects_nonpositive_render_limits(limit: int) -> None:
+    with pytest.raises(
+        SFXIError,
+        match=r"analysis\.sfxi_triptych_sequence\.limit must be a positive integer",
+    ):
+        _normalized_render_config(limit=limit)
+
+
 def test_sfxi_triptych_maps_authored_labels_to_stable_states() -> None:
     cfg = _normalized_render_config()
 

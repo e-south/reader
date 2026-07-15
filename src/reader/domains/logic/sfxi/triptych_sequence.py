@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import operator
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
@@ -188,7 +189,10 @@ def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "snapshot_target_time_h": _finite_float(cfg.get("snapshot_target_time_h"), default=12.0),
         "acquisition_transition_time_h": _finite_float(cfg.get("acquisition_transition_time_h"), default=None),
         "time_tolerance_h": _finite_float(cfg.get("time_tolerance_h"), default=0.51),
-        "limit": cfg.get("limit"),
+        "limit": _optional_positive_integer(
+            cfg.get("limit"),
+            where="analysis.sfxi_triptych_sequence.limit",
+        ),
         "dpi": int(cfg.get("dpi") or 220),
         "movie_enabled": bool(cfg.get("movie_enabled", False)),
         "movie_fps": float(cfg.get("movie_fps", 0.85)),
@@ -729,6 +733,20 @@ def _finite_float(value: Any, *, default: float | None) -> float | None:
         raise SFXIError(f"Expected a finite numeric value, got {value!r}") from exc
     if not math.isfinite(out):
         raise SFXIError(f"Expected a finite numeric value, got {value!r}")
+    return out
+
+
+def _optional_positive_integer(value: Any, *, where: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise SFXIError(f"{where} must be a positive integer.")
+    try:
+        out = operator.index(value)
+    except TypeError as exc:
+        raise SFXIError(f"{where} must be a positive integer.") from exc
+    if out <= 0:
+        raise SFXIError(f"{where} must be a positive integer.")
     return out
 
 
