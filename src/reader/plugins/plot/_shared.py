@@ -14,6 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from reader.errors import ExecutionError
 from reader.plotting.sinks import PlotFigure, normalize_plot_figures, save_plot_figures
 from reader.workbench.ports import file_bundle_output
 from reader.workbench.records import PathDescription
@@ -49,6 +50,10 @@ def resolve_plot_partition_cfg(*, ctx, partition: PlotPartitionCfg):
 
 def save_rendered_figures(*, ctx, figures: list[PlotFigure], plot_key: str) -> dict[str, list[str | PathDescription]]:
     normalized = normalize_plot_figures(figures, where=f"plot/{plot_key}")
+    if not normalized:
+        raise ExecutionError(
+            f"plot/{plot_key}: renderer produced no figures; check data filters, time windows, channels, and partitions"
+        )
     saved = save_plot_figures(normalized, ctx.plots_dir)
     artifacts: list[str | PathDescription] = []
     for figure, path in zip(normalized, saved, strict=True):

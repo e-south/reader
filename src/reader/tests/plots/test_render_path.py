@@ -10,6 +10,7 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -18,7 +19,7 @@ from matplotlib import pyplot as plt
 from reader.contracts import builtin_contract_catalog
 from reader.errors import ExecutionError
 from reader.plotting.sinks import PlotFigure
-from reader.plugins.plot._shared import FigurePlotPlugin
+from reader.plugins.plot._shared import FigurePlotPlugin, save_rendered_figures
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics, resolve_workbench
@@ -47,6 +48,17 @@ class _Cfg(PluginConfig):
 def test_plot_figure_rejects_invalid_descriptions(description: str) -> None:
     with pytest.raises(ExecutionError, match="PlotFigure.description"):
         PlotFigure(fig=object(), filename="plot", description=description)
+
+
+def test_shared_plot_adapter_explains_empty_figure_selections(tmp_path: Path) -> None:
+    with pytest.raises(ExecutionError, match="renderer produced no figures.*filters"):
+        save_rendered_figures(
+            ctx=SimpleNamespace(plots_dir=tmp_path),
+            figures=[],
+            plot_key="time_series",
+        )
+
+    assert list(tmp_path.iterdir()) == []
 
 
 class _DummyPlot(Plugin):
