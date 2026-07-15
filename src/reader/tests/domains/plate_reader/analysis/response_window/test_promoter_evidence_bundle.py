@@ -8,6 +8,7 @@ import matplotlib.image as mpimg
 import pandas as pd
 import pytest
 
+from reader.domains.plate_reader.analysis.response_window import promoter_evidence_bundle as bundle_module
 from reader.domains.plate_reader.analysis.response_window.provenance import sha256_file
 from reader.domains.promoter import sequence_panel as sequence_panel_module
 from reader.response_window_review import (
@@ -166,6 +167,37 @@ def test_promoter_evidence_rejects_binding_from_another_study(tmp_path: Path, mo
             design_id="design",
             reduction_id="primary",
         )
+
+
+def test_promoter_evidence_does_not_replace_destination_created_while_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "promoter-evidence"
+
+    def build_staged_bundle(**kwargs: object) -> None:
+        staging = kwargs["staging"]
+        assert isinstance(staging, Path)
+        (staging / "staged.txt").write_text("staged output", encoding="utf-8")
+        destination.mkdir()
+        (destination / "owner.txt").write_text("concurrent output", encoding="utf-8")
+
+    monkeypatch.setattr(bundle_module, "_build_staged_bundle", build_staged_bundle)
+    monkeypatch.setattr(bundle_module, "verify_promoter_evidence_bundle", lambda _path: object())
+
+    with pytest.raises(FileExistsError, match="output already exists"):
+        bundle_module.build_promoter_evidence_bundle(
+            response_bundle=object(),  # type: ignore[arg-type]
+            bindings_root=tmp_path / "unused-bindings",
+            out_dir=destination,
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+        )
+
+    assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
+    assert list(tmp_path.glob(".promoter-evidence.staging-*")) == []
+    assert list(tmp_path.glob(".promoter-evidence.backup-*")) == []
 
 
 @pytest.mark.parametrize("destination_kind", ["file", "directory_symlink", "dangling_symlink"])

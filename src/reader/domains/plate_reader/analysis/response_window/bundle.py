@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,7 +16,7 @@ from .contracts import ResponseWindowRequest, load_response_window_request
 from .materialize import materialize_experiment
 from .notebook import write_review_notebook
 from .provenance import sha256_file
-from .publication import resolve_bundle_destination
+from .publication import bundle_publication
 from .reporting import write_review_artifacts
 from .sources import ExperimentSourceLoader
 from .verification import BUNDLE_SCHEMA_VERSION, RECORD_ARTIFACTS, RECORD_CONTRACTS, verify_bundle_payload
@@ -42,43 +41,21 @@ def build_response_window_bundle(
 ) -> ResponseWindowBundle:
     """Materialize verified records and review artifacts for one request."""
 
-    destination = resolve_bundle_destination(
+    with bundle_publication(
         out_dir,
         bundle_label="response-window",
         overwrite=overwrite,
-    )
-    request_file = Path(request_path).expanduser().resolve()
-    request = load_response_window_request(request_file)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    staging = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
-    backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"
-    staging.mkdir(parents=False)
-    try:
+    ) as publication:
+        request_file = Path(request_path).expanduser().resolve()
+        request = load_response_window_request(request_file)
         _build_staged_bundle(
             request_path=request_file,
             request=request,
-            staging=staging,
+            staging=publication.staging,
             contracts=contracts,
             source_loader=source_loader,
         )
-        if destination.exists():
-            destination.rename(backup)
-        try:
-            staging.rename(destination)
-            published = verify_response_window_bundle(destination, contracts=contracts)
-        except BaseException:
-            if destination.exists():
-                shutil.rmtree(destination)
-            if backup.exists():
-                backup.rename(destination)
-            raise
-        if backup.exists():
-            shutil.rmtree(backup)
-        return published
-    except BaseException:
-        if staging.exists():
-            shutil.rmtree(staging)
-        raise
+        return publication.publish(lambda root: verify_response_window_bundle(root, contracts=contracts))
 
 
 def _build_staged_bundle(

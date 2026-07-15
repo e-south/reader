@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,7 +31,7 @@ from .promoter_evidence_overlay import (
 from .promoter_evidence_selected_binding import selected_binding_record
 from .promoter_evidence_verification import verify_promoter_evidence_bundle
 from .provenance import sha256_file
-from .publication import resolve_bundle_destination
+from .publication import bundle_publication
 from .review import load_review_tables, selected_handoff_row
 
 
@@ -50,44 +48,22 @@ def build_promoter_evidence_bundle(
 ) -> PromoterEvidenceBundle:
     """Build and atomically publish one verified promoter-evidence bundle."""
 
-    destination = resolve_bundle_destination(
+    with bundle_publication(
         out_dir,
         bundle_label="promoter-evidence",
         overwrite=overwrite,
-    )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    staging = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
-    backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"
-    staging.mkdir()
-    try:
+    ) as publication:
         _build_staged_bundle(
             response_bundle=response_bundle,
             bindings_root=bindings_root,
-            staging=staging,
+            staging=publication.staging,
             experiment_id=experiment_id,
             design_id=design_id,
             reduction_id=reduction_id,
             objective_overlay_path=objective_overlay_path,
         )
-        verify_promoter_evidence_bundle(staging)
-        if destination.exists():
-            destination.rename(backup)
-        try:
-            staging.rename(destination)
-            published = verify_promoter_evidence_bundle(destination)
-        except BaseException:
-            if destination.exists():
-                shutil.rmtree(destination)
-            if backup.exists():
-                backup.rename(destination)
-            raise
-        if backup.exists():
-            shutil.rmtree(backup)
-        return published
-    except BaseException:
-        if staging.exists():
-            shutil.rmtree(staging)
-        raise
+        verify_promoter_evidence_bundle(publication.staging)
+        return publication.publish(verify_promoter_evidence_bundle)
 
 
 def _build_staged_bundle(

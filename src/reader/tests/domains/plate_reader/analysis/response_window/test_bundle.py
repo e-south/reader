@@ -257,6 +257,81 @@ def test_bundle_build_removes_staging_directory_on_interrupt(tmp_path: Path, mon
     assert list(tmp_path.glob(".latest.staging-*")) == []
 
 
+def test_bundle_build_does_not_replace_destination_created_while_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_path = tmp_path / "request.yaml"
+    request_path.write_text("request", encoding="utf-8")
+    destination = tmp_path / "latest"
+    monkeypatch.setattr(bundle_module, "load_response_window_request", lambda _path: object())
+
+    def build_staged_bundle(**kwargs: object) -> None:
+        staging = kwargs["staging"]
+        assert isinstance(staging, Path)
+        (staging / "staged.txt").write_text("staged output", encoding="utf-8")
+        destination.mkdir()
+        (destination / "owner.txt").write_text("concurrent output", encoding="utf-8")
+
+    monkeypatch.setattr(bundle_module, "_build_staged_bundle", build_staged_bundle)
+    monkeypatch.setattr(
+        bundle_module,
+        "verify_response_window_bundle",
+        lambda *_args, **_kwargs: pytest.fail("concurrent output must not be replaced"),
+    )
+
+    with pytest.raises(FileExistsError, match="output already exists"):
+        bundle_module.build_response_window_bundle(
+            request_path=request_path,
+            out_dir=destination,
+            contracts=builtin_runtime().contracts,
+            source_loader=lambda *_args: pytest.fail("source loader should not run"),
+        )
+
+    assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
+    assert list(tmp_path.glob(".latest.staging-*")) == []
+    assert list(tmp_path.glob(".latest.backup-*")) == []
+
+
+def test_bundle_build_does_not_delete_destination_when_publish_rename_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_path = tmp_path / "request.yaml"
+    request_path.write_text("request", encoding="utf-8")
+    destination = tmp_path / "latest"
+    monkeypatch.setattr(bundle_module, "load_response_window_request", lambda _path: object())
+
+    def build_staged_bundle(**kwargs: object) -> None:
+        staging = kwargs["staging"]
+        assert isinstance(staging, Path)
+        (staging / "staged.txt").write_text("staged output", encoding="utf-8")
+
+    original_rename = Path.rename
+
+    def fail_publish_rename(path: Path, target: Path) -> Path:
+        if path.name.startswith(".latest.staging-") and target == destination:
+            destination.mkdir()
+            (destination / "owner.txt").write_text("concurrent output", encoding="utf-8")
+            raise OSError("injected publish race")
+        return original_rename(path, target)
+
+    monkeypatch.setattr(bundle_module, "_build_staged_bundle", build_staged_bundle)
+    monkeypatch.setattr(Path, "rename", fail_publish_rename)
+
+    with pytest.raises(OSError, match="injected publish race"):
+        bundle_module.build_response_window_bundle(
+            request_path=request_path,
+            out_dir=destination,
+            contracts=builtin_runtime().contracts,
+            source_loader=lambda *_args: pytest.fail("source loader should not run"),
+        )
+
+    assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
+    assert list(tmp_path.glob(".latest.staging-*")) == []
+    assert list(tmp_path.glob(".latest.backup-*")) == []
+
+
 @pytest.mark.parametrize("destination_kind", ["file", "directory_symlink", "dangling_symlink"])
 def test_bundle_build_rejects_non_directory_or_symlink_destination_before_staging(
     tmp_path: Path,
