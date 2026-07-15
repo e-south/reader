@@ -171,7 +171,12 @@ def resolve_event_interval(
     experiment_id: str,
     event_spec: EventSpec,
 ) -> EventInterval:
-    indexes = set(pd.to_numeric(frame[event_spec.segment_column], errors="coerce").dropna().astype(int))
+    segments = pd.to_numeric(frame[event_spec.segment_column], errors="coerce")
+    segment_values = segments.to_numpy(dtype=float, na_value=np.nan)
+    if not np.isfinite(segment_values).all() or not np.equal(segment_values, np.trunc(segment_values)).all():
+        raise ValueError(f"{experiment_id}: event segment indexes must be finite integers.")
+    segment_indexes = segments.astype(int)
+    indexes = set(segment_indexes)
     expected = {event_spec.pre_segment_index, event_spec.post_segment_index}
     if indexes != expected:
         raise ValueError(
@@ -180,8 +185,8 @@ def resolve_event_interval(
     times = pd.to_numeric(frame["time"], errors="coerce")
     if not np.isfinite(times.to_numpy(dtype=float)).all():
         raise ValueError(f"{experiment_id}: event alignment requires finite acquisition times.")
-    pre = times.loc[frame[event_spec.segment_column].astype(int).eq(event_spec.pre_segment_index)]
-    post = times.loc[frame[event_spec.segment_column].astype(int).eq(event_spec.post_segment_index)]
+    pre = times.loc[segment_indexes.eq(event_spec.pre_segment_index)]
+    post = times.loc[segment_indexes.eq(event_spec.post_segment_index)]
     last_pre = float(pre.max())
     first_post = float(post.min())
     assay_end = float(post.max())
