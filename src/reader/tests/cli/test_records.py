@@ -121,6 +121,7 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
     )
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    external_plot = tmp_path / "published" / "qc.png"
     record = {
         "schema_version": 3,
         "record_id": "plot:qc",
@@ -129,7 +130,7 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
         "created_at": "2026-07-10T00:00:00+00:00",
         "inputs": [],
         "config_digest": "sha256:qc",
-        "files": ["plots/qc.png"],
+        "files": [str(external_plot)],
     }
     store.records_path.write_text(
         json.dumps(
@@ -151,6 +152,7 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
     assert json_result.exit_code == 0
     payload = json.loads(json_result.output)
     assert payload["records"][0]["schema_version"] == 3
+    assert payload["records"][0]["files"] == [str(external_plot)]
     assert payload["records"][0]["description"] == "Description unavailable in this record."
 
 

@@ -18,7 +18,13 @@ import pytest
 from reader.contracts import builtin_contract_catalog
 from reader.errors import ContractError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
-from reader.workbench.records import FileBundleRecord, PathDescription, RecordStore, discover_dataframe_records
+from reader.workbench.records import (
+    FileBundleRecord,
+    PathDescription,
+    RecordStore,
+    discover_dataframe_records,
+    record_to_dict,
+)
 
 
 def test_records_catalog_invalid_json_raises(tmp_path) -> None:
@@ -608,12 +614,19 @@ def test_catalog_rejects_dataframe_paths_outside_outputs(tmp_path, raw_path) -> 
         store.read_dataframe("ingest/df")
 
 
-@pytest.mark.parametrize("raw_path", ["../outside.png", "/tmp/outside.png"])
-def test_catalog_rejects_file_bundle_paths_outside_outputs(tmp_path, raw_path) -> None:
+@pytest.mark.parametrize(
+    ("schema_version", "raw_path"),
+    [
+        (3, "../outside.png"),
+        (4, "../outside.png"),
+        (4, "/tmp/outside.png"),
+    ],
+)
+def test_catalog_rejects_unconfined_file_bundle_paths(tmp_path, schema_version, raw_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     payload = {
-        "schema_version": 3,
+        "schema_version": schema_version,
         "record_id": "plot:qc_plot",
         "kind": "file_bundle",
         "producer": {"kind": "plot", "id": "qc_plot", "plugin": "plot/time_series"},
@@ -633,6 +646,39 @@ def test_catalog_rejects_file_bundle_paths_outside_outputs(tmp_path, raw_path) -
 
     with pytest.raises(RecordError, match="must resolve within the outputs directory|must be relative"):
         store.read_record("plot:qc_plot")
+
+
+def test_catalog_preserves_schema_v3_absolute_file_bundle_paths(tmp_path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    external_plot = tmp_path / "published" / "trace.png"
+    external_plot.parent.mkdir()
+    external_plot.write_text("png", encoding="utf-8")
+    payload = {
+        "schema_version": 3,
+        "record_id": "plot:qc_plot",
+        "kind": "file_bundle",
+        "producer": {"kind": "plot", "id": "qc_plot", "plugin": "plot/time_series"},
+        "created_at": "2026-07-11T00:00:00+00:00",
+        "inputs": [],
+        "config_digest": "sha256:test",
+        "files": [str(external_plot)],
+        "description": "Time-series plot.",
+        "path_descriptions": [{"path": str(external_plot), "description": "Time-series plot."}],
+    }
+    catalog = {
+        "schema_version": 3,
+        "latest": {"plot:qc_plot": payload},
+        "history": {"plot:qc_plot": [payload]},
+    }
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    record = store.read_record("plot:qc_plot")
+    assert record.files == (external_plot,)
+    assert record.description_for(external_plot) == "Time-series plot."
+    encoded = record_to_dict(record, outputs_dir=outputs)
+    assert encoded["files"] == [str(external_plot)]
+    assert encoded["path_descriptions"] == [{"path": str(external_plot), "description": "Time-series plot."}]
 
 
 def test_file_bundle_rejects_path_that_resolves_outside_outputs(tmp_path) -> None:

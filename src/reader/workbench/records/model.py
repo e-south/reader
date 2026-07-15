@@ -13,8 +13,9 @@ from reader.workbench.graph import ProvenanceInput, provenance_input_from_dict, 
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 
 DATAFRAME_RECORD_SCHEMA_VERSION = 3
+FILE_BUNDLE_RECORD_SCHEMA_V3 = 3
 FILE_BUNDLE_RECORD_SCHEMA_VERSION = 4
-_SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS = frozenset({3, FILE_BUNDLE_RECORD_SCHEMA_VERSION})
+_SUPPORTED_FILE_BUNDLE_SCHEMA_VERSIONS = frozenset({FILE_BUNDLE_RECORD_SCHEMA_V3, FILE_BUNDLE_RECORD_SCHEMA_VERSION})
 
 
 @dataclass(frozen=True)
@@ -244,6 +245,32 @@ def _encode_path(path: Path, *, outputs_dir: Path) -> str:
     return str(relative)
 
 
+def _decode_file_bundle_path(raw: Any, *, outputs_dir: Path, schema_version: int) -> Path:
+    """Decode one bundle path under the declared file-bundle schema."""
+    if schema_version != FILE_BUNDLE_RECORD_SCHEMA_V3:
+        return _decode_path(raw, outputs_dir=outputs_dir)
+    if not isinstance(raw, str) or not raw.strip():
+        raise RecordError("record path entries must be non-empty strings")
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return _decode_path(raw, outputs_dir=outputs_dir)
+
+
+def _encode_file_bundle_path(path: Path, *, outputs_dir: Path, schema_version: int) -> str:
+    """Encode one bundle path without changing schema-v3 absolute paths."""
+    if schema_version != FILE_BUNDLE_RECORD_SCHEMA_V3:
+        return _encode_path(path, outputs_dir=outputs_dir)
+    candidate = Path(path)
+    if candidate.is_absolute():
+        try:
+            _resolved, relative = _path_within_outputs(candidate, outputs_dir=outputs_dir)
+        except RecordError:
+            return str(candidate)
+        return str(relative)
+    return _encode_path(candidate, outputs_dir=outputs_dir)
+
+
 def record_to_dict(record: DataFrameArtifactRecord | FileBundleRecord, *, outputs_dir: Path) -> dict[str, Any]:
     base = {
         "schema_version": (
@@ -266,13 +293,20 @@ def record_to_dict(record: DataFrameArtifactRecord | FileBundleRecord, *, output
             }
         )
         return base
-    base["files"] = [_encode_path(path, outputs_dir=outputs_dir) for path in record.files]
+    base["files"] = [
+        _encode_file_bundle_path(path, outputs_dir=outputs_dir, schema_version=record.schema_version)
+        for path in record.files
+    ]
     if record.description is not None:
         base["description"] = record.description
     if record.path_descriptions:
         base["path_descriptions"] = [
             {
-                "path": _encode_path(item.path, outputs_dir=outputs_dir),
+                "path": _encode_file_bundle_path(
+                    item.path,
+                    outputs_dir=outputs_dir,
+                    schema_version=record.schema_version,
+                ),
                 "description": item.description,
             }
             for item in record.path_descriptions
@@ -395,7 +429,11 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
             raise RecordError(f"record {record_id!r} path_descriptions entries must include string descriptions")
         path_descriptions.append(
             PathDescription(
-                path=_decode_path(item_path, outputs_dir=outputs_dir),
+                path=_decode_file_bundle_path(
+                    item_path,
+                    outputs_dir=outputs_dir,
+                    schema_version=schema_version,
+                ),
                 description=item_description,
             )
         )
@@ -406,7 +444,9 @@ def record_from_dict(payload: dict[str, Any], *, outputs_dir: Path) -> DataFrame
         created_at=created_at,
         inputs=parsed_inputs,
         config_digest=config_digest,
-        files=tuple(_decode_path(path, outputs_dir=outputs_dir) for path in files),
+        files=tuple(
+            _decode_file_bundle_path(path, outputs_dir=outputs_dir, schema_version=schema_version) for path in files
+        ),
         description=description,
         schema_version=schema_version,
         path_descriptions=tuple(path_descriptions),

@@ -295,8 +295,10 @@ latest record entries. File-bundle record schema v4 requires new plot entries
 to include one typed description for every path, sourced from the matching
 protocol figure or explicit producer metadata. Export entries carry the
 producing plugin's operational bundle description. Reader can inspect schema v3
-file bundles whose descriptions were not recorded, but reports that absence
-instead of inferring meaning from filenames. `--all` does not dump every stored
+file bundles whose descriptions were not recorded and preserves absolute bundle
+paths written by that schema. Current schema v4 publication remains confined
+below `outputs/`. Missing descriptions are reported rather than inferred from
+filenames. `--all` does not dump every stored
 revision. It adds per-record revision counts and a total
 revision summary so the output stays compact. The table view summarizes
 multi-file bundles by count and location. JSON keeps the full structured
