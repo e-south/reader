@@ -17,6 +17,7 @@ from .contracts import ResponseWindowRequest, load_response_window_request
 from .materialize import materialize_experiment
 from .notebook import write_review_notebook
 from .provenance import sha256_file
+from .publication import resolve_bundle_destination
 from .reporting import write_review_artifacts
 from .sources import ExperimentSourceLoader
 from .verification import BUNDLE_SCHEMA_VERSION, RECORD_ARTIFACTS, RECORD_CONTRACTS, verify_bundle_payload
@@ -41,11 +42,13 @@ def build_response_window_bundle(
 ) -> ResponseWindowBundle:
     """Materialize verified records and review artifacts for one request."""
 
+    destination = resolve_bundle_destination(
+        out_dir,
+        bundle_label="response-window",
+        overwrite=overwrite,
+    )
     request_file = Path(request_path).expanduser().resolve()
-    destination = Path(out_dir).expanduser().resolve()
     request = load_response_window_request(request_file)
-    if destination.exists() and not overwrite:
-        raise FileExistsError(f"response-window output already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
     backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"

@@ -33,6 +33,7 @@ from .promoter_evidence_overlay import (
 from .promoter_evidence_selected_binding import selected_binding_record
 from .promoter_evidence_verification import verify_promoter_evidence_bundle
 from .provenance import sha256_file
+from .publication import resolve_bundle_destination
 from .review import load_review_tables, selected_handoff_row
 
 
@@ -49,9 +50,11 @@ def build_promoter_evidence_bundle(
 ) -> PromoterEvidenceBundle:
     """Build and atomically publish one verified promoter-evidence bundle."""
 
-    destination = Path(out_dir).expanduser().resolve()
-    if destination.exists() and not overwrite:
-        raise FileExistsError(f"promoter-evidence output already exists: {destination}")
+    destination = resolve_bundle_destination(
+        out_dir,
+        bundle_label="promoter-evidence",
+        overwrite=overwrite,
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
     backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"

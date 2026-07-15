@@ -168,6 +168,46 @@ def test_promoter_evidence_rejects_binding_from_another_study(tmp_path: Path, mo
         )
 
 
+@pytest.mark.parametrize("destination_kind", ["file", "directory_symlink", "dangling_symlink"])
+def test_promoter_evidence_rejects_non_directory_or_symlink_destination_before_staging(
+    tmp_path: Path,
+    destination_kind: str,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    destination = tmp_path / "promoter-evidence"
+    if destination_kind == "file":
+        destination.write_text("keep this file", encoding="utf-8")
+    elif destination_kind == "directory_symlink":
+        target = tmp_path / "linked-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_text("keep this directory", encoding="utf-8")
+        destination.symlink_to(target, target_is_directory=True)
+    else:
+        destination.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="output must be a real directory path"):
+        build_promoter_evidence_bundle(
+            response_bundle_root=response_root,
+            bindings_root=tmp_path / "unused-bindings",
+            out_dir=destination,
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+            overwrite=True,
+        )
+
+    if destination_kind == "file":
+        assert destination.read_text(encoding="utf-8") == "keep this file"
+    elif destination_kind == "directory_symlink":
+        assert destination.is_symlink()
+        assert (target / "sentinel.txt").read_text(encoding="utf-8") == "keep this directory"
+    else:
+        assert destination.is_symlink()
+        assert not destination.exists()
+    assert list(tmp_path.glob(".promoter-evidence.staging-*")) == []
+    assert list(tmp_path.glob(".promoter-evidence.backup-*")) == []
+
+
 def test_genbank_evidence_records_explicit_null_densegen_provenance(tmp_path: Path, monkeypatch) -> None:
     response_root = _bundle_fixture(tmp_path)
     binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")

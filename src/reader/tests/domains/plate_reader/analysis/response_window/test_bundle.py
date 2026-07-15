@@ -257,6 +257,52 @@ def test_bundle_build_removes_staging_directory_on_interrupt(tmp_path: Path, mon
     assert list(tmp_path.glob(".latest.staging-*")) == []
 
 
+@pytest.mark.parametrize("destination_kind", ["file", "directory_symlink", "dangling_symlink"])
+def test_bundle_build_rejects_non_directory_or_symlink_destination_before_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_kind: str,
+) -> None:
+    request_path = tmp_path / "request.yaml"
+    request_path.write_text("request", encoding="utf-8")
+    monkeypatch.setattr(bundle_module, "load_response_window_request", lambda _path: object())
+    monkeypatch.setattr(
+        bundle_module,
+        "_build_staged_bundle",
+        lambda **_kwargs: pytest.fail("invalid output must be rejected before staging"),
+    )
+    destination = tmp_path / "latest"
+    if destination_kind == "file":
+        destination.write_text("keep this file", encoding="utf-8")
+    elif destination_kind == "directory_symlink":
+        target = tmp_path / "linked-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_text("keep this directory", encoding="utf-8")
+        destination.symlink_to(target, target_is_directory=True)
+    else:
+        destination.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="output must be a real directory path"):
+        bundle_module.build_response_window_bundle(
+            request_path=request_path,
+            out_dir=destination,
+            contracts=builtin_runtime().contracts,
+            source_loader=lambda *_args: pytest.fail("source loader should not run"),
+            overwrite=True,
+        )
+
+    if destination_kind == "file":
+        assert destination.read_text(encoding="utf-8") == "keep this file"
+    elif destination_kind == "directory_symlink":
+        assert destination.is_symlink()
+        assert (target / "sentinel.txt").read_text(encoding="utf-8") == "keep this directory"
+    else:
+        assert destination.is_symlink()
+        assert not destination.exists()
+    assert list(tmp_path.glob(".latest.staging-*")) == []
+    assert list(tmp_path.glob(".latest.backup-*")) == []
+
+
 def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_growth") -> Path:
     root = tmp_path / "bundle"
     (root / "tables").mkdir(parents=True)
