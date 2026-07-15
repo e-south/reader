@@ -6,7 +6,7 @@ import pandas as pd
 
 from .aggregation import build_design_records
 from .contracts import ReductionSpec, ResponseWindowRequest
-from .reduction import summarize_trace
+from .reduction import combine_bound_kinds, invert_bound_kind, summarize_trace
 from .sources import ExperimentSource
 from .uncertainty import bootstrap_draw_records
 
@@ -154,8 +154,14 @@ def _summaries_by_trace(
             positive_floor=request.quality.positive_floor,
             max_interior_gap_h=request.quality.max_interior_gap_h,
             trace_id=trace_id,
+            policy_clipped=trace["value_policy_clipped"].to_numpy(dtype=bool),
+            instrument_overflow=trace["value_instrument_overflow"].to_numpy(dtype=bool),
+            bound_kinds=trace["value_bound_kind"].to_numpy(dtype=object),
         )
         value = post.value
+        policy_clipped_point_count = post.policy_clipped_point_count
+        instrument_overflow_point_count = post.instrument_overflow_point_count
+        bound_kind = post.bound_kind
         pre_observed_point_count = 0
         pre_integration_point_count = 0
         pre_max_interior_gap_h = 0.0
@@ -171,8 +177,14 @@ def _summaries_by_trace(
                 positive_floor=request.quality.positive_floor,
                 max_interior_gap_h=request.quality.max_interior_gap_h,
                 trace_id=f"{trace_id}:pre",
+                policy_clipped=trace["value_policy_clipped"].to_numpy(dtype=bool),
+                instrument_overflow=trace["value_instrument_overflow"].to_numpy(dtype=bool),
+                bound_kinds=trace["value_bound_kind"].to_numpy(dtype=object),
             )
             value -= pre.value
+            policy_clipped_point_count += pre.policy_clipped_point_count
+            instrument_overflow_point_count += pre.instrument_overflow_point_count
+            bound_kind = combine_bound_kinds(bound_kind, invert_bound_kind(pre.bound_kind))
             pre_observed_point_count = pre.observed_point_count
             pre_integration_point_count = pre.integration_point_count
             pre_max_interior_gap_h = pre.max_interior_gap_h
@@ -188,6 +200,9 @@ def _summaries_by_trace(
                 f"{signal_kind}_pre_observed_point_count": pre_observed_point_count,
                 f"{signal_kind}_pre_integration_point_count": pre_integration_point_count,
                 f"{signal_kind}_pre_max_interior_gap_h": pre_max_interior_gap_h,
+                f"{signal_kind}_policy_clipped_point_count": policy_clipped_point_count,
+                f"{signal_kind}_instrument_overflow_point_count": instrument_overflow_point_count,
+                f"{signal_kind}_bound_kind": bound_kind,
             }
         )
     result = pd.DataFrame.from_records(rows)
@@ -204,7 +219,19 @@ def _trace_record(source: ExperimentSource, *, request: ResponseWindowRequest) -
         ("growth", source.trajectory),
     ):
         selected = frame.loc[
-            :, ["experiment_id", "design_id", "position", "state", "time", "time_from_event_h", "value"]
+            :,
+            [
+                "experiment_id",
+                "design_id",
+                "position",
+                "state",
+                "time",
+                "time_from_event_h",
+                "value",
+                "value_policy_clipped",
+                "value_instrument_overflow",
+                "value_bound_kind",
+            ],
         ].copy()
         selected["signal_kind"] = signal_kind
         selected["is_reference"] = selected["design_id"].astype(str).eq(request.source.reference_design_id)

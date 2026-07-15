@@ -6,6 +6,8 @@ import pandas as pd
 import pytest
 import yaml
 
+from reader.domains.plate_reader.analysis.response_window.contracts import load_response_window_request
+from reader.domains.plate_reader.analysis.response_window.materialize import materialize_experiment
 from reader.domains.plate_reader.analysis.response_window.preflight import preflight_response_window_request
 from reader.domains.plate_reader.analysis.response_window.sources import EventInterval, ExperimentSource
 from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
@@ -59,6 +61,68 @@ def test_preflight_accepts_fully_buildable_request(tmp_path: Path) -> None:
     assert result.reduction_ids == ("primary",)
 
 
+def test_materialization_propagates_trace_bounds_to_well_and_state_summaries(tmp_path: Path) -> None:
+    request_path = _write_request(tmp_path, coverage_end=2.0)
+    request = load_response_window_request(request_path)
+    source = _source(tmp_path)
+    response_mask = (
+        source.response["design_id"].eq("design")
+        & source.response["state"].eq("00")
+        & source.response["position"].eq("A1")
+        & source.response["time"].eq(2.0)
+    )
+    source.response.loc[response_mask, "value_policy_clipped"] = True
+    source.response.loc[response_mask, "value_bound_kind"] = "lower"
+    reference_mask = (
+        source.magnitude["design_id"].eq("reference")
+        & source.magnitude["state"].eq("00")
+        & source.magnitude["position"].eq("A1")
+        & source.magnitude["time"].eq(2.0)
+    )
+    source.magnitude.loc[reference_mask, "value_instrument_overflow"] = True
+    source.magnitude.loc[reference_mask, "value_bound_kind"] = "lower"
+    event_only_mask = (
+        source.response["design_id"].eq("design")
+        & source.response["state"].eq("10")
+        & source.response["position"].eq("A1")
+        & source.response["time"].eq(1.0)
+    )
+    source.response.loc[event_only_mask, "value_policy_clipped"] = True
+    source.response.loc[event_only_mask, "value_bound_kind"] = "lower"
+
+    wells, designs, _draws, traces, _events = materialize_experiment(source, request=request)
+
+    affected_trace = traces.loc[
+        traces["design_id"].eq("design")
+        & traces["state"].eq("00")
+        & traces["position"].eq("A1")
+        & traces["signal_kind"].eq("response")
+        & traces["time"].eq(2.0)
+    ].iloc[0]
+    assert bool(affected_trace["value_policy_clipped"])
+    assert affected_trace["value_bound_kind"] == "lower"
+    affected_well = wells.loc[
+        wells["design_id"].eq("design") & wells["state"].eq("00") & wells["position"].eq("A1")
+    ].iloc[0]
+    assert affected_well["response_policy_clipped_point_count"] == 1
+    assert affected_well["response_instrument_overflow_point_count"] == 0
+    assert affected_well["response_bound_kind"] == "lower"
+    design = designs.loc[designs["design_id"].eq("design")].iloc[0]
+    assert bool(design["r00_has_policy_clipping"])
+    assert not bool(design["r00_has_instrument_overflow"])
+    assert design["r00_bound_kind"] == "lower"
+    assert bool(design["b00_has_instrument_overflow"])
+    assert design["b00_bound_kind"] == "upper"
+    assert design["r10_bound_kind"] == "exact"
+    assert bool(design["r10_event_sensitivity_has_policy_clipping"])
+    assert not bool(design["r10_event_sensitivity_has_instrument_overflow"])
+    assert design["b10_bound_kind"] == "exact"
+    reference = designs.loc[designs["design_id"].eq("reference")].iloc[0]
+    assert bool(reference["b00_has_instrument_overflow"])
+    assert reference["b00"] == 0.0
+    assert reference["b00_bound_kind"] == "exact"
+
+
 def _write_request(tmp_path: Path, *, coverage_end: float) -> Path:
     request = _payload()
     request["experiment_ids"] = ["20260101_example"]
@@ -107,6 +171,9 @@ def _source(tmp_path: Path) -> ExperimentSource:
                             "time": time,
                             "time_from_event_h": time - 1.0,
                             "value": 2.0 + 0.1 * time,
+                            "value_policy_clipped": False,
+                            "value_instrument_overflow": False,
+                            "value_bound_kind": "exact",
                         }
                     )
     ratios = pd.DataFrame.from_records(rows)

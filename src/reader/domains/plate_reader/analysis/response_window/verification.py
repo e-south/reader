@@ -18,12 +18,12 @@ from .verification_invariants import verify_record_invariants
 from .verification_request import verify_request_parity
 from .verification_source_catalog import verify_source_catalog
 
-BUNDLE_SCHEMA_VERSION = "reader.response_window.bundle.v4"
+BUNDLE_SCHEMA_VERSION = "reader.response_window.bundle.v5"
 RECORD_CONTRACTS = {
-    "wells": "plate_reader.response_window.wells.v2",
-    "designs": "plate_reader.response_window.designs.v2",
+    "wells": "plate_reader.response_window.wells.v3",
+    "designs": "plate_reader.response_window.designs.v3",
     "bootstrap_draws": "plate_reader.response_window.bootstrap_draws.v2",
-    "traces": "plate_reader.response_window.traces.v2",
+    "traces": "plate_reader.response_window.traces.v3",
     "events": "plate_reader.response_window.events.v2",
 }
 RECORD_ARTIFACTS = {record_id: f"tables/{record_id}.parquet" for record_id in RECORD_CONTRACTS}
@@ -89,6 +89,7 @@ def verify_bundle_payload(
         counts=counts,
         display=display,
         frames=frames,
+        request=request,
     )
     return manifest_path, manifest, counts
 

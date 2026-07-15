@@ -7,6 +7,7 @@ import pandas as pd
 
 from .contracts import ReductionSpec, ResponseWindowRequest
 from .provenance import stable_seed
+from .reduction import combine_bound_kinds, invert_bound_kind
 from .sources import STATE_ORDER, ExperimentSource
 from .uncertainty import joint_state_bootstrap_draws, symmetric_event_sensitivity_half_width
 
@@ -77,6 +78,19 @@ def build_design_records(
                 float(lower_row["anchored_fluorescence"]),
                 float(upper_row["anchored_fluorescence"]),
             )
+            for prefix, field in (("r", "response"), ("b", "anchored_fluorescence")):
+                record[f"{prefix}{state}_event_sensitivity_has_policy_clipping"] = any(
+                    bool(candidate[f"{field}_has_policy_clipping"]) for candidate in (row, lower_row, upper_row)
+                )
+                record[f"{prefix}{state}_event_sensitivity_has_instrument_overflow"] = any(
+                    bool(candidate[f"{field}_has_instrument_overflow"]) for candidate in (row, lower_row, upper_row)
+                )
+            record[f"r{state}_has_policy_clipping"] = bool(row["response_has_policy_clipping"])
+            record[f"r{state}_has_instrument_overflow"] = bool(row["response_has_instrument_overflow"])
+            record[f"r{state}_bound_kind"] = str(row["response_bound_kind"])
+            record[f"b{state}_has_policy_clipping"] = bool(row["anchored_fluorescence_has_policy_clipping"])
+            record[f"b{state}_has_instrument_overflow"] = bool(row["anchored_fluorescence_has_instrument_overflow"])
+            record[f"b{state}_bound_kind"] = str(row["anchored_fluorescence_bound_kind"])
             record[f"n{state}"] = int(row["replicate_count"])
         records.append(record)
     return pd.DataFrame.from_records(records)
@@ -94,7 +108,8 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowReque
     for (design_id, state), frame in wells.groupby(["design_id", "state"], sort=True):
         response_values = frame["response_well"].to_numpy(dtype=float)
         magnitude_values = frame["magnitude_well"].to_numpy(dtype=float)
-        anchor_values = anchor.loc[anchor["state"].astype(str).eq(str(state)), "magnitude_well"].to_numpy(dtype=float)
+        state_anchor = anchor.loc[anchor["state"].astype(str).eq(str(state))]
+        anchor_values = state_anchor["magnitude_well"].to_numpy(dtype=float)
         minimum = request.quality.min_replicates_per_state
         if min(len(response_values), len(magnitude_values), len(anchor_values)) < minimum:
             raise ValueError(f"{design_id}:{state} requires at least {minimum} design and reference replicate wells.")
@@ -114,6 +129,17 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowReque
             samples=request.aggregation.bootstrap_samples,
             stat=stat,
             rng=rng,
+        )
+        response_bound = combine_bound_kinds(*frame["response_bound_kind"])
+        design_magnitude_bound = combine_bound_kinds(*frame["magnitude_bound_kind"])
+        anchor_magnitude_bound = combine_bound_kinds(*state_anchor["magnitude_bound_kind"])
+        anchored_bound = (
+            "exact"
+            if str(design_id) == anchor_id
+            else combine_bound_kinds(
+                design_magnitude_bound,
+                invert_bound_kind(anchor_magnitude_bound),
+            )
         )
         rows.append(
             {
@@ -136,6 +162,18 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowReque
                 ),
                 "min_pre_observed_points": int(frame["response_pre_observed_point_count"].min()),
                 "max_pre_interior_gap_h": float(frame["response_pre_max_interior_gap_h"].max()),
+                "response_has_policy_clipping": bool(frame["response_policy_clipped_point_count"].gt(0).any()),
+                "response_has_instrument_overflow": bool(frame["response_instrument_overflow_point_count"].gt(0).any()),
+                "response_bound_kind": response_bound,
+                "anchored_fluorescence_has_policy_clipping": bool(
+                    frame["magnitude_policy_clipped_point_count"].gt(0).any()
+                    or state_anchor["magnitude_policy_clipped_point_count"].gt(0).any()
+                ),
+                "anchored_fluorescence_has_instrument_overflow": bool(
+                    frame["magnitude_instrument_overflow_point_count"].gt(0).any()
+                    or state_anchor["magnitude_instrument_overflow_point_count"].gt(0).any()
+                ),
+                "anchored_fluorescence_bound_kind": anchored_bound,
             }
         )
     return pd.DataFrame.from_records(rows)

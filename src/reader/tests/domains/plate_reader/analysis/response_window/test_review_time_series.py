@@ -67,6 +67,10 @@ def test_time_series_uses_median_bands_and_shows_the_eight_value_handoff() -> No
         assert "observed rᵢ wells" in support_text
         assert "independent design/reference" in support_text
         assert "dashed/hollow: pDual-10 anchor" in support_text
+        assert "central 2/8 bounded" in support_text
+        assert "event envelope 1/8" in support_text
+        assert response_axis.findobj(lambda artist: artist.get_gid() == "censor-bound-r10")[0].get_text() == "≥"
+        assert fluorescence_axis.findobj(lambda artist: artist.get_gid() == "censor-bound-b01")[0].get_text() == "≤"
         legend_labels = [text.get_text() for text in figure.legends[0].get_texts()]
         assert legend_labels == ["No stress", "Ethanol", "Ciprofloxacin", "Ethanol + ciprofloxacin"]
         assert "Stress addition interval" not in legend_labels
@@ -108,7 +112,14 @@ def _selected() -> pd.Series:
         values[f"b{state}_ci_high"] = float(values[f"b{state}"]) + 0.07
         values[f"r{state}_event_half_range"] = 0.03
         values[f"b{state}_event_half_range"] = 0.02
+        for prefix in ("r", "b"):
+            values[f"{prefix}{state}_bound_kind"] = "exact"
+            values[f"{prefix}{state}_event_sensitivity_has_policy_clipping"] = False
+            values[f"{prefix}{state}_event_sensitivity_has_instrument_overflow"] = False
         values[f"n{state}"] = 3
+    values["r10_bound_kind"] = "lower"
+    values["b01_bound_kind"] = "upper"
+    values["r11_event_sensitivity_has_policy_clipping"] = True
     return pd.Series(values)
 
 

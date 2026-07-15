@@ -66,7 +66,7 @@ def test_build_promoter_evidence_publishes_white_png_pdf_and_digest_manifest(
         "candidate_id": "candidate-spyp",
         "reduction_id": "primary",
     }
-    assert manifest["sources"]["response_window"]["schema_version"] == "reader.response_window.bundle.v4"
+    assert manifest["sources"]["response_window"]["schema_version"] == "reader.response_window.bundle.v5"
     assert manifest["sources"]["response_window"]["study_id"] == "stress_ethanol_cipro_growth"
     assert manifest["sources"]["candidate_bindings"]["schema_id"] == ("dnadesign.study.promoter_candidate_bindings.v1")
     assert manifest["sources"]["candidate_bindings"]["study_id"] == "stress_ethanol_cipro_growth"

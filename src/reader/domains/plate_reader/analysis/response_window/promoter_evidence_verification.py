@@ -120,14 +120,14 @@ def _verify_sources(value: object, *, selection: dict[str, str]) -> None:
     }:
         raise ValueError("promoter-evidence response-window source metadata is malformed.")
     if (
-        response["schema_version"] != "reader.response_window.bundle.v4"
+        response["schema_version"] != "reader.response_window.bundle.v5"
         or not _is_nonempty_text(response["study_id"])
         or not _is_nonempty_text(response["request_id"])
         or not _is_nonempty_text(response["experiment_id"])
         or not _is_nonempty_text(response["reduction_id"])
         or not _is_sha256(response["manifest_sha256"])
     ):
-        raise ValueError("promoter-evidence source must be a verified response-window bundle v4.")
+        raise ValueError("promoter-evidence source must be a verified response-window bundle v5.")
     if response["experiment_id"] != selection["experiment_id"]:
         raise ValueError("promoter-evidence selection experiment disagrees with response-window source.")
     if response["reduction_id"] != selection["reduction_id"]:

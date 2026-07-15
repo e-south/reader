@@ -39,7 +39,7 @@ labels. Reader evidence shown in an OPAL notebook remains evidence, not a
 second label source.
 
 The response-window route accepts `reader.response_window.request.v3` and
-publishes `reader.response_window.bundle.v4`. Its eight response and
+publishes `reader.response_window.bundle.v5`. Its eight response and
 reference-relative fluorescence values remain assay summaries until the study
 applies its declared repeat-aggregation and label-promotion contracts. OPAL
 ingests that typed response y-space; Reader does not publish a scalar RMF label.
@@ -50,7 +50,7 @@ artifact is available to any consumer that understands one of its typed alias
 namespaces. Reader verifies the artifact and uses its exact `reader.design_id`
 alias, candidate, sequence, and BaseRender projection without importing study
 internals. The resulting
-`reader.response_window.promoter_evidence_bundle.v2` is a display artifact for
+`reader.response_window.promoter_evidence_bundle.v3` is a display artifact for
 downstream notebooks; OPAL does not reconstruct its trajectories or resolve its
 candidate identity again.
 

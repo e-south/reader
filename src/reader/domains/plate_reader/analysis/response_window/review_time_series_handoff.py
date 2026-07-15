@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 
+from .censor_display import annotate_bound_glyph, censor_qc_line
 from .plot_style import style_data_axis
 from .sources import STATE_ORDER
 from .visual_labels import (
@@ -78,6 +79,15 @@ def draw_reduced_value_axis(
             zorder=5,
         )
         summary.set_gid(f"handoff-summary-{prefix}{state}")
+        annotate_bound_glyph(
+            axis,
+            row=selected,
+            component=f"{prefix}{state}",
+            xy=(x[index], values[index]),
+            xytext=(7, 0),
+            ha="left",
+            va="center",
+        )
     axis.axhline(0.0, color="#111827", linewidth=0.9, zorder=2)
     axis.set_xticks(x, STATE_ORDER)
     axis.set_xlabel("Condition")
@@ -124,6 +134,7 @@ def draw_window_support_axis(
         f"Trajectory style  solid/filled: selected design · dashed/hollow: {reference_id} anchor",
         f"Plot key  hollow circles: observed rᵢ wells · colored line: {str(selected['replicate_stat']).lower()}",
         f"Intervals  thin color: central {confidence_level:.0%} bootstrap · thick gray: event-time sensitivity",
+        censor_qc_line(selected),
         "bᵢ uses independent design/reference aggregates; no paired replicate points",
     )
     lines = [

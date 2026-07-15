@@ -8,6 +8,7 @@ _STATES = ["00", "10", "01", "11"]
 _REDUCTION_ROLES = ["primary", "sensitivity"]
 _REDUCTION_METHODS = ["geometric_time_mean", "integrated_linear_mean"]
 _RESPONSE_BASES = ["post_window", "post_minus_pre"]
+_VALUE_BOUND_KINDS = ["exact", "lower", "upper", "indeterminate"]
 
 
 def _state_summary_columns() -> list[ColumnRule]:
@@ -25,6 +26,16 @@ def _state_summary_columns() -> list[ColumnRule]:
                 ColumnRule(f"b{state}_ci_high", "float"),
                 ColumnRule(f"r{state}_event_half_range", "float", nonnegative=True),
                 ColumnRule(f"b{state}_event_half_range", "float", nonnegative=True),
+                ColumnRule(f"r{state}_event_sensitivity_has_policy_clipping", "bool"),
+                ColumnRule(f"r{state}_event_sensitivity_has_instrument_overflow", "bool"),
+                ColumnRule(f"b{state}_event_sensitivity_has_policy_clipping", "bool"),
+                ColumnRule(f"b{state}_event_sensitivity_has_instrument_overflow", "bool"),
+                ColumnRule(f"r{state}_has_policy_clipping", "bool"),
+                ColumnRule(f"r{state}_has_instrument_overflow", "bool"),
+                ColumnRule(f"r{state}_bound_kind", "string", allowed_values=_VALUE_BOUND_KINDS),
+                ColumnRule(f"b{state}_has_policy_clipping", "bool"),
+                ColumnRule(f"b{state}_has_instrument_overflow", "bool"),
+                ColumnRule(f"b{state}_bound_kind", "string", allowed_values=_VALUE_BOUND_KINDS),
                 ColumnRule(f"n{state}", "int", nonnegative=True),
             ]
         )
@@ -33,8 +44,8 @@ def _state_summary_columns() -> list[ColumnRule]:
 
 CONTRACTS: tuple[DataFrameContract, ...] = (
     DataFrameContract(
-        id="plate_reader.response_window.wells.v2",
-        description="Event-relative response and fluorescence summary for one replicate well.",
+        id="plate_reader.response_window.wells.v3",
+        description="Event-relative well summary with clipping and censor-bound support.",
         columns=[
             ColumnRule("experiment_id", "string"),
             ColumnRule("design_id", "string"),
@@ -47,6 +58,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("response_pre_observed_point_count", "int", nonnegative=True),
             ColumnRule("response_pre_integration_point_count", "int", nonnegative=True),
             ColumnRule("response_pre_max_interior_gap_h", "float", nonnegative=True),
+            ColumnRule("response_policy_clipped_point_count", "int", nonnegative=True),
+            ColumnRule("response_instrument_overflow_point_count", "int", nonnegative=True),
+            ColumnRule("response_bound_kind", "string", allowed_values=_VALUE_BOUND_KINDS),
             ColumnRule("magnitude_well", "float"),
             ColumnRule("magnitude_observed_point_count", "int", nonnegative=True),
             ColumnRule("magnitude_integration_point_count", "int", nonnegative=True),
@@ -54,6 +68,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("magnitude_pre_observed_point_count", "int", nonnegative=True),
             ColumnRule("magnitude_pre_integration_point_count", "int", nonnegative=True),
             ColumnRule("magnitude_pre_max_interior_gap_h", "float", nonnegative=True),
+            ColumnRule("magnitude_policy_clipped_point_count", "int", nonnegative=True),
+            ColumnRule("magnitude_instrument_overflow_point_count", "int", nonnegative=True),
+            ColumnRule("magnitude_bound_kind", "string", allowed_values=_VALUE_BOUND_KINDS),
             ColumnRule("reduction_id", "string"),
             ColumnRule("reduction_method", "string", allowed_values=_REDUCTION_METHODS),
             ColumnRule("response_basis", "string", allowed_values=_RESPONSE_BASES),
@@ -71,8 +88,8 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         allow_extra_columns=False,
     ),
     DataFrameContract(
-        id="plate_reader.response_window.designs.v2",
-        description="Four-condition response and reference-relative fluorescence summary.",
+        id="plate_reader.response_window.designs.v3",
+        description="Four-condition response and fluorescence summary with state-level censor bounds.",
         columns=[
             ColumnRule("experiment_id", "string"),
             ColumnRule("design_id", "string"),
@@ -119,8 +136,8 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         allow_extra_columns=False,
     ),
     DataFrameContract(
-        id="plate_reader.response_window.traces.v2",
-        description="Source trace observations aligned to one declared intervention event.",
+        id="plate_reader.response_window.traces.v3",
+        description="Source trace observations with clipping and censor bounds aligned to one event.",
         columns=[
             ColumnRule("experiment_id", "string"),
             ColumnRule("design_id", "string"),
@@ -129,6 +146,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("time", "float", nonnegative=True),
             ColumnRule("time_from_event_h", "float"),
             ColumnRule("value", "float"),
+            ColumnRule("value_policy_clipped", "bool"),
+            ColumnRule("value_instrument_overflow", "bool"),
+            ColumnRule("value_bound_kind", "string", allowed_values=_VALUE_BOUND_KINDS),
             ColumnRule("signal_kind", "string", allowed_values=["response", "magnitude", "growth"]),
             ColumnRule("is_reference", "bool"),
         ],

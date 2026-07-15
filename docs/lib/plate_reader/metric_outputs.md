@@ -31,7 +31,7 @@ objective.
 | Output lane | Explicit selector | Time basis | Durable Reader output | Review surface |
 | --- | --- | --- | --- | --- |
 | SFXI | `logic/sfxi_screen` protocol inputs and analysis settings | one acquisition-time snapshot | `sfxi_vec8/vec8` under `sfxi.vec8.v3` | per-experiment `notebook/sfxi_eda` and SFXI plot bundles |
-| Response window | `reader.response_window.request.v3` | one declared intervention and event-relative windows | `reader.response_window.bundle.v4` with typed well, design, trace, event, and bootstrap records | bundle-generated `review.py` and optional promoter-evidence bundle |
+| Response window | `reader.response_window.request.v3` | one declared intervention and event-relative windows | `reader.response_window.bundle.v5` with typed well, design, trace, event, bootstrap, and censor-bound records | bundle-generated `review.py` and optional promoter-evidence bundle |
 
 The SFXI notebook may recompute a vector at an interactively selected time for
 review, but it does not persist that table. The manifest-backed vec8 record is

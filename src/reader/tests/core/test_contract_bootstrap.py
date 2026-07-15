@@ -17,10 +17,10 @@ def test_builtin_contract_catalog_is_explicit_and_stable() -> None:
     assert {
         "tidy.v1",
         "plate_reader.annotated.v1",
-        "plate_reader.response_window.wells.v2",
-        "plate_reader.response_window.designs.v2",
+        "plate_reader.response_window.wells.v3",
+        "plate_reader.response_window.designs.v3",
         "plate_reader.response_window.bootstrap_draws.v2",
-        "plate_reader.response_window.traces.v2",
+        "plate_reader.response_window.traces.v3",
         "plate_reader.response_window.events.v2",
         "fold_change.v1",
         "plate_reader.sponge_trace.v1",

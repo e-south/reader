@@ -23,6 +23,17 @@ from reader.runtime import builtin_runtime
 from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
 
 
+def test_response_window_bundle_declares_censor_aware_record_contracts() -> None:
+    assert BUNDLE_SCHEMA_VERSION == "reader.response_window.bundle.v5"
+    assert RECORD_CONTRACTS == {
+        "wells": "plate_reader.response_window.wells.v3",
+        "designs": "plate_reader.response_window.designs.v3",
+        "bootstrap_draws": "plate_reader.response_window.bootstrap_draws.v2",
+        "traces": "plate_reader.response_window.traces.v3",
+        "events": "plate_reader.response_window.events.v2",
+    }
+
+
 def test_verify_bundle_enforces_record_and_artifact_contracts(tmp_path: Path) -> None:
     root = _bundle_fixture(tmp_path)
 
@@ -65,6 +76,102 @@ def test_verify_bundle_rejects_schema_drift_with_matching_digest(tmp_path: Path)
     _refresh_artifact_manifest(root, RECORD_ARTIFACTS["designs"])
 
     with pytest.raises(ContractError, match="missing required column"):
+        verify_response_window_bundle(root)
+
+
+def test_verify_bundle_rejects_internally_inconsistent_well_bound_provenance(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    path = root / RECORD_ARTIFACTS["wells"]
+    wells = pd.read_parquet(path)
+    wells.loc[wells.index[0], "response_policy_clipped_point_count"] = 1
+    wells.to_parquet(path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["wells"])
+
+    with pytest.raises(ValueError, match="well value provenance"):
+        verify_response_window_bundle(root)
+
+
+def test_verify_bundle_rejects_design_state_provenance_drift(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    path = root / RECORD_ARTIFACTS["designs"]
+    designs = pd.read_parquet(path)
+    designs.loc[designs["design_id"].eq("design"), "r00_has_policy_clipping"] = True
+    designs.loc[designs["design_id"].eq("design"), "r00_bound_kind"] = "lower"
+    designs.to_parquet(path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["designs"])
+
+    with pytest.raises(ValueError, match="state provenance"):
+        verify_response_window_bundle(root)
+
+
+def test_verify_bundle_rejects_well_provenance_that_disagrees_with_trace_support(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    wells_path = root / RECORD_ARTIFACTS["wells"]
+    wells = pd.read_parquet(wells_path)
+    target = wells["design_id"].eq("design") & wells["state"].eq("00")
+    wells.loc[target, "response_policy_clipped_point_count"] = 1
+    wells.loc[target, "response_bound_kind"] = "lower"
+    wells.to_parquet(wells_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["wells"])
+
+    designs_path = root / RECORD_ARTIFACTS["designs"]
+    designs = pd.read_parquet(designs_path)
+    target = designs["design_id"].eq("design")
+    designs.loc[target, "r00_has_policy_clipping"] = True
+    designs.loc[target, "r00_bound_kind"] = "lower"
+    designs.to_parquet(designs_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["designs"])
+
+    with pytest.raises(ValueError, match="trace support"):
+        verify_response_window_bundle(root)
+
+
+def test_verify_bundle_accepts_censored_reference_with_exact_self_anchor(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    traces_path = root / RECORD_ARTIFACTS["traces"]
+    traces = pd.read_parquet(traces_path)
+    target = (
+        traces["design_id"].eq("reference")
+        & traces["state"].eq("00")
+        & traces["position"].eq("A1")
+        & traces["signal_kind"].eq("magnitude")
+        & traces["time"].eq(2.5)
+    )
+    traces.loc[target, "value_policy_clipped"] = True
+    traces.loc[target, "value_bound_kind"] = "lower"
+    traces.to_parquet(traces_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["traces"])
+
+    wells_path = root / RECORD_ARTIFACTS["wells"]
+    wells = pd.read_parquet(wells_path)
+    target = wells["design_id"].eq("reference") & wells["state"].eq("00") & wells["position"].eq("A1")
+    wells.loc[target, "magnitude_policy_clipped_point_count"] = 1
+    wells.loc[target, "magnitude_bound_kind"] = "lower"
+    wells.to_parquet(wells_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["wells"])
+
+    designs_path = root / RECORD_ARTIFACTS["designs"]
+    designs = pd.read_parquet(designs_path)
+    designs.loc[:, "b00_has_policy_clipping"] = True
+    designs.loc[:, "b00_event_sensitivity_has_policy_clipping"] = True
+    designs.loc[designs["design_id"].eq("reference"), "b00_bound_kind"] = "exact"
+    designs.loc[designs["design_id"].eq("design"), "b00_bound_kind"] = "upper"
+    designs.to_parquet(designs_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["designs"])
+
+    verify_response_window_bundle(root)
+
+
+def test_verify_bundle_rejects_event_sensitivity_censoring_drift(tmp_path: Path) -> None:
+    root = _bundle_fixture(tmp_path)
+    designs_path = root / RECORD_ARTIFACTS["designs"]
+    designs = pd.read_parquet(designs_path)
+    target = designs["design_id"].eq("design")
+    designs.loc[target, "r00_event_sensitivity_has_policy_clipping"] = True
+    designs.to_parquet(designs_path, index=False)
+    _refresh_artifact_manifest(root, RECORD_ARTIFACTS["designs"])
+
+    with pytest.raises(ValueError, match="event-sensitivity provenance"):
         verify_response_window_bundle(root)
 
 
@@ -506,7 +613,7 @@ def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_gro
             "well_rows": 16,
             "design_rows": 2,
             "bootstrap_draw_rows": 200,
-            "trace_rows": 48,
+            "trace_rows": 240,
             "unique_design_ids": 2,
             "repeated_design_ids": 0,
             "reductions": 1,
@@ -538,15 +645,17 @@ def _record_frames() -> dict[str, pd.DataFrame]:
             for position in ("A1", "A2"):
                 wells.append(_well_row(design_id, state=state, position=position, is_reference=is_reference))
                 for signal_kind in ("response", "magnitude", "growth"):
-                    traces.append(
-                        _trace_row(
-                            design_id,
-                            state=state,
-                            position=position,
-                            signal_kind=signal_kind,
-                            is_reference=is_reference,
+                    for time in (2.0, 2.5, 2.75, 3.0, 3.5):
+                        traces.append(
+                            _trace_row(
+                                design_id,
+                                state=state,
+                                position=position,
+                                signal_kind=signal_kind,
+                                is_reference=is_reference,
+                                time=time,
+                            )
                         )
-                    )
     return {
         "wells": pd.DataFrame(wells),
         "designs": pd.DataFrame(designs),
@@ -597,6 +706,9 @@ def _well_row(design_id: str, *, state: str, position: str, is_reference: bool) 
             row[f"{family}_{period}observed_point_count"] = 3 if not period else 0
             row[f"{family}_{period}integration_point_count"] = 5 if not period else 0
             row[f"{family}_{period}max_interior_gap_h"] = 0.5 if not period else 0.0
+        row[f"{family}_policy_clipped_point_count"] = 0
+        row[f"{family}_instrument_overflow_point_count"] = 0
+        row[f"{family}_bound_kind"] = "exact"
     return row
 
 
@@ -632,6 +744,11 @@ def _design_row(design_id: str, *, is_reference: bool) -> dict[str, object]:
             row[f"{prefix}{state}_ci_low"] = -0.1
             row[f"{prefix}{state}_ci_high"] = 0.1
             row[f"{prefix}{state}_event_half_range"] = 0.05
+            row[f"{prefix}{state}_event_sensitivity_has_policy_clipping"] = False
+            row[f"{prefix}{state}_event_sensitivity_has_instrument_overflow"] = False
+            row[f"{prefix}{state}_has_policy_clipping"] = False
+            row[f"{prefix}{state}_has_instrument_overflow"] = False
+            row[f"{prefix}{state}_bound_kind"] = "exact"
         row[f"n{state}"] = 2
     return row
 
@@ -657,15 +774,19 @@ def _trace_row(
     position: str,
     signal_kind: str,
     is_reference: bool,
+    time: float,
 ) -> dict[str, object]:
     return {
         "experiment_id": "experiment",
         "design_id": design_id,
         "position": position,
         "state": state,
-        "time": 1.25,
-        "time_from_event_h": 0.0,
+        "time": time,
+        "time_from_event_h": time - 1.25,
         "value": 1.0,
+        "value_policy_clipped": False,
+        "value_instrument_overflow": False,
+        "value_bound_kind": "exact",
         "signal_kind": signal_kind,
         "is_reference": is_reference,
     }

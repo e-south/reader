@@ -7,7 +7,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .contracts import ResponseWindowRequest
 from .sources import STATE_ORDER
+from .verification_value_provenance import verify_value_provenance
 
 _PLOT_MANIFEST_FIELDS = {
     "plot_id",
@@ -31,6 +33,7 @@ def verify_record_invariants(
     counts: dict[str, int],
     display: dict[str, object],
     frames: dict[str, pd.DataFrame],
+    request: ResponseWindowRequest,
 ) -> None:
     wells = frames["wells"]
     designs = frames["designs"]
@@ -52,6 +55,7 @@ def verify_record_invariants(
     _verify_reference_contract(designs, display)
     _verify_bootstrap_contract(designs, draws)
     _verify_well_counts(designs, wells)
+    verify_value_provenance(designs, wells, traces, events=events, request=request)
     _verify_event_contract(events)
     _verify_display_examples(designs, display)
     _verify_counts(designs, events, counts)

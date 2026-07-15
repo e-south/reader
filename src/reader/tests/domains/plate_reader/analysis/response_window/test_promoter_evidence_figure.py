@@ -59,6 +59,7 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         assert provenance.get_title(loc="left") == "F  Provenance and QC"
         assert handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
         assert handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
+        assert handoff.findobj(lambda artist: artist.get_gid() == "censor-bound-r10")[0].get_text() == "≥"
         assert len(fluorescence.findobj(lambda artist: artist.get_gid() == "anchor-replicate-interval")) == 4
         assert [tick.get_text() for tick in handoff.get_yticklabels()] == [
             "r₀₀",
@@ -105,8 +106,9 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         assert "observed rᵢ wells" in handoff_notes
         assert "independent aggregates" in handoff_notes
         assert "Event-time sensitivity" in handoff_notes
+        assert "central 1/8 bounded" in handoff_notes
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
-        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v2"
+        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v3"
     finally:
         plt.close(figure)
 
@@ -319,7 +321,12 @@ def _selected() -> pd.Series:
         values[f"b{state}_ci_high"] = float(values[f"b{state}"]) + 0.07
         values[f"r{state}_event_half_range"] = 0.03
         values[f"b{state}_event_half_range"] = 0.02
+        for prefix in ("r", "b"):
+            values[f"{prefix}{state}_bound_kind"] = "exact"
+            values[f"{prefix}{state}_event_sensitivity_has_policy_clipping"] = False
+            values[f"{prefix}{state}_event_sensitivity_has_instrument_overflow"] = False
         values[f"n{state}"] = 3
+    values["r10_bound_kind"] = "lower"
     return pd.Series(values)
 
 

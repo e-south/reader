@@ -9,6 +9,7 @@ def test_response_window_modules_stay_bounded() -> None:
     limits = {
         "aggregation.py": 220,
         "bundle.py": 280,
+        "censor_display.py": 60,
         "contracts.py": 340,
         "display.py": 190,
         "materialize.py": 340,
@@ -47,6 +48,8 @@ def test_response_window_modules_stay_bounded() -> None:
         "verification_request.py": 100,
         "verification_request_payload.py": 180,
         "verification_source_catalog.py": 80,
+        "verification_trace_support.py": 220,
+        "verification_value_provenance.py": 120,
         "visual_labels.py": 150,
     }
     observed = {name: len((PACKAGE / name).read_text(encoding="utf-8").splitlines()) for name in limits}

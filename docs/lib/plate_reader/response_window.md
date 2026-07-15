@@ -54,7 +54,7 @@ uv run reader response-window promoter-evidence-verify \
 The analysis Python facade is `reader.response_window`. Review and promoter
 evidence publication use `reader.response_window_review`.
 Both surfaces accept `reader.response_window.request.v3` and publish
-`reader.response_window.bundle.v4`. No downstream repository imports Reader
+`reader.response_window.bundle.v5`. No downstream repository imports Reader
 internals.
 
 `preflight` verifies request syntax, source contracts, artifact digests,
@@ -69,7 +69,7 @@ agents and automation.
 `promoter-evidence` first verifies the response-window bundle, then consumes a
 separate study-owned candidate-binding artifact. It publishes one white-canvas
 300-dpi PNG, one PDF, and a digest-bearing
-`reader.response_window.promoter_evidence_bundle.v2` manifest. Its verifier
+`reader.response_window.promoter_evidence_bundle.v3` manifest. Its verifier
 checks the claim boundary, source contract identities, artifact paths, byte
 counts, digests, and exact experiment/design/candidate/reduction selection
 parity independently.
@@ -174,15 +174,45 @@ larger absolute deviation between the midpoint estimate and either bound
 estimate. It is not half the distance between the two bound estimates. This
 conservative envelope is displayed separately from replicate-bootstrap
 uncertainty.
+Each response and fluorescence state also records separate policy-clipping and
+instrument-overflow flags aggregated across the midpoint and both event-bound
+windows. The central `*_bound_kind` describes only the midpoint estimate; it
+does not qualify the gray event-sensitivity envelope.
+
+## Clipping and censor bounds
+
+Source records must declare `value_policy_clipped`,
+`value_instrument_overflow`, and `value_bound_kind` for every observation.
+Missing provenance stops the response-window build; an older capped record is
+never inferred to be exact. Finite values changed by the configured cap are
+kept distinct from explicit instrument overflow.
+The generic ratio transform propagates this capability only when all three
+fields are present. It does not upgrade a resumed pre-capability artifact by
+inventing exact provenance.
+
+Ratio construction carries both numerator and denominator provenance. An
+affected numerator makes the stored ratio a lower bound, an affected
+denominator makes it an upper bound, and opposing bounds make it
+indeterminate. These labels describe the stored value; they do not impute an
+uncensored measurement.
+
+Trace records retain the observation-level flags and bound. Well records count
+the policy-clipped and overflow observations that support each reduction and
+declare the resulting response or magnitude bound. Design records expose the
+same evidence for each `r` and `b` state. A `b` bound includes both the design
+and its same-state reference because `b` subtracts the reference magnitude.
+The verifier requires trace, well, and state provenance to be internally
+consistent. Bootstrap intervals remain intervals around the stored values and
+do not convert a bounded observation into an exact one.
 
 ## Bundle records
 
 | Record | Contract | Grain |
 | --- | --- | --- |
-| `tables/wells.parquet` | `plate_reader.response_window.wells.v2` | experiment, design, condition, well, reduction |
-| `tables/designs.parquet` | `plate_reader.response_window.designs.v2` | experiment, design, reduction |
+| `tables/wells.parquet` | `plate_reader.response_window.wells.v3` | experiment, design, condition, well, reduction, censor support |
+| `tables/designs.parquet` | `plate_reader.response_window.designs.v3` | experiment, design, reduction, state-level censor bounds |
 | `tables/bootstrap_draws.parquet` | `plate_reader.response_window.bootstrap_draws.v2` | experiment, design, reduction, draw |
-| `tables/traces.parquet` | `plate_reader.response_window.traces.v2` | event-relative trace observation |
+| `tables/traces.parquet` | `plate_reader.response_window.traces.v3` | event-relative trace observation and value bound |
 | `tables/events.parquet` | `plate_reader.response_window.events.v2` | experiment event declaration |
 
 `manifest.json` records `study_id`, contract versions, source-record digests,

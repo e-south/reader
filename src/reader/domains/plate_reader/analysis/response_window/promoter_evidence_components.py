@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from .censor_display import annotate_bound_glyph, censor_qc_line
 from .plot_style import style_data_axis
 from .review_replicates import draw_horizontal_replicate_summary
 from .review_time_series_components import signal_rows, style_trajectory_axis, trace_interval
@@ -135,6 +136,15 @@ def draw_eight_value_handoff_axis(
             state=state,
             component=f"{prefix}{state}",
         )
+        annotate_bound_glyph(
+            axis,
+            row=selected,
+            component=f"{prefix}{state}",
+            xy=(values[index], y[index]),
+            xytext=(0, 6),
+            ha="center",
+            va="bottom",
+        )
 
     axis.axvline(0, color="#111827", linewidth=0.8, zorder=1)
     axis.axhline(4.0, color="#d1d5db", linewidth=0.8, zorder=1)
@@ -193,7 +203,8 @@ def draw_eight_value_handoff_axis(
         -0.27,
         "bᵢ compares independent aggregates; reference n = "
         + "/".join(str(reference_counts[state]) for state in STATE_ORDER)
-        + " for states 00/10/01/11",
+        + " for states 00/10/01/11\n"
+        + censor_qc_line(selected),
         transform=axis.transAxes,
         ha="left",
         va="top",

@@ -246,10 +246,49 @@ def _load_signal(
         raise ValueError(f"{context} record contains non-finite time or values.")
     if require_positive and (work["value"].to_numpy(dtype=float) <= 0.0).any():
         raise ValueError(f"{context} record contains non-positive ratio values.")
+    _normalize_value_provenance(work, context=context)
     return work.loc[
         :,
-        ["design_id", "position", "state", "time", "channel", "value", event_spec.segment_column],
+        [
+            "design_id",
+            "position",
+            "state",
+            "time",
+            "channel",
+            "value",
+            "value_policy_clipped",
+            "value_instrument_overflow",
+            "value_bound_kind",
+            event_spec.segment_column,
+        ],
     ].reset_index(drop=True)
+
+
+def _normalize_value_provenance(frame: pd.DataFrame, *, context: str) -> None:
+    required = {"value_policy_clipped", "value_instrument_overflow", "value_bound_kind"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"{context} record is missing required value provenance columns: {missing}.")
+    policy = _boolean_provenance(frame["value_policy_clipped"], context=f"{context}:value_policy_clipped")
+    overflow = _boolean_provenance(frame["value_instrument_overflow"], context=f"{context}:value_instrument_overflow")
+    frame["value_policy_clipped"] = policy
+    frame["value_instrument_overflow"] = overflow
+    bounds = frame["value_bound_kind"].astype(str)
+    allowed = {"exact", "lower", "upper", "indeterminate"}
+    unknown = sorted(set(bounds) - allowed)
+    if unknown:
+        raise ValueError(f"{context} record contains unsupported value_bound_kind values: {unknown}.")
+    if ((policy | overflow) & bounds.eq("exact")).any():
+        raise ValueError(f"{context} record marks clipped or overflowed values as exact.")
+    if (bounds.ne("exact") & ~(policy | overflow)).any():
+        raise ValueError(f"{context} record contains a value bound without clipping or overflow provenance.")
+    frame["value_bound_kind"] = bounds
+
+
+def _boolean_provenance(values: pd.Series, *, context: str) -> pd.Series:
+    if values.isna().any() or not values.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+        raise ValueError(f"{context} must contain booleans without missing values.")
+    return values.astype(bool)
 
 
 def _require_event_parity(left: EventInterval, right: EventInterval, *, context: str) -> None:

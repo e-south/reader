@@ -139,7 +139,7 @@ def review(
     help="Publish one objective-neutral response-window and sequence evidence figure.",
 )
 def promoter_evidence(
-    response_bundle_root: Annotated[Path, typer.Argument(help="Verified reader.response_window.bundle.v4 directory.")],
+    response_bundle_root: Annotated[Path, typer.Argument(help="Verified reader.response_window.bundle.v5 directory.")],
     bindings_root: Annotated[
         Path,
         typer.Argument(help="Verified study-issued promoter candidate-binding directory."),
