@@ -81,4 +81,28 @@ def joint_state_bootstrap_draws(
     return response_draws, magnitude_draws - anchor_draws
 
 
-__all__ = ["bootstrap_draw_records", "joint_state_bootstrap_draws"]
+def symmetric_event_sensitivity_half_width(
+    midpoint: float,
+    lower_bound: float,
+    upper_bound: float,
+) -> float:
+    """Return a midpoint-centered envelope covering both event-bound reductions.
+
+    Response-window reduction is not necessarily linear in event time. The
+    midpoint estimate therefore need not bisect the values obtained at the two
+    event bounds. A symmetric display interval must use the larger absolute
+    deviation from the midpoint, not half the distance between the bound
+    values.
+    """
+
+    values = np.asarray([midpoint, lower_bound, upper_bound], dtype=float)
+    if not np.all(np.isfinite(values)):
+        raise ValueError("event-time sensitivity values must be finite.")
+    return float(max(abs(values[0] - values[1]), abs(values[2] - values[0])))
+
+
+__all__ = [
+    "bootstrap_draw_records",
+    "joint_state_bootstrap_draws",
+    "symmetric_event_sensitivity_half_width",
+]

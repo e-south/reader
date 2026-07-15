@@ -163,7 +163,7 @@ def test_quality_figure_labels_do_not_collide_and_grids_stay_behind_bars() -> No
             assert grid_zorders and max(grid_zorders) < min(mark_zorders)
         assert [text.get_text() for text in figure.legends[0].get_texts()] == [
             "Bootstrap SD",
-            "Event-time sensitivity (half-range)",
+            "Event-time sensitivity (max bound deviation)",
         ]
     finally:
         plt.close(figure)

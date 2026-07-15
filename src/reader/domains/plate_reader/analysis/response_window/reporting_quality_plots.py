@@ -131,7 +131,7 @@ def write_uncertainty_plot(
             x + width / 2,
             rows["p90_event_half_range"],
             width,
-            label="Event-time sensitivity (half-range)",
+            label="Event-time sensitivity (max bound deviation)",
             color="#f59e0b",
             zorder=3,
         )

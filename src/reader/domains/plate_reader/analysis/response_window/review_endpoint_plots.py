@@ -143,7 +143,7 @@ def quality_figure(*, selected: pd.Series, selected_wells: pd.DataFrame, display
         event = np.asarray([selected[f"{prefix}{state}_event_half_range"] for state in STATE_ORDER], dtype=float)
         for offset, values, color, label in (
             (-1, bootstrap, "#2563eb", "Bootstrap SD"),
-            (1, event, "#f59e0b", "Event-time sensitivity (half-range)"),
+            (1, event, "#f59e0b", "Event-time sensitivity (max bound deviation)"),
         ):
             axis.bar(x + offset * width / 2, values, width, color=color, label=label, zorder=3)
         axis.set_ylabel(ylabel)

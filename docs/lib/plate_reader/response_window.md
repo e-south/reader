@@ -167,6 +167,14 @@ corresponding linear ratio and then takes log2. They are different estimands
 and require different IDs. Extrapolation is forbidden, interior gaps are
 bounded, and ratios at or below the declared positive floor fail.
 
+Event-time sensitivity evaluates the reduction at both declared event bounds.
+Because the reduction need not vary linearly with event time, the persisted
+`*_event_half_range` is the half-width of a midpoint-centered envelope: the
+larger absolute deviation between the midpoint estimate and either bound
+estimate. It is not half the distance between the two bound estimates. This
+conservative envelope is displayed separately from replicate-bootstrap
+uncertainty.
+
 ## Bundle records
 
 | Record | Contract | Grain |

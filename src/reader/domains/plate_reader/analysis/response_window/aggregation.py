@@ -8,7 +8,7 @@ import pandas as pd
 from .contracts import ReductionSpec, ResponseWindowRequest
 from .provenance import stable_seed
 from .sources import STATE_ORDER, ExperimentSource
-from .uncertainty import joint_state_bootstrap_draws
+from .uncertainty import joint_state_bootstrap_draws, symmetric_event_sensitivity_half_width
 
 
 def build_design_records(
@@ -67,11 +67,15 @@ def build_design_records(
             record[f"r{state}_ci_high"] = float(row["response_ci_high"])
             record[f"b{state}_ci_low"] = float(row["anchored_fluorescence_ci_low"])
             record[f"b{state}_ci_high"] = float(row["anchored_fluorescence_ci_high"])
-            record[f"r{state}_event_half_range"] = float(
-                abs(float(upper_row["response"]) - float(lower_row["response"])) / 2.0
+            record[f"r{state}_event_half_range"] = symmetric_event_sensitivity_half_width(
+                float(row["response"]),
+                float(lower_row["response"]),
+                float(upper_row["response"]),
             )
-            record[f"b{state}_event_half_range"] = float(
-                abs(float(upper_row["anchored_fluorescence"]) - float(lower_row["anchored_fluorescence"])) / 2.0
+            record[f"b{state}_event_half_range"] = symmetric_event_sensitivity_half_width(
+                float(row["anchored_fluorescence"]),
+                float(lower_row["anchored_fluorescence"]),
+                float(upper_row["anchored_fluorescence"]),
             )
             record[f"n{state}"] = int(row["replicate_count"])
         records.append(record)
