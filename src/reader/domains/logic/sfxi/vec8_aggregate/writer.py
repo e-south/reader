@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -63,6 +67,7 @@ def write_sfxi_vec8_aggregate(
                     (tmp_manifest_path, manifest_path),
                 ),
                 backup_dir=tmp_dir,
+                overwrite=overwrite,
             )
     except SFXIError:
         raise
@@ -100,7 +105,23 @@ def _check_replaceable_targets(paths: tuple[Path, ...]) -> None:
         raise SFXIError(f"SFXI vec8 aggregate output paths must be files when they already exist: {rendered}")
 
 
-def _commit_artifact_bundle(replacements: tuple[tuple[Path, Path], ...], *, backup_dir: Path) -> None:
+def _commit_artifact_bundle(
+    replacements: tuple[tuple[Path, Path], ...],
+    *,
+    backup_dir: Path,
+    overwrite: bool,
+) -> None:
+    target_paths = tuple(target for _, target in replacements)
+    target_parents = {target.parent for target in target_paths}
+    if len(target_parents) != 1:
+        raise SFXIError("SFXI vec8 aggregate artifacts must share one output directory.")
+
+    with _exclusive_directory_lock(next(iter(target_parents))):
+        _check_overwrite(target_paths, overwrite=overwrite)
+        _replace_artifact_bundle(replacements, backup_dir=backup_dir)
+
+
+def _replace_artifact_bundle(replacements: tuple[tuple[Path, Path], ...], *, backup_dir: Path) -> None:
     backups: list[tuple[Path, Path]] = []
     committed: list[Path] = []
     try:
@@ -120,6 +141,17 @@ def _commit_artifact_bundle(replacements: tuple[tuple[Path, Path], ...], *, back
             if backup.exists():
                 backup.replace(target)
         raise
+
+
+@contextmanager
+def _exclusive_directory_lock(directory: Path) -> Iterator[None]:
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
 def _positive_dpi(dpi: int) -> int:

@@ -347,6 +347,27 @@ def test_writer_refuses_to_overwrite_existing_bundle_without_explicit_flag(tmp_p
     assert second.heatmap_path == first.heatmap_path
 
 
+def test_writer_preserves_output_created_during_render_without_overwrite(tmp_path: Path, monkeypatch) -> None:
+    exp_a = _write_experiment_with_vec8(tmp_path, experiment_id="20260706_sfxi", design_prefix="eth", v11=1.0)
+    out_dir = tmp_path / "aggregate"
+    heatmap_path = out_dir / "sfxi_vec8_heatmap.png"
+    concurrent_content = b"published by another writer"
+    render = aggregate_writer.render_sfxi_vec8_heatmap
+
+    def _render_after_concurrent_publish(*args, **kwargs):
+        heatmap_path.write_bytes(concurrent_content)
+        return render(*args, **kwargs)
+
+    monkeypatch.setattr(aggregate_writer, "render_sfxi_vec8_heatmap", _render_after_concurrent_publish)
+
+    with pytest.raises(SFXIError, match="already exists"):
+        write_sfxi_vec8_aggregate(sources=[exp_a], out_dir=out_dir)
+
+    assert heatmap_path.read_bytes() == concurrent_content
+    assert not (out_dir / "sfxi_vec8_heatmap_tidy.csv").exists()
+    assert not (out_dir / "sfxi_vec8_heatmap_manifest.json").exists()
+
+
 def test_experiment_source_requires_vec8_record_without_export_fallback(tmp_path: Path) -> None:
     root = tmp_path / "20260706_sfxi"
     root.mkdir()
