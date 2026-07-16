@@ -183,12 +183,13 @@ does not qualify the gray event-sensitivity envelope.
 
 Source records must declare `value_policy_clipped`,
 `value_instrument_overflow`, and `value_bound_kind` for every observation.
-Missing provenance stops the response-window build; an older capped record is
-never inferred to be exact. Finite values changed by the configured cap are
-kept distinct from explicit instrument overflow.
-The generic ratio transform propagates this capability only when all three
-fields are present. It does not upgrade a resumed pre-capability artifact by
-inventing exact provenance.
+Missing provenance stops the response-window build: the absence of clipping or
+overflow fields does not prove that a value is exact. Finite values changed by
+the configured cap remain distinct from explicit instrument overflow.
+The generic ratio transform propagates provenance only when all three fields
+are present on its input. A ratio without those fields can support generic
+Reader workflows, but it is not response-window evidence and the source loader
+rejects it.
 
 Ratio construction carries both numerator and denominator provenance. An
 affected numerator makes the stored ratio a lower bound, an affected

@@ -47,7 +47,7 @@ def test_ratio_requires_channels_present():
         RatioTransform().run(_ctx(), {"df": df}, cfg)
 
 
-def test_ratio_preserves_passthrough_rows_for_nonderived_channels():
+def test_ratio_does_not_promote_provenance_less_rows_to_exact():
     df = pd.DataFrame(
         {
             "position": ["A1", "A1", "A1", "A1", "A1", "A1"],

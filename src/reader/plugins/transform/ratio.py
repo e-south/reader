@@ -153,6 +153,8 @@ class RatioTransform(Plugin):
 
         out = pd.concat([df, derived], ignore_index=True)
         if not emit_value_provenance:
+            # Generic ratios remain usable, but missing provenance is not evidence
+            # that an observation is exact. Response-window ingestion rejects it.
             out = out.loc[:, input_columns]
 
         with suppress(Exception):
