@@ -42,7 +42,7 @@ def build_plate_reader_variant_protocols(
     )
     dual_ingest_field = next(item for item in dual_reporter_protocol.input_fields if item.key == "ingest")
     dual_channel_map_field = next(item for item in dual_ingest_field.children if item.key == "channel_map")
-    single_reporter_ingest_field = replace(
+    map_free_kinetic_ingest_field = replace(
         dual_ingest_field,
         children=tuple(
             replace(
@@ -58,8 +58,8 @@ def build_plate_reader_variant_protocols(
             for item in dual_ingest_field.children
         ),
     )
-    single_reporter_input_fields = tuple(
-        single_reporter_ingest_field if item is dual_ingest_field else item
+    map_free_kinetic_input_fields = tuple(
+        map_free_kinetic_ingest_field if item is dual_ingest_field else item
         for item in dual_reporter_protocol.input_fields
     )
     measurement_field = field(
@@ -191,7 +191,7 @@ def build_plate_reader_variant_protocols(
             "compiled fold-change summaries."
         ),
         tags=("plate_reader", "single_reporter", "screen", "ratio", "fold_change"),
-        input_fields=single_reporter_input_fields,
+        input_fields=map_free_kinetic_input_fields,
         analysis_fields=(
             field(
                 "reporter_channel",
@@ -383,7 +383,7 @@ def build_plate_reader_variant_protocols(
             "and cross-sensor ranking summaries."
         ),
         tags=("plate_reader", "retron", "sponge", "matched_control", "screen", "ratio"),
-        input_fields=dual_reporter_protocol.input_fields,
+        input_fields=map_free_kinetic_input_fields,
         analysis_fields=(
             measurement_field,
             field(

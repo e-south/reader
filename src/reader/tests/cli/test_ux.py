@@ -749,6 +749,22 @@ def test_single_reporter_protocol_example_config_surfaces_semantic_channels() ->
     assert "target:" not in result.output
 
 
+def test_retron_sponge_protocol_example_config_keeps_kinetic_channel_discovery_map_free() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["protocols", "plate_reader/retron_sponge_screen", "--example-config"],
+        terminal_width=160,
+    )
+
+    assert result.exit_code == 0
+    assert "id: plate_reader/retron_sponge_screen" in result.output
+    assert "measurement: yfp_cfp" in result.output
+    assert "channel_map: null" in result.output
+    assert "CFP:433,475" not in result.output
+    assert "YFP:500,530" not in result.output
+
+
 def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "experiments" / "20260317_new_assay"
@@ -766,6 +782,16 @@ def test_single_reporter_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) 
     runner = CliRunner()
     target = tmp_path / "experiments" / "20260317_single_reporter"
     result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/single_reporter_screen"])
+
+    assert result.exit_code == 0
+    spec = ReaderSpec.load(target / "config.yaml")
+    assert spec.protocol.inputs["ingest"]["channel_map"] is None
+
+
+def test_retron_sponge_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "experiments" / "20260317_retron_sponge"
+    result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/retron_sponge_screen"])
 
     assert result.exit_code == 0
     spec = ReaderSpec.load(target / "config.yaml")
