@@ -80,6 +80,29 @@ def test_normalize_experiment_vec8_heatmap_frame_rejects_missing_intensity_delta
         )
 
 
+def test_normalize_experiment_vec8_heatmap_frame_accepts_optional_time_metadata() -> None:
+    frame = normalize_experiment_vec8_heatmap_frame(
+        _vec8_df().drop(columns=["time_selected_h"]),
+        source_id="exp_sfxi",
+    )
+
+    assert "time_selected_h" not in frame.columns
+    assert frame["row_label"].tolist() == [
+        "exp_sfxi::pDual-10-spyp",
+        "exp_sfxi::pDual-10-SECG-B0-AND-01",
+    ]
+
+
+def test_normalize_experiment_vec8_heatmap_frame_accepts_nullable_time_metadata() -> None:
+    vec8 = _vec8_df()
+    vec8.loc[0, "time_selected_h"] = float("nan")
+
+    frame = normalize_experiment_vec8_heatmap_frame(vec8, source_id="exp_sfxi")
+
+    assert pd.isna(frame.loc[0, "time_selected_h"])
+    assert frame.loc[1, "time_selected_h"] == pytest.approx(12.0)
+
+
 def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -> None:
     runtime = builtin_runtime()
     outputs = tmp_path / "outputs"

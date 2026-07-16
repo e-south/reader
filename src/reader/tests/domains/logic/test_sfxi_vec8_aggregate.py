@@ -276,7 +276,29 @@ def test_sfxi_vec8_aggregate_requires_design_id_without_genotype_alias(tmp_path:
         load_sfxi_vec8_sources([path])
 
 
-@pytest.mark.parametrize("missing_column", ["time_selected_h", "reference_design_id", "r_logic", "flat_logic"])
+def test_direct_table_sources_accept_optional_time_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "vec8_without_time.csv"
+    _vec8_df(design_prefix="valid", v11=1.0).drop(columns=["time_selected_h"]).to_csv(path, index=False)
+
+    aggregate = load_sfxi_vec8_sources([path])
+
+    assert "time_selected_h" not in aggregate.frame.columns
+    assert aggregate.frame["design_id"].tolist() == ["valid-01", "valid-02"]
+
+
+def test_direct_table_sources_accept_nullable_time_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "vec8_with_nullable_time.csv"
+    frame = _vec8_df(design_prefix="valid", v11=1.0)
+    frame.loc[0, "time_selected_h"] = float("nan")
+    frame.to_csv(path, index=False)
+
+    aggregate = load_sfxi_vec8_sources([path])
+
+    assert pd.isna(aggregate.frame.loc[0, "time_selected_h"])
+    assert aggregate.frame.loc[1, "time_selected_h"] == pytest.approx(18.0)
+
+
+@pytest.mark.parametrize("missing_column", ["reference_design_id", "r_logic", "flat_logic"])
 def test_direct_table_sources_require_vec8_v3_provenance_columns(tmp_path: Path, missing_column: str) -> None:
     path = tmp_path / "bad_vec8.csv"
     _vec8_df(design_prefix="bad", v11=1.0).drop(columns=[missing_column]).to_csv(path, index=False)

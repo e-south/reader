@@ -305,6 +305,15 @@ def compile_logic_sfxi_screen(protocol: Any):
     )
     if include_fold_change:
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
+    default_exports = (
+        ("logic_summary_workbook",)
+        if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8)
+        else ()
+    )
+    selected_exports = protocol.select_export_outputs(
+        defaults=default_exports,
+        allowed=LOGIC_EXPORT_OUTPUTS,
+    )
     selected_plot_ids = protocol.select_plot_outputs(
         allowed={
             "raw_kinetics",
@@ -317,8 +326,10 @@ def compile_logic_sfxi_screen(protocol: Any):
             "sfxi_vec8_heatmap",
         },
     )
-    requires_vec8 = include_vec8 or bool(
-        {"sfxi_setpoint_scatter", "sfxi_triptych_sequence", "sfxi_vec8_heatmap"} & set(selected_plot_ids)
+    requires_vec8 = (
+        include_vec8
+        or bool({"sfxi_setpoint_scatter", "sfxi_triptych_sequence", "sfxi_vec8_heatmap"} & set(selected_plot_ids))
+        or "logic_summary_workbook" in selected_exports
     )
     requires_promoted_df = requires_vec8 or bool({"logic_symmetry", "sfxi_triptych_sequence"} & set(selected_plot_ids))
     if requires_promoted_df:
@@ -331,15 +342,6 @@ def compile_logic_sfxi_screen(protocol: Any):
         for deliverable_id in selected_plot_ids
     ]
 
-    default_exports = (
-        ("logic_summary_workbook",)
-        if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8)
-        else ()
-    )
-    selected_exports = protocol.select_export_outputs(
-        defaults=default_exports,
-        allowed=LOGIC_EXPORT_OUTPUTS,
-    )
     exports = [_logic_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports]
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())

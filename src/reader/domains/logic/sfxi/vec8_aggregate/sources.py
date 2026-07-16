@@ -166,9 +166,13 @@ def _normalize_vec8_frame(loaded: LoadedSFXIVec8Source, *, source_index: int) ->
     for channel in VEC8_CHANNELS:
         out[channel] = finite_numeric_column(out[channel], column=channel, source=loaded.source_path)
     out["design_id"] = _nonempty_string_column(out["design_id"], column="design_id", source=loaded.source_path)
-    out["time_selected_h"] = finite_numeric_column(
-        out["time_selected_h"], column="time_selected_h", source=loaded.source_path
-    )
+    if "time_selected_h" in out.columns:
+        out["time_selected_h"] = finite_numeric_column(
+            out["time_selected_h"],
+            column="time_selected_h",
+            source=loaded.source_path,
+            allow_nan=True,
+        )
     out["reference_design_id"] = _nonempty_string_column(
         out["reference_design_id"], column="reference_design_id", source=loaded.source_path
     )

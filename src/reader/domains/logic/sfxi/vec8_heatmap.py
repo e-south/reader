@@ -12,7 +12,6 @@ from .vec8_aggregate.constants import VEC8_CHANNELS
 from .vec8_aggregate.render import render_sfxi_vec8_heatmap
 
 _NUMERIC_COLUMNS = (
-    "time_selected_h",
     "intensity_log2_offset_delta",
     "r_logic",
     *VEC8_CHANNELS,
@@ -31,6 +30,12 @@ def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, source_id: st
     _require_non_empty_text_columns(frame, columns=("design_id", "reference_design_id"))
     for column in _NUMERIC_COLUMNS:
         frame[column] = _finite_numeric(frame[column], column=column)
+    if "time_selected_h" in frame.columns:
+        frame["time_selected_h"] = _finite_numeric(
+            frame["time_selected_h"],
+            column="time_selected_h",
+            allow_nan=True,
+        )
     frame["flat_logic"] = frame["flat_logic"].astype(bool)
 
     frame["source_index"] = 0
@@ -56,9 +61,13 @@ def _row_labels(frame: pd.DataFrame, *, source_id: str) -> list[str]:
     return [f"{source_id}::{design_id}" for design_id in frame["design_id"].astype(str).tolist()]
 
 
-def _finite_numeric(series: pd.Series, *, column: str) -> pd.Series:
+def _finite_numeric(series: pd.Series, *, column: str, allow_nan: bool = False) -> pd.Series:
     values = pd.to_numeric(series, errors="coerce")
-    invalid = values.isna() | ~values.map(lambda value: math.isfinite(float(value)))
+    coerced_to_nan = series.notna() & values.isna()
+    nonfinite = values.notna() & ~values.fillna(0.0).map(lambda value: math.isfinite(float(value)))
+    invalid = coerced_to_nan | nonfinite
+    if not allow_nan:
+        invalid |= values.isna()
     if invalid.any():
         raise SFXIError(f"SFXI vec8 heatmap column {column!r} must contain finite numeric values.")
     return values.astype(float)
