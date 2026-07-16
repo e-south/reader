@@ -267,7 +267,8 @@ def _build_candidate_plan(
         mismatches = [
             str(row[design_col])
             for _, row in plan.iterrows()
-            if str(row[sequence_col]).upper() != row["candidate_binding"].canonical_sequence.upper()
+            if pd.notna(row[sequence_col])
+            and str(row[sequence_col]).upper() != row["candidate_binding"].canonical_sequence.upper()
         ]
         if mismatches:
             raise SFXIError(

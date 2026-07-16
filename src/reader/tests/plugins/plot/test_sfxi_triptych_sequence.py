@@ -286,6 +286,24 @@ def test_sfxi_triptych_rejects_reader_sequence_drift_from_binding(tmp_path: Path
         )
 
 
+@pytest.mark.parametrize("missing_sequence", [None, pd.NA, np.nan])
+def test_sfxi_triptych_uses_binding_when_optional_vec8_sequence_is_missing(
+    tmp_path: Path,
+    missing_sequence: object,
+) -> None:
+    bindings = load_promoter_candidate_bindings(_write_binding_fixture(tmp_path, reader_design_id="pDual-10-test01"))
+    vec8 = _vec8_df()
+    vec8.loc[0, "sequence"] = missing_sequence
+
+    plan = triptych_sequence._build_candidate_plan(
+        vec8=vec8,
+        bindings=bindings,
+        cfg=_normalized_render_config(),
+    )
+
+    assert plan.loc[0, "candidate_binding"].canonical_sequence == "ACGTACGT"
+
+
 def test_sfxi_triptych_requires_resolved_logic_map_treatment_semantics() -> None:
     with pytest.raises(SFXIError, match="logic_map_ref must be a non-empty string"):
         triptych_sequence._normalize_config({})
