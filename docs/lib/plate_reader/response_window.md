@@ -43,7 +43,7 @@ uv run reader response-window promoter-evidence \
   --out-dir outputs/reviews/promoter_evidence/design-id \
   --experiment-id EXPERIMENT_ID \
   --design-id READER_DESIGN_ID \
-  --reduction-id event_logmean_6_12h_post \
+  --reduction-id REDUCTION_ID \
   --format json
 
 uv run reader response-window promoter-evidence-verify \
@@ -106,14 +106,14 @@ summaries, not an SFXI vec8, campaign score, or OPAL label. Channel names are
 configured source fields; record semantics are response and
 reference-relative fluorescence magnitude.
 
-For the primary 6-12 hour post-event geometric time mean, each well is
-reduced before wells are aggregated:
+For any declared geometric time mean over the event-relative interval
+`[a, b]`, each well is reduced before wells are aggregated:
 
 ```text
-response_well(i) = (1 / 6 h) integral[6 h, 12 h]
+response_well(i) = (1 / (b - a)) integral[a, b]
                    log2[(YFP / CFP)_design,i(t)] dt
 
-fluorescence_well(i) = (1 / 6 h) integral[6 h, 12 h]
+fluorescence_well(i) = (1 / (b - a)) integral[a, b]
                        log2[(YFP / OD600)_design,i(t)] dt
 
 r_i = median(response_well(i))
@@ -392,10 +392,10 @@ diagnostics that disagree with the binding.
 ## Stress-study binding
 
 The study request lives in dnadesign at
-`src/dnadesign/studies/units/stress_ethanol_cipro_growth/decision/opal/response_metastudy/config/reader_response_window.yaml`.
-It names eight existing experiments and five reductions. The primary reduction
-is the 6-12 hour post-event geometric log mean; adjacent windows, normalized
-linear AUC, and pre-window delta remain sensitivity analyses. The request
+`src/dnadesign/studies/units/stress_ethanol_cipro_growth/response_window_observations/config/reader_response_window.yaml`.
+It names eight existing experiments and seven reductions. The primary reduction
+is the 4-8 hour post-event geometric log mean; the other declared windows,
+normalized linear AUC, and pre-window delta remain sensitivity analyses. The request
 declares `study_id: stress_ethanol_cipro_growth`; that identity must match the
 bundle manifest and any candidate-binding artifact used for promoter evidence.
 
