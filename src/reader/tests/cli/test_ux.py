@@ -724,6 +724,8 @@ def test_protocols_command_can_render_example_config() -> None:
     assert "schema: reader/v7" in result.output
     assert "id: plate_reader/dual_reporter_screen" in result.output
     assert "profile: screen_overview" in result.output
+    assert "CFP:433,475: CFP" in result.output
+    assert "YFP:500,530: YFP" in result.output
     assert "channels:" not in result.output
     assert "target:" not in result.output
 
@@ -740,6 +742,9 @@ def test_single_reporter_protocol_example_config_surfaces_semantic_channels() ->
     assert "id: plate_reader/single_reporter_screen" in result.output
     assert "reporter_channel: RFP" in result.output
     assert "normalizer_channel: OD600" in result.output
+    assert "channel_map: null" in result.output
+    assert "CFP:433,475" not in result.output
+    assert "YFP:500,530" not in result.output
     assert "channels:" not in result.output
     assert "target:" not in result.output
 
@@ -755,6 +760,16 @@ def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
     spec = ReaderSpec.load(target / "config.yaml")
     assert spec.experiment.id == "20260317_new_assay"
     assert spec.protocol.id == "plate_reader/dual_reporter_screen"
+
+
+def test_single_reporter_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "experiments" / "20260317_single_reporter"
+    result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/single_reporter_screen"])
+
+    assert result.exit_code == 0
+    spec = ReaderSpec.load(target / "config.yaml")
+    assert spec.protocol.inputs["ingest"]["channel_map"] is None
 
 
 def test_notebook_list_templates_command_shows_semantics() -> None:

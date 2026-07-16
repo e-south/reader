@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
@@ -38,6 +39,28 @@ def build_plate_reader_variant_protocols(
     field = field_builder
     dual_preprocessing_field = next(
         item for item in dual_reporter_protocol.analysis_fields if item.key == "preprocessing"
+    )
+    dual_ingest_field = next(item for item in dual_reporter_protocol.input_fields if item.key == "ingest")
+    dual_channel_map_field = next(item for item in dual_ingest_field.children if item.key == "channel_map")
+    single_reporter_ingest_field = replace(
+        dual_ingest_field,
+        children=tuple(
+            replace(
+                item,
+                summary=(
+                    "Optional raw workbook label to canonical channel mapping. Leave null for map-free kinetic "
+                    "channel discovery; snapshot and mixed parsing require an explicit mapping."
+                ),
+                default=None,
+            )
+            if item is dual_channel_map_field
+            else item
+            for item in dual_ingest_field.children
+        ),
+    )
+    single_reporter_input_fields = tuple(
+        single_reporter_ingest_field if item is dual_ingest_field else item
+        for item in dual_reporter_protocol.input_fields
     )
     measurement_field = field(
         "measurement",
@@ -168,7 +191,7 @@ def build_plate_reader_variant_protocols(
             "compiled fold-change summaries."
         ),
         tags=("plate_reader", "single_reporter", "screen", "ratio", "fold_change"),
-        input_fields=dual_reporter_protocol.input_fields,
+        input_fields=single_reporter_input_fields,
         analysis_fields=(
             field(
                 "reporter_channel",
