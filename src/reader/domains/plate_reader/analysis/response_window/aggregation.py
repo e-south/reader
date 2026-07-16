@@ -129,6 +129,7 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowReque
             samples=request.aggregation.bootstrap_samples,
             stat=stat,
             rng=rng,
+            paired_anchor=str(design_id) == anchor_id,
         )
         response_bound = combine_bound_kinds(*frame["response_bound_kind"])
         design_magnitude_bound = combine_bound_kinds(*frame["magnitude_bound_kind"])

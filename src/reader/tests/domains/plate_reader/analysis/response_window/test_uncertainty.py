@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
+from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowRequest
 from reader.domains.plate_reader.analysis.response_window.provenance import stable_seed
+from reader.domains.plate_reader.analysis.response_window.sources import STATE_ORDER
 from reader.domains.plate_reader.analysis.response_window.uncertainty import (
+    bootstrap_draw_records,
     joint_state_bootstrap_draws,
     symmetric_event_sensitivity_half_width,
 )
+from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
 
 
 def test_joint_bootstrap_preserves_paired_well_covariance() -> None:
@@ -21,6 +26,32 @@ def test_joint_bootstrap_preserves_paired_well_covariance() -> None:
     )
 
     np.testing.assert_array_equal(response, relative_fluorescence)
+
+
+def test_reference_bootstrap_draws_keep_anchored_fluorescence_at_zero() -> None:
+    request = ResponseWindowRequest.from_mapping(_payload())
+    records = []
+    for state_index, state in enumerate(STATE_ORDER):
+        for replicate_index, magnitude in enumerate((1.0 + state_index, 4.0 + state_index)):
+            records.append(
+                {
+                    "experiment_id": "20260101_example",
+                    "design_id": "reference",
+                    "state": state,
+                    "position": f"{state}-{replicate_index}",
+                    "reduction_id": request.primary_reduction.id,
+                    "response_well": magnitude / 2.0,
+                    "magnitude_well": magnitude,
+                }
+            )
+
+    draws = bootstrap_draw_records(pd.DataFrame.from_records(records), request=request)
+
+    fluorescence_columns = [f"b{state}" for state in STATE_ORDER]
+    np.testing.assert_array_equal(
+        draws[fluorescence_columns].to_numpy(dtype=float),
+        np.zeros((request.aggregation.bootstrap_samples, len(STATE_ORDER))),
+    )
 
 
 def test_stable_seed_includes_experiment_identity() -> None:

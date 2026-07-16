@@ -9,7 +9,7 @@ import yaml
 from reader.domains.plate_reader.analysis.response_window.contracts import load_response_window_request
 from reader.domains.plate_reader.analysis.response_window.materialize import materialize_experiment
 from reader.domains.plate_reader.analysis.response_window.preflight import preflight_response_window_request
-from reader.domains.plate_reader.analysis.response_window.sources import EventInterval, ExperimentSource
+from reader.domains.plate_reader.analysis.response_window.sources import STATE_ORDER, EventInterval, ExperimentSource
 from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
 
 
@@ -121,6 +121,23 @@ def test_materialization_propagates_trace_bounds_to_well_and_state_summaries(tmp
     assert bool(reference["b00_has_instrument_overflow"])
     assert reference["b00"] == 0.0
     assert reference["b00_bound_kind"] == "exact"
+
+
+def test_materialization_keeps_reference_fluorescence_bootstrap_exactly_zero(tmp_path: Path) -> None:
+    request_path = _write_request(tmp_path, coverage_end=2.0)
+    request = load_response_window_request(request_path)
+    source = _source(tmp_path)
+
+    _wells, designs, draws, _traces, _events = materialize_experiment(source, request=request)
+
+    reference = designs.loc[designs["design_id"].eq("reference")].iloc[0]
+    reference_draws = draws.loc[draws["design_id"].eq("reference")]
+    for state in STATE_ORDER:
+        assert reference[f"b{state}"] == 0.0
+        assert reference[f"b{state}_bootstrap_sd"] == 0.0
+        assert reference[f"b{state}_ci_low"] == 0.0
+        assert reference[f"b{state}_ci_high"] == 0.0
+        assert reference_draws[f"b{state}"].eq(0.0).all()
 
 
 def _write_request(tmp_path: Path, *, coverage_end: float) -> Path:

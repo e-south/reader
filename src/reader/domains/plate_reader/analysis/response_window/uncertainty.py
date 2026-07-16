@@ -39,6 +39,7 @@ def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowReques
                 samples=request.aggregation.bootstrap_samples,
                 stat=request.aggregation.replicate_stat,
                 rng=rng,
+                paired_anchor=str(design_id) == anchor_id,
             )
             state_draws[f"r{state}"] = response_draws
             state_draws[f"b{state}"] = fluorescence_draws
@@ -60,8 +61,9 @@ def joint_state_bootstrap_draws(
     samples: int,
     stat: ReplicateStat,
     rng: np.random.Generator,
+    paired_anchor: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Resample paired design wells and independent reference wells."""
+    """Resample paired design wells and either paired or independent reference wells."""
 
     response = np.asarray(response_values, dtype=float)
     magnitude = np.asarray(magnitude_values, dtype=float)
@@ -72,8 +74,10 @@ def joint_state_bootstrap_draws(
         raise ValueError("joint bootstrap requires aligned design wells and non-empty reference wells.")
     if samples < 2:
         raise ValueError("joint bootstrap requires at least two draws.")
+    if paired_anchor and not np.array_equal(magnitude, anchor):
+        raise ValueError("paired reference bootstrap requires identical ordered magnitude and anchor wells.")
     design_indexes = rng.integers(0, len(response), size=(samples, len(response)))
-    anchor_indexes = rng.integers(0, len(anchor), size=(samples, len(anchor)))
+    anchor_indexes = design_indexes if paired_anchor else rng.integers(0, len(anchor), size=(samples, len(anchor)))
     aggregate = np.median if stat == "median" else np.mean
     response_draws = aggregate(response[design_indexes], axis=1)
     magnitude_draws = aggregate(magnitude[design_indexes], axis=1)
