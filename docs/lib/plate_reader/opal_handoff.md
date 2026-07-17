@@ -42,7 +42,8 @@ The response-window route accepts `reader.response_window.request.v3` and
 publishes `reader.response_window.bundle.v5`. Its eight response and
 reference-relative fluorescence values remain assay summaries until the study
 applies its declared repeat-aggregation and label-promotion contracts. OPAL
-ingests that typed response y-space; Reader does not publish a scalar RMF label.
+ingests that typed response y-space; Reader does not calculate or publish a
+downstream objective score.
 
 For publication evidence, the study materializes
 `dnadesign.study.promoter_candidate_bindings.v1`. This study-wide identity
@@ -58,9 +59,9 @@ The v2 evidence manifest requires response-bundle and candidate-binding
 `study_id` parity. It preserves the selected binding's sequence authority,
 source/design family, exact binding method, and adapter-specific DenseGen
 provenance. Model features use a separate candidate-keyed projection. The
-optional objective overlay is screen-only raw evidence. Calibrated RMF values
-and promotion provenance belong to the study and OPAL contracts, not the Reader
-evidence bundle.
+optional objective overlay is screen-only raw evidence. Objective scores,
+normalization or calibration parameters, and promotion provenance belong to
+study and OPAL contracts, not the Reader evidence bundle.
 
 Start with [plate-reader metric outputs](metric_outputs.md) to choose the assay
 route. The output contracts are documented in [SFXI vec8](../sfxi/vec8.md) and

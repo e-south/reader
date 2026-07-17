@@ -60,6 +60,8 @@ def test_build_promoter_evidence_publishes_white_png_pdf_and_digest_manifest(
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION
     assert manifest["claim_status"] == "objective_neutral"
+    assert "downstream objective scoring" in manifest["non_claim_boundary"]
+    assert "RMF" not in manifest["non_claim_boundary"]
     assert manifest["selection"] == {
         "experiment_id": "experiment",
         "design_id": "design",

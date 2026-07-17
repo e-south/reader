@@ -80,7 +80,8 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
                 assert handoff.findobj(lambda artist, gid=f"handoff-summary-{prefix}{state}": artist.get_gid() == gid)
         provenance_text = "\n".join(text.get_text() for text in provenance.texts)
         assert "Objective-neutral evidence" in provenance_text
-        assert "RMF is not calculated by Reader" in provenance_text
+        assert "Objective scoring stays outside Reader" in provenance_text
+        assert "RMF" not in provenance_text
         assert "Binding  exact alias" in provenance_text
         assert sequence.get_position().x0 > handoff.get_position().x1
         assert provenance.get_position().x0 > handoff.get_position().x1
@@ -113,12 +114,25 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         plt.close(figure)
 
 
-def test_promoter_evidence_figure_labels_supplied_raw_objective_values_as_screen_only(
+@pytest.mark.parametrize(
+    ("objective_id", "expected_label"),
+    [
+        ("response_magnitude_feasibility_v1", "RMF"),
+        ("multistate_response_behavior_v1", "multistate response behavior v1"),
+    ],
+)
+def test_promoter_evidence_figure_labels_configured_raw_objective_values_as_screen_only(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
+    objective_id: str,
+    expected_label: str,
 ) -> None:
     monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
-    overlay = load_objective_display_overlay(_write_overlay(tmp_path))
+    overlay_path = _write_overlay(tmp_path)
+    payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+    payload["objective_id"] = objective_id
+    overlay_path.write_text(json.dumps(payload), encoding="utf-8")
+    overlay = load_objective_display_overlay(overlay_path)
 
     figure, _diagnostics = figure_module.promoter_evidence_figure(
         experiment_id="experiment",
@@ -135,7 +149,7 @@ def test_promoter_evidence_figure_labels_supplied_raw_objective_values_as_screen
 
     try:
         text = "\n".join(item.get_text() for item in figure.axes[6].texts)
-        assert "RMF raw components · screen only" in text
+        assert f"{expected_label} raw components · screen only" in text
         assert "Response separation  0.8 raw log2 units" in text
         assert "ON fluorescence floor  0.3 pDual-10-relative log2 fluorescence" in text
         assert "calibrated score" not in text.lower()

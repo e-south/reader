@@ -57,7 +57,8 @@ bundle to declare the same `study_id`.
   explicitly configured SFXI objective.
 - Response-window values remain assay summaries until the owning study applies
   its repeat-aggregation and label-promotion contract. OPAL then ingests that
-  typed response y-space and applies RMF.
+  typed response y-space and applies only the objective named by the configured
+  selection view.
 - Candidate identity, model-feature readiness, label promotion, and objective
   evaluation are separate readiness checks.
 

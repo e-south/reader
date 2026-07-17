@@ -96,7 +96,7 @@ def draw_provenance_axis(
             (
                 f"Reduction  {_compact(reduction_id, width=32)}",
                 f"Sequence  {binding.sequence_sha256[:12]}…",
-                "RMF is not calculated by Reader",
+                "Objective scoring stays outside Reader",
             )
         ),
     ]
@@ -104,7 +104,7 @@ def draw_provenance_axis(
         label = (
             "RMF"
             if objective_overlay.objective_id == "response_magnitude_feasibility_v1"
-            else objective_overlay.objective_id
+            else objective_overlay.objective_id.replace("_", " ")
         )
         lines.append(f"{label} raw components · {objective_overlay.claim_status.replace('_', ' ')}")
         lines.extend(

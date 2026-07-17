@@ -8,8 +8,8 @@ from pathlib import Path
 PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION = "reader.response_window.promoter_evidence_bundle.v3"
 PROMOTER_EVIDENCE_ARTIFACT_IDS = ("promoter_evidence.pdf", "promoter_evidence.png")
 PROMOTER_EVIDENCE_NON_CLAIM = (
-    "Reader presents response-window evidence and sequence context; it does not calculate, calibrate, "
-    "or promote an RMF objective."
+    "Reader presents response-window evidence and sequence context; downstream objective scoring, "
+    "normalization or calibration, and promotion remain outside Reader."
 )
 
 
