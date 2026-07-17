@@ -2,7 +2,7 @@
 doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-15
+last_verified: 2026-07-17
 summary: Event-relative response summaries, verified review collections, and experiment-level evidence navigation.
 ---
 
@@ -137,13 +137,20 @@ The stress-study binding maps the fixed state order as follows:
 | `11` | ethanol plus ciprofloxacin |
 
 The request must declare `study_id`, `state_order: ["00", "10", "01", "11"]`, an
-explicit `state_map_ref`, the exact `reference_design_id`, and a
+explicit `state_map_ref` that resolves through the experiment's
+[`annotations.ordered_state_spaces`](../../core/ordered_state_spaces.md), the
+exact `reference_design_id`, and a
 `reader.response_window.display.v1` vocabulary. The display block names each
 condition, the intervention, the fluorescence reference, and the response
 examples used for review. The versioned request is the authority for that
 reference. Reader rejects missing examples, reordered or implicit state
 ontologies, a display reference that disagrees with the measurement reference,
 or a reference design absent from a selected magnitude record.
+
+The ordered state-space annotation is metric-neutral. It binds state ids to
+exact source metadata values and contains no target mask or objective. The
+response-window runtime independently requires the four state ids in the order
+shown above.
 
 ## Time and intervention
 

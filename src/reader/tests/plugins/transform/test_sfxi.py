@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pandas.testing as pdt
+import pytest
 
 from reader.domains.logic.sfxi.run import build_vec8_from_tidy
 from reader.plugins.transform.sfxi import SFXICfg, SFXITransform
@@ -13,25 +14,29 @@ from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.workbench.experiment import (
     AnnotationSemantics,
     ExperimentSemantics,
-    LogicMaps,
-    LogicMapSpec,
+    OrderedStateSpaces,
+    OrderedStateSpaceSpec,
     OutputLayout,
     ResourceCatalog,
 )
 
 
-def _ctx():
+def _ctx(*, state_order: tuple[str, ...] = ("00", "10", "01", "11")):
+    source_values = {state_id: state_id for state_id in state_order}
+    source_values.update({"00": "A", "10": "B", "01": "C", "11": "D"})
+    source_values = {state_id: source_values[state_id] for state_id in state_order}
     return SimpleNamespace(
         logger=logging.getLogger("reader.tests.sfxi"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="logic/sfxi_screen"),
             protocol_program=ProtocolSemanticProgram(protocol="logic/sfxi_screen"),
             annotations=AnnotationSemantics(
-                logic_maps=LogicMaps(
+                ordered_state_spaces=OrderedStateSpaces(
                     by_id={
-                        "screen": LogicMapSpec(
+                        "screen": OrderedStateSpaceSpec(
                             column="treatment",
-                            corners={"00": "A", "10": "B", "01": "C", "11": "D"},
+                            state_order=state_order,
+                            source_values=source_values,
                             case_sensitive=True,
                         )
                     }
@@ -75,17 +80,29 @@ def test_sfxi_plugin_matches_build_vec8_from_tidy():
     ctx = _ctx()
     cfg = SFXICfg(
         response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
-        logic_map_ref="screen",
+        state_map_ref="screen",
         reference={"design_id": "REF", "stat": "mean"},
         target_time_h=12.0,
     )
     df = _input_df()
 
-    logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
+    state_space = ctx.experiment.annotations.resolve_ordered_state_space(ref=cfg.state_map_ref)
     run_cfg = cfg.model_dump()
-    run_cfg["treatment_map"] = dict(logic_map.corners)
-    run_cfg["treatment_case_sensitive"] = logic_map.case_sensitive
+    run_cfg["treatment_map"] = dict(state_space.source_values)
+    run_cfg["treatment_case_sensitive"] = state_space.case_sensitive
     expected = build_vec8_from_tidy(df.copy(), run_cfg).vec8.reset_index(drop=True)
     actual = SFXITransform().run(ctx, {"df": df}, cfg)["vec8"].reset_index(drop=True)
 
     pdt.assert_frame_equal(actual, expected)
+
+
+def test_sfxi_transform_rejects_noncanonical_ordered_state_space() -> None:
+    cfg = SFXICfg(
+        response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
+        state_map_ref="screen",
+        reference={"design_id": "REF", "stat": "mean"},
+        target_time_h=12.0,
+    )
+
+    with pytest.raises(ValueError, match="SFXI state space must declare exactly 00, 10, 01, 11 in that order"):
+        SFXITransform().run(_ctx(state_order=("00", "01", "10", "11")), {"df": _input_df()}, cfg)

@@ -750,17 +750,17 @@ def _sfxi_setpoint_scatter_defaults(protocol: Any) -> dict[str, Any]:
 def _sfxi_triptych_sequence_defaults(protocol: Any) -> dict[str, Any]:
     configured = deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_triptych_sequence"))
     duplicated = sorted(
-        {"logic_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(configured)
+        {"state_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(configured)
     )
     if duplicated:
         raise ConfigError(
             f"protocol.analysis.sfxi_triptych_sequence must not duplicate SFXI treatment identity; remove: {duplicated}"
         )
     sfxi_cfg = protocol.effective_plugin_config(plugin_id="transform/sfxi")
-    logic_map_ref = sfxi_cfg.get("logic_map_ref")
-    if not isinstance(logic_map_ref, str) or not logic_map_ref.strip():
-        raise ConfigError("logic/sfxi_screen requires protocol.inputs.logic_map_ref to be a non-empty string.")
-    configured["logic_map_ref"] = logic_map_ref.strip()
+    state_map_ref = sfxi_cfg.get("state_map_ref")
+    if not isinstance(state_map_ref, str) or not state_map_ref.strip():
+        raise ConfigError("logic/sfxi_screen requires protocol.inputs.state_map_ref to be a non-empty string.")
+    configured["state_map_ref"] = state_map_ref.strip()
     return configured
 
 
@@ -914,7 +914,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
         )
     if output_id == "sfxi_triptych_sequence":
         duplicated = sorted(
-            {"logic_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(settings)
+            {"state_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(settings)
         )
         if duplicated:
             raise ConfigError(

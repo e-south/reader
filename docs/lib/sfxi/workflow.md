@@ -2,13 +2,13 @@
 doc_id: reader-sfxi-workflow
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Configure, preflight, run, inspect, export, and open notebooks for a Reader SFXI experiment.
 ---
 
 # SFXI experiment workflow
 
-This guide covers the Reader-owned path from `reader/v7` configuration to the
+This guide covers the Reader-owned path from `reader/v8` configuration to the
 typed vec8 record. For calculation details, use the
 [vec8 contract](./vec8.md). For optional figures, use
 [SFXI plot surfaces](./plots.md). For the shared plate-reader ingest boundary,
@@ -22,7 +22,7 @@ surface. The treatment labels and `J23105` reference are taken from
 values that are present in the target experiment's metadata.
 
 ```yaml
-schema: reader/v7
+schema: reader/v8
 protocol:
   id: logic/sfxi_screen
   inputs:
@@ -30,7 +30,7 @@ protocol:
       logic_channel: YFP/CFP
       intensity_channel: YFP/OD600
     design_by: [design_id]
-    logic_map_ref: induction_logic
+    state_map_ref: induction_logic
     reference:
       design_id: J23105
       stat: mean
@@ -44,10 +44,11 @@ protocol:
       intensity_log2_offset_delta: 0.0
 
 annotations:
-  logic_maps:
+  ordered_state_spaces:
     induction_logic:
       column: treatment_alias
-      corners:
+      state_order: ["00", "10", "01", "11"]
+      values:
         "00": EtOH 0%, 0 nM cipro
         "10": EtOH 3%, 0 nM cipro
         "01": EtOH 0%, 100 nM cipro
@@ -56,7 +57,7 @@ annotations:
 ```
 
 The experiment still needs its `experiment`, `resources`, ingest, and metadata
-sections. Keep the logic map in `annotations`; do not add a hand-authored
+sections. Keep the ordered state space in `annotations`; do not add a hand-authored
 `transform/sfxi` step or duplicate `treatment_map` in protocol inputs.
 
 `analysis.sfxi_objective.intensity_log2_offset_delta` is compiled into vec8
@@ -72,7 +73,7 @@ uv run reader explain <config-or-experiment> --format json
 uv run reader run <config-or-experiment> --dry-run --format json
 ```
 
-Use these surfaces to confirm the protocol, logic map, selected records, and
+Use these surfaces to confirm the protocol, ordered state space, selected records, and
 optional dependency checks before execution. `reader explain` should show a
 transform named `sfxi_vec8` writing `sfxi_vec8/vec8`.
 
@@ -126,7 +127,7 @@ generated scaffold as the package implementation.
 
 ## Operating sequence
 
-1. Validate metadata, logic-map values, channels, and reference identity.
+1. Validate metadata, state-space values, channels, and reference identity.
 2. Inspect or explain the compiled record flow.
 3. Dry-run the pipeline.
 4. Run the experiment and inspect `sfxi_vec8/vec8`.

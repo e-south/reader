@@ -2,7 +2,7 @@
 doc_id: reader-getting-started
 surface: tutorial
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-17
 summary: Minimal setup and first-inspection path for a new Reader user.
 ---
 
@@ -53,5 +53,5 @@ Use `inspect` for the bound experiment summary, `validate` for preflight checks,
 - [Preflight, run, verify](./preflight_run_verify.md)
 - [Automation and JSON](./automation.md)
 - [CLI reference](../core/cli.md)
-- [Configuring `reader/v7`](../core/pipeline.md)
+- [Configuring `reader/v8`](../core/pipeline.md)
 - [Notebooks](./notebooks.md)

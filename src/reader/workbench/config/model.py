@@ -4,7 +4,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from reader.errors import ConfigError
 
@@ -85,19 +85,47 @@ class AnnotationCollectionSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class AnnotationLogicMapSpec(BaseModel):
+class AnnotationOrderedStateSpaceSpec(BaseModel):
     column: str
-    corners: dict[str, str]
+    state_order: list[str]
+    values: dict[str, str]
     case_sensitive: bool = True
 
     model_config = {"extra": "forbid"}
+
+    @field_validator("column", mode="after")
+    @classmethod
+    def _validate_column(cls, value: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("ordered state-space column must be a non-empty string")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _validate_states(self) -> AnnotationOrderedStateSpaceSpec:
+        if not self.state_order:
+            raise ValueError("state_order must be a non-empty list")
+        state_ids = self.state_order
+        if any(not state_id.strip() for state_id in state_ids):
+            raise ValueError("state_order must contain non-empty strings")
+        if len(set(state_ids)) != len(state_ids):
+            raise ValueError("state ids must be unique")
+        if set(self.values) != set(state_ids):
+            raise ValueError("values must have exactly the ids declared by state_order")
+        source_values = [self.values[state_id] for state_id in state_ids]
+        if any(not value.strip() for value in source_values):
+            raise ValueError("values must map state ids to non-empty strings")
+        compared = source_values if self.case_sensitive else [value.strip().casefold() for value in source_values]
+        if len(set(compared)) != len(compared):
+            sensitivity = "true" if self.case_sensitive else "false"
+            raise ValueError(f"source values must be unique under case_sensitive={sensitivity}")
+        return self
 
 
 class AnnotationSpec(BaseModel):
     labels: dict[str, AnnotationLabelSpec] = Field(default_factory=dict)
     orders: dict[str, AnnotationOrderSpec] = Field(default_factory=dict)
     collections: dict[str, AnnotationCollectionSpec] = Field(default_factory=dict)
-    logic_maps: dict[str, AnnotationLogicMapSpec] = Field(default_factory=dict)
+    ordered_state_spaces: dict[str, AnnotationOrderedStateSpaceSpec] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
@@ -163,8 +191,8 @@ class ReaderSpec(BaseModel):
     @field_validator("schema_", mode="after")
     @classmethod
     def _validate_schema(cls, v: str) -> str:
-        if v != "reader/v7":
-            raise ConfigError("Config schema must be 'reader/v7'. This repo only supports reader/v7.")
+        if v != "reader/v8":
+            raise ConfigError("Config schema must be 'reader/v8'. This repo only supports reader/v8.")
         return v
 
     @classmethod

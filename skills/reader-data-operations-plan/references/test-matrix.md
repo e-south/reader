@@ -10,7 +10,7 @@ Should trigger:
 - "Audit the DOP registry for protocol coverage."
 - "Refresh the DOP skill against the Merelogic resource."
 - "Check whether DOP metadata minimums are enough before bootstrap."
-- "Add DOP guidance for a long-tail assay without changing reader/v7."
+- "Add DOP guidance for a long-tail assay without changing reader/v8."
 
 Should not trigger:
 

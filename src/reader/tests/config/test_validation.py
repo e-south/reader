@@ -36,7 +36,7 @@ def test_load_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,
         """
-schema: reader/v7
+schema: reader/v8
 experiment:
   id: first
   id: second
@@ -53,7 +53,19 @@ def test_load_requires_schema_marker(tmp_path: Path) -> None:
     data = _base_config()
     data.pop("schema")
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="reader/v7"):
+    with pytest.raises(ConfigError, match="reader/v8"):
+        ReaderSpec.load(path)
+
+
+def test_load_rejects_reader_v7_without_a_compatibility_path(tmp_path: Path) -> None:
+    data = _base_config()
+    data["schema"] = "reader/v7"
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(
+        ConfigError,
+        match=r"Config schema must be 'reader/v8'\. This repo only supports reader/v8 \(found 'reader/v7'\)",
+    ):
         ReaderSpec.load(path)
 
 
@@ -139,7 +151,7 @@ def test_load_rejects_removed_workflow_sections(tmp_path: Path) -> None:
     data = _base_config()
     data["pipeline"] = {"steps": []}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="reader/v7 rejects removed config keys"):
+    with pytest.raises(ConfigError, match="reader/v8 rejects removed config keys"):
         ReaderSpec.load(path)
 
 
@@ -187,7 +199,7 @@ def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "preprocessing": {
                 "overflow": {
@@ -201,10 +213,11 @@ def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -294,17 +307,18 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none", "include": ["logic_symmetry"]},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -322,14 +336,15 @@ def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -352,7 +367,7 @@ def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none"},
@@ -360,10 +375,11 @@ def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -382,7 +398,7 @@ def test_sfxi_objective_delta_reaches_vec8_and_setpoint_plot_configs(tmp_path: P
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "include_vec8": True,
             "include_fold_change": False,
@@ -395,10 +411,11 @@ def test_sfxi_objective_delta_reaches_vec8_and_setpoint_plot_configs(tmp_path: P
         protocol_outputs={"plots": {"profile": "none", "include": ["sfxi_setpoint_scatter"]}},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },

@@ -14,8 +14,8 @@ from reader.workbench.experiment import (
     AnnotationOrderSpec,
     AnnotationSemantics,
     ExperimentSemantics,
-    LogicMaps,
-    LogicMapSpec,
+    OrderedStateSpaces,
+    OrderedStateSpaceSpec,
     OutputLayout,
     ResourceCatalog,
     ResourceEntry,
@@ -82,14 +82,15 @@ def build_workbench_decl(
                     for key, value in (spec.annotations.collections or {}).items()
                 }
             ),
-            logic_maps=LogicMaps(
+            ordered_state_spaces=OrderedStateSpaces(
                 by_id={
-                    key: LogicMapSpec(
+                    key: OrderedStateSpaceSpec(
                         column=value.column,
-                        corners=dict(value.corners),
+                        state_order=tuple(value.state_order),
+                        source_values=dict(value.values),
                         case_sensitive=bool(value.case_sensitive),
                     )
-                    for key, value in (spec.annotations.logic_maps or {}).items()
+                    for key, value in (spec.annotations.ordered_state_spaces or {}).items()
                 }
             ),
         ),

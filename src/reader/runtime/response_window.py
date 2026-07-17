@@ -35,6 +35,9 @@ from reader.domains.plate_reader.analysis.response_window.sources import (
 )
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.decl import load_workbench_decl
+from reader.workbench.experiment import ResolvedOrderedStateSpace
+
+_RESPONSE_WINDOW_STATE_ORDER = ("00", "10", "01", "11")
 
 
 def preflight_response_window_request(
@@ -131,7 +134,10 @@ def _load_source(
     records = {record_id: store.read_dataframe(record_id) for record_id in sorted(record_ids)}
     for record in records.values():
         record.verify_content_digest()
-    logic_map = declaration.experiment_semantics.annotations.resolve_logic_map(ref=source_spec.state_map_ref)
+    state_space = declaration.experiment_semantics.annotations.resolve_ordered_state_space(
+        ref=source_spec.state_map_ref
+    )
+    state_space = _require_response_window_state_space(state_space)
     resolved = ResolvedExperimentSource(
         experiment_id=experiment_id,
         experiment_dir=experiment_dir.resolve(),
@@ -140,9 +146,9 @@ def _load_source(
         record_paths={record_id: record.path.resolve() for record_id, record in records.items()},
         record_contracts={record_id: record.contract_id for record_id, record in records.items()},
         record_digests={record_id: record.content_digest for record_id, record in records.items()},
-        state_column=logic_map.column,
-        treatment_map=logic_map.corners,
-        state_values_case_sensitive=logic_map.case_sensitive,
+        state_column=state_space.column,
+        treatment_map=dict(state_space.source_values),
+        state_values_case_sensitive=state_space.case_sensitive,
     )
     return load_experiment_source(
         resolved,
@@ -150,6 +156,14 @@ def _load_source(
         event_spec=event_spec,
         contracts=runtime.contracts,
     )
+
+
+def _require_response_window_state_space(
+    state_space: ResolvedOrderedStateSpace,
+) -> ResolvedOrderedStateSpace:
+    if state_space.state_ids != _RESPONSE_WINDOW_STATE_ORDER:
+        raise ValueError("response-window state space must declare exactly 00, 10, 01, 11 in that order.")
+    return state_space
 
 
 __all__ = [

@@ -17,7 +17,7 @@ This file is the top-level map. Use it to understand the layers, ownership bound
 `reader` has four layers.
 
 1. Authoring model
-   Human-facing `reader/v7` YAML in `experiments/<exp>/config.yaml`.
+   Human-facing `reader/v8` YAML in `experiments/<exp>/config.yaml`.
    This is the public contract for users.
 2. Semantic model
    Protocols, annotations, resources, and experiment semantics.
@@ -77,7 +77,7 @@ The main ownership boundaries are:
 
 The deterministic execution path is:
 
-1. Load `reader/v7` YAML.
+1. Load `reader/v8` YAML.
 2. Validate schema and reject removed config keys.
 3. Bind the experiment to a protocol.
 4. Compile authored config into a workbench declaration.
@@ -108,7 +108,7 @@ These registries are meant to reduce cognitive load, not increase it. Experiment
 
 These are the invariants the codebase should preserve.
 
-- `reader/v7` is the only supported public config schema.
+- `reader/v8` is the only supported public config schema.
 - `workbench/config/` parses wire format; it does not become the internal authored model or runtime graph.
 - Protocols own assay semantics and user-facing output vocabulary.
 - Plugins are mechanics. They should be thin adapters around domain logic.

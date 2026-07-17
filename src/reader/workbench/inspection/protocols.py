@@ -220,7 +220,7 @@ def protocol_example_document(descriptor) -> dict[str, object]:
     protocol_block["outputs"] = outputs
 
     return {
-        "schema": "reader/v7",
+        "schema": "reader/v8",
         "experiment": {"id": "example_experiment"},
         "protocol": protocol_block,
         "resources": {},

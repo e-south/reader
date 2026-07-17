@@ -2,7 +2,7 @@
 doc_id: reader-plugin-development
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Maintainer guide for adding mechanical Reader plugins behind protocol-owned semantics and typed contracts.
 ---
 
@@ -10,7 +10,7 @@ summary: Maintainer guide for adding mechanical Reader plugins behind protocol-o
 
 Plugins are the execution layer of `reader`. They are for maintainers, not the
 public authoring surface. Experiment authors should stay in
-[`reader/v7`](./pipeline.md), protocol selection, and protocol-owned output
+[`reader/v8`](./pipeline.md), protocol selection, and protocol-owned output
 choices. Public configs do not list raw plugin ids.
 
 ## Plugin categories
@@ -36,7 +36,7 @@ The runtime does not discover built-ins by scanning package trees.
 The registry has a `reader.plugins` entry-point hook for coordinated
 maintainer integrations. It is not a standalone public plugin SDK: the current
 descriptor and port imports live under `reader.workbench`, and an entry point
-cannot add `reader/v7` protocol semantics by itself. Do not advertise an
+cannot add `reader/v8` protocol semantics by itself. Do not advertise an
 external package as a Reader feature until Reader protocol code owns its
 authoring and compilation path.
 
@@ -254,7 +254,7 @@ maintainable way.
 
 ## Related docs
 
-- [Configuring `reader/v7`](./pipeline.md)
+- [Configuring `reader/v8`](./pipeline.md)
 - [reader specification](./spec.md)
 - [Architecture](../../ARCHITECTURE.md)
 - [Crosstalk pairs](../lib/crosstalk_pairs.md)

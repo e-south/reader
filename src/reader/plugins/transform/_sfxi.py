@@ -10,7 +10,7 @@ from reader.domains.logic.sfxi.treatment_semantics import resolve_sfxi_treatment
 def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
     semantics = resolve_sfxi_treatment_semantics(
         ctx=ctx,
-        logic_map_ref=cfg.logic_map_ref,
+        state_map_ref=cfg.state_map_ref,
         treatment_column=cfg.treatment_column,
     )
     run_cfg = semantics.inject(cfg.model_dump())

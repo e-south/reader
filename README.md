@@ -15,7 +15,7 @@ summary: Short entry point for installing reader and finding the canonical opera
 `reader` organizes experiment directories and runs config-driven analysis
 pipelines over structured assay data. Each experiment uses a fixed layout:
 raw inputs in `inputs/`, optional notebooks in `notebooks/`, generated results
-in `outputs/`, and a `reader/v7` `config.yaml` that declares the run.
+in `outputs/`, and a `reader/v8` `config.yaml` that declares the run.
 
 ---
 
@@ -36,7 +36,7 @@ in `outputs/`, and a `reader/v7` `config.yaml` that declares the run.
 - [Workbench gardening](docs/guides/workbench_gardening.md): maintainer
   workflow for architecture and docs cleanup.
 - [CLI reference](docs/core/cli.md): full command reference.
-- [Configuring `reader/v7`](docs/core/pipeline.md): schema and protocol-owned
+- [Configuring `reader/v8`](docs/core/pipeline.md): schema and protocol-owned
   config surface.
 - [Repo maintenance](docs/repo-maintenance.md): repo-wide checks, CI, and
   maintainer routines.

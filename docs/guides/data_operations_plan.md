@@ -2,7 +2,7 @@
 doc_id: reader-data-operations-plan
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-17
 summary: Entry point for classifying datasets and recording metadata, transfer, readiness, and verification decisions.
 ---
 
@@ -11,7 +11,7 @@ summary: Entry point for classifying datasets and recording metadata, transfer, 
 Use this guide as the `reader`-local overlay for deciding what must be
 captured before an experiment is run. It adapts the lab-facing parts of a
 [Data Operations Plan](https://merelogic.net/data_operations_plans/how) to the
-workbench without turning `reader/v7` into an organization-wide policy schema.
+workbench without turning `reader/v8` into an organization-wide policy schema.
 
 The short path is:
 

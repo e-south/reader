@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-vec8
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Canonical route to Reader SFXI vec8 semantics, operation, plots, and the OPAL handoff boundary.
 ---
 
@@ -24,7 +24,7 @@ ownership can change independently.
 - [Vec8 contract](./sfxi/vec8.md): input requirements, time and corner
   selection, reference normalization, equations, output columns, and failure
   rules.
-- [Experiment workflow](./sfxi/workflow.md): `reader/v7` configuration,
+- [Experiment workflow](./sfxi/workflow.md): `reader/v8` configuration,
   preflight, execution, records, workbook export, and the SFXI marimo notebook.
 - [Plot surfaces](./sfxi/plots.md): the per-experiment heatmap, setpoint
   scatter, triptych sequence bundle, and cross-experiment aggregate heatmap.

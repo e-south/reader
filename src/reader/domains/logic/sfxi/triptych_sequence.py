@@ -163,21 +163,21 @@ def _normalize_config(config: Mapping[str, Any]) -> dict[str, Any]:
     removed_keys = sorted({"treatment_col", "treatments"} & set(cfg))
     if removed_keys:
         raise SFXIError(
-            "SFXI triptych treatment identity comes from the resolved logic-map contract; "
+            "SFXI triptych treatment identity comes from the resolved ordered state-space contract; "
             f"remove duplicated setting(s): {removed_keys}"
         )
     channels = dict(cfg.get("channels") or {})
     sequence_panel = dict(cfg.get("sequence_panel") or {})
     time_series = dict(cfg.get("time_series") or {})
     axis_limits = dict(cfg.get("axis_limits") or {})
-    logic_map_ref = _required_string(cfg.get("logic_map_ref"), where="logic_map_ref")
+    state_map_ref = _required_string(cfg.get("state_map_ref"), where="state_map_ref")
     treatment_column = _required_string(cfg.get("treatment_column"), where="treatment_column")
     treatment_map, treatment_case_sensitive = _normalize_treatment_contract(
         cfg.get("treatment_map"),
         case_sensitive=cfg.get("treatment_case_sensitive"),
     )
     return {
-        "logic_map_ref": logic_map_ref,
+        "state_map_ref": state_map_ref,
         "bundle_id": str(cfg.get("bundle_id") or "sfxi_triptych_sequence"),
         "design_col": str(cfg.get("design_col") or "design_id"),
         "sequence_col": str(cfg.get("sequence_col") or "sequence"),

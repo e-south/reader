@@ -554,7 +554,7 @@ def _bundle_fixture(tmp_path: Path, *, study_id: str = "stress_ethanol_cipro_gro
     (root / "request.yaml").write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
     write_review_notebook(root)
     (root / "sources" / "experiment" / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: experiment\n  title: Example promoter experiment\n",
+        "schema: reader/v8\nexperiment:\n  id: experiment\n  title: Example promoter experiment\n",
         encoding="utf-8",
     )
     source_digests = {

@@ -1,4 +1,4 @@
-schema: reader/v7
+schema: reader/v8
 experiment:
   id: 20260317_tetra_functional_sponges
 protocol:

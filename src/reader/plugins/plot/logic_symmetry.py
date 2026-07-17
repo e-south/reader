@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 from pydantic import Field
 
+from reader.domains.logic.sfxi.treatment_semantics import resolve_sfxi_treatment_semantics
 from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.workbench.ports import dataframe_input
@@ -25,7 +26,7 @@ class LogicSymCfg(PluginConfig):
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     batch_col: str = "batch"
     treatment_column: str | None = None
-    logic_map_ref: str
+    state_map_ref: str
     aggregation: dict[str, Any] = Field(default_factory=dict)
     encodings: dict[str, Any] = Field(default_factory=dict)
     ideals_overlay: dict[str, Any] = Field(default_factory=dict)
@@ -49,7 +50,11 @@ class LogicSymmetryPlot(FigurePlotPlugin):
         df: pd.DataFrame = inputs["df"]
         from reader.domains.logic.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
 
-        logic_map = ctx.experiment.annotations.resolve_logic_map(ref=cfg.logic_map_ref)
+        state_semantics = resolve_sfxi_treatment_semantics(
+            ctx=ctx,
+            state_map_ref=cfg.state_map_ref,
+            treatment_column=cfg.treatment_column,
+        )
         result = plot_logic_symmetry(
             df=df,
             blanks=df.iloc[0:0],
@@ -57,9 +62,9 @@ class LogicSymmetryPlot(FigurePlotPlugin):
             response_channel=cfg.response_channel,
             design_by=cfg.design_by,
             batch_col=cfg.batch_col,
-            treatment_column=cfg.treatment_column or logic_map.column,
-            treatment_map=dict(logic_map.corners),
-            treatment_case_sensitive=logic_map.case_sensitive,
+            treatment_column=state_semantics.treatment_column,
+            treatment_map=dict(state_semantics.corners),
+            treatment_case_sensitive=state_semantics.case_sensitive,
             aggregation=cfg.aggregation,
             encodings=cfg.encodings,
             ideals_overlay=cfg.ideals_overlay,

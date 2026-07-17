@@ -2,7 +2,7 @@
 doc_id: reader-workbench-gardening
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Maintainer workflow for bounded reader architecture, documentation, CLI, and verification gardening.
 ---
 
@@ -21,7 +21,7 @@ Use this guide for:
   registries
 - assay lock-in risk in config, CLI, docs, or code organization
 - stale semantics, stale docs, or obsolete behavior that no longer matches
-  `reader/v7`
+  `reader/v8`
 - maintainer ergonomics and CLI or JSON surface hardening
 
 Do not use this guide for new-experiment intake, result interpretation, or
@@ -66,7 +66,7 @@ rephrasing them from memory:
 The invariants that usually matter most are:
 
 - experiment-scoped IO remains the workbench unit of work
-- `reader/v7` stays the only public config schema
+- `reader/v8` stays the only public config schema
 - protocols own assay semantics and output vocabulary
 - plugins stay mechanical adapters around domain or runtime logic
 - discovery, validation, and dry-run surfaces stay first-class

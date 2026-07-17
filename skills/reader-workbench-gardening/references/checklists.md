@@ -5,7 +5,7 @@ into a vague "architecture review."
 
 ## Information ownership
 
-- Does `reader/v7` stay the authored source of truth?
+- Does `reader/v8` stay the authored source of truth?
 - Are assay-facing semantics owned by protocols rather than plugins?
 - Is domain math or parsing living in `domains/` instead of CLI or plugin glue?
 - Are docs pointing to canonical sources instead of forking duplicate guidance?
@@ -35,7 +35,7 @@ into a vague "architecture review."
 
 ## Docs and semantics drift
 
-- Do docs still describe the current `reader/v7` surface?
+- Do docs still describe the current `reader/v8` surface?
 - Are removed legacy keys or behaviors still documented or silently accepted?
 - Does `AGENTS.md` route to the current maintainer workflow instead of stale
   instructions?

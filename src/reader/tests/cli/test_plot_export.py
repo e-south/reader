@@ -51,15 +51,16 @@ def _logic_plot_config() -> dict:
     return base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
         protocol_outputs={"plots": {"profile": "none", "include": ["logic_symmetry"]}},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },

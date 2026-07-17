@@ -101,7 +101,7 @@ def test_load_experiment_source_preserves_value_bound_provenance(tmp_path: Path)
 
     config_path = tmp_path / "config.yaml"
     records_path = tmp_path / "records.json"
-    config_path.write_text("schema: reader/v7\n", encoding="utf-8")
+    config_path.write_text("schema: reader/v8\n", encoding="utf-8")
     records_path.write_text("{}\n", encoding="utf-8")
     resolved = ResolvedExperimentSource(
         experiment_id="experiment",

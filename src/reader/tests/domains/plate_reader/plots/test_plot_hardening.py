@@ -295,7 +295,7 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
 
 def test_validate_rejects_unknown_heatmap_order_ref(tmp_path) -> None:
     data = {
-        "schema": "reader/v7",
+        "schema": "reader/v8",
         "experiment": {"id": "exp_semantics"},
         "protocol": {
             "id": "plate_reader/dual_reporter_screen",

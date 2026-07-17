@@ -48,8 +48,8 @@ def load_reader_config_document(path: Path) -> dict[str, Any]:
         )
 
     schema = data.get("schema")
-    if schema != "reader/v7":
-        raise ConfigError(f"Config schema must be 'reader/v7'. This repo only supports reader/v7 (found {schema!r}).")
+    if schema != "reader/v8":
+        raise ConfigError(f"Config schema must be 'reader/v8'. This repo only supports reader/v8 (found {schema!r}).")
     return data
 
 
@@ -89,7 +89,7 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
             parts.append(f"protocol keys: {illegal_protocol}")
         if illegal_exp:
             parts.append(f"experiment keys: {illegal_exp}")
-        raise ConfigError("reader/v7 rejects removed config keys. Remove or replace: " + "; ".join(parts))
+        raise ConfigError("reader/v8 rejects removed config keys. Remove or replace: " + "; ".join(parts))
 
     data.setdefault("experiment", {})
     if not isinstance(data["experiment"], dict):
@@ -181,7 +181,11 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
 
 
 def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
-    _ensure_only_keys(annotations_raw, {"labels", "orders", "collections", "logic_maps"}, where="annotations")
+    _ensure_only_keys(
+        annotations_raw,
+        {"labels", "orders", "collections", "ordered_state_spaces"},
+        where="annotations",
+    )
     labels_raw = annotations_raw.get("labels", {}) or {}
     if not isinstance(labels_raw, dict):
         raise ConfigError("annotations.labels must be a mapping")
@@ -247,35 +251,56 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
             "items": {str(item_key): [str(item) for item in item_values] for item_key, item_values in items.items()},
         }
 
-    logic_maps_raw = annotations_raw.get("logic_maps", {}) or {}
-    if not isinstance(logic_maps_raw, dict):
-        raise ConfigError("annotations.logic_maps must be a mapping")
-    normalized_logic_maps: dict[str, dict[str, Any]] = {}
-    for logic_id, logic_spec in logic_maps_raw.items():
-        if not isinstance(logic_spec, dict):
-            raise ConfigError(f"annotations.logic_maps.{logic_id} must be a mapping")
-        _ensure_only_keys(
-            logic_spec,
-            {"column", "corners", "case_sensitive"},
-            where=f"annotations.logic_maps.{logic_id}",
-        )
-        column = logic_spec.get("column")
+    state_spaces_raw = annotations_raw.get("ordered_state_spaces", {}) or {}
+    if not isinstance(state_spaces_raw, dict):
+        raise ConfigError("annotations.ordered_state_spaces must be a mapping")
+    normalized_state_spaces: dict[str, dict[str, Any]] = {}
+    for space_id, space_spec in state_spaces_raw.items():
+        context = f"annotations.ordered_state_spaces.{space_id}"
+        if not isinstance(space_spec, dict):
+            raise ConfigError(f"{context} must be a mapping")
+        _ensure_only_keys(space_spec, {"column", "state_order", "values", "case_sensitive"}, where=context)
+        column = space_spec.get("column")
         if not isinstance(column, str) or not column.strip():
-            raise ConfigError(f"annotations.logic_maps.{logic_id}.column must be a non-empty string")
-        corners = logic_spec.get("corners")
-        if not isinstance(corners, dict) or not corners:
-            raise ConfigError(f"annotations.logic_maps.{logic_id}.corners must be a non-empty mapping")
-        normalized_logic_maps[str(logic_id)] = {
-            "column": column,
-            "corners": {str(key): str(value) for key, value in corners.items()},
-            "case_sensitive": bool(logic_spec.get("case_sensitive", True)),
+            raise ConfigError(f"{context}.column must be a non-empty string")
+        state_order = space_spec.get("state_order")
+        if not isinstance(state_order, list) or not state_order:
+            raise ConfigError(f"{context}.state_order must be a non-empty list")
+        if any(not isinstance(state_id, str) or not state_id.strip() for state_id in state_order):
+            raise ConfigError(f"{context}.state_order must contain non-empty strings")
+        normalized_state_order = [state_id.strip() for state_id in state_order]
+        if len(set(normalized_state_order)) != len(normalized_state_order):
+            raise ConfigError(f"{context} state ids must be unique")
+        values = space_spec.get("values")
+        if not isinstance(values, dict) or not values:
+            raise ConfigError(f"{context}.values must be a non-empty mapping")
+        if any(not isinstance(value, str) or not value.strip() for value in values.values()):
+            raise ConfigError(f"{context}.values must map state ids to non-empty strings")
+        normalized_values = {str(state_id): value for state_id, value in values.items()}
+        if set(normalized_values) != set(normalized_state_order):
+            raise ConfigError(f"{context}.values must have exactly the ids declared by state_order")
+        case_sensitive = space_spec.get("case_sensitive", True)
+        if not isinstance(case_sensitive, bool):
+            raise ConfigError(f"{context}.case_sensitive must be a boolean")
+        comparison_values = [
+            normalized_values[state_id] if case_sensitive else normalized_values[state_id].strip().casefold()
+            for state_id in normalized_state_order
+        ]
+        if len(set(comparison_values)) != len(comparison_values):
+            sensitivity = "true" if case_sensitive else "false"
+            raise ConfigError(f"{context} source values must be unique under case_sensitive={sensitivity}")
+        normalized_state_spaces[str(space_id)] = {
+            "column": column.strip(),
+            "state_order": normalized_state_order,
+            "values": normalized_values,
+            "case_sensitive": case_sensitive,
         }
 
     return {
         "labels": normalized_labels,
         "orders": normalized_orders,
         "collections": normalized_collections,
-        "logic_maps": normalized_logic_maps,
+        "ordered_state_spaces": normalized_state_spaces,
     }
 
 

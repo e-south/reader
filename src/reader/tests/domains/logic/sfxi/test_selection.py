@@ -264,7 +264,7 @@ def test_treatment_alias_selection_and_case_sensitivity():
     assert not sel_ci.points.empty
 
 
-def test_explicit_treatment_column_prefers_logic_map_surface():
+def test_explicit_treatment_column_prefers_ordered_state_space_surface():
     tmap = {"00": "EtOH", "10": "PMS", "01": "Cipro", "11": "NEG"}
     rows = []
     for corner, pos in zip(["00", "10", "01", "11"], ["A1", "B1", "C1", "D1"], strict=False):

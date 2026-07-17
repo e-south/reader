@@ -16,7 +16,7 @@ def test_audit_local_experiments_auto_discovers_numeric_year_dirs(tmp_path: Path
     experiment_dir.mkdir(parents=True)
     (experiments_root / "template").mkdir(parents=True)
     (experiment_dir / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: exp_auto\n  lifecycle: draft\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v8\nexperiment:\n  id: exp_auto\n  lifecycle: draft\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
 
@@ -41,7 +41,7 @@ def test_audit_local_experiments_include_non_active_flag(tmp_path: Path) -> None
     experiment_dir = experiments_root / "2027" / "exp_auto"
     experiment_dir.mkdir(parents=True)
     (experiment_dir / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: exp_auto\n  lifecycle: draft\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v8\nexperiment:\n  id: exp_auto\n  lifecycle: draft\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
 
@@ -65,7 +65,7 @@ def test_audit_local_experiments_does_not_mutate_source_outputs(tmp_path: Path) 
     experiment_dir = experiments_root / "2027" / "exp_active"
     experiment_dir.mkdir(parents=True)
     (experiment_dir / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: exp_active\n  lifecycle: active\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v8\nexperiment:\n  id: exp_active\n  lifecycle: active\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     outputs_dir = experiment_dir / "outputs"

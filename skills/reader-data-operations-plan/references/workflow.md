@@ -112,4 +112,4 @@ Stop and ask or report blocked when:
   provenance;
 - a requested change would make generated outputs source material;
 - the change requires lab-wide policy that `reader` cannot enforce; or
-- the change would widen `reader/v7` without a separate schema decision.
+- the change would widen `reader/v8` without a separate schema decision.

@@ -1,4 +1,4 @@
-schema: reader/v7
+schema: reader/v8
 experiment:
   id: template
   title: biosensor_panel_M9_glu
@@ -21,7 +21,7 @@ protocol:
       stat: mean
     design_by:
     - design_id
-    logic_map_ref: induction_logic
+    state_map_ref: induction_logic
     target_time_h: 10
     time_mode: nearest
     time_tolerance_h: 0.5
@@ -69,7 +69,7 @@ protocol:
             figsize:
             - 7
             - 6
-          logic_map_ref: induction_logic
+          state_map_ref: induction_logic
       include:
       - raw_kinetics
       - logic_symmetry
@@ -97,12 +97,17 @@ annotations:
       - +IPTG/-stress
       - -IPTG/+stress
       - +IPTG/+stress
-  logic_maps:
+  ordered_state_spaces:
     induction_logic:
       column: treatment
-      corners:
-        '00': …
-        '10': …
-        '01': …
-        '11': …
+      state_order:
+      - '00'
+      - '10'
+      - '01'
+      - '11'
+      values:
+        '00': -IPTG/-stress
+        '10': +IPTG/-stress
+        '01': -IPTG/+stress
+        '11': +IPTG/+stress
       case_sensitive: true

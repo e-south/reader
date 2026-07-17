@@ -305,7 +305,7 @@ def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSem
                 "protocol.inputs.response",
                 "protocol.inputs.reference",
                 "protocol.inputs.design_by",
-                "protocol.inputs.logic_map_ref",
+                "protocol.inputs.state_map_ref",
                 "protocol.inputs.time_mode",
                 "protocol.inputs.target_time_h",
                 "protocol.inputs.time_tolerance_h",

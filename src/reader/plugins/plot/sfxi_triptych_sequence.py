@@ -35,7 +35,7 @@ class SFXITriptychSequencePanelCfg(_StrictModel):
 
 
 class SFXITriptychSequenceCfg(PluginConfig):
-    logic_map_ref: str
+    state_map_ref: str
     bundle_id: str = "sfxi_triptych_sequence"
     design_col: str = "design_id"
     sequence_col: str = "sequence"
@@ -105,7 +105,7 @@ class SFXITriptychSequencePlot(FigurePlotPlugin):
             render_sfxi_triptych_sequence_bundle,
         )
 
-        semantics = resolve_sfxi_treatment_semantics(ctx=ctx, logic_map_ref=cfg.logic_map_ref)
+        semantics = resolve_sfxi_treatment_semantics(ctx=ctx, state_map_ref=cfg.state_map_ref)
         paths = render_sfxi_triptych_sequence_bundle(
             ctx=ctx,
             vec8=vec8,

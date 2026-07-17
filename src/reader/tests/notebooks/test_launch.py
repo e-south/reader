@@ -16,7 +16,7 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     notebook.parent.mkdir(parents=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='reader-test'\n", encoding="utf-8")
     (repo_root / "experiments" / "2026" / "exp" / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     notebook.write_text("import marimo\n", encoding="utf-8")

@@ -223,7 +223,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     good_dir.mkdir(parents=True)
     bad_dir.mkdir(parents=True)
     write_config(good_dir / "config.yaml", _base_config())
-    (bad_dir / "config.yaml").write_text("schema: reader/v7\nexperiment:\n  id: broken\n", encoding="utf-8")
+    (bad_dir / "config.yaml").write_text("schema: reader/v8\nexperiment:\n  id: broken\n", encoding="utf-8")
     inputs_dir = good_dir / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
@@ -384,7 +384,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
             resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
         ),
     )
-    (broken_dir / "config.yaml").write_text("schema: reader/v7\nexperiment:\n  id: broken\n", encoding="utf-8")
+    (broken_dir / "config.yaml").write_text("schema: reader/v8\nexperiment:\n  id: broken\n", encoding="utf-8")
 
     runner = CliRunner()
     by_protocol = runner.invoke(
@@ -527,7 +527,7 @@ def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: P
     payload = json.loads(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["authoring"]["schema"] == "reader/v7"
+    assert payload["authoring"]["schema"] == "reader/v8"
     assert payload["authoring"]["protocol"]["id"] == "plate_reader/dual_reporter_screen"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
@@ -721,7 +721,7 @@ def test_protocols_command_can_render_example_config() -> None:
     )
     assert result.exit_code == 0
     assert "Starter YAML" in result.output
-    assert "schema: reader/v7" in result.output
+    assert "schema: reader/v8" in result.output
     assert "id: plate_reader/dual_reporter_screen" in result.output
     assert "profile: screen_overview" in result.output
     assert "CFP:433,475: CFP" in result.output
@@ -999,7 +999,7 @@ def test_protocols_command_can_emit_json() -> None:
     assert compiled_program["summary"]["descriptive_only"] == 0
     assert compiled_metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
     assert compiled_metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
-    assert payload["authoring"]["starter_config"]["schema"] == "reader/v7"
+    assert payload["authoring"]["starter_config"]["schema"] == "reader/v8"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
     assert payload["implementation"]["defaults"][0]["parameters"]["mode"]["source"] == "protocol.inputs.ingest.mode"

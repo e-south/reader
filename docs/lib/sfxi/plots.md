@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-plots
 surface: plot-reference
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Reader SFXI plot inputs, configuration, outputs, descriptions, and dependency boundaries.
 ---
 
@@ -126,11 +126,11 @@ a short colored line, and sample standard deviation as a whisker. It does not
 use bar height as a second encoding of the mean.
 
 Treatment identity is not configured again for this plot. The compiler carries
-`protocol.inputs.logic_map_ref` into the plot, and the plot resolves the same
-`annotations.logic_maps` entry used by the SFXI vec8 transform. The four plot
+`protocol.inputs.state_map_ref` into the plot, and the plot resolves the same
+`annotations.ordered_state_spaces` entry used by the SFXI vec8 transform. The four plot
 series use the stable states `00`, `10`, `01`, and `11`; the authored condition
-labels and treatment column come from that resolved map. The bundle manifest
-records the map reference, column, corner labels, and case-sensitivity policy.
+labels and treatment column come from that resolved state space. The bundle manifest
+records the state-map reference, column, corner labels, and case-sensitivity policy.
 Missing states or a second plot-local treatment mapping are errors.
 
 Declare the binding manifest as a file resource, then opt into the figure:
@@ -155,7 +155,7 @@ protocol:
 
 The plot rejects duplicate vec8 rows per design, missing or duplicate exact
 alias bindings, sequence mismatches, binding digest or schema drift, missing
-assay rows, treatment labels that do not satisfy the resolved SFXI logic map,
+assay rows, treatment labels that do not satisfy the resolved SFXI state space,
 unsupported sequence adapters, and an unavailable public dnadesign contract.
 It does not fall back to fuzzy, prefix, sequence-only, or direct USR joins, and
 it does not substitute a local sequence renderer.
@@ -173,7 +173,7 @@ contains:
 - ordered per-design PNG frames in a bundle-specific subdirectory
 - index CSV under `outputs/exports/sfxi_triptych_sequence/`
 - JSON manifest under `outputs/manifests/` with schema
-  `reader.sfxi_triptych_sequence_bundle.v2`
+  `reader.sfxi_triptych_sequence_bundle.v3`
 - file-bundle record `plot:sfxi_triptych_sequence`
 - optional MP4 when `movie_enabled: true` and `ffmpeg` is available
 

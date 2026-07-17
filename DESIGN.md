@@ -30,10 +30,10 @@ They should not need to think in compiler branches, plugin ids, or graph mutatio
 
 ## Public Surface Design
 
-The public surface is `reader/v7`.
+The public surface is `reader/v8`.
 
 ```yaml
-schema: reader/v7
+schema: reader/v8
 experiment:
   id: ...
 protocol:

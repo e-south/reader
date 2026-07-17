@@ -53,7 +53,7 @@ The top-level quality program for `reader` currently centers on three harness en
 
 ### `architecture-invariants`
 
-- Public config stays `reader/v7`.
+- Public config stays `reader/v8`.
 - Protocols stay the semantic owner.
 - Plugins stay mechanical adapters.
 - Generated outputs remain generated.
@@ -89,14 +89,14 @@ For documentation-only changes, at least verify:
 - `uv run python tools/check_docs.py`
 - linked routes are still valid
 - command examples match current CLI behavior
-- changed docs stay aligned with `reader/v7`
+- changed docs stay aligned with `reader/v8`
 
 ## Quality Gates
 
 ### Config and schema quality
 
 - SafeLoader-based YAML parsing with duplicate-key rejection
-- strict `reader/v7` schema check
+- strict `reader/v8` schema check
 - removed config keys rejected explicitly
 - pydantic models forbid extra fields on plugin configs
 

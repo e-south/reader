@@ -714,7 +714,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             _field("target_time_h", "Target timepoint for vec8 extraction.", kind="number", allow_none=True),
             _field("time_tolerance_h", "Nearest-time tolerance in hours.", kind="number", default=0.5),
             _field(
-                "logic_map_ref", "Reference to annotations.logic_maps entry.", kind="string", default="induction_logic"
+                "state_map_ref",
+                "Reference to an annotations.ordered_state_spaces entry.",
+                kind="string",
+                default="induction_logic",
             ),
             _field(
                 "promote",
@@ -804,7 +807,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "sfxi_triptych_sequence",
                 (
                     "SFXI triptych sequence settings. Treatment states come from the same "
-                    "protocol.inputs.logic_map_ref used by the SFXI vec8 transform."
+                    "protocol.inputs.state_map_ref used by the SFXI vec8 transform."
                 ),
                 allow_unknown=True,
                 children=(
@@ -899,7 +902,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         factors=(
             ProtocolFactorSpec(name="design_id", role="design", summary="Design grouping for logic comparison."),
             ProtocolFactorSpec(name="time", role="time", summary="Selected summary timepoint."),
-            ProtocolFactorSpec(name="logic_map", role="mapping", summary="00/10/01/11 treatment-to-corner map."),
+            ProtocolFactorSpec(
+                name="ordered_state_space",
+                role="mapping",
+                summary="Ordered 00/10/01/11 treatment-to-corner state space.",
+            ),
             ProtocolFactorSpec(
                 name="reference_design", role="control", summary="Reference design for intensity normalization."
             ),
@@ -907,8 +914,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         control_rules=(
             ProtocolControlRule(
                 id="logic_corner_map",
-                summary="Resolve treatment states to 00/10/01/11 corners through the configured logic map.",
-                control_selector="logic_map_ref",
+                summary="Resolve treatment states to 00/10/01/11 corners through the configured ordered state space.",
+                control_selector="state_map_ref",
             ),
         ),
         windows=(
@@ -1096,7 +1103,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "time_mode": binding_value("time_mode", "nearest"),
                         "target_time_h": binding_value("target_time_h", None),
                         "time_tolerance_h": binding_value("time_tolerance_h", 0.5),
-                        "logic_map_ref": binding_value("logic_map_ref", "induction_logic"),
+                        "state_map_ref": binding_value("state_map_ref", "induction_logic"),
                         "reference": {
                             "design_id": binding_value("reference.design_id", "REF"),
                             "stat": binding_value("reference.stat", "mean"),

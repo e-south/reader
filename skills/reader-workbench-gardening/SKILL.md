@@ -70,7 +70,7 @@ Clarification policy:
 - findings and decisions are traceable to repository docs, code, or CLI
   evidence
 - the chosen slice reduces coupling, drift, or retry cost without widening
-  `reader/v7`
+  `reader/v8`
 - verification matches the changed surface and skipped checks are explicit
 - output separates verified facts, inferences, and follow-up work
 - knowledge-integrity, autonomy-capability, and architecture-invariants checks
@@ -187,7 +187,7 @@ Example 1: audit-only
 
 Example 2: docs-sync
 
-- User says: "Bring the maintainer docs back in sync with current `reader/v7`
+- User says: "Bring the maintainer docs back in sync with current `reader/v8`
   behavior."
 - Result: stale-route findings, canonical-doc fixes, and docs-only
   verification evidence.

@@ -36,7 +36,7 @@ External plugins and notebooks are executable Python. They are an extension surf
 ### Config parsing
 
 - YAML uses a SafeLoader-based parser that rejects duplicate mapping keys.
-- Only `reader/v7` is accepted.
+- Only `reader/v8` is accepted.
 - removed config keys are rejected explicitly
 - protocol, experiment, paths, resources, and annotations are shape-checked before model validation
 

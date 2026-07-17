@@ -26,7 +26,7 @@ class SFXICfg(PluginConfig):
     time_mode: str = "nearest"  # nearest|last_before|first_after|exact
     target_time_h: float | None = None
     time_tolerance_h: float = 0.5
-    logic_map_ref: str
+    state_map_ref: str
     reference: dict[str, str | None] = Field(default_factory=lambda: {"design_id": None, "stat": "mean"})
     require_all_corners_per_design: bool = True
     eps_ratio: float = 1e-9

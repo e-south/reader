@@ -72,7 +72,7 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
     DataClassSpec(
         id="logic_sfxi_analysis",
         label="Logic/SFXI analysis",
-        summary="Logic-response or SFXI-style assay data with response/intensity channels and logic-map corners.",
+        summary="Logic-response or SFXI-style assay data with response/intensity channels and ordered states.",
         decision_order=30,
         protocol_candidates=("logic/sfxi_screen",),
         minimum_capture=(
@@ -80,21 +80,21 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
             "metadata map",
             "response and intensity channel choices",
             "reference design",
-            "logic-map corners",
+            "ordered 00/10/01/11 states",
         ),
         stop_conditions=(
             "reference design cannot be reconstructed",
-            "logic-map corners are missing or contradictory",
+            "ordered state values are missing or contradictory",
             "response or intensity channel choices are ambiguous",
         ),
         transfer_rules=(
             "stage raw files under inputs/",
-            "encode logic maps in annotations or metadata resources",
+            "encode ordered state spaces in annotations or metadata resources",
             "regenerate SFXI summaries from source inputs",
         ),
         verification=(
             "logic reference config validates",
-            "logic-map annotations are present",
+            "ordered state-space annotations are present",
             "records catalog captures vec8 summary evidence",
         ),
     ),
@@ -201,7 +201,7 @@ BUILTIN_READY_SPECS: tuple[ReadySpec, ...] = (
         label="Preflight OK",
         summary="Schema, protocol binding, declared files, and dependencies pass reader validation.",
         required_evidence=(
-            "config schema is reader/v7",
+            "config schema is reader/v8",
             "protocol binding resolves",
             "declared files and resources exist",
             "runtime dependencies are available",

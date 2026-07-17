@@ -57,5 +57,5 @@ Required evidence:
 - Generated `experiments/**/outputs/` stay out of scope
 
 Failure handling:
-- Stop when a DOP update would widen `reader/v7`, hand-edit generated outputs,
+- Stop when a DOP update would widen `reader/v8`, hand-edit generated outputs,
   or encode guessed metadata semantics. Route to the owning workflow instead.

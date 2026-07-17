@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
 ---
 
@@ -193,7 +193,7 @@ For machine-readable output, use [Automation and JSON](../guides/automation.md).
 In short:
 
 - `uv run reader protocols <id>` shows the protocol inputs, selected outputs, and compiled defaults.
-- `uv run reader protocols <id> --example-config` prints a starter `reader/v7` outline.
+- `uv run reader protocols <id> --example-config` prints a starter `reader/v8` outline.
 - `uv run reader inspect`, `config`, `steps`, and `explain` show one bound experiment; JSON mode uses shared `authoring`, `semantics`, and `implementation` sections.
 - `uv run reader ls --details --readiness` is the experiment list with preflight state.
 - `uv run reader plot --list`, `uv run reader export --list`, and `uv run reader records` show selected outputs and generated records.
@@ -225,7 +225,7 @@ Print the config as JSON:
 uv run reader config CONFIG|DIR|INDEX --format json
 ```
 
-In JSON mode, `authoring` is the full `reader/v7` document, while
+In JSON mode, `authoring` is the full `reader/v8` document, while
 `implementation` carries the compiled plan and the execution-bound semantic
 program.
 

@@ -2,7 +2,7 @@
 doc_id: reader-dop-metadata-minimums
 surface: operator-reference
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-17
 summary: Minimum metadata required before Reader can validate or execute each supported data class.
 ---
 
@@ -29,7 +29,7 @@ need the overview.
 - Controls: blank, reference, negative, positive, paired-control, and treatment
   meanings when the assay uses them.
 - Canonical labels: design ids, strain ids, treatments, aliases, orders,
-  collections, and logic-map corners.
+  collections, and ordered state spaces.
 - Requested outputs: plot profile, export artifacts, and notebook template only
   when they differ from protocol defaults.
 
@@ -41,7 +41,7 @@ Stop intake and ask for clarification when any of these affect interpretation:
 - treatment meaning is incomplete or overloaded;
 - blank/control rows are present but their role is unclear;
 - channel labels drift from the selected protocol;
-- reference design ids or logic-map corners cannot be reconstructed; or
+- reference design ids or ordered state values cannot be reconstructed; or
 - the closest existing protocol would silently change the assay meaning.
 
 ## Storage Rules
@@ -51,7 +51,7 @@ notes under `notebooks/`. Generated artifacts under `outputs/` are evidence,
 not the source of truth.
 
 Keep lab-wide owners, approval policy, retention rules, and enterprise catalog
-policy outside `reader/v7` until there is a concrete repo-local behavior to
+policy outside `reader/v8` until there is a concrete repo-local behavior to
 validate. Record those details in the handoff or organization system of record
 instead of widening experiment config.
 

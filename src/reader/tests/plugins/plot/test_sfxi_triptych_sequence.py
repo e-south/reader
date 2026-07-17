@@ -39,8 +39,8 @@ from reader.workbench.engine import run_spec
 from reader.workbench.experiment import (
     AnnotationSemantics,
     ExperimentSemantics,
-    LogicMaps,
-    LogicMapSpec,
+    OrderedStateSpaces,
+    OrderedStateSpaceSpec,
     OutputLayout,
     ResourceCatalog,
     ResourceEntry,
@@ -112,7 +112,7 @@ def _assay_df() -> pd.DataFrame:
 def _normalized_render_config(**overrides: object) -> dict[str, object]:
     return triptych_sequence._normalize_config(
         {
-            "logic_map_ref": "induction_logic",
+            "state_map_ref": "induction_logic",
             "treatment_column": "treatment_alias",
             "treatment_map": _TREATMENT_MAP,
             "treatment_case_sensitive": True,
@@ -213,7 +213,7 @@ def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None
     cfg = base_reader_config(
         experiment_id="exp_logic_triptych",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "include_vec8": True,
             "include_fold_change": False,
@@ -228,10 +228,11 @@ def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None
             },
         },
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -304,8 +305,8 @@ def test_sfxi_triptych_uses_binding_when_optional_vec8_sequence_is_missing(
     assert plan.loc[0, "candidate_binding"].canonical_sequence == "ACGTACGT"
 
 
-def test_sfxi_triptych_requires_resolved_logic_map_treatment_semantics() -> None:
-    with pytest.raises(SFXIError, match="logic_map_ref must be a non-empty string"):
+def test_sfxi_triptych_requires_resolved_state_map_treatment_semantics() -> None:
+    with pytest.raises(SFXIError, match="state_map_ref must be a non-empty string"):
         triptych_sequence._normalize_config({})
 
 
@@ -326,7 +327,7 @@ def test_sfxi_triptych_maps_authored_labels_to_stable_states() -> None:
     assert set(mapped[cfg["state_column"]].dropna()) == {"00", "10", "01", "11"}
 
 
-def test_sfxi_triptych_honors_logic_map_case_sensitivity() -> None:
+def test_sfxi_triptych_honors_state_map_case_sensitivity() -> None:
     lower_labels = {state: label.lower() for state, label in _TREATMENT_MAP.items()}
     cfg = _normalized_render_config(treatment_case_sensitive=False, treatment_map=lower_labels)
 
@@ -400,7 +401,7 @@ def test_sfxi_triptych_global_scale_contains_snapshot_sd_whiskers() -> None:
 
 
 def test_sfxi_triptych_rejects_duplicated_treatment_identity() -> None:
-    with pytest.raises(SFXIError, match="comes from the resolved logic-map contract"):
+    with pytest.raises(SFXIError, match="comes from the resolved ordered state-space contract"):
         _normalized_render_config(treatments=[])
 
 
@@ -590,11 +591,12 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
             protocol=ProtocolBinding(id="logic/sfxi_screen"),
             protocol_program=ProtocolSemanticProgram(protocol="logic/sfxi_screen"),
             annotations=AnnotationSemantics(
-                logic_maps=LogicMaps(
+                ordered_state_spaces=OrderedStateSpaces(
                     by_id={
-                        "induction_logic": LogicMapSpec(
+                        "induction_logic": OrderedStateSpaceSpec(
                             column="treatment_alias",
-                            corners=_TREATMENT_MAP,
+                            state_order=("00", "10", "01", "11"),
+                            source_values=_TREATMENT_MAP,
                             case_sensitive=True,
                         )
                     }
@@ -624,7 +626,7 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
                     },
                     with_={
                         "acquisition_transition_time_h": 12.0,
-                        "logic_map_ref": "induction_logic",
+                        "state_map_ref": "induction_logic",
                     },
                 ),
             )
@@ -650,10 +652,10 @@ def test_sfxi_triptych_sequence_runtime_persists_bundle_record(tmp_path: Path, m
     manifest_path = outputs / "manifests" / "sfxi_triptych_sequence_manifest.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v2"
+    assert manifest["schema"] == "reader.sfxi_triptych_sequence_bundle.v3"
     assert manifest["candidate_bindings"]["manifest_sha256"].startswith("sha256:")
     assert manifest["treatment_contract"] == {
-        "logic_map_ref": "induction_logic",
+        "state_map_ref": "induction_logic",
         "column": "treatment_alias",
         "corners": _TREATMENT_MAP,
         "case_sensitive": True,

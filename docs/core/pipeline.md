@@ -1,14 +1,14 @@
 ---
-doc_id: reader-v7-config
+doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-11
-summary: Public Reader v7 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
+last_verified: 2026-07-17
+summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
-# Configuring Reader v7
+# Configuring Reader v8
 
-Reader v7 has three explicit layers:
+Reader v8 has three explicit layers:
 
 - config: experiment `config.yaml`
 - protocol: `reader.protocols`
@@ -20,7 +20,7 @@ in domain terms, not plugin or graph terms.
 ## Minimal shape
 
 ```yaml
-schema: reader/v7
+schema: reader/v8
 
 experiment:
   id: 20250614_sensor_panel_M9_glu
@@ -46,7 +46,7 @@ resources:
 ## Top-level keys
 
 - `schema`
-  Must be `reader/v7`.
+  Must be `reader/v8`.
 - `experiment`
   Explicit experiment identity. `experiment.id` is required. Optional `experiment.lifecycle`
   may be `draft` or `template` for intentionally non-runnable configs; omit it for
@@ -56,7 +56,7 @@ resources:
 - `resources`
   External files such as `sample_map` or `metadata`.
 - `annotations`
-  Labels, orders, collections, and logic maps.
+  Labels, orders, collections, and metric-neutral ordered state spaces.
 - `paths`
   Optional output layout override.
 - `plotting`
@@ -64,6 +64,29 @@ resources:
 
 There is no public `graph_patch`, no top-level `pipeline` / `plots` /
 `exports`, and no `protocol.with`.
+
+## Ordered state-space annotation
+
+`annotations.ordered_state_spaces` binds ordered state ids to exact values in
+one metadata column. It contains no target mask or metric semantics. Analyses
+resolve it and enforce their own state requirements.
+
+```yaml
+annotations:
+  ordered_state_spaces:
+    stress_states:
+      column: treatment
+      state_order: ["00", "10", "01", "11"]
+      values:
+        "00": no stress
+        "10": ethanol
+        "01": ciprofloxacin
+        "11": ethanol plus ciprofloxacin
+      case_sensitive: true
+```
+
+See [Ordered state spaces](./ordered_state_spaces.md) for validation and
+ownership rules.
 
 ## Protocol block
 
@@ -98,7 +121,7 @@ Users do not select plugins directly. They choose:
 - optional export `include` / `exclude`
 - optional per-artifact `artifacts` config
 
-Unknown keys in the public config fail fast. `reader/v7` does not
+Unknown keys in the public config fail fast. `reader/v8` does not
 longer silently drops misspelled `protocol` keys, unknown plot/export output
 blocks, or malformed annotation collections.
 
@@ -155,7 +178,7 @@ protocol:
       design_id: REF
       stat: mean
     design_by: [design_id]
-    logic_map_ref: induction_logic
+    state_map_ref: induction_logic
   analysis:
     include_export: true
   outputs:

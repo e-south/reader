@@ -160,7 +160,7 @@ A = u10 - u01
 
 ```yaml
 plots:
-    - name: logic_map
+    - name: ordered_state_space
       module: logic_symmetry
       params:
         response_channel: "YFP/CFP"

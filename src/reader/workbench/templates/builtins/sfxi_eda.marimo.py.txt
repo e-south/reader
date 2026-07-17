@@ -335,15 +335,17 @@ def _(decl, mo, sfxi_step):
     sfxi_step_id = getattr(sfxi_step, "id", "")
     if not sfxi_step_cfg:
         mo.stop(True, mo.md(f"Step `{sfxi_step_id}` has no SFXI config (`with`)."))
-    logic_map_ref = sfxi_step_cfg.get("logic_map_ref")
-    if isinstance(logic_map_ref, str):
+    state_map_ref = sfxi_step_cfg.get("state_map_ref")
+    if isinstance(state_map_ref, str):
         try:
-            logic_spec = decl.experiment_semantics.annotations.resolve_logic_map(ref=logic_map_ref)
+            state_space = decl.experiment_semantics.annotations.resolve_ordered_state_space(ref=state_map_ref)
+            if state_space.state_ids != ("00", "10", "01", "11"):
+                raise ValueError("SFXI notebook requires state order 00, 10, 01, 11")
         except Exception as exc:
             mo.stop(True, mo.md(f"SFXI config error in `{sfxi_step_id}`: `{exc}`"))
         sfxi_step_cfg = dict(sfxi_step_cfg)
-        sfxi_step_cfg["treatment_map"] = dict(logic_spec.corners)
-        sfxi_step_cfg["treatment_case_sensitive"] = bool(logic_spec.case_sensitive)
+        sfxi_step_cfg["treatment_map"] = dict(state_space.source_values)
+        sfxi_step_cfg["treatment_case_sensitive"] = bool(state_space.case_sensitive)
     return sfxi_step_cfg, sfxi_step_id
 
 
@@ -653,7 +655,7 @@ def _(mo, sfxi_cfg, sfxi_condition_map, sfxi_condition_order, subset_pd, treatme
             True,
             mo.md(
                 "No rows for the selected design match the configured SFXI 00/10/01/11 treatment map. "
-                "Check `annotations.logic_maps` and the selected dataset."
+                "Check `annotations.ordered_state_spaces` and the selected dataset."
             ),
         )
     return sfxi_triptych_rows, sfxi_triptych_treatment_col

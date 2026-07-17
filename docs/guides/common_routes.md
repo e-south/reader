@@ -2,7 +2,7 @@
 doc_id: reader-common-routes
 surface: task-router
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Short command routes for common Reader discovery, preflight, execution, output, and recovery tasks.
 ---
 
@@ -85,5 +85,5 @@ Use JSON output when another tool needs stable machine-readable discovery, inspe
 - [Preflight, run, verify](./preflight_run_verify.md)
 - [Automation and JSON](./automation.md)
 - [CLI reference](../core/cli.md)
-- [Configuring `reader/v7`](../core/pipeline.md)
+- [Configuring `reader/v8`](../core/pipeline.md)
 - [End-to-end demo](./demo.md)

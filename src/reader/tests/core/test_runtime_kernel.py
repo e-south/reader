@@ -31,7 +31,7 @@ def test_bound_protocol_applies_executable_defaults() -> None:
             id="logic/sfxi_screen",
             inputs={
                 "target_time_h": 10.0,
-                "logic_map_ref": "induction_logic",
+                "state_map_ref": "induction_logic",
                 "reference": {"design_id": "CUSTOM"},
             },
         )
@@ -41,7 +41,7 @@ def test_bound_protocol_applies_executable_defaults() -> None:
 
     assert cfg["time_mode"] == "nearest"
     assert cfg["target_time_h"] == 10.0
-    assert cfg["logic_map_ref"] == "induction_logic"
+    assert cfg["state_map_ref"] == "induction_logic"
     assert cfg["reference"] == {"design_id": "CUSTOM", "stat": "median"}
     assert protocol.default_notebook_template == "notebook/sfxi_eda"
 

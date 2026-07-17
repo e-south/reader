@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-vec8-contract
 surface: library-reference
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Reader-owned SFXI vec8 input, selection, calculation, output, and failure contract.
 ---
 
@@ -40,16 +40,16 @@ The calculation requires:
 - the configured time column, normally `time`
 - `channel` and numeric `value`
 - every configured `design_by` column; the first must be `design_id`
-- a treatment column that matches the selected logic map
+- a treatment column that matches the selected ordered state space
 
-The protocol resolves `annotations.logic_maps.<name>` through
-`protocol.inputs.logic_map_ref`. The map must contain exactly `00`, `10`,
+The protocol resolves `annotations.ordered_state_spaces.<name>` through
+`protocol.inputs.state_map_ref`. The state space must declare exactly `00`, `10`,
 `01`, and `11`, with one treatment label per corner. Duplicate labels are
 rejected after the configured case-normalization rule.
 
-If both `treatment` and `treatment_alias` are present, the configured logic-map
+If both `treatment` and `treatment_alias` are present, the configured state-space
 column is preferred. Without an explicit choice, Reader selects the column
-that matches more map values and uses `treatment` to break a tie.
+that matches more state values and uses `treatment` to break a tie.
 
 An optional `sequence` column can be carried into vec8 output. It is experiment
 metadata; it is not downstream sequence authority.
@@ -165,7 +165,7 @@ provenance; use `reader export` when a workbook is required.
 
 Reader rejects, rather than infers around:
 
-- a logic map without exactly four unique corner labels
+- an ordered state space without exactly four unique corner labels
 - missing required columns or an invalid first `design_by` column
 - a configured channel or treatment map with no matching rows
 - an unavailable snapshot under the selected time mode

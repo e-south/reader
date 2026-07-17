@@ -173,7 +173,7 @@ def test_logic_sfxi_triptych_reads_one_declared_candidate_binding_resource() -> 
 
     assert plot.reads["candidate_bindings"] == ResourceInputDecl(resource_id="promoter_candidate_bindings")
     assert "candidate_bindings_resource" not in plot.with_
-    assert plot.with_["logic_map_ref"] == "induction_logic"
+    assert plot.with_["state_map_ref"] == "induction_logic"
 
 
 def test_logic_sfxi_triptych_rejects_a_second_treatment_mapping() -> None:

@@ -2,7 +2,7 @@
 doc_id: reader-dop-operating-model
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Decision sequence, ownership boundaries, and stop conditions for a Reader Data Operations Plan.
 ---
 
@@ -22,7 +22,7 @@ document.
 
 | DOP concern | `reader` surface | Contract |
 | --- | --- | --- |
-| Requirements | Intake prompt, handoff notes, and experiment context | Capture why the data matters, who will consume it, and what ambiguity would make it unusable later. Do not store organization-wide requirements in `reader/v7`. |
+| Requirements | Intake prompt, handoff notes, and experiment context | Capture why the data matters, who will consume it, and what ambiguity would make it unusable later. Do not store organization-wide requirements in `reader/v8`. |
 | Design | Standard experiment layout, workbench architecture, and preflight/run/verify loop | Keep the operating path stable: `config.yaml`, `inputs/`, `notebooks/`, generated `outputs/`, and manifest-backed records. |
 | Configuration | DOP registry, protocol catalog, config files, sample maps, and canonical labels | Define data classes, protocol candidates, metadata minimums, naming expectations, and stop conditions in one owned place. |
 | Instructions | DOP guide pages, experiment bootstrap guide, repo-local skills, and CLI commands | Give humans and agents the shortest safe next step without duplicating every detail into one monolith. |
@@ -36,7 +36,7 @@ document.
 - `skills/reader-data-operations-plan/` owns agent routing for DOP
   classification and maintenance.
 - `src/reader/protocols/` owns executable assay semantics.
-- `reader/v7` config owns authored experiment intent, not lab-wide policy.
+- `reader/v8` config owns authored experiment intent, not lab-wide policy.
 - `outputs/manifests/records.json` owns generated evidence after execution.
 
 When a fact must be consumed by automation, put it in the registry first and
@@ -55,7 +55,7 @@ Use this order for a DOP change:
 4. Link from the overview or skill only when the route is recurring.
 5. Run the docs, skill, and targeted registry checks before broad tests.
 
-Do not use a DOP change to widen `reader/v7`, restore removed config keys, or
+Do not use a DOP change to widen `reader/v8`, restore removed config keys, or
 encode a guessed metadata interpretation. If a new assay needs different
 execution semantics, add or change a protocol after the intake contract is
 clear.

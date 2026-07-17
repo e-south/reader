@@ -2,7 +2,7 @@
 doc_id: reader-repo-change-gate
 surface: maintainer-runbook
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Minimum review and verification gate for tracked Reader code, docs, tests, and CLI changes.
 ---
 
@@ -30,7 +30,7 @@ Before finalizing a change:
 
 ## Non-Negotiable Invariants
 
-- Public config stays `reader/v7`.
+- Public config stays `reader/v8`.
 - Removed config keys do not return through aliases or shims.
 - Protocols own assay-facing semantics.
 - Plugins remain mechanical adapters, not the public UX.

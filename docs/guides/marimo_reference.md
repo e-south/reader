@@ -2,7 +2,7 @@
 doc_id: reader-marimo-reference
 surface: agent-reference
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-17
 summary: Reader-specific Marimo authoring, performance, accessibility, and validation contract.
 ---
 
@@ -15,7 +15,7 @@ Marimo component and API reference, use the
 
 For operator commands and template selection, start with
 [Running notebooks](./notebooks.md). For the files and records that notebooks
-consume, use [Configuring Reader v7](../core/pipeline.md).
+consume, use [Configuring Reader v8](../core/pipeline.md).
 
 ## Managed workflow
 

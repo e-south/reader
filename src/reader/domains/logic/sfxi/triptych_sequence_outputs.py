@@ -18,7 +18,7 @@ from reader.domains.promoter.candidate_bindings import (
 )
 from reader.errors import SFXIError
 
-TRIPTYCH_BUNDLE_CONTRACT_VERSION = "reader.sfxi_triptych_sequence_bundle.v2"
+TRIPTYCH_BUNDLE_CONTRACT_VERSION = "reader.sfxi_triptych_sequence_bundle.v3"
 _PUBLISH_KEYS = ("poster", "pdf", "index", "frames_dir", "manifest", "movie")
 
 
@@ -130,7 +130,7 @@ def manifest_payload(
         "reference_rows": [record for record in records if record.get("row_kind") == "reference"],
         "snapshot_target_time_h": float(cfg["snapshot_target_time_h"]),
         "treatment_contract": {
-            "logic_map_ref": str(cfg["logic_map_ref"]),
+            "state_map_ref": str(cfg["state_map_ref"]),
             "column": str(cfg["treatment_column"]),
             "corners": dict(cfg["treatment_map"]),
             "case_sensitive": bool(cfg["treatment_case_sensitive"]),

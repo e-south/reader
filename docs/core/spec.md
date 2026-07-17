@@ -2,7 +2,7 @@
 doc_id: reader-package-spec
 surface: architecture-reference
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-17
 summary: Detailed package map and implementation contracts beneath the top-level Reader architecture.
 ---
 
@@ -20,7 +20,7 @@ it to answer three questions quickly:
 `reader` stays legible when these layers remain separate:
 
 - Authoring contract:
-  [`reader/v7` config](./pipeline.md) in `experiments/<exp>/config.yaml`
+  [`reader/v8` config](./pipeline.md) in `experiments/<exp>/config.yaml`
 - Protocol semantics:
   [`src/reader/protocols/`](../../src/reader/protocols/)
 - Experiment-local semantics:
@@ -64,11 +64,12 @@ plugin wiring or internal graph structure.
 - [`src/reader/workbench/config/`](../../src/reader/workbench/config/)
   parses YAML and validates the wire schema only.
 - [`src/reader/workbench/decl/build.py`](../../src/reader/workbench/decl/build.py)
-  binds a `reader/v7` document to a protocol and produces the compiled
+  binds a `reader/v8` document to a protocol and produces the compiled
   workbench declaration.
 - [`src/reader/workbench/experiment/model.py`](../../src/reader/workbench/experiment/model.py)
   owns experiment-local semantics: protocol binding, annotations, resources,
-  layout, and the compiled protocol semantic program.
+  layout, ordered state-space resolution, and the compiled protocol semantic
+  program.
 - [`src/reader/workbench/dop/`](../../src/reader/workbench/dop/)
   owns the read-only Data Operations Plan overlay: data-class selection,
   metadata minimums, stop conditions, transfer rules, and readiness evidence
@@ -104,7 +105,7 @@ The canonical path is:
 More concretely:
 
 1. [`src/reader/workbench/config/load.py`](../../src/reader/workbench/config/load.py)
-   loads and validates `reader/v7`.
+   loads and validates `reader/v8`.
 2. [`src/reader/workbench/decl/build.py`](../../src/reader/workbench/decl/build.py)
    binds the protocol and stores the compiled semantic program on the
    experiment semantics object.
@@ -133,6 +134,8 @@ separate hardening concern.
 - `inspection/` is presentation-only. It should not recompile or “repair”
   semantic state.
 - Generated artifacts live under `outputs/` and are never the source of truth.
+- Ordered state spaces describe record identity only. Target masks, metric
+  formulas, and calibration stay outside Reader experiment annotations.
 - When docs name a code surface, prefer linking to the actual file or package so
   `tools/check_docs.py` can catch drift.
 

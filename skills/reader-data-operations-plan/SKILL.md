@@ -29,7 +29,7 @@ In scope:
 Out of scope:
 
 - organization-wide ELN/LIMS, archive, retention, or role-assignment policy
-- widening `reader/v7` without a separate code-change contract
+- widening `reader/v8` without a separate code-change contract
 - generic scientific result interpretation
 - hand-editing generated `experiments/**/outputs/`
 
@@ -96,7 +96,7 @@ Clarification policy:
 
 - Do not infer well identity, treatment meaning, channel semantics, control
   interpretation, or source provenance to make an experiment appear ready.
-- Do not treat DOP data classes as new `reader/v7` schema fields.
+- Do not treat DOP data classes as new `reader/v8` schema fields.
 - Do not duplicate the DOP registry into prose when automation needs the fact.
 - Do not copy generated outputs as source material for a new experiment.
 - Do not turn this skill into broad workbench gardening; route architecture

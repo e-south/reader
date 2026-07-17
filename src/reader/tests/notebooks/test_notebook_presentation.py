@@ -48,7 +48,7 @@ def test_experiment_display_title_from_config_checks_identity(tmp_path: Path) ->
     config_path.write_text(
         yaml.safe_dump(
             {
-                "schema": "reader/v7",
+                "schema": "reader/v8",
                 "experiment": {"id": "exp_alpha", "title": "Alpha screen"},
                 "protocol": {"id": "workbench/generic"},
             },
@@ -65,7 +65,7 @@ def test_experiment_display_title_from_config_checks_identity(tmp_path: Path) ->
 def test_experiment_display_title_from_config_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        """schema: reader/v7
+        """schema: reader/v8
 experiment:
   id: exp_alpha
   id: exp_beta
@@ -82,7 +82,7 @@ protocol:
 def test_experiment_display_title_from_config_accepts_verified_source_snapshot(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        """schema: reader/v7
+        """schema: reader/v8
 experiment:
   id: exp_alpha
   title: Alpha evidence

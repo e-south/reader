@@ -22,7 +22,7 @@ def test_repo_experiment_configs_omit_redundant_defaults(entry: RepoConfigEntry)
     data = entry.data
 
     assert "semantics" not in data, (
-        f"{config_path}: use annotations.collections / annotations.orders / annotations.logic_maps, not semantics"
+        f"{config_path}: use annotations collections, orders, or ordered_state_spaces; not semantics"
     )
     assert "assay" not in data, f"{config_path}: use annotations, not assay"
     assert data.get("paths") != DEFAULT_PATHS, f"{config_path}: omit default paths block"
