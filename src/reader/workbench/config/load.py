@@ -256,6 +256,8 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
         raise ConfigError("annotations.ordered_state_spaces must be a mapping")
     normalized_state_spaces: dict[str, dict[str, Any]] = {}
     for space_id, space_spec in state_spaces_raw.items():
+        if not isinstance(space_id, str) or not space_id or space_id != space_id.strip():
+            raise ConfigError("annotations.ordered_state_spaces keys must be non-empty, already-trimmed strings")
         context = f"annotations.ordered_state_spaces.{space_id}"
         if not isinstance(space_spec, dict):
             raise ConfigError(f"{context} must be a mapping")
@@ -266,17 +268,21 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
         state_order = space_spec.get("state_order")
         if not isinstance(state_order, list) or not state_order:
             raise ConfigError(f"{context}.state_order must be a non-empty list")
-        if any(not isinstance(state_id, str) or not state_id.strip() for state_id in state_order):
-            raise ConfigError(f"{context}.state_order must contain non-empty strings")
-        normalized_state_order = [state_id.strip() for state_id in state_order]
+        if any(
+            not isinstance(state_id, str) or not state_id or state_id != state_id.strip() for state_id in state_order
+        ):
+            raise ConfigError(f"{context}.state_order must contain non-empty, already-trimmed strings")
+        normalized_state_order = list(state_order)
         if len(set(normalized_state_order)) != len(normalized_state_order):
             raise ConfigError(f"{context} state ids must be unique")
         values = space_spec.get("values")
         if not isinstance(values, dict) or not values:
             raise ConfigError(f"{context}.values must be a non-empty mapping")
+        if any(not isinstance(state_id, str) for state_id in values):
+            raise ConfigError(f"{context}.values keys must be strings")
         if any(not isinstance(value, str) or not value.strip() for value in values.values()):
             raise ConfigError(f"{context}.values must map state ids to non-empty strings")
-        normalized_values = {str(state_id): value for state_id, value in values.items()}
+        normalized_values = dict(values)
         if set(normalized_values) != set(normalized_state_order):
             raise ConfigError(f"{context}.values must have exactly the ids declared by state_order")
         case_sensitive = space_spec.get("case_sensitive", True)
@@ -289,7 +295,7 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
         if len(set(comparison_values)) != len(comparison_values):
             sensitivity = "true" if case_sensitive else "false"
             raise ConfigError(f"{context} source values must be unique under case_sensitive={sensitivity}")
-        normalized_state_spaces[str(space_id)] = {
+        normalized_state_spaces[space_id] = {
             "column": column.strip(),
             "state_order": normalized_state_order,
             "values": normalized_values,

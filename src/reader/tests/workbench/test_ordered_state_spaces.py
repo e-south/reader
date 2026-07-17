@@ -68,6 +68,64 @@ def test_ordered_state_space_rejects_duplicate_state_ids(tmp_path: Path) -> None
         load_models(path)
 
 
+@pytest.mark.parametrize("space_id", ["", " stress_states ", 7])
+def test_ordered_state_space_rejects_nonexact_space_ids(tmp_path: Path, space_id: object) -> None:
+    data = _config(state_order=["off"], values={"off": "none"})
+    space = data["annotations"]["ordered_state_spaces"].pop("stress_states")
+    data["annotations"]["ordered_state_spaces"] = {space_id: space}
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="keys must be non-empty, already-trimmed strings"):
+        load_models(path)
+
+
+def test_ordered_state_space_rejects_space_ids_that_collide_when_stringified(tmp_path: Path) -> None:
+    data = _config(state_order=["off"], values={"off": "none"})
+    space = data["annotations"]["ordered_state_spaces"].pop("stress_states")
+    data["annotations"]["ordered_state_spaces"] = {
+        7: space,
+        "7": space,
+    }
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="keys must be non-empty, already-trimmed strings"):
+        load_models(path)
+
+
+def test_ordered_state_space_rejects_nonstring_value_keys(tmp_path: Path) -> None:
+    data = _config(state_order=["0"], values={"0": "none"})
+    data["annotations"]["ordered_state_spaces"]["stress_states"]["values"] = {0: "none"}
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="values keys must be strings"):
+        load_models(path)
+
+
+def test_ordered_state_space_rejects_value_keys_that_collide_when_stringified(tmp_path: Path) -> None:
+    data = _config(state_order=["0"], values={"0": "none"})
+    data["annotations"]["ordered_state_spaces"]["stress_states"]["values"] = {
+        0: "first",
+        "0": "second",
+    }
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(ConfigError, match="values keys must be strings"):
+        load_models(path)
+
+
+def test_ordered_state_space_rejects_state_ids_that_require_trimming(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        _config(
+            state_order=[" off "],
+            values={"off": "none"},
+        ),
+    )
+
+    with pytest.raises(ConfigError, match="state_order must contain non-empty, already-trimmed strings"):
+        load_models(path)
+
+
 def test_ordered_state_space_rejects_case_insensitive_source_collisions(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,
