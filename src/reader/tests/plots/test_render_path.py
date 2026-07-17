@@ -128,6 +128,23 @@ class _DummyDescribedPlot(FigurePlotPlugin):
         ]
 
 
+class _DummyUndescribedMultiPlot(FigurePlotPlugin):
+    ConfigModel = _Cfg
+
+    @classmethod
+    def input_ports(cls):
+        return {"df": dataframe_input("df", "tidy.v1")}
+
+    def render(self, ctx, inputs, cfg):
+        del ctx, inputs, cfg
+        figure, axis = plt.subplots()
+        axis.plot([0.0, 1.0], [1.0, 0.0])
+        return [
+            PlotFigure(fig=figure, filename="generic_pair", ext="pdf"),
+            PlotFigure(fig=figure, filename="generic_pair", ext="png"),
+        ]
+
+
 def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin_descriptions(tmp_path: Path) -> None:
     _DummyPlot.render_called = False
     outputs = tmp_path / "outputs"
@@ -177,6 +194,11 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
                     plugin="plot/dummy_described",
                     reads={"df": RecordInputDecl(record_id="raw/df")},
                 ),
+                PluginStepDecl(
+                    id="generic_pair",
+                    plugin="plot/dummy_undescribed_multi",
+                    reads={"df": RecordInputDecl(record_id="raw/df")},
+                ),
             )
         ),
         exports=SurfaceDecl(
@@ -204,6 +226,17 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
             plugin_id="plot/dummy_described",
             semantics=PluginSemantics(domain="generic", family="test_plot", summary="Render two test plot files."),
             plugin_cls=_DummyDescribedPlot,
+        )
+    )
+    reg.register(
+        build_plugin_asset(
+            plugin_id="plot/dummy_undescribed_multi",
+            semantics=PluginSemantics(
+                domain="generic",
+                family="test_plot",
+                summary="Render one test plot in multiple formats.",
+            ),
+            plugin_cls=_DummyUndescribedMultiPlot,
         )
     )
     reg.register(
@@ -248,5 +281,13 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
         "Reporter kinetics over assay time."
     )
     assert custom_record.description_for(outputs / "plots" / "custom_summary.pdf") == ("Endpoint summary by treatment.")
+    generic_pair_record = latest["plot:generic_pair"]
+    assert generic_pair_record.description == "Render one test plot in multiple formats."
+    assert generic_pair_record.description_for(outputs / "plots" / "generic_pair.pdf") == (
+        "Render one test plot in multiple formats."
+    )
+    assert generic_pair_record.description_for(outputs / "plots" / "generic_pair.png") == (
+        "Render one test plot in multiple formats."
+    )
     assert plot_path.exists()
     assert (outputs / "exports" / "dummy_export.csv").exists()

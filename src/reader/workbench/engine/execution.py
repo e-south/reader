@@ -107,20 +107,15 @@ def _persist_file_bundle_record(
             path_descriptions = tuple(
                 PathDescription(path=path, description=protocol_figure_description) for path in record_files
             )
-        elif explicit_descriptions:
-            path_descriptions = tuple(
-                PathDescription(
-                    path=_record_output_path(item.path, outputs_dir=ctx.outputs_dir),
-                    description=item.description,
-                )
-                for item in explicit_descriptions
-            )
-        elif len(record_files) == 1:
-            path_descriptions = (PathDescription(path=record_files[0], description=description),)
         else:
-            raise ExecutionError(
-                f"plots {step.id}: multiple files require an exact protocol figure summary or producer-supplied "
-                "PathDescription entries"
+            explicit_by_path: dict[Path, str] = {}
+            for item in explicit_descriptions:
+                record_path = _record_output_path(item.path, outputs_dir=ctx.outputs_dir)
+                if record_path in explicit_by_path:
+                    raise ExecutionError(f"plots {step.id}: duplicate descriptions for {record_path}")
+                explicit_by_path[record_path] = item.description
+            path_descriptions = tuple(
+                PathDescription(path=path, description=explicit_by_path.get(path, description)) for path in record_files
             )
     store.append_file_bundle(
         producer_kind=producer_kind,
