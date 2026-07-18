@@ -24,11 +24,11 @@ def tidy_kinetic_blocks(
     sheet_name: str,
     channels: Sequence[str] | None,
     channel_map_ci: Mapping[str, str],
+    map_free_raw_by_channel: dict[str, tuple[str, str, str]],
 ) -> pd.DataFrame:
     logger = logging.getLogger("reader")
     raw_to_resolved: dict[str, str] = {}
     raw_to_canonical: dict[str, str] = {}
-    map_free_raw_by_channel: dict[str, tuple[str, str]] = {}
 
     def row_has(frame: pd.DataFrame, index: int, pattern: str) -> bool:
         return frame.iloc[index].astype(str).str.contains(pattern, case=False, na=False).any()
@@ -71,10 +71,12 @@ def tidy_kinetic_blocks(
             if previous_raw is not None and previous_raw[0] != normalized_canonical:
                 raise ValueError(
                     f"Ambiguous map-free kinetic channel {channel!r} in sheet {sheet_name!r}: "
-                    f"raw labels {previous_raw[1]!r} and {canonical!r} resolve to the same declared channel; "
+                    f"raw labels {previous_raw[1]!r} from sheet {previous_raw[2]!r} and "
+                    f"{canonical!r} from sheet {sheet_name!r} resolve to the same declared channel; "
                     "provide channel_map to select raw labels explicitly"
                 )
-            map_free_raw_by_channel[channel] = (normalized_canonical, canonical)
+            if previous_raw is None:
+                map_free_raw_by_channel[channel] = (normalized_canonical, canonical, sheet_name)
 
         raw_to_canonical.setdefault(raw_channel, canonical)
         previous = raw_to_resolved.get(raw_channel)

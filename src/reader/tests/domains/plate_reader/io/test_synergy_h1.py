@@ -16,6 +16,13 @@ def _write_workbook(path: Path, rows: list[list[object]], *, sheet_name: str = "
     return path
 
 
+def _write_multi_sheet_workbook(path: Path, sheets: dict[str, list[list[object]]]) -> Path:
+    with pd.ExcelWriter(path) as writer:
+        for sheet_name, rows in sheets.items():
+            pd.DataFrame(rows).to_excel(writer, sheet_name=sheet_name, header=False, index=False)
+    return path
+
+
 def _snapshot_rows(
     *,
     first_label: object = "OD600:600",
@@ -323,6 +330,27 @@ def test_kinetic_without_map_rejects_multiple_raw_labels_for_one_base_channel(tm
     with pytest.raises(
         ValueError,
         match=r"Ambiguous map-free kinetic channel 'YFP'.*'YFP:500,530'.*'YFP:510,540'.*channel_map",
+    ):
+        parse_kinetic_only(workbook, channels=["YFP"])
+
+
+def test_kinetic_without_map_rejects_distinct_raw_labels_across_workbook_sheets(tmp_path: Path) -> None:
+    first_rows = _kinetic_rows(value="1.0")
+    first_rows[2] = ["YFP:500,530"]
+    second_rows = _kinetic_rows(value="2.0")
+    second_rows[1] = ["Time", "13:00:00"]
+    second_rows[2] = ["YFP:510,540"]
+    workbook = _write_multi_sheet_workbook(
+        tmp_path / "kinetic.xlsx",
+        {"First": first_rows, "Second": second_rows},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Ambiguous map-free kinetic channel 'YFP'.*'YFP:500,530'.*sheet 'First'.*"
+            r"'YFP:510,540'.*sheet 'Second'.*channel_map"
+        ),
     ):
         parse_kinetic_only(workbook, channels=["YFP"])
 

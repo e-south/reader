@@ -140,6 +140,7 @@ def parse_snapshot_and_timeseries(
     require(channels or channel_map_ci, "Provide either 'channels' or 'channel_map'")
 
     frames: list[pd.DataFrame] = []
+    map_free_raw_by_channel: dict[str, tuple[str, str, str]] = {}
     with pd.ExcelFile(workbook) as excel:
         sheets = _selected_sheets(excel, sheet_names)
         elapsed_by_sheet = _elapsed_hours_by_sheet(excel, sheets)
@@ -177,6 +178,7 @@ def parse_snapshot_and_timeseries(
                         sheet_name=sheet,
                         channels=channels,
                         channel_map_ci=channel_map_ci,
+                        map_free_raw_by_channel=map_free_raw_by_channel,
                     )
                 )
 
@@ -232,6 +234,7 @@ def parse_kinetic_only(
     require(channels or channel_map_ci, "Provide either 'channels' or 'channel_map'")
 
     frames: list[pd.DataFrame] = []
+    map_free_raw_by_channel: dict[str, tuple[str, str, str]] = {}
     with pd.ExcelFile(workbook) as excel:
         sheets = _selected_sheets(excel, sheet_names)
         elapsed_by_sheet = _elapsed_hours_by_sheet(excel, sheets)
@@ -252,6 +255,7 @@ def parse_kinetic_only(
                     sheet_name=sheet,
                     channels=channels,
                     channel_map_ci=channel_map_ci,
+                    map_free_raw_by_channel=map_free_raw_by_channel,
                 )
             )
 
