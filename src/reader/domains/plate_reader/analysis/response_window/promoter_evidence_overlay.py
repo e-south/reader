@@ -11,7 +11,8 @@ from pathlib import Path
 
 from .provenance import sha256_file
 
-OBJECTIVE_OVERLAY_SCHEMA_VERSION = "reader.response_window.objective_display_overlay.v1"
+OBJECTIVE_OVERLAY_SCHEMA_VERSION = "reader.response_window.objective_display_overlay.v2"
+OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH = 40
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class ObjectiveDisplayOverlay:
     path: Path
     manifest_sha256: str
     objective_id: str
+    objective_display_label: str
     claim_status: str
     experiment_id: str
     reader_design_id: str
@@ -47,6 +49,7 @@ def load_objective_display_overlay(path: Path) -> ObjectiveDisplayOverlay:
             "schema_version",
             "created_at",
             "objective_id",
+            "objective_display_label",
             "claim_status",
             "selection",
             "components",
@@ -56,6 +59,7 @@ def load_objective_display_overlay(path: Path) -> ObjectiveDisplayOverlay:
         raise ValueError(f"objective overlay must use {OBJECTIVE_OVERLAY_SCHEMA_VERSION!r}.")
     _created_at(payload["created_at"])
     objective_id = _nonempty(payload["objective_id"], context="objective overlay.objective_id")
+    objective_display_label = _objective_display_label(payload["objective_display_label"])
     selection = _exact_mapping(
         payload["selection"],
         context="objective overlay.selection",
@@ -64,11 +68,12 @@ def load_objective_display_overlay(path: Path) -> ObjectiveDisplayOverlay:
     components = _components(payload["components"])
     claim_status = _nonempty(payload["claim_status"], context="objective overlay.claim_status")
     if claim_status != "screen_only":
-        raise ValueError("objective overlay v1 supports screen_only evidence only.")
+        raise ValueError("objective overlay v2 supports screen_only evidence only.")
     return ObjectiveDisplayOverlay(
         path=overlay_path,
         manifest_sha256=sha256_file(overlay_path),
         objective_id=objective_id,
+        objective_display_label=objective_display_label,
         claim_status=claim_status,
         experiment_id=_nonempty(selection["experiment_id"], context="objective overlay.selection.experiment_id"),
         reader_design_id=_nonempty(
@@ -126,6 +131,19 @@ def _finite(value: object, *, context: str) -> float:
     return float(value)
 
 
+def _objective_display_label(value: object) -> str:
+    context = "objective overlay.objective_display_label"
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{context} must be a non-empty string.")
+    text = value.strip()
+    if value != text or not value.isprintable() or len(text) > OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH:
+        raise ValueError(
+            f"{context} must be a trimmed, printable, single-line string of at most "
+            f"{OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH} characters."
+        )
+    return text
+
+
 def _created_at(value: object) -> None:
     text = _nonempty(value, context="objective overlay.created_at")
     try:
@@ -137,6 +155,7 @@ def _created_at(value: object) -> None:
 
 
 __all__ = [
+    "OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH",
     "OBJECTIVE_OVERLAY_SCHEMA_VERSION",
     "ObjectiveComponent",
     "ObjectiveDisplayOverlay",

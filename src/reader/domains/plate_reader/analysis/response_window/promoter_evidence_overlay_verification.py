@@ -5,7 +5,10 @@ from __future__ import annotations
 import math
 import re
 
-from .promoter_evidence_overlay import OBJECTIVE_OVERLAY_SCHEMA_VERSION
+from .promoter_evidence_overlay import (
+    OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH,
+    OBJECTIVE_OVERLAY_SCHEMA_VERSION,
+)
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -18,6 +21,7 @@ def verify_overlay_record(value: object, *, claim_status: str, selection: dict[s
     fields = {
         "schema_version",
         "objective_id",
+        "objective_display_label",
         "claim_status",
         "experiment_id",
         "reader_design_id",
@@ -35,6 +39,11 @@ def verify_overlay_record(value: object, *, claim_status: str, selection: dict[s
         or not _is_sha256(value["manifest_sha256"])
     ):
         raise ValueError("promoter-evidence objective overlay identity or claim status is invalid.")
+    if not _is_objective_display_label(value["objective_display_label"]):
+        raise ValueError(
+            "promoter-evidence objective overlay display label must be a trimmed, printable, "
+            f"single-line string of at most {OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH} characters."
+        )
     if (
         value["experiment_id"] != selection["experiment_id"]
         or value["reader_design_id"] != selection["design_id"]
@@ -72,6 +81,16 @@ def _is_sha256(value: object) -> bool:
 
 def _is_nonempty(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _is_objective_display_label(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and value == value.strip()
+        and bool(value)
+        and value.isprintable()
+        and len(value) <= OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH
+    )
 
 
 def _is_finite(value: object) -> bool:

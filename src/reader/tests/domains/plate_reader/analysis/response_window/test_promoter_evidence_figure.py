@@ -17,6 +17,7 @@ from reader.domains.promoter import sequence_panel as sequence_panel_module
 from reader.domains.promoter.candidate_bindings import (
     PromoterCandidateBinding,
 )
+from reader.response_window_review import OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH
 from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_overlay import (
     _write_overlay,
 )
@@ -109,28 +110,29 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         assert "Event-time sensitivity" in handoff_notes
         assert "central 1/8 bounded" in handoff_notes
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
-        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v3"
+        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v4"
     finally:
         plt.close(figure)
 
 
 @pytest.mark.parametrize(
-    ("objective_id", "expected_label"),
+    ("objective_id", "objective_display_label"),
     [
         ("response_magnitude_feasibility_v1", "RMF"),
-        ("multistate_response_behavior_v1", "multistate response behavior v1"),
+        ("multistate_response_behavior_v1", "MSRB"),
     ],
 )
 def test_promoter_evidence_figure_labels_configured_raw_objective_values_as_screen_only(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     objective_id: str,
-    expected_label: str,
+    objective_display_label: str,
 ) -> None:
     monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
     overlay_path = _write_overlay(tmp_path)
     payload = json.loads(overlay_path.read_text(encoding="utf-8"))
     payload["objective_id"] = objective_id
+    payload["objective_display_label"] = objective_display_label
     overlay_path.write_text(json.dumps(payload), encoding="utf-8")
     overlay = load_objective_display_overlay(overlay_path)
 
@@ -149,7 +151,8 @@ def test_promoter_evidence_figure_labels_configured_raw_objective_values_as_scre
 
     try:
         text = "\n".join(item.get_text() for item in figure.axes[6].texts)
-        assert f"{expected_label} raw components · screen only" in text
+        assert f"{objective_display_label} raw components · screen only" in text
+        assert objective_id.replace("_", " ") not in text
         assert "Response separation  0.8 raw log2 units" in text
         assert "ON fluorescence floor  0.3 pDual-10-relative log2 fluorescence" in text
         assert "calibrated score" not in text.lower()
@@ -164,6 +167,7 @@ def test_promoter_evidence_figure_fits_six_component_overlay(
     monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
     overlay_path = _write_overlay(tmp_path)
     payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+    payload["objective_display_label"] = "W" * OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH
     payload["components"].extend(
         {
             "component_id": f"screen_component_{index}",

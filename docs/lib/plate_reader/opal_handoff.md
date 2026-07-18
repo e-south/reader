@@ -51,7 +51,7 @@ artifact is available to any consumer that understands one of its typed alias
 namespaces. Reader verifies the artifact and uses its exact `reader.design_id`
 alias, candidate, sequence, and BaseRender projection without importing study
 internals. The resulting
-`reader.response_window.promoter_evidence_bundle.v3` is a display artifact for
+`reader.response_window.promoter_evidence_bundle.v4` is a display artifact for
 downstream notebooks; OPAL does not reconstruct its trajectories or resolve its
 candidate identity again.
 

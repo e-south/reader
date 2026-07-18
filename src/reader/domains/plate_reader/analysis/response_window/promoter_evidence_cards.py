@@ -101,12 +101,10 @@ def draw_provenance_axis(
         ),
     ]
     if objective_overlay is not None:
-        label = (
-            "RMF"
-            if objective_overlay.objective_id == "response_magnitude_feasibility_v1"
-            else objective_overlay.objective_id.replace("_", " ")
+        lines.append(
+            f"{objective_overlay.objective_display_label} raw components · "
+            f"{objective_overlay.claim_status.replace('_', ' ')}"
         )
-        lines.append(f"{label} raw components · {objective_overlay.claim_status.replace('_', ' ')}")
         lines.extend(
             f"{_compact(item.label, width=34)}  {item.value:g} {_compact(item.unit, width=54)}"
             for item in objective_overlay.components

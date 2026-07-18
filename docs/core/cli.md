@@ -41,11 +41,12 @@ These commands consume published experiment records. They do not bypass the
 normal experiment pipeline or infer treatment semantics from file names.
 The response service accepts `reader.response_window.request.v3`, publishes
 `reader.response_window.bundle.v5`, and publishes promoter evidence under
-`reader.response_window.promoter_evidence_bundle.v3`.
+`reader.response_window.promoter_evidence_bundle.v4`.
 Promoter evidence additionally consumes an explicit, study-owned candidate
 binding; Reader does not open the study candidate table or calculate an OPAL
-objective. Its optional v1 objective overlay accepts screen-only raw components
-and rejects production claims.
+objective. Its optional v2 objective overlay accepts screen-only raw components
+plus a study-supplied compact objective display label and rejects production
+claims.
 
 `uv run reader` commands accept a config path, experiment directory, or an index from `uv run reader ls` (shown below as `CONFIG|DIR|INDEX`).
 

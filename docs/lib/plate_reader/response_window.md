@@ -69,7 +69,7 @@ agents and automation.
 `promoter-evidence` first verifies the response-window bundle, then consumes a
 separate study-owned candidate-binding artifact. It publishes one white-canvas
 300-dpi PNG, one PDF, and a digest-bearing
-`reader.response_window.promoter_evidence_bundle.v3` manifest. Its verifier
+`reader.response_window.promoter_evidence_bundle.v4` manifest. Its verifier
 checks the claim boundary, source contract identities, artifact paths, byte
 counts, digests, and exact experiment/design/candidate/reduction selection
 parity independently.
@@ -376,13 +376,41 @@ file digest drift.
 
 ### Optional objective display overlay
 
-An optional `reader.response_window.objective_display_overlay.v1` JSON file may
+An optional `reader.response_window.objective_display_overlay.v2` JSON file may
 display study-supplied raw objective components and must declare
-`claim_status: screen_only`. Version 1 rejects calibrated scores, limiting
-components, promotion fields, and `production` claim status entirely. A future
-promoted display requires a new contract that verifies the referenced label and
-calibration artifacts. Reader displays the supplied raw values; it never
-derives, calibrates, or promotes them.
+`claim_status: screen_only`. The issuing study supplies both the stable
+`objective_id` and a compact `objective_display_label`; Reader does not map
+objective identities to acronyms or presentation names. The display label must
+be non-empty, printable, single-line, and at most 40 characters so the
+provenance card has a bounded publication layout. Version 2 rejects calibrated
+scores, limiting components, promotion fields, and `production` claim status
+entirely. Version 1 is not accepted. A future promoted display requires a new
+contract that verifies the referenced label and calibration artifacts. Reader
+displays the supplied raw values; it never derives, calibrates, or promotes
+them.
+
+```json
+{
+  "schema_version": "reader.response_window.objective_display_overlay.v2",
+  "created_at": "2026-07-18T00:00:00+00:00",
+  "objective_id": "example_objective_v1",
+  "objective_display_label": "Example objective",
+  "claim_status": "screen_only",
+  "selection": {
+    "experiment_id": "experiment-id",
+    "reader_design_id": "reader-design-id",
+    "reduction_id": "primary"
+  },
+  "components": [
+    {
+      "component_id": "response_component",
+      "label": "Response component",
+      "value": 0.8,
+      "unit": "raw log2 units"
+    }
+  ]
+}
+```
 
 ## Fail-fast boundary
 

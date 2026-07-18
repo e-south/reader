@@ -5,6 +5,7 @@ from reader.domains.plate_reader.analysis.response_window.promoter_evidence_bund
     PromoterEvidenceBundle,
 )
 from reader.domains.plate_reader.analysis.response_window.promoter_evidence_overlay import (
+    OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH,
     OBJECTIVE_OVERLAY_SCHEMA_VERSION,
     ObjectiveDisplayOverlay,
     load_objective_display_overlay,
@@ -41,6 +42,7 @@ from reader.runtime.response_window import (
 __all__ = [
     "REVIEW_VIEW_SPECS",
     "BINDING_SCHEMA_ID",
+    "OBJECTIVE_DISPLAY_LABEL_MAX_LENGTH",
     "OBJECTIVE_OVERLAY_SCHEMA_VERSION",
     "PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION",
     "VIEW_LABELS",

@@ -115,10 +115,12 @@ def test_build_promoter_evidence_records_a_study_supplied_screen_only_overlay(
     overlay = bundle.manifest["objective_overlay"]
     assert bundle.manifest["claim_status"] == "screen_only"
     assert overlay["objective_id"] == "response_magnitude_feasibility_v1"
+    assert overlay["objective_display_label"] == "RMF"
     assert overlay["manifest_sha256"] == sha256_file(overlay_path)
     assert set(overlay) == {
         "schema_version",
         "objective_id",
+        "objective_display_label",
         "claim_status",
         "experiment_id",
         "reader_design_id",
@@ -319,6 +321,9 @@ def test_promoter_evidence_verifier_rejects_artifact_and_claim_drift(
         ("selection_reduction", "selection reduction"),
         ("overlay_too_many", "between one and six"),
         ("overlay_empty_objective", "identity or claim status"),
+        ("overlay_empty_display_label", "display label"),
+        ("overlay_multiline_display_label", "display label"),
+        ("overlay_overlong_display_label", "display label"),
         ("overlay_empty_label", "component is malformed"),
     ],
 )
@@ -385,6 +390,12 @@ def test_promoter_evidence_verifier_rejects_semantic_manifest_drift(
         manifest["objective_overlay"]["components"] *= 7
     elif drift == "overlay_empty_objective":
         manifest["objective_overlay"]["objective_id"] = ""
+    elif drift == "overlay_empty_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = ""
+    elif drift == "overlay_multiline_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = "RMF\nscreen"
+    elif drift == "overlay_overlong_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = "x" * 41
     else:
         manifest["objective_overlay"]["components"][0]["label"] = ""
     bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")

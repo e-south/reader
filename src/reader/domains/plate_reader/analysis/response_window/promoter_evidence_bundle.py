@@ -224,6 +224,7 @@ def _overlay_record(overlay: ObjectiveDisplayOverlay) -> dict[str, object]:
     return {
         "schema_version": OBJECTIVE_OVERLAY_SCHEMA_VERSION,
         "objective_id": overlay.objective_id,
+        "objective_display_label": overlay.objective_display_label,
         "claim_status": overlay.claim_status,
         "experiment_id": overlay.experiment_id,
         "reader_design_id": overlay.reader_design_id,
