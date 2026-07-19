@@ -2,7 +2,7 @@
 doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-19
 summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
@@ -31,9 +31,9 @@ protocol:
     ingest:
       mode: mixed
       channel_map:
-        OD600: OD600
-        CFP: CFP
-        YFP: YFP
+        "OD600:600": OD600
+        "CFP:433,475": CFP
+        "YFP:500,530": YFP
     fold_change:
       report_times: [8.0, 14.0]
 
@@ -42,6 +42,10 @@ resources:
     kind: file
     path: ./inputs/metadata.xlsx
 ```
+
+`channel_map` keys are exact canonical channel labels from the Synergy export.
+Keep wavelength suffixes when the workbook supplies them; the values are the
+stable Reader channel names used by downstream analyses.
 
 ## Top-level keys
 
@@ -134,9 +138,9 @@ protocol:
     ingest:
       mode: mixed
       channel_map:
-        OD600: OD600
-        CFP: CFP
-        YFP: YFP
+        "OD600:600": OD600
+        "CFP:433,475": CFP
+        "YFP:500,530": YFP
       sheet_names: ["Plate 1 - Sheet1", "Plate 2 - Sheet1"]
     fold_change:
       report_times: [8.0, 14.0]
