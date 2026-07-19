@@ -58,6 +58,34 @@ def test_response_window_verify_emits_bundle_contract(monkeypatch, tmp_path: Pat
     assert payload["counts"] == {"experiments": 1, "plots": 5}
 
 
+def test_response_window_build_rejects_invalid_format_before_publication(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "response-window-bundle"
+
+    def _publish(**kwargs):
+        out_dir = kwargs["out_dir"]
+        out_dir.mkdir()
+        return _bundle(out_dir)
+
+    monkeypatch.setattr(response_window_cli, "build_response_window_bundle", _publish)
+
+    invocation = CliRunner().invoke(
+        cli.app,
+        [
+            "response-window",
+            "build",
+            "request.yaml",
+            "--out-dir",
+            str(destination),
+            "--format",
+            "jsno",
+        ],
+    )
+
+    assert invocation.exit_code != 0
+    assert "format must be one of" in invocation.output
+    assert not destination.exists()
+
+
 def test_response_window_review_verifies_before_launch(monkeypatch, tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
     reader_root = tmp_path / "reader-project"
@@ -119,6 +147,41 @@ def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, t
     assert payload["selection"]["candidate_id"] == "candidate"
     assert payload["png"] == str(bundle.png_path)
     assert payload["pdf"] == str(bundle.pdf_path)
+
+
+def test_promoter_evidence_rejects_invalid_format_before_publication(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "promoter-evidence"
+
+    def _publish(**kwargs):
+        out_dir = kwargs["out_dir"]
+        out_dir.mkdir()
+        return _promoter_bundle(out_dir.parent)
+
+    monkeypatch.setattr(response_window_cli, "build_promoter_evidence_bundle", _publish)
+
+    invocation = CliRunner().invoke(
+        cli.app,
+        [
+            "response-window",
+            "promoter-evidence",
+            "response-bundle",
+            "candidate-bindings",
+            "--out-dir",
+            str(destination),
+            "--experiment-id",
+            "experiment",
+            "--design-id",
+            "design",
+            "--reduction-id",
+            "primary",
+            "--format",
+            "jsno",
+        ],
+    )
+
+    assert invocation.exit_code != 0
+    assert "format must be one of" in invocation.output
+    assert not destination.exists()
 
 
 def _preflight(tmp_path: Path) -> ResponseWindowPreflight:

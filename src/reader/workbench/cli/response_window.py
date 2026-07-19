@@ -82,6 +82,7 @@ def build(
         typer.Option("--format", metavar="FMT", help="Output format: table | json (default: table)."),
     ] = "table",
 ) -> None:
+    output_format = normalize_output_format(output_format)
     try:
         bundle = build_response_window_bundle(
             reader_root=reader_root,
@@ -161,6 +162,7 @@ def promoter_evidence(
         typer.Option("--format", metavar="FMT", help="Output format: table | json (default: table)."),
     ] = "table",
 ) -> None:
+    output_format = normalize_output_format(output_format)
     try:
         bundle = build_promoter_evidence_bundle(
             response_bundle_root=response_bundle_root,
