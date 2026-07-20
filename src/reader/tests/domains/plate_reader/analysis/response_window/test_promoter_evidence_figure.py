@@ -147,7 +147,8 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_wit
             assert family_box.y0 >= handoff_box.y0
             assert family_box.y1 <= handoff_box.y1
         data_boxes = [axis.get_window_extent(renderer) for axis in (growth, response, fluorescence, handoff)]
-        assert sequence.get_window_extent(renderer).height >= 225.0
+        sequence_height_fraction = sequence.get_window_extent(renderer).height / figure_box.height
+        assert 0.15 <= sequence_height_fraction <= 0.20
         assert max(box.width for box in data_boxes) - min(box.width for box in data_boxes) <= 1.0
         assert max(box.height for box in data_boxes) - min(box.height for box in data_boxes) <= 1.0
         handoff_data_box = data_boxes[-1]
