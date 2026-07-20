@@ -200,6 +200,7 @@ def prepare_event_table(
         pl.len().alias("row_count"),
         pl.struct(pivot_key_columns).n_unique().alias("unique_pivot_key_count"),
         pl.col("channel").unique().sort().implode().alias("channels"),
+        pl.col("channel").n_unique().over(event_identity_columns).min().alias("minimum_event_selected_channel_count"),
         *[pl.col(consistency_column).max() for consistency_column in metadata_consistency_columns.values()],
     ).collect()
     row_count = int(channel_profile.item(0, "row_count"))
@@ -229,6 +230,14 @@ def prepare_event_table(
         missing_channels = [channel for channel in selected_channels if channel not in present_channels]
         if missing_channels:
             raise CytometryAnalysisError("Missing channels after pivot: " + ", ".join(missing_channels) + ".")
+        minimum_channel_count = int(channel_profile.item(0, "minimum_event_selected_channel_count"))
+        if minimum_channel_count < len(selected_channels):
+            identity = ", ".join(event_identity_columns)
+            required_channels = ", ".join(selected_channels)
+            raise CytometryAnalysisError(
+                "Cytometry event data is missing selected channels within at least one event; "
+                f"each {identity} must contain all of: {required_channels}."
+            )
 
     return (
         query.select(projected_columns)

@@ -181,6 +181,21 @@ def test_prepare_event_table_rejects_metadata_drift_within_one_event() -> None:
         )
 
 
+def test_prepare_event_table_rejects_missing_selected_channel_within_one_event() -> None:
+    events = _tidy_events().filter(
+        ~(pl.col("sample_id").eq("s1") & pl.col("event_index").eq(0) & pl.col("channel").eq("mCherry-A"))
+    )
+
+    with pytest.raises(
+        CytometryAnalysisError,
+        match=r"missing selected channels.*sample_id.*event_index.*mCherry-A",
+    ):
+        prepare_event_table(
+            events.lazy(),
+            channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
+        )
+
+
 def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
     wide = prepare_event_table(
         _tidy_events(),
