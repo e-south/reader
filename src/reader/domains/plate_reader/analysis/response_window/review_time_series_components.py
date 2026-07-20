@@ -54,16 +54,21 @@ def style_trajectory_axis(
     uncertainty: float,
     selected: pd.Series,
     annotate_spans: bool = False,
+    show_event_uncertainty: bool = True,
 ) -> None:
-    axis.axvspan(-uncertainty, uncertainty, color="#9ca3af", alpha=0.20, zorder=1)
-    axis.axvspan(
+    if show_event_uncertainty:
+        event_span = axis.axvspan(-uncertainty, uncertainty, color="#9ca3af", alpha=0.20, zorder=1)
+        event_span.set_gid("event-time-uncertainty-window")
+    response_window = axis.axvspan(
         float(selected["window_start_event_h"]),
         float(selected["window_end_event_h"]),
         color="#f59e0b",
         alpha=0.11,
         zorder=1,
     )
-    axis.axvline(0.0, color="#111827", linewidth=0.9, zorder=3)
+    response_window.set_gid("selected-response-window")
+    event_line = axis.axvline(0.0, color="#111827", linewidth=0.9, zorder=3)
+    event_line.set_gid("recorded-event-time")
     axis.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, fontweight="semibold")
     axis.set_xlabel(f"Hours from {event_label.lower()}")
     axis.set_ylabel(ylabel)
@@ -76,7 +81,10 @@ def style_trajectory_axis(
                 Patch(facecolor="#f59e0b", alpha=0.28, edgecolor="none", label="Selected window"),
             ],
             loc="lower right",
-            frameon=False,
+            frameon=True,
+            framealpha=0.92,
+            facecolor="white",
+            edgecolor="#d1d5db",
             fontsize=LEGEND_SIZE,
             handlelength=1.0,
             handletextpad=0.45,

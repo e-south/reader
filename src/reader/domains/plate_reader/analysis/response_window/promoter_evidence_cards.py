@@ -1,9 +1,10 @@
-"""Compact header and shared legend for the promoter-evidence figure."""
+"""Compact shared legend for the promoter-evidence figure."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 from .plot_style import LEGEND_SIZE
 from .sources import STATE_ORDER
@@ -15,16 +16,26 @@ def draw_header_axis(
     *,
     state_labels: dict[str, object],
     reference_id: str,
+    window_start_h: float,
+    window_end_h: float,
 ) -> None:
     axis.set_axis_off()
     axis.set_gid("promoter-evidence-header")
     axis.legend(
-        handles=_figure_legend(state_labels=state_labels, reference_id=reference_id),
-        loc="upper center",
-        ncol=6,
+        handles=_figure_legend(
+            state_labels=state_labels,
+            reference_id=reference_id,
+            window_start_h=window_start_h,
+            window_end_h=window_end_h,
+        ),
+        loc="center",
+        ncol=7,
         frameon=False,
         fontsize=LEGEND_SIZE,
         borderaxespad=0,
+        columnspacing=1.0,
+        handlelength=1.8,
+        handletextpad=0.45,
     )
 
 
@@ -32,7 +43,9 @@ def _figure_legend(
     *,
     state_labels: dict[str, object],
     reference_id: str,
-) -> list[Line2D]:
+    window_start_h: float,
+    window_end_h: float,
+) -> list[Line2D | Patch]:
     handles = [
         Line2D(
             [],
@@ -63,7 +76,13 @@ def _figure_legend(
                 markerfacecolor="white",
                 linestyle="--",
                 linewidth=1.2,
-                label=f"{reference_id} anchor",
+                label=f"{reference_id} reference",
+            ),
+            Patch(
+                facecolor="#f59e0b",
+                alpha=0.28,
+                edgecolor="none",
+                label=f"{window_start_h:g}–{window_end_h:g} h summary window",
             ),
         )
     )

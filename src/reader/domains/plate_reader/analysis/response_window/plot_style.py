@@ -6,10 +6,12 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-AXIS_LABEL_SIZE = 10.0
-LEGEND_SIZE = 8.5
-PANEL_TITLE_SIZE = 11.0
-TICK_LABEL_SIZE = 10.0
+FIGURE_TITLE_SIZE = 18.0
+PANEL_TITLE_SIZE = 15.0
+AXIS_LABEL_SIZE = 12.5
+TICK_LABEL_SIZE = 12.0
+LEGEND_SIZE = 11.0
+HANDOFF_FAMILY_LABEL_SIZE = 10.5
 
 
 def style_data_axis(axis: plt.Axes, *, grid_axis: str | None = None) -> None:
@@ -58,6 +60,8 @@ def save_publication_figure(figure: plt.Figure, path: Path, *, dpi: int = 180) -
 
 __all__ = [
     "AXIS_LABEL_SIZE",
+    "FIGURE_TITLE_SIZE",
+    "HANDOFF_FAMILY_LABEL_SIZE",
     "LEGEND_SIZE",
     "PANEL_TITLE_SIZE",
     "TICK_LABEL_SIZE",

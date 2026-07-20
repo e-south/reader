@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import textwrap
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
 
 from .censor_display import annotate_bound_glyph
 from .plot_style import AXIS_LABEL_SIZE, PANEL_TITLE_SIZE, TICK_LABEL_SIZE, style_data_axis
@@ -71,8 +74,15 @@ def draw_trajectory_axis(
         uncertainty=uncertainty,
         selected=selected,
         annotate_spans=annotate_spans,
+        show_event_uncertainty=False,
     )
-    axis.set_title(title, loc="center", fontsize=PANEL_TITLE_SIZE, fontweight="semibold")
+    axis.set_title(
+        textwrap.fill(title, width=28),
+        loc="center",
+        fontsize=PANEL_TITLE_SIZE,
+        fontweight="normal",
+        linespacing=1.15,
+    )
     axis.set_box_aspect(1.0)
     _style_promoter_axis_text(axis)
 
@@ -83,6 +93,7 @@ def draw_eight_value_handoff_axis(
     selected: pd.Series,
     replicate_rows: pd.DataFrame,
 ) -> None:
+    axis.set_gid("promoter-evidence-response-window-phenotype")
     components = tuple((prefix, state) for prefix in ("r", "b") for state in STATE_ORDER)
     y = np.asarray((8.0, 7.0, 6.0, 5.0, 3.0, 2.0, 1.0, 0.0))
     values = np.asarray([selected[f"{prefix}{state}"] for prefix, state in components], dtype=float)
@@ -149,16 +160,46 @@ def draw_eight_value_handoff_axis(
         fontsize=9,
     )
     axis.set_ylim(-0.75, 8.75)
-    axis.set_xlabel("Window-reduced value (log₂ units)")
+    _set_phenotype_x_limits(
+        axis,
+        values=values,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        event=event,
+        replicate_rows=replicate_rows,
+    )
+    axis.set_xlabel("Reduced value (log₂ units)")
     axis.set_title(
-        "Eight-value response-window handoff",
+        "Response-window\nphenotype",
         loc="center",
         fontsize=PANEL_TITLE_SIZE,
-        fontweight="semibold",
+        fontweight="normal",
     )
     axis.set_box_aspect(1.0)
     style_data_axis(axis, grid_axis="x")
     _style_promoter_axis_text(axis)
+
+
+def _set_phenotype_x_limits(
+    axis: plt.Axes,
+    *,
+    values: np.ndarray,
+    ci_low: np.ndarray,
+    ci_high: np.ndarray,
+    event: np.ndarray,
+    replicate_rows: pd.DataFrame,
+) -> None:
+    replicate_values = pd.to_numeric(replicate_rows.get("value"), errors="coerce").to_numpy(dtype=float)
+    finite_replicates = replicate_values[np.isfinite(replicate_values)]
+    lower_candidates = [0.0, *ci_low.tolist(), *(values - event).tolist(), *finite_replicates.tolist()]
+    upper_candidates = [0.0, *ci_high.tolist(), *(values + event).tolist(), *finite_replicates.tolist()]
+    data_low = float(np.min(lower_candidates))
+    data_high = float(np.max(upper_candidates))
+    data_span = max(data_high - data_low, 1.0)
+    left = data_low - 0.08 * data_span
+    data_right = data_high + 0.08 * data_span
+    axis.set_xlim(left, data_right)
+    axis.xaxis.set_major_locator(MaxNLocator(nbins=4))
 
 
 def _style_promoter_axis_text(axis: plt.Axes) -> None:

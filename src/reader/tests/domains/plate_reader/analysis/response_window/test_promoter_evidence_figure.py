@@ -47,24 +47,29 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_wit
         assert header.get_gid() == "promoter-evidence-header"
         assert not header.texts
         assert [axis.get_title() for axis in (growth, response, fluorescence)] == [
-            "Growth trajectory across conditions",
-            "Reporter response across conditions",
-            "Fluorescence relative to pDual-10",
+            "Growth trajectory across\nconditions",
+            "Reporter response across\nconditions",
+            "Fluorescence relative to\npDual-10",
         ]
         assert all(not axis.get_title(loc="left") for axis in (growth, response, fluorescence))
         assert response.get_ylabel() == "log₂(YFP / CFP)"
         assert fluorescence.get_ylabel() == "log₂(YFP / OD600)"
         assert all(axis.get_box_aspect() == 1.0 for axis in (growth, response, fluorescence, handoff))
-        assert handoff.get_title() == "Eight-value response-window handoff"
+        assert handoff.get_title() == "Response-window\nphenotype"
         assert handoff.get_title(loc="left") == ""
-        assert handoff_families.get_gid() == "promoter-evidence-handoff-families"
-        assert sequence.get_title() == "Measured promoter sequence · spyP promoter"
+        assert handoff.get_gid() == "promoter-evidence-response-window-phenotype"
+        assert handoff_families.get_gid() == "promoter-evidence-response-window-phenotype-families"
+        assert sequence.get_title() == ""
         assert sequence.get_title(loc="left") == ""
         assert not any("Provenance and QC" in axis.get_title() for axis in figure.axes)
         assert handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
         assert handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
         assert handoff.findobj(lambda artist: artist.get_gid() == "censor-bound-r10")[0].get_text() == "≥"
         assert len(fluorescence.findobj(lambda artist: artist.get_gid() == "anchor-replicate-interval")) == 4
+        for axis in (growth, response, fluorescence):
+            assert axis.findobj(lambda artist: artist.get_gid() == "recorded-event-time")
+            assert axis.findobj(lambda artist: artist.get_gid() == "selected-response-window")
+            assert not axis.findobj(lambda artist: artist.get_gid() == "event-time-uncertainty-window")
         assert [tick.get_text() for tick in handoff.get_yticklabels()] == [
             "r₀₀",
             "r₁₀",
@@ -82,15 +87,17 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_wit
             assert not handoff.findobj(lambda artist, gid=f"replicate-values-b{state}": artist.get_gid() == gid)
             for prefix in ("r", "b"):
                 assert handoff.findobj(lambda artist, gid=f"handoff-summary-{prefix}{state}": artist.get_gid() == gid)
-        assert sequence.get_position().x0 > handoff.get_position().x1
-        assert handoff_families.get_position().x0 >= handoff.get_position().x1
-        assert sequence.get_position().x0 >= handoff_families.get_position().x1
+        assert sequence.get_position().y1 < min(handoff.get_position().y0, handoff_families.get_position().y0)
+        top_row_width = handoff.get_position().x1 - growth.get_position().x0
+        assert sequence.get_position().width >= 0.85 * top_row_width
+        assert sequence.get_position().x0 + sequence.get_position().width / 2.0 == pytest.approx(0.5, abs=0.02)
         assert abs(sequence.get_ylim()[1] - sequence.get_ylim()[0]) == 80
         assert mcolors.to_hex(figure.get_facecolor()) == "#ffffff"
         assert all(mcolors.to_hex(axis.get_facecolor()) == "#ffffff" for axis in figure.axes)
         assert figure._suptitle is not None
-        assert figure._suptitle.get_text() == "Promoter response evidence · 6–12 h log mean (primary)"
+        assert figure._suptitle.get_text() == "Promoter response evidence · spyP promoter · 6–12 h log mean (primary)"
         assert len(figure._suptitle.get_text()) < 100
+        assert figure._suptitle.get_fontweight() == "bold"
         figure.canvas.draw()
         renderer = figure.canvas.get_renderer()
         header_legend = header.get_legend()
@@ -101,58 +108,75 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_wit
             "Ciprofloxacin",
             "Ethanol + ciprofloxacin",
             "Selected design",
-            "pDual-10 anchor",
+            "pDual-10 reference",
+            "6–12 h summary window",
         }
+        assert {text.get_fontsize() for text in header_legend.get_texts()} == {11.0}
         assert growth.get_legend() is None
-        span_legend = response.get_legend()
-        assert span_legend is not None
-        assert [text.get_text() for text in span_legend.get_texts()] == [
-            "Event interval",
-            "Selected window",
-        ]
-        assert span_legend._loc == 4
+        assert response.get_legend() is None
         assert {
             tick.get_fontsize()
             for axis in (growth, response, fluorescence, handoff)
             for tick in (*axis.get_xticklabels(), *axis.get_yticklabels())
-        } == {10.0}
-        assert {axis.xaxis.label.get_fontsize() for axis in (growth, response, fluorescence, handoff)} == {10.0}
+        } == {12.0}
+        assert {axis.xaxis.label.get_fontsize() for axis in (growth, response, fluorescence, handoff)} == {12.5}
+        assert {axis.title.get_fontsize() for axis in (growth, response, fluorescence, handoff)} == {15.0}
+        assert {axis.title.get_fontweight() for axis in (growth, response, fluorescence, handoff)} == {"normal"}
+        assert figure._suptitle.get_fontsize() == pytest.approx(18.0)
         response_family = handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-response-label")
         fluorescence_family = handoff_families.findobj(
             lambda artist: artist.get_gid() == "handoff-family-fluorescence-label"
         )
         assert [text.get_text() for text in response_family] == ["Response rᵢ\nlog₂(YFP/CFP)"]
         assert [text.get_text() for text in fluorescence_family] == [
-            "Fluorescence bᵢ\nlog₂(YFP/OD600)\nrelative to\nsame-state\npDual-10"
+            "Signal bᵢ\nlog₂(YFP/OD600)\nrelative to\nsame-state\npDual-10"
         ]
-        assert {text.get_fontsize() for text in (*response_family, *fluorescence_family)} == {10.0}
+        assert {text.get_fontsize() for text in (*response_family, *fluorescence_family)} == {10.5}
         assert handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-response-bracket")
         assert handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-fluorescence-bracket")
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
-        assert len(figure.legends) == 1
-        handoff_legend = figure.legends[0]
-        assert [text.get_text() for text in handoff_legend.get_texts()] == [
-            "Observed response wells",
-            "Median + 90% bootstrap",
-            "Value range covering earliest/latest recorded stress-addition times",
-        ]
-        assert {text.get_fontsize() for text in handoff_legend.get_texts()} == {8.5}
-        legend_box = handoff_legend.get_window_extent(renderer)
+        assert not figure.legends
+        legend_box = header_legend.get_window_extent(renderer)
         figure_box = figure.get_window_extent(renderer)
-        handoff_box = handoff_families.get_window_extent(renderer)
+        handoff_box = handoff.get_window_extent(renderer)
+        family_box = handoff_families.get_window_extent(renderer)
+        header_legend_box = header_legend.get_window_extent(renderer)
+        suptitle_box = figure._suptitle.get_window_extent(renderer)
+        assert suptitle_box.x0 >= figure_box.x0
+        assert suptitle_box.x1 <= figure_box.x1
+        assert suptitle_box.y0 >= figure_box.y0
+        assert suptitle_box.y1 <= figure_box.y1
+        panel_title_boxes = [
+            axis.title.get_window_extent(renderer) for axis in (growth, response, fluorescence, handoff)
+        ]
+        for title_box in panel_title_boxes:
+            assert title_box.x0 >= figure_box.x0
+            assert title_box.x1 <= figure_box.x1
+            assert title_box.y0 >= figure_box.y0
+            assert title_box.y1 <= figure_box.y1
+            assert not title_box.overlaps(header_legend_box)
+            assert not title_box.overlaps(suptitle_box)
+        assert header_legend_box.y0 >= max(title_box.y1 for title_box in panel_title_boxes)
+        for left_index, left_box in enumerate(panel_title_boxes):
+            for right_box in panel_title_boxes[left_index + 1 :]:
+                assert not left_box.overlaps(right_box)
         for family_label in (*response_family, *fluorescence_family):
-            family_box = family_label.get_window_extent(renderer)
-            assert family_box.x0 >= handoff_box.x0
-            assert family_box.x1 <= handoff_box.x1
-            assert family_box.y0 >= handoff_box.y0
-            assert family_box.y1 <= handoff_box.y1
+            label_box = family_label.get_window_extent(renderer)
+            assert label_box.x0 >= family_box.x0
+            assert label_box.x1 <= family_box.x1
+            assert label_box.y0 >= family_box.y0
+            assert label_box.y1 <= family_box.y1
+        assert family_box.x0 >= handoff_box.x1
+        assert handoff.xaxis.label.get_position()[0] == pytest.approx(0.5)
+        for y_value in (0.0, 3.0, 5.0, 8.0):
+            handoff_y = handoff.transData.transform((0.0, y_value))[1]
+            family_y = handoff_families.transData.transform((0.0, y_value))[1]
+            assert family_y == pytest.approx(handoff_y, abs=1.0)
         data_boxes = [axis.get_window_extent(renderer) for axis in (growth, response, fluorescence, handoff)]
         sequence_height_fraction = sequence.get_window_extent(renderer).height / figure_box.height
-        assert 0.15 <= sequence_height_fraction <= 0.20
+        assert 0.24 <= sequence_height_fraction <= 0.36
         assert max(box.width for box in data_boxes) - min(box.width for box in data_boxes) <= 1.0
         assert max(box.height for box in data_boxes) - min(box.height for box in data_boxes) <= 1.0
-        handoff_data_box = data_boxes[-1]
-        assert 0.0 <= handoff_box.x0 - handoff_data_box.x1 <= 20.0
         assert legend_box.x0 >= figure_box.x0
         assert legend_box.x1 <= figure_box.x1
         assert legend_box.y0 >= figure_box.y0
@@ -242,7 +266,7 @@ def test_promoter_evidence_figure_layout_is_independent_of_overlay_component_cou
     try:
         figure.canvas.draw()
         assert len(figure.axes) == 7
-        assert figure.axes[-1].get_title() == "Measured promoter sequence · spyP promoter"
+        assert figure.axes[-1].get_title() == ""
     finally:
         plt.close(figure)
 
@@ -269,9 +293,10 @@ class _FakeBaseRender:
             ],
         }
         assert kwargs["adapter_kind"] == "densegen_tfbs"
-        assert kwargs["target_height_px"] == 480
-        image = np.full((80, 400, 4), 255, dtype=np.uint8)
-        image[20:60, 50:350, :3] = 0
+        assert kwargs["target_width_px"] == 3600
+        assert kwargs["target_height_px"] == 640
+        image = np.full((80, 450, 4), 255, dtype=np.uint8)
+        image[20:60, 50:400, :3] = 0
         return SimpleNamespace(
             image=image,
             diagnostics=SimpleNamespace(
@@ -284,7 +309,7 @@ class _FakeBaseRender:
                 feature_count=0,
                 strand_count=2,
                 legend_entries=(),
-                image_width_px=400,
+                image_width_px=450,
                 image_height_px=80,
             ),
         )

@@ -9,20 +9,19 @@ import pandas as pd
 from reader.domains.promoter.candidate_bindings import PromoterCandidateBinding
 from reader.domains.promoter.sequence_panel import render_candidate_sequence_panel
 
-from .plot_style import LEGEND_SIZE, PANEL_TITLE_SIZE, apply_publication_style
+from .plot_style import FIGURE_TITLE_SIZE, apply_publication_style
 from .promoter_evidence_bundle_contract import PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION
 from .promoter_evidence_cards import draw_header_axis
 from .promoter_evidence_components import (
     draw_eight_value_handoff_axis,
     draw_trajectory_axis,
 )
-from .promoter_evidence_handoff_annotations import (
-    draw_handoff_family_axis,
-    handoff_legend_handles,
-)
+from .promoter_evidence_handoff_annotations import draw_handoff_family_axis
 from .promoter_evidence_overlay import ObjectiveDisplayOverlay
 from .review_replicates import response_replicate_rows
 from .visual_labels import response_summary_label
+
+_PHENOTYPE_FAMILY_GUTTER_RATIO = 0.52
 
 
 def promoter_evidence_figure(
@@ -72,21 +71,26 @@ def promoter_evidence_figure(
         design_id=design_id,
         reduction_id=reduction_id,
     )
-    figure = plt.figure(figsize=(13.2, 9.5), layout="compressed")
+    figure = plt.figure(figsize=(16.0, 8.6), layout="compressed")
     figure.set_gid(PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION)
-    grid = figure.add_gridspec(3, 3, height_ratios=(0.30, 2.7, 2.7))
-    header_axis = figure.add_subplot(grid[0, :])
-    top_grid = grid[1, :].subgridspec(1, 3, width_ratios=(1.0, 1.0, 1.0), wspace=0.015)
+    grid = figure.add_gridspec(3, 1, height_ratios=(0.24, 2.85, 1.75))
+    header_axis = figure.add_subplot(grid[0, 0])
+    top_grid = grid[1, 0].subgridspec(
+        1,
+        5,
+        width_ratios=(1.0, 1.0, 1.0, 1.0, _PHENOTYPE_FAMILY_GUTTER_RATIO),
+        wspace=0.02,
+    )
     trajectories = [figure.add_subplot(top_grid[0, index]) for index in range(3)]
-    lower_grid = grid[2, :].subgridspec(1, 3, width_ratios=(1.0, 0.30, 1.70), wspace=0.0)
-    handoff_axis = figure.add_subplot(lower_grid[0, 0])
-    handoff_axis.set_anchor("E")
-    handoff_family_axis = figure.add_subplot(lower_grid[0, 1])
-    sequence_axis = figure.add_subplot(lower_grid[0, 2])
+    handoff_axis = figure.add_subplot(top_grid[0, 3])
+    handoff_family_axis = figure.add_subplot(top_grid[0, 4])
+    sequence_axis = figure.add_subplot(grid[2, 0])
     draw_header_axis(
         header_axis,
         state_labels=state_labels,
         reference_id=reference_id,
+        window_start_h=float(selected["window_start_event_h"]),
+        window_end_h=float(selected["window_end_event_h"]),
     )
     specs = (
         ("growth", "Growth trajectory across conditions", str(channels["growth"])),
@@ -97,7 +101,7 @@ def promoter_evidence_figure(
             f"log₂({_spaced(channels['magnitude_ratio'])})",
         ),
     )
-    for index, (axis, (signal_kind, title, ylabel)) in enumerate(zip(trajectories, specs, strict=True)):
+    for axis, (signal_kind, title, ylabel) in zip(trajectories, specs, strict=True):
         draw_trajectory_axis(
             axis,
             traces=experiment_traces,
@@ -110,35 +114,25 @@ def promoter_evidence_figure(
             event_label=str(display["event_label"]),
             title=title,
             ylabel=ylabel,
-            annotate_spans=index == 1,
+            annotate_spans=False,
         )
     draw_eight_value_handoff_axis(
         handoff_axis,
         selected=selected,
         replicate_rows=replicate_rows,
     )
-    draw_handoff_family_axis(handoff_family_axis)
-    diagnostics = _draw_sequence_axis(sequence_axis, binding=binding)
-    figure.legend(
-        handles=handoff_legend_handles(
-            replicate_stat=str(selected["replicate_stat"]),
-            confidence_level=confidence_level,
-            event_label=str(display["event_label"]),
-        ),
-        loc="outside lower center",
-        ncol=3,
-        frameon=False,
-        fontsize=LEGEND_SIZE,
-        columnspacing=1.6,
-        handletextpad=0.55,
+    draw_handoff_family_axis(
+        handoff_family_axis,
+        width_ratio=_PHENOTYPE_FAMILY_GUTTER_RATIO,
     )
+    diagnostics = _draw_sequence_axis(sequence_axis, binding=binding)
     figure.suptitle(
-        f"Promoter response evidence · {_title_response_summary(selected)}",
-        fontsize=13,
-        fontweight="semibold",
+        f"Promoter response evidence · {_sequence_title(binding=binding)} · {_title_response_summary(selected)}",
+        fontsize=FIGURE_TITLE_SIZE,
+        fontweight="bold",
     )
     figure = apply_publication_style(figure)
-    figure.get_layout_engine().set(h_pad=0.025, w_pad=0.025, hspace=0.04, wspace=0.04)
+    figure.get_layout_engine().set(h_pad=0.02, w_pad=0.01, hspace=0.025, wspace=0.015)
     return figure, diagnostics
 
 
@@ -166,22 +160,16 @@ def _draw_sequence_axis(axis: plt.Axes, *, binding: PromoterCandidateBinding) ->
     rendered = render_candidate_sequence_panel(
         binding,
         style_profile="promoter_compact_slide.v1",
-        target_width_px=2200,
-        target_height_px=480,
+        target_width_px=3600,
+        target_height_px=640,
         vertical_anchor="center",
         canvas_top_pad_px=0,
     )
     diagnostics = rendered.diagnostics
     image = np.asarray(rendered.image)
     axis.imshow(image)
+    axis.set_anchor("C")
     axis.set_axis_off()
-    axis.set_title(
-        f"Measured promoter sequence · {_sequence_title(binding=binding)}",
-        loc="center",
-        fontsize=PANEL_TITLE_SIZE,
-        fontweight="semibold",
-        pad=5,
-    )
     return diagnostics
 
 
