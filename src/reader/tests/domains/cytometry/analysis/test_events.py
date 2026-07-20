@@ -144,6 +144,20 @@ def test_prepare_event_table_fails_fast_when_a_selected_channel_is_absent() -> N
         )
 
 
+def test_prepare_event_table_rejects_duplicate_event_channel_rows() -> None:
+    events = _tidy_events()
+    duplicated = pl.concat((events, events.head(1)))
+
+    with pytest.raises(
+        CytometryAnalysisError,
+        match=r"duplicate pivot key rows.*sample_id.*event_index.*channel",
+    ):
+        prepare_event_table(
+            duplicated.lazy(),
+            channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
+        )
+
+
 def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
     wide = prepare_event_table(
         _tidy_events(),

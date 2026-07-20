@@ -171,6 +171,7 @@ def prepare_event_table(
 
     metadata_columns = [column for column in _METADATA_COLUMNS if column in available]
     index_columns = ["sample_id", "event_index", *metadata_columns]
+    pivot_key_columns = [*index_columns, "channel"]
     projected_columns = [*index_columns, "channel", "value"]
     query = _as_lazy(frame).select(projected_columns).filter(pl.col("channel").is_in(selected_channels))
     for column, value in (
@@ -185,9 +186,19 @@ def prepare_event_table(
 
     channel_profile = query.select(
         pl.len().alias("row_count"),
+        pl.struct(pivot_key_columns).n_unique().alias("unique_pivot_key_count"),
         pl.col("channel").unique().sort().implode().alias("channels"),
     ).collect()
-    if channel_profile.item(0, "row_count"):
+    row_count = int(channel_profile.item(0, "row_count"))
+    unique_pivot_key_count = int(channel_profile.item(0, "unique_pivot_key_count"))
+    if row_count > unique_pivot_key_count:
+        duplicate_row_count = row_count - unique_pivot_key_count
+        keys = ", ".join(pivot_key_columns)
+        raise CytometryAnalysisError(
+            f"Cytometry event data contains {duplicate_row_count} duplicate pivot key rows across "
+            f"{keys}; each event/channel key must be unique."
+        )
+    if row_count:
         present_channels = set(channel_profile.item(0, "channels"))
         missing_channels = [channel for channel in selected_channels if channel not in present_channels]
         if missing_channels:
@@ -200,7 +211,6 @@ def prepare_event_table(
             on_columns=selected_channels,
             values="value",
             index=index_columns,
-            aggregate_function="first",
             maintain_order=True,
         )
         .collect()
