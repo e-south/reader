@@ -158,6 +158,29 @@ def test_prepare_event_table_rejects_duplicate_event_channel_rows() -> None:
         )
 
 
+def test_prepare_event_table_rejects_metadata_drift_within_one_event() -> None:
+    events = (
+        _tidy_events()
+        .with_row_index("row_number")
+        .with_columns(
+            pl.when(pl.col("row_number") == 0)
+            .then(pl.lit("drifted-design"))
+            .otherwise(pl.col("design_id"))
+            .alias("design_id")
+        )
+    )
+
+    with pytest.raises(
+        CytometryAnalysisError,
+        match=r"inconsistent metadata.*sample_id.*event_index.*design_id",
+    ):
+        prepare_event_table(
+            events.drop("row_number"),
+            channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
+            filters=EventFilters(design_id="d1"),
+        )
+
+
 def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
     wide = prepare_event_table(
         _tidy_events(),
