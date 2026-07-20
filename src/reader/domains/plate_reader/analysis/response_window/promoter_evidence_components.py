@@ -6,16 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .censor_display import annotate_bound_glyph, censor_qc_line
-from .plot_style import style_data_axis
+from .censor_display import annotate_bound_glyph
+from .plot_style import AXIS_LABEL_SIZE, PANEL_TITLE_SIZE, TICK_LABEL_SIZE, style_data_axis
 from .review_replicates import draw_horizontal_replicate_summary
 from .review_time_series_components import signal_rows, style_trajectory_axis, trace_interval
 from .sources import STATE_ORDER
-from .visual_labels import (
-    STATE_COLORS,
-    STATE_MARKERS,
-    channels,
-)
+from .visual_labels import STATE_COLORS, STATE_MARKERS
 
 _SUBSCRIPT_DIGITS = str.maketrans("01", "₀₁")
 
@@ -76,17 +72,16 @@ def draw_trajectory_axis(
         selected=selected,
         annotate_spans=annotate_spans,
     )
-    axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
+    axis.set_title(title, loc="center", fontsize=PANEL_TITLE_SIZE, fontweight="semibold")
     axis.set_box_aspect(1.0)
+    _style_promoter_axis_text(axis)
 
 
 def draw_eight_value_handoff_axis(
     axis: plt.Axes,
     *,
     selected: pd.Series,
-    display: dict[str, object],
     replicate_rows: pd.DataFrame,
-    reference_counts: dict[str, int],
 ) -> None:
     components = tuple((prefix, state) for prefix in ("r", "b") for state in STATE_ORDER)
     y = np.asarray((8.0, 7.0, 6.0, 5.0, 3.0, 2.0, 1.0, 0.0))
@@ -151,68 +146,28 @@ def draw_eight_value_handoff_axis(
     axis.set_yticks(
         y,
         [f"{prefix}{state.translate(_SUBSCRIPT_DIGITS)}" for prefix, state in components],
-        fontsize=8,
+        fontsize=9,
     )
     axis.set_ylim(-0.75, 8.75)
     axis.set_xlabel("Window-reduced value (log₂ units)")
-    axis.set_title("D  Eight-value handoff", loc="left", fontsize=10, fontweight="semibold")
-    axis.text(
-        0.02,
-        0.965,
-        "rᵢ  response",
-        transform=axis.transAxes,
-        ha="left",
-        va="top",
-        fontsize=7,
-        color="#475569",
-    )
-    reference_id = channels(display)["reference_design_id"]
-    axis.text(
-        0.02,
-        0.43,
-        f"bᵢ  {reference_id}-relative fluorescence",
-        transform=axis.transAxes,
-        ha="left",
-        va="top",
-        fontsize=7,
-        color="#475569",
-    )
-    axis.text(
-        0.0,
-        -0.18,
-        f"Hollow circles: observed rᵢ wells  ·  Colored line: {str(selected['replicate_stat']).lower()}",
-        transform=axis.transAxes,
-        ha="left",
-        va="top",
-        fontsize=6.5,
-        color="#475569",
-    )
-    axis.text(
-        0.0,
-        -0.225,
-        f"Central {float(selected['confidence_level']):.0%} bootstrap interval: thin color  ·  "
-        "Event-time sensitivity: thick gray",
-        transform=axis.transAxes,
-        ha="left",
-        va="top",
-        fontsize=6.2,
-        color="#475569",
-    )
-    axis.text(
-        0.0,
-        -0.27,
-        "bᵢ compares independent aggregates; reference n = "
-        + "/".join(str(reference_counts[state]) for state in STATE_ORDER)
-        + " for states 00/10/01/11\n"
-        + censor_qc_line(selected),
-        transform=axis.transAxes,
-        ha="left",
-        va="top",
-        fontsize=6.2,
-        color="#475569",
+    axis.set_title(
+        "Eight-value response-window handoff",
+        loc="center",
+        fontsize=PANEL_TITLE_SIZE,
+        fontweight="semibold",
     )
     axis.set_box_aspect(1.0)
     style_data_axis(axis, grid_axis="x")
+    _style_promoter_axis_text(axis)
 
 
-__all__ = ["draw_eight_value_handoff_axis", "draw_trajectory_axis"]
+def _style_promoter_axis_text(axis: plt.Axes) -> None:
+    axis.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
+    axis.xaxis.label.set_fontsize(AXIS_LABEL_SIZE)
+    axis.yaxis.label.set_fontsize(AXIS_LABEL_SIZE)
+
+
+__all__ = [
+    "draw_eight_value_handoff_axis",
+    "draw_trajectory_axis",
+]

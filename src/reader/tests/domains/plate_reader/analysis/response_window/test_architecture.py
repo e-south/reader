@@ -20,6 +20,7 @@ def test_response_window_modules_stay_bounded() -> None:
         "promoter_evidence_cards.py": 180,
         "promoter_evidence_components.py": 220,
         "promoter_evidence_figure.py": 220,
+        "promoter_evidence_handoff_annotations.py": 130,
         "promoter_evidence_overlay.py": 240,
         "promoter_evidence_overlay_verification.py": 100,
         "promoter_evidence_selected_binding.py": 120,

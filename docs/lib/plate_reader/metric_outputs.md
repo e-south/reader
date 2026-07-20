@@ -2,7 +2,7 @@
 doc_id: reader-plate-reader-metric-outputs
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-20
 summary: Route compatible dual-reporter assay records to independent SFXI and response-window outputs.
 ---
 
@@ -50,6 +50,14 @@ Both output lanes may consume the same binding artifact without sharing
 reductions, vector fields, notebooks, plots, or objective logic. Response-window
 promoter evidence additionally requires the binding artifact and response
 bundle to declare the same `study_id`.
+
+The publication image in
+`reader.response_window.promoter_evidence_bundle.v5` keeps trajectories, the
+eight-value handoff, and the BaseRender sequence panel in one compact viewport.
+Exact binding provenance, source digests, BaseRender diagnostics, QC claim
+boundaries, and any screen-only objective overlay remain structured manifest
+fields. A notebook can disclose those fields on demand without painting them
+into the assay-evidence bitmap.
 
 ## Downstream boundary
 

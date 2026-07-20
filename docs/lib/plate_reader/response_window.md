@@ -2,7 +2,7 @@
 doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-20
 summary: Event-relative response summaries, verified review collections, and experiment-level evidence navigation.
 ---
 
@@ -69,7 +69,7 @@ agents and automation.
 `promoter-evidence` first verifies the response-window bundle, then consumes a
 separate study-owned candidate-binding artifact. It publishes one white-canvas
 300-dpi PNG, one PDF, and a digest-bearing
-`reader.response_window.promoter_evidence_bundle.v4` manifest. Its verifier
+`reader.response_window.promoter_evidence_bundle.v5` manifest. Its verifier
 checks the claim boundary, source contract identities, artifact paths, byte
 counts, digests, and exact experiment/design/candidate/reduction selection
 parity independently.
@@ -181,6 +181,14 @@ larger absolute deviation between the midpoint estimate and either bound
 estimate. It is not half the distance between the two bound estimates. This
 conservative envelope is displayed separately from replicate-bootstrap
 uncertainty.
+The promoter-evidence key names the span dynamically from the authored event,
+for example **Value range covering earliest/latest recorded stress-addition
+times**. The horizontal mark runs from the midpoint estimate minus the persisted
+half-range to the midpoint estimate plus that half-range. Both event-bound
+reductions fall inside this conservative symmetric envelope, but its endpoints
+need not equal those two reductions. It shows how far the reported value could
+move when event time is shifted across its recorded interval; it is not a
+replicate confidence interval.
 Each response and fluorescence state also records separate policy-clipping and
 instrument-overflow flags aggregated across the midpoint and both event-bound
 windows. The central `*_bound_kind` describes only the midpoint estimate; it
@@ -324,18 +332,30 @@ declares a premise, decision value, rationale, alt text, and non-claim boundary.
 
 ## Promoter evidence composite
 
-The response-window promoter-evidence composite contains:
+The response-window promoter-evidence image contains:
 
-1. a readable experiment and response-summary header, with exact identities in
-   provenance;
-2. growth, `log2(YFP/CFP)`, and `log2(YFP/OD600)` trajectories, including the
-   same-state declared fluorescence reference;
+1. one centered title naming the response summary, with exact experiment and
+   reduction identities retained in the manifest;
+2. centered premise titles above growth, `log₂(YFP/CFP)`, and
+   `log₂(YFP/OD600)` trajectories, including the
+   same-state declared fluorescence reference, with condition and trajectory
+   style meanings on one legend row;
 3. one square, symbolic eight-value handoff with observed `r_i` wells, the
    published response and fluorescence aggregates, asymmetric bootstrap
-   intervals, and event-time sensitivity drawn and labeled separately;
-4. an objective-neutral provenance and QC card; and
-5. a BaseRender sequence panel beside the handoff, titled according to its actual
-   `densegen_tfbs` or `usr_genbank_annotations_v1` adapter.
+   intervals, and the value envelope covering the earliest and latest recorded
+   event times drawn separately with one compact key. Right-side brackets define
+   the four response values as
+   `r_i = log₂(YFP/CFP)` and the four reference-relative fluorescence values as
+   `b_i = log₂(YFP/OD600)` versus same-state pDual-10. The definitions occupy
+   their own narrow annotation strip, so the square handoff axes retain their
+   measured x-range; and
+4. a two-column BaseRender sequence panel beside the handoff, centered under the
+   human-readable candidate label.
+
+Exact identities, source digests, binding provenance, BaseRender diagnostics,
+claim boundaries, and any objective overlay remain structured fields in the
+verified manifest. Notebook consumers can disclose those records on demand
+without shrinking the publication image or duplicating them in its bitmap.
 
 Reader calls only the versioned public `dnadesign.baserender` sequence-panel
 API. It passes the verified binding row in memory. It does not import a study
@@ -377,17 +397,18 @@ file digest drift.
 ### Optional objective display overlay
 
 An optional `reader.response_window.objective_display_overlay.v2` JSON file may
-display study-supplied raw objective components and must declare
+attach study-supplied raw objective components and must declare
 `claim_status: screen_only`. The issuing study supplies both the stable
 `objective_id` and a compact `objective_display_label`; Reader does not map
 objective identities to acronyms or presentation names. The display label must
-be non-empty, printable, single-line, and at most 40 characters so the
-provenance card has a bounded publication layout. Version 2 rejects calibrated
+be non-empty, printable, single-line, and at most 40 characters so review
+surfaces can disclose it predictably. Version 2 rejects calibrated
 scores, limiting components, promotion fields, and `production` claim status
 entirely. Version 1 is not accepted. A future promoted display requires a new
 contract that verifies the referenced label and calibration artifacts. Reader
-displays the supplied raw values; it never derives, calibrates, or promotes
-them.
+records the supplied raw values in the verified manifest; it never derives,
+calibrates, or promotes them. The static PNG and PDF remain assay-evidence
+views and do not paint objective terms into the figure.
 
 ```json
 {

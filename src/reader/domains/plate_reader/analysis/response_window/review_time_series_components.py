@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
-from .plot_style import style_data_axis
+from .plot_style import LEGEND_SIZE, PANEL_TITLE_SIZE, style_data_axis
 from .sources import STATE_ORDER
 from .visual_labels import (
     STATE_COLORS,
@@ -63,21 +64,24 @@ def style_trajectory_axis(
         zorder=1,
     )
     axis.axvline(0.0, color="#111827", linewidth=0.9, zorder=3)
-    axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
+    axis.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, fontweight="semibold")
     axis.set_xlabel(f"Hours from {event_label.lower()}")
     axis.set_ylabel(ylabel)
     axis.set_box_aspect(1.0)
     style_data_axis(axis, grid_axis="both")
     if annotate_spans:
-        axis.text(
-            0.02,
-            0.97,
-            "Gray: event interval\nAmber: selected window",
-            transform=axis.transAxes,
-            ha="left",
-            va="top",
-            fontsize=6.4,
-            color="#475569",
+        axis.legend(
+            handles=[
+                Patch(facecolor="#9ca3af", alpha=0.38, edgecolor="none", label="Event interval"),
+                Patch(facecolor="#f59e0b", alpha=0.28, edgecolor="none", label="Selected window"),
+            ],
+            loc="lower right",
+            frameon=False,
+            fontsize=LEGEND_SIZE,
+            handlelength=1.0,
+            handletextpad=0.45,
+            labelspacing=0.25,
+            borderaxespad=0.35,
         )
 
 

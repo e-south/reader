@@ -143,7 +143,7 @@ def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, t
 
     assert invocation.exit_code == 0
     payload = json.loads(invocation.output)
-    assert payload["schema_version"] == "reader.response_window.promoter_evidence_bundle.v4"
+    assert payload["schema_version"] == "reader.response_window.promoter_evidence_bundle.v5"
     assert payload["selection"]["candidate_id"] == "candidate"
     assert payload["png"] == str(bundle.png_path)
     assert payload["pdf"] == str(bundle.pdf_path)
@@ -238,7 +238,7 @@ def _promoter_bundle(tmp_path: Path) -> PromoterEvidenceBundle:
         png_path=root / "promoter_evidence.png",
         pdf_path=root / "promoter_evidence.pdf",
         manifest={
-            "schema_version": "reader.response_window.promoter_evidence_bundle.v4",
+            "schema_version": "reader.response_window.promoter_evidence_bundle.v5",
             "claim_status": "objective_neutral",
             "selection": {
                 "experiment_id": "experiment",

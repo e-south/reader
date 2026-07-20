@@ -23,7 +23,7 @@ from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_ev
 )
 
 
-def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_sequence(
+def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_without_static_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
@@ -43,21 +43,24 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
     try:
         assert diagnostics.adapter_kind == "densegen_tfbs"
         assert len(figure.axes) == 7
-        header, growth, response, fluorescence, handoff, sequence, provenance = figure.axes
+        header, growth, response, fluorescence, handoff, handoff_families, sequence = figure.axes
         assert header.get_gid() == "promoter-evidence-header"
-        header_text = "\n".join(text.get_text() for text in header.texts)
-        assert "Experiment  experiment" in header_text
-        assert "Response summary  6-12 h log mean (primary)" in header_text
-        assert "dashed/hollow = pDual-10 anchor" in header_text
-        assert [axis.get_title(loc="left") for axis in (growth, response, fluorescence)] == [
-            "A  Growth by condition",
-            "B  YFP / CFP response",
-            "C  YFP / OD600 with pDual-10 anchor",
+        assert not header.texts
+        assert [axis.get_title() for axis in (growth, response, fluorescence)] == [
+            "Growth trajectory across conditions",
+            "Reporter response across conditions",
+            "Fluorescence relative to pDual-10",
         ]
+        assert all(not axis.get_title(loc="left") for axis in (growth, response, fluorescence))
+        assert response.get_ylabel() == "log₂(YFP / CFP)"
+        assert fluorescence.get_ylabel() == "log₂(YFP / OD600)"
         assert all(axis.get_box_aspect() == 1.0 for axis in (growth, response, fluorescence, handoff))
-        assert handoff.get_title(loc="left") == "D  Eight-value handoff"
-        assert sequence.get_title(loc="left") == "E  DenseGen TFBS annotation"
-        assert provenance.get_title(loc="left") == "F  Provenance and QC"
+        assert handoff.get_title() == "Eight-value response-window handoff"
+        assert handoff.get_title(loc="left") == ""
+        assert handoff_families.get_gid() == "promoter-evidence-handoff-families"
+        assert sequence.get_title() == "Measured promoter sequence · spyP promoter"
+        assert sequence.get_title(loc="left") == ""
+        assert not any("Provenance and QC" in axis.get_title() for axis in figure.axes)
         assert handoff.findobj(lambda artist: artist.get_gid() == "bootstrap-uncertainty")
         assert handoff.findobj(lambda artist: artist.get_gid() == "event-time-sensitivity")
         assert handoff.findobj(lambda artist: artist.get_gid() == "censor-bound-r10")[0].get_text() == "≥"
@@ -79,19 +82,14 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
             assert not handoff.findobj(lambda artist, gid=f"replicate-values-b{state}": artist.get_gid() == gid)
             for prefix in ("r", "b"):
                 assert handoff.findobj(lambda artist, gid=f"handoff-summary-{prefix}{state}": artist.get_gid() == gid)
-        provenance_text = "\n".join(text.get_text() for text in provenance.texts)
-        assert "Objective-neutral evidence" in provenance_text
-        assert "Objective scoring stays outside Reader" in provenance_text
-        assert "RMF" not in provenance_text
-        assert "Binding  exact alias" in provenance_text
         assert sequence.get_position().x0 > handoff.get_position().x1
-        assert provenance.get_position().x0 > handoff.get_position().x1
-        assert sequence.get_position().y0 > provenance.get_position().y1
-        assert abs(sequence.get_ylim()[1] - sequence.get_ylim()[0]) < 80
+        assert handoff_families.get_position().x0 >= handoff.get_position().x1
+        assert sequence.get_position().x0 >= handoff_families.get_position().x1
+        assert abs(sequence.get_ylim()[1] - sequence.get_ylim()[0]) == 80
         assert mcolors.to_hex(figure.get_facecolor()) == "#ffffff"
         assert all(mcolors.to_hex(axis.get_facecolor()) == "#ffffff" for axis in figure.axes)
         assert figure._suptitle is not None
-        assert figure._suptitle.get_text() == "Promoter response evidence · spyP promoter"
+        assert figure._suptitle.get_text() == "Promoter response evidence · 6–12 h log mean (primary)"
         assert len(figure._suptitle.get_text()) < 100
         figure.canvas.draw()
         renderer = figure.canvas.get_renderer()
@@ -102,15 +100,63 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
             "Ethanol",
             "Ciprofloxacin",
             "Ethanol + ciprofloxacin",
+            "Selected design",
+            "pDual-10 anchor",
         }
-        handoff_notes = "\n".join(text.get_text() for text in handoff.texts)
-        assert "Central 90% bootstrap interval" in handoff_notes
-        assert "observed rᵢ wells" in handoff_notes
-        assert "independent aggregates" in handoff_notes
-        assert "Event-time sensitivity" in handoff_notes
-        assert "central 1/8 bounded" in handoff_notes
+        assert growth.get_legend() is None
+        span_legend = response.get_legend()
+        assert span_legend is not None
+        assert [text.get_text() for text in span_legend.get_texts()] == [
+            "Event interval",
+            "Selected window",
+        ]
+        assert span_legend._loc == 4
+        assert {
+            tick.get_fontsize()
+            for axis in (growth, response, fluorescence, handoff)
+            for tick in (*axis.get_xticklabels(), *axis.get_yticklabels())
+        } == {10.0}
+        assert {axis.xaxis.label.get_fontsize() for axis in (growth, response, fluorescence, handoff)} == {10.0}
+        response_family = handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-response-label")
+        fluorescence_family = handoff_families.findobj(
+            lambda artist: artist.get_gid() == "handoff-family-fluorescence-label"
+        )
+        assert [text.get_text() for text in response_family] == ["Response rᵢ\nlog₂(YFP/CFP)"]
+        assert [text.get_text() for text in fluorescence_family] == [
+            "Fluorescence bᵢ\nlog₂(YFP/OD600)\nrelative to\nsame-state\npDual-10"
+        ]
+        assert {text.get_fontsize() for text in (*response_family, *fluorescence_family)} == {10.0}
+        assert handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-response-bracket")
+        assert handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-fluorescence-bracket")
         assert header_legend.get_window_extent(renderer).y1 < figure._suptitle.get_window_extent(renderer).y0
-        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v4"
+        assert len(figure.legends) == 1
+        handoff_legend = figure.legends[0]
+        assert [text.get_text() for text in handoff_legend.get_texts()] == [
+            "Observed response wells",
+            "Median + 90% bootstrap",
+            "Value range covering earliest/latest recorded stress-addition times",
+        ]
+        assert {text.get_fontsize() for text in handoff_legend.get_texts()} == {8.5}
+        legend_box = handoff_legend.get_window_extent(renderer)
+        figure_box = figure.get_window_extent(renderer)
+        handoff_box = handoff_families.get_window_extent(renderer)
+        for family_label in (*response_family, *fluorescence_family):
+            family_box = family_label.get_window_extent(renderer)
+            assert family_box.x0 >= handoff_box.x0
+            assert family_box.x1 <= handoff_box.x1
+            assert family_box.y0 >= handoff_box.y0
+            assert family_box.y1 <= handoff_box.y1
+        data_boxes = [axis.get_window_extent(renderer) for axis in (growth, response, fluorescence, handoff)]
+        assert sequence.get_window_extent(renderer).height >= 225.0
+        assert max(box.width for box in data_boxes) - min(box.width for box in data_boxes) <= 1.0
+        assert max(box.height for box in data_boxes) - min(box.height for box in data_boxes) <= 1.0
+        handoff_data_box = data_boxes[-1]
+        assert 0.0 <= handoff_box.x0 - handoff_data_box.x1 <= 20.0
+        assert legend_box.x0 >= figure_box.x0
+        assert legend_box.x1 <= figure_box.x1
+        assert legend_box.y0 >= figure_box.y0
+        assert legend_box.y1 <= figure_box.y1
+        assert figure.get_gid() == "reader.response_window.promoter_evidence_bundle.v5"
     finally:
         plt.close(figure)
 
@@ -122,7 +168,7 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_provenance_and_s
         ("multistate_response_behavior_v1", "MSRB"),
     ],
 )
-def test_promoter_evidence_figure_labels_configured_raw_objective_values_as_screen_only(
+def test_promoter_evidence_figure_keeps_objective_overlay_out_of_static_plot(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     objective_id: str,
@@ -150,17 +196,16 @@ def test_promoter_evidence_figure_labels_configured_raw_objective_values_as_scre
     )
 
     try:
-        text = "\n".join(item.get_text() for item in figure.axes[6].texts)
-        assert f"{objective_display_label} raw components · screen only" in text
-        assert objective_id.replace("_", " ") not in text
-        assert "Response separation  0.8 raw log2 units" in text
-        assert "ON fluorescence floor  0.3 pDual-10-relative log2 fluorescence" in text
-        assert "calibrated score" not in text.lower()
+        text = "\n".join(item.get_text() for axis in figure.axes for item in axis.texts)
+        assert objective_display_label not in text
+        assert objective_id not in text
+        assert "Response separation" not in text
+        assert "ON fluorescence floor" not in text
     finally:
         plt.close(figure)
 
 
-def test_promoter_evidence_figure_fits_six_component_overlay(
+def test_promoter_evidence_figure_layout_is_independent_of_overlay_component_count(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -195,15 +240,8 @@ def test_promoter_evidence_figure_fits_six_component_overlay(
 
     try:
         figure.canvas.draw()
-        renderer = figure.canvas.get_renderer()
-        provenance = figure.axes[6]
-        axis_box = provenance.get_window_extent(renderer)
-        for text in provenance.texts:
-            text_box = text.get_window_extent(renderer)
-            assert text_box.y0 >= axis_box.y0 - 1.0
-            assert text_box.y1 <= axis_box.y1 + 1.0
-            assert text_box.x0 >= axis_box.x0 - 1.0
-            assert text_box.x1 <= axis_box.x1 + 1.0
+        assert len(figure.axes) == 7
+        assert figure.axes[-1].get_title() == "Measured promoter sequence · spyP promoter"
     finally:
         plt.close(figure)
 
@@ -230,7 +268,7 @@ class _FakeBaseRender:
             ],
         }
         assert kwargs["adapter_kind"] == "densegen_tfbs"
-        assert kwargs["target_height_px"] == 310
+        assert kwargs["target_height_px"] == 480
         image = np.full((80, 400, 4), 255, dtype=np.uint8)
         image[20:60, 50:350, :3] = 0
         return SimpleNamespace(

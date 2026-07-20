@@ -2,7 +2,7 @@
 doc_id: reader-opal-handoff
 surface: ownership-reference
 owner: reader-maintainers
-last_verified: 2026-07-14
+last_verified: 2026-07-20
 summary: Public Reader record boundary for study staging and OPAL use.
 ---
 
@@ -51,15 +51,16 @@ artifact is available to any consumer that understands one of its typed alias
 namespaces. Reader verifies the artifact and uses its exact `reader.design_id`
 alias, candidate, sequence, and BaseRender projection without importing study
 internals. The resulting
-`reader.response_window.promoter_evidence_bundle.v4` is a display artifact for
+`reader.response_window.promoter_evidence_bundle.v5` is a display artifact for
 downstream notebooks; OPAL does not reconstruct its trajectories or resolve its
 candidate identity again.
 
-The v2 evidence manifest requires response-bundle and candidate-binding
+The v5 evidence manifest requires response-bundle and candidate-binding
 `study_id` parity. It preserves the selected binding's sequence authority,
 source/design family, exact binding method, and adapter-specific DenseGen
 provenance. Model features use a separate candidate-keyed projection. The
-optional objective overlay is screen-only raw evidence. Objective scores,
+optional objective overlay is screen-only raw evidence retained in the
+structured manifest rather than painted into the assay-evidence image. Objective scores,
 normalization or calibration parameters, and promotion provenance belong to
 study and OPAL contracts, not the Reader evidence bundle.
 

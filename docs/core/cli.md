@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-20
 summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
 ---
 
@@ -41,7 +41,7 @@ These commands consume published experiment records. They do not bypass the
 normal experiment pipeline or infer treatment semantics from file names.
 The response service accepts `reader.response_window.request.v3`, publishes
 `reader.response_window.bundle.v5`, and publishes promoter evidence under
-`reader.response_window.promoter_evidence_bundle.v4`.
+`reader.response_window.promoter_evidence_bundle.v5`.
 Promoter evidence additionally consumes an explicit, study-owned candidate
 binding; Reader does not open the study candidate table or calculate an OPAL
 objective. Its optional v2 objective overlay accepts screen-only raw components

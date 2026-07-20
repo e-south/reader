@@ -9,15 +9,19 @@ import pandas as pd
 from reader.domains.promoter.candidate_bindings import PromoterCandidateBinding
 from reader.domains.promoter.sequence_panel import render_candidate_sequence_panel
 
-from .plot_style import apply_publication_style
+from .plot_style import LEGEND_SIZE, PANEL_TITLE_SIZE, apply_publication_style
 from .promoter_evidence_bundle_contract import PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION
-from .promoter_evidence_cards import draw_header_axis, draw_provenance_axis
+from .promoter_evidence_cards import draw_header_axis
 from .promoter_evidence_components import (
     draw_eight_value_handoff_axis,
     draw_trajectory_axis,
 )
+from .promoter_evidence_handoff_annotations import (
+    draw_handoff_family_axis,
+    handoff_legend_handles,
+)
 from .promoter_evidence_overlay import ObjectiveDisplayOverlay
-from .review_replicates import reference_replicate_counts, response_replicate_rows
+from .review_replicates import response_replicate_rows
 from .visual_labels import response_summary_label
 
 
@@ -32,10 +36,14 @@ def promoter_evidence_figure(
     events: pd.DataFrame,
     display: dict[str, object],
     binding: PromoterCandidateBinding,
-    experiment_title: str | None = None,
     objective_overlay: ObjectiveDisplayOverlay | None = None,
 ) -> tuple[plt.Figure, object]:
-    """Render trajectories, handoff values, provenance, and one BaseRender panel."""
+    """Render assay trajectories, handoff values, and one BaseRender panel.
+
+    Exact provenance, QC, and any study-issued objective overlay remain in the
+    verified bundle manifest instead of competing with assay evidence for
+    static figure space.
+    """
 
     _verify_selection(
         experiment_id=experiment_id,
@@ -64,37 +72,29 @@ def promoter_evidence_figure(
         design_id=design_id,
         reduction_id=reduction_id,
     )
-    reference_counts = reference_replicate_counts(
-        selected=selected,
-        wells=wells,
-        experiment_id=experiment_id,
-        reduction_id=reduction_id,
-    )
-
-    figure_height, lower_row_height, evidence_heights = _layout_for_overlay(objective_overlay)
-    figure = plt.figure(figsize=(13.2, figure_height), constrained_layout=True)
+    figure = plt.figure(figsize=(13.2, 9.5), layout="compressed")
     figure.set_gid(PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION)
-    grid = figure.add_gridspec(3, 3, height_ratios=(0.44, 2.7, lower_row_height))
+    grid = figure.add_gridspec(3, 3, height_ratios=(0.30, 2.7, 2.7))
     header_axis = figure.add_subplot(grid[0, :])
-    trajectories = [figure.add_subplot(grid[1, index]) for index in range(3)]
-    handoff_axis = figure.add_subplot(grid[2, 0])
-    evidence_grid = grid[2, 1:].subgridspec(2, 1, height_ratios=evidence_heights)
-    sequence_axis = figure.add_subplot(evidence_grid[0, 0])
-    provenance_axis = figure.add_subplot(evidence_grid[1, 0])
+    top_grid = grid[1, :].subgridspec(1, 3, width_ratios=(1.0, 1.0, 1.0), wspace=0.015)
+    trajectories = [figure.add_subplot(top_grid[0, index]) for index in range(3)]
+    lower_grid = grid[2, :].subgridspec(1, 3, width_ratios=(1.0, 0.30, 1.70), wspace=0.0)
+    handoff_axis = figure.add_subplot(lower_grid[0, 0])
+    handoff_axis.set_anchor("E")
+    handoff_family_axis = figure.add_subplot(lower_grid[0, 1])
+    sequence_axis = figure.add_subplot(lower_grid[0, 2])
     draw_header_axis(
         header_axis,
-        experiment_label=experiment_title or experiment_id,
-        reduction_label=response_summary_label(selected),
         state_labels=state_labels,
         reference_id=reference_id,
     )
     specs = (
-        ("growth", "A  Growth by condition", str(channels["growth"])),
-        ("response", "B  YFP / CFP response", f"log2({_spaced(channels['response_ratio'])})"),
+        ("growth", "Growth trajectory across conditions", str(channels["growth"])),
+        ("response", "Reporter response across conditions", f"log₂({_spaced(channels['response_ratio'])})"),
         (
             "magnitude",
-            f"C  YFP / OD600 with {reference_id} anchor",
-            f"log2({_spaced(channels['magnitude_ratio'])})",
+            f"Fluorescence relative to {reference_id}",
+            f"log₂({_spaced(channels['magnitude_ratio'])})",
         ),
     )
     for index, (axis, (signal_kind, title, ylabel)) in enumerate(zip(trajectories, specs, strict=True)):
@@ -110,30 +110,36 @@ def promoter_evidence_figure(
             event_label=str(display["event_label"]),
             title=title,
             ylabel=ylabel,
-            annotate_spans=index == 0,
+            annotate_spans=index == 1,
         )
     draw_eight_value_handoff_axis(
         handoff_axis,
         selected=selected,
-        display=display,
         replicate_rows=replicate_rows,
-        reference_counts=reference_counts,
     )
-    draw_provenance_axis(
-        provenance_axis,
-        binding=binding,
-        experiment_id=experiment_id,
-        design_id=design_id,
-        reduction_id=reduction_id,
-        objective_overlay=objective_overlay,
-    )
+    draw_handoff_family_axis(handoff_family_axis)
     diagnostics = _draw_sequence_axis(sequence_axis, binding=binding)
+    figure.legend(
+        handles=handoff_legend_handles(
+            replicate_stat=str(selected["replicate_stat"]),
+            confidence_level=confidence_level,
+            event_label=str(display["event_label"]),
+        ),
+        loc="outside lower center",
+        ncol=3,
+        frameon=False,
+        fontsize=LEGEND_SIZE,
+        columnspacing=1.6,
+        handletextpad=0.55,
+    )
     figure.suptitle(
-        _compact_title(binding=binding),
-        fontsize=12,
+        f"Promoter response evidence · {_title_response_summary(selected)}",
+        fontsize=13,
         fontweight="semibold",
     )
-    return apply_publication_style(figure), diagnostics
+    figure = apply_publication_style(figure)
+    figure.get_layout_engine().set(h_pad=0.025, w_pad=0.025, hspace=0.04, wspace=0.04)
+    return figure, diagnostics
 
 
 def _verify_selection(
@@ -161,60 +167,34 @@ def _draw_sequence_axis(axis: plt.Axes, *, binding: PromoterCandidateBinding) ->
         binding,
         style_profile="promoter_compact_slide.v1",
         target_width_px=2200,
-        target_height_px=310,
+        target_height_px=480,
         vertical_anchor="center",
         canvas_top_pad_px=0,
     )
     diagnostics = rendered.diagnostics
     image = np.asarray(rendered.image)
     axis.imshow(image)
-    _focus_sequence_content(axis, image)
     axis.set_axis_off()
-    title = {
-        "densegen_tfbs": "E  DenseGen TFBS annotation",
-        "usr_genbank_annotations_v1": "E  GenBank source annotation",
-    }[binding.baserender_adapter_kind]
-    axis.set_title(title, loc="left", fontsize=10, fontweight="semibold")
+    axis.set_title(
+        f"Measured promoter sequence · {_sequence_title(binding=binding)}",
+        loc="center",
+        fontsize=PANEL_TITLE_SIZE,
+        fontweight="semibold",
+        pad=5,
+    )
     return diagnostics
-
-
-def _focus_sequence_content(axis: plt.Axes, image: np.ndarray) -> None:
-    """Remove BaseRender canvas padding without resampling sequence evidence."""
-
-    if image.ndim != 3 or image.shape[2] < 3:
-        return
-    visible = np.any(image[..., :3] < 248, axis=2)
-    if image.shape[2] >= 4:
-        visible &= image[..., 3] > 8
-    min_row_ink = max(12, int(round(image.shape[1] * 0.01)))
-    rows = np.flatnonzero(visible.sum(axis=1) >= min_row_ink)
-    if not len(rows):
-        rows = np.flatnonzero(visible.any(axis=1))
-    if not len(rows):
-        return
-    height = image.shape[0]
-    y_pad = max(8, int(round(height * 0.04)))
-    top = max(0, int(rows.min()) - y_pad)
-    bottom = min(height - 1, int(rows.max()) + y_pad)
-    axis.set_ylim(bottom + 0.5, top - 0.5)
 
 
 def _spaced(value: object) -> str:
     return str(value).replace("/", " / ")
 
 
-def _compact_title(*, binding: PromoterCandidateBinding) -> str:
-    return f"Promoter response evidence · {binding.display_label}"
+def _sequence_title(*, binding: PromoterCandidateBinding) -> str:
+    return binding.display_label
 
 
-def _layout_for_overlay(
-    overlay: ObjectiveDisplayOverlay | None,
-) -> tuple[float, float, tuple[float, float]]:
-    if overlay is None:
-        return 9.4, 2.7, (1.55, 0.45)
-    if len(overlay.components) <= 3:
-        return 9.8, 3.0, (1.65, 1.0)
-    return 10.6, 3.6, (1.55, 2.05)
+def _title_response_summary(selected: pd.Series) -> str:
+    return response_summary_label(selected).replace("-", "–", 1)
 
 
 __all__ = ["PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION", "promoter_evidence_figure"]

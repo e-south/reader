@@ -13,7 +13,6 @@ from reader.domains.promoter.candidate_bindings import (
     PromoterCandidateBindings,
     load_promoter_candidate_bindings,
 )
-from reader.notebook_presentation import experiment_display_title_from_config
 
 from .bundle import ResponseWindowBundle
 from .promoter_evidence_bundle_contract import (
@@ -95,10 +94,6 @@ def _build_staged_bundle(
     if not isinstance(display, dict):
         raise ValueError("verified response-window bundle lacks its display contract.")
     overlay = None if objective_overlay_path is None else load_objective_display_overlay(objective_overlay_path)
-    experiment_title = experiment_display_title_from_config(
-        response_bundle.root / "sources" / experiment_id / "config.yaml",
-        expected_experiment_id=experiment_id,
-    )
     figure, diagnostics = promoter_evidence_figure(
         experiment_id=experiment_id,
         design_id=design_id,
@@ -109,7 +104,6 @@ def _build_staged_bundle(
         events=events,
         display=display,
         binding=binding,
-        experiment_title=experiment_title,
         objective_overlay=overlay,
     )
     try:
