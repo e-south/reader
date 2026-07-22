@@ -1,3 +1,11 @@
+---
+doc_id: reader-quality
+surface: quality-contract
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Quality criteria and verification evidence for Reader discovery, preflight, execution, and extension work.
+---
+
 # Quality
 
 `reader` quality is not just “tests pass.” The quality bar is that users and agents can discover, validate, dry-run, execute, and verify experiments through explicit contracts with low ambiguity and low retry cost.
@@ -25,7 +33,7 @@ The workbench is healthy when these questions have fast, deterministic answers.
 - Acceptance checks:
   Discovery, inspect, validate, explain, dry-run, plot/export listing, and record inspection must remain available and deterministic.
 - Stop conditions:
-  Halt when a proposed change requires reviving legacy config shims, plugin-shaped public config, or hidden mutation paths.
+  Halt when a proposed change requires config shims, plugin-shaped public config, or hidden mutation paths.
 - Escalation criteria:
   Escalate when assay semantics cannot be expressed without widening the public surface or violating architecture boundaries.
 
@@ -45,7 +53,7 @@ The top-level quality program for `reader` currently centers on three harness en
 
 ### `architecture-invariants`
 
-- Public config stays `reader/v7`.
+- Public config stays `reader/v8`.
 - Protocols stay the semantic owner.
 - Plugins stay mechanical adapters.
 - Generated outputs remain generated.
@@ -61,8 +69,6 @@ The preferred quality loop is:
 5. `reader run --dry-run`
 6. targeted execution
 7. `reader records`, `reader plot --list`, `reader export --list`
-
-This follows the same harness lesson emphasized in OpenAI’s harness-engineering article: speed and explicit feedback loops matter because slow or ambiguous verification causes retries and drift.
 
 Use [docs/guides/preflight_run_verify.md](./docs/guides/preflight_run_verify.md) for the task-oriented version of this loop.
 
@@ -83,15 +89,15 @@ For documentation-only changes, at least verify:
 - `uv run python tools/check_docs.py`
 - linked routes are still valid
 - command examples match current CLI behavior
-- changed docs stay aligned with `reader/v7`
+- changed docs stay aligned with `reader/v8`
 
 ## Quality Gates
 
 ### Config and schema quality
 
-- `yaml.safe_load`
-- strict `reader/v7` schema check
-- removed legacy keys rejected explicitly
+- SafeLoader-based YAML parsing with duplicate-key rejection
+- strict `reader/v8` schema check
+- removed config keys rejected explicitly
 - pydantic models forbid extra fields on plugin configs
 
 ### Runtime quality
@@ -99,7 +105,17 @@ For documentation-only changes, at least verify:
 - typed input and output ports
 - explicit dataframe contracts
 - validation of reads/writes compatibility
-- record manifests with content digests and provenance
+- dataframe record manifests with streamed content digests and provenance
+- auto-discovered raw workbooks recorded as explicit runtime file inputs
+- discovered files confined to the experiment root before preflight or runtime
+  parsing
+- plot and export records built only from nonempty typed file outputs, without
+  recursive directory-change scans
+- complete per-path descriptions for new plot records, sourced from an exact
+  protocol figure or explicit producer metadata; unmapped multi-file plots
+  without complete descriptions fail
+- bundle-level operational descriptions for exports; descriptorless file
+  bundles are invalid
 
 ### UX quality
 
@@ -124,13 +140,16 @@ These are the failure classes that quality work should continue to reduce.
 
 ## Current Open Quality Debt
 
-The main unresolved quality debt is still semantic, not documentation. Protocol windows, controls, metrics, and ranking are not yet compiled from one executable typed analysis program. Until that changes, there is still some duplicate truth between protocol metadata and compiler behavior.
+- Some protocol, compiler, and retron-review modules hold several
+  responsibilities and need contract-led decomposition.
+- Documentation frontmatter and links are checked mechanically, but command and
+  scientific wording still require review against current code and records.
 
 ## Definition Of Done
 
 A workbench change is done when:
 
-- the public surface is still cleaner or tighter than before
+- the public surface remains minimal and protocol-owned
 - the verification path is explicit
 - generated outputs were not hand-edited
 - docs and CLI agree

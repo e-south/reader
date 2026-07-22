@@ -118,16 +118,16 @@ def _validate_plot_semantic_refs(*, step: Any, experiment: ExperimentSemantics, 
             column=(y_column if isinstance(y_column, str) else None),
             arg_name="order_y",
         )
-        if isinstance(with_block.get("logic_map_ref"), str):
-            experiment.annotations.resolve_logic_map(ref=with_block["logic_map_ref"])
+        if isinstance(with_block.get("state_map_ref"), str):
+            experiment.annotations.resolve_ordered_state_space(ref=with_block["state_map_ref"])
     except Exception as err:
         raise ConfigError(f"plot {step.id}: invalid ordering semantic reference: {err}") from err
 
 
 def _validate_pipeline_semantic_refs(*, step: Any, experiment: ExperimentSemantics, with_block: dict[str, Any]) -> None:
     try:
-        if isinstance(with_block.get("logic_map_ref"), str):
-            experiment.annotations.resolve_logic_map(ref=with_block["logic_map_ref"])
+        if isinstance(with_block.get("state_map_ref"), str):
+            experiment.annotations.resolve_ordered_state_space(ref=with_block["state_map_ref"])
     except Exception as err:
         raise ConfigError(f"pipeline {step.id}: invalid annotation semantic reference: {err}") from err
 

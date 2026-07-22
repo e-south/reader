@@ -9,11 +9,16 @@ from reader.workbench.graph import OutputRef, input_ref_display, output_ref_disp
 from reader.workbench.templates import resolve_notebook_template_descriptor
 
 from .common import flatten_binding_rows
+from .results import record_payload_detail_text
 from .runtime import render_read_binding
 from .semantics import semantic_program_table
 
 
-def experiment_inspect_renderables(*, payload: dict[str, object], semantic_program) -> list[Panel]:
+def experiment_inspect_renderables(
+    *,
+    payload: dict[str, object],
+    semantic_program,
+) -> list[Panel]:
     experiment = dict(payload.get("experiment") or {})
     authoring = dict(payload.get("authoring") or {})
     implementation = dict(payload.get("implementation") or {})
@@ -90,7 +95,7 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
             )
         renderables.append(Panel(readiness_table, border_style="accent", box=box.ROUNDED))
 
-    authoring_table = _table("Authoring bindings")
+    authoring_table = _table("Config values")
     authoring_table.add_column("section", style="accent", width=10)
     authoring_table.add_column("path", overflow="fold")
     authoring_table.add_column("value", overflow="fold")
@@ -101,8 +106,23 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
         authoring_table.add_row("—", "—", "No explicit bindings; protocol defaults only.")
     renderables.append(Panel(authoring_table, border_style="accent", box=box.ROUNDED))
 
-    if semantic_program is not None:
-        renderables.append(Panel(semantic_program_table(semantic_program), border_style="accent", box=box.ROUNDED))
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, include_execution=False),
+            border_style="accent",
+            box=box.ROUNDED,
+        )
+    )
+    renderables.append(
+        Panel(
+            semantic_program_table(
+                semantic_program,
+                title="Compiled Semantic Execution",
+            ),
+            border_style="accent",
+            box=box.ROUNDED,
+        )
+    )
 
     filesystem = _table("Inputs + resources")
     filesystem.add_column("kind", style="accent", width=10)
@@ -141,7 +161,7 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     )
     renderables.append(Panel(generated_table, border_style="accent", box=box.ROUNDED))
 
-    records_table = _table("Record catalog")
+    records_table = _table("Records")
     records_table.add_column("record", style="accent", overflow="fold")
     records_table.add_column("kind", width=18)
     records_table.add_column("producer", overflow="fold")
@@ -152,10 +172,10 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
                 str(record.get("record_id") or "—"),
                 str(record.get("kind") or "—"),
                 str(record.get("producer_label") or "—"),
-                str(record.get("detail") or "—"),
+                record_payload_detail_text(record),
             )
     else:
-        records_table.add_row("—", "—", "—", "No records catalog found under outputs/manifests/records.json.")
+        records_table.add_row("—", "—", "—", "No records found under outputs/manifests/records.json.")
     renderables.append(Panel(records_table, border_style="accent", box=box.ROUNDED))
 
     pipeline_rows = [dict(item) for item in (compiled.get("pipeline") or []) if isinstance(item, dict)]
@@ -197,7 +217,7 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     )
 
     renderables.append(_surface_specs_panel(title="Plot outputs", rows=(compiled.get("plots") or [])))
-    renderables.append(_surface_specs_panel(title="Export artifacts", rows=(compiled.get("exports") or [])))
+    renderables.append(_surface_specs_panel(title="Exports", rows=(compiled.get("exports") or [])))
 
     notebooks = [dict(item) for item in (compiled.get("notebooks") or []) if isinstance(item, dict)]
     notebook_table = _table("Notebooks")
@@ -206,7 +226,7 @@ def experiment_inspect_renderables(*, payload: dict[str, object], semantic_progr
     notebook_table.add_column("status")
     if notebooks:
         for idx, notebook in enumerate(notebooks, 1):
-            notebook_table.add_row(str(idx), str(notebook.get("template") or "—"), "selected")
+            notebook_table.add_row(str(idx), str(notebook.get("template") or "—"), "configured")
     else:
         notebook_table.add_row("—", "—", "No notebook template selected.")
     renderables.append(Panel(notebook_table, border_style="accent", box=box.ROUNDED))
@@ -238,16 +258,23 @@ def workflow_explain_renderables(
     resources = tuple(decl.experiment_semantics.resources.by_id.keys())
     if resources:
         summary.add_row("Resources", ", ".join(resources))
-    renderables.append(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Protocol plan"))
+    renderables.append(Panel(summary, border_style="cyan", box=box.ROUNDED, title="Plan summary"))
 
-    if decl.experiment_semantics.protocol_program is not None:
-        renderables.append(
-            Panel(
-                semantic_program_table(decl.experiment_semantics.protocol_program),
-                border_style="cyan",
-                box=box.ROUNDED,
-            )
+    semantic_program = decl.experiment_semantics.protocol_program
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, include_execution=False),
+            border_style="cyan",
+            box=box.ROUNDED,
         )
+    )
+    renderables.append(
+        Panel(
+            semantic_program_table(semantic_program, title="Compiled Semantic Execution"),
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
 
     if pipeline_steps:
         renderables.append(
@@ -364,7 +391,7 @@ def _surface_specs_panel(*, title: str, rows) -> Panel:
             from_refs = ", ".join(render_read_binding(read) for read in (item.get("reads") or [])) or "—"
             table.add_row(str(idx), str(item.get("id") or "—"), str(item.get("summary") or "—"), from_refs)
     else:
-        empty = "No plot outputs selected." if title == "Plot outputs" else "No export artifacts selected."
+        empty = "No plot outputs selected." if title == "Plot outputs" else "No exports selected."
         table.add_row("—", "—", empty, "—")
     return Panel(table, border_style="accent", box=box.ROUNDED)
 

@@ -1,0 +1,1113 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import replace
+
+from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
+from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
+
+from .compiler import (
+    compile_plate_reader_retron_sponge_screen,
+    compile_plate_reader_single_reporter_screen,
+)
+from .model import (
+    ProtocolArtifactSpec,
+    ProtocolConfigFieldSpec,
+    ProtocolControlRule,
+    ProtocolDescriptor,
+    ProtocolEffectSignSpec,
+    ProtocolExecutionPlan,
+    ProtocolFactorSpec,
+    ProtocolFigureSpec,
+    ProtocolMetricSpec,
+    ProtocolNotebookPolicy,
+    ProtocolPlotProfileSpec,
+    ProtocolPluginDefaultsSpec,
+    ProtocolRankingSpec,
+    ProtocolSemanticProfileOverride,
+    ProtocolSemanticProfileSpec,
+    ProtocolWindowSpec,
+    binding_value,
+)
+
+
+def build_plate_reader_variant_protocols(
+    *,
+    dual_reporter_protocol: ProtocolDescriptor,
+    field_builder: Callable[..., ProtocolConfigFieldSpec],
+) -> tuple[ProtocolDescriptor, ProtocolDescriptor]:
+    field = field_builder
+    dual_preprocessing_field = next(
+        item for item in dual_reporter_protocol.analysis_fields if item.key == "preprocessing"
+    )
+    dual_ingest_field = next(item for item in dual_reporter_protocol.input_fields if item.key == "ingest")
+    dual_channel_map_field = next(item for item in dual_ingest_field.children if item.key == "channel_map")
+    map_free_kinetic_ingest_field = replace(
+        dual_ingest_field,
+        children=tuple(
+            replace(
+                item,
+                summary=(
+                    "Optional raw workbook label to canonical channel mapping. Leave null for map-free kinetic "
+                    "channel discovery; snapshot and mixed parsing require an explicit mapping."
+                ),
+                default=None,
+            )
+            if item is dual_channel_map_field
+            else item
+            for item in dual_ingest_field.children
+        ),
+    )
+    map_free_kinetic_input_fields = tuple(
+        map_free_kinetic_ingest_field if item is dual_ingest_field else item
+        for item in dual_reporter_protocol.input_fields
+    )
+    measurement_field = field(
+        "measurement",
+        "Primary matched-control measurement family.",
+        kind="string",
+        choices=("yfp_cfp", "single_reporter"),
+        default="yfp_cfp",
+    )
+
+    retron_sponge_figures = (
+        ProtocolFigureSpec(
+            id="raw_kinetics",
+            kind="qc",
+            summary="Raw growth and reporter kinetics for early QC before matched-control normalization.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="support_kinetics",
+            kind="qc",
+            summary="Growth-normalized support ratios that contextualize broad physiology vs reporter-specific effects.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="control_burden_panel",
+            kind="qc",
+            summary="tetO-only burden panel over the primary readout and growth-rate traces across the full run.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="baseline_shifted_kinetics",
+            kind="kinetics",
+            summary="Baseline-shifted kinetics that isolate post-stress movement from pre-stress offsets.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="matched_control_kinetics",
+            kind="kinetics",
+            summary="Per-arm matched-control-normalized kinetics that show deviation from same-sensor tetO controls across the full run.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="induced_effect_kinetics",
+            kind="kinetics",
+            summary="Per-arm post-stress increment trajectories after matched-control normalization, paired with a compact expected-direction positive-area score.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="absolute_effect_kinetics",
+            kind="kinetics",
+            summary="Per-arm matched-tetO separation trajectories that preserve pre-stress preload differences, paired with a compact expected-direction total-area score.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="control_anchored_decomposition",
+            kind="summary",
+            summary="Per-pair sponge-versus-matched-tetO assay summary with relevant-stress traces, H2O context, pre-stress ΔR, and expected-direction state-area summaries.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="interaction_summary",
+            kind="summary",
+            summary="2x2 state summary over the matched-control-normalized endpoint or AUC surface.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="library_heatmaps",
+            kind="summary",
+            summary="Library-wide heatmaps over expected-direction total area, expected-direction post-stress area, and preload shift.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="stress_modulation_scores",
+            kind="summary",
+            summary="Stress-modulation score review across on-target sponge/sensor pairs.",
+            primary=True,
+        ),
+        ProtocolFigureSpec(
+            id="pareto_ranking",
+            kind="summary",
+            summary="Pareto-style ranking of expected-direction total area against burden and leakiness.",
+            primary=True,
+        ),
+    )
+
+    retron_sponge_plot_profiles = (
+        ProtocolPlotProfileSpec(
+            id="screen_overview",
+            summary="Reader-first default set for matched-control sponge screens from QC through decision and ranking.",
+            figures=(
+                "raw_kinetics",
+                "support_kinetics",
+                "control_burden_panel",
+                "control_anchored_decomposition",
+                "absolute_effect_kinetics",
+                "induced_effect_kinetics",
+                "library_heatmaps",
+                "pareto_ranking",
+            ),
+        ),
+        ProtocolPlotProfileSpec(
+            id="kinetics_qc",
+            summary="QC-first review over raw, support, and tetO burden traces.",
+            figures=("raw_kinetics", "support_kinetics", "control_burden_panel"),
+        ),
+        ProtocolPlotProfileSpec(
+            id="analysis_review",
+            summary="Expanded semantic review over compiled sponge metrics, intermediate transforms, and rankings.",
+            figures=(
+                "baseline_shifted_kinetics",
+                "matched_control_kinetics",
+                "absolute_effect_kinetics",
+                "induced_effect_kinetics",
+                "control_anchored_decomposition",
+                "interaction_summary",
+                "library_heatmaps",
+                "stress_modulation_scores",
+                "pareto_ranking",
+            ),
+        ),
+    )
+
+    single_reporter_protocol = ProtocolDescriptor(
+        protocol="plate_reader/single_reporter_screen",
+        domain="plate_reader",
+        family="screen_analysis",
+        summary=(
+            "Single-reporter plate-reader panel protocol with configurable reporter/normalizer channels and "
+            "compiled fold-change summaries."
+        ),
+        tags=("plate_reader", "single_reporter", "screen", "ratio", "fold_change"),
+        input_fields=map_free_kinetic_input_fields,
+        analysis_fields=(
+            field(
+                "reporter_channel",
+                "Primary reporter channel to normalize against the configured normalizer.",
+                kind="string",
+                default="RFP",
+            ),
+            field(
+                "normalizer_channel",
+                "Denominator channel used to normalize the reporter signal.",
+                kind="string",
+                default="OD600",
+            ),
+            field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            dual_preprocessing_field,
+        ),
+        factors=dual_reporter_protocol.factors,
+        semantic_profiles=(
+            ProtocolSemanticProfileSpec(
+                id="single_reporter_raw",
+                family="single_reporter_panel",
+                summary="Single-reporter panel semantics over a configured reporter/normalizer ratio.",
+                primary_metric="Reporter_Normalizer",
+                primary_readout="reporter / normalizer",
+                tags=("single_reporter", "ratio", "panel"),
+            ),
+            ProtocolSemanticProfileSpec(
+                id="single_reporter_fold_change",
+                family="single_reporter_panel",
+                summary="Single-reporter panel semantics with compiled fold-change summaries.",
+                primary_metric="log2FC",
+                primary_readout="reporter / normalizer",
+                tags=("single_reporter", "ratio", "panel", "fold_change"),
+            ),
+        ),
+        control_rules=(),
+        windows=(),
+        metrics=(
+            ProtocolMetricSpec(
+                id="Normalizer",
+                stage="raw",
+                summary="Raw configured normalizer trace.",
+                formula="configured_normalizer_channel",
+                profiles=("single_reporter_raw", "single_reporter_fold_change"),
+            ),
+            ProtocolMetricSpec(
+                id="Reporter",
+                stage="raw",
+                summary="Raw configured reporter trace.",
+                formula="configured_reporter_channel",
+                profiles=("single_reporter_raw", "single_reporter_fold_change"),
+            ),
+            ProtocolMetricSpec(
+                id="Reporter_Normalizer",
+                stage="support",
+                summary="Configured reporter normalized by the configured denominator channel.",
+                formula="configured_reporter_channel / configured_normalizer_channel",
+                depends_on=("Reporter", "Normalizer"),
+                value_space="linear_ratio",
+                unit="ratio",
+                comparable_group="primary_ratio_linear",
+                profiles=("single_reporter_raw", "single_reporter_fold_change"),
+            ),
+            ProtocolMetricSpec(
+                id="FC",
+                stage="summary",
+                summary="Nearest-time fold-change relative to the configured baseline treatment.",
+                formula="Reporter_Normalizer(t*) / baseline(Reporter_Normalizer)",
+                depends_on=("Reporter_Normalizer",),
+                value_space="fold_change_ratio",
+                unit="ratio",
+                comparable_group="fold_change_linear",
+                profiles=("single_reporter_fold_change",),
+            ),
+            ProtocolMetricSpec(
+                id="log2FC",
+                stage="summary",
+                summary="Log2 fold-change relative to the configured baseline treatment.",
+                formula="log2(FC)",
+                depends_on=("FC",),
+                value_space="log2_fold_change",
+                unit="log2_ratio",
+                comparable_group="fold_change_log2",
+                profiles=("single_reporter_fold_change",),
+            ),
+        ),
+        effect_signs=(),
+        figures=(
+            ProtocolFigureSpec(
+                id="raw_kinetics",
+                kind="qc",
+                summary="Raw kinetics view over the configured normalizer, reporter, and reporter ratio channels.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="endpoint_by_condition",
+                kind="summary",
+                summary="Endpoint comparison grouped by treatment/condition.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="endpoint_by_design",
+                kind="summary",
+                summary="Endpoint comparison grouped by construct/design.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="intensity_overview",
+                kind="kinetics",
+                summary="Combined time-series and endpoint view of the primary single-reporter ratio.",
+                primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="value_distributions",
+                kind="qc",
+                summary="Distribution view of the primary single-reporter ratio.",
+            ),
+        ),
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="screen_overview",
+                summary="Balanced default set for single-reporter plate-reader experiments.",
+                figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+            ),
+            ProtocolPlotProfileSpec(
+                id="kinetics_qc",
+                summary="Kinetics-first QC view with raw traces and distributions.",
+                figures=("raw_kinetics", "value_distributions"),
+            ),
+        ),
+        default_plot_profile="screen_overview",
+        execution=ProtocolExecutionPlan(
+            notebook=ProtocolNotebookPolicy(
+                default_template="notebook/eda",
+                allowed_templates=("notebook/eda", "notebook/basic"),
+                summary="Single-reporter plate-reader screens default to the EDA notebook with plot support.",
+            ),
+            plugin_defaults=(
+                ProtocolPluginDefaultsSpec(
+                    plugin="ingest/synergy_h1",
+                    summary=(
+                        "Single-reporter screens inherit generic ingest settings here; "
+                        "the compiler derives the required reporter/normalizer channels."
+                    ),
+                    with_={
+                        "mode": binding_value("ingest.mode", "kinetic_only"),
+                        "channel_map": binding_value("ingest.channel_map", None),
+                        "sheet_names": binding_value("ingest.sheet_names", None),
+                        "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                        "time_step_h": binding_value("ingest.time_step_h", None),
+                        "auto_roots": binding_value("ingest.auto_roots", None),
+                        "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                        "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                        "auto_pick": binding_value("ingest.auto_pick", "single"),
+                        "auto_recursive": binding_value("ingest.auto_recursive", False),
+                        "print_summary": binding_value("ingest.print_summary", True),
+                    },
+                ),
+                ProtocolPluginDefaultsSpec(
+                    plugin="transform/fold_change",
+                    summary=(
+                        "Single-reporter fold-change inherits generic comparison settings here; "
+                        "the compiler sets the target to the configured reporter/normalizer ratio."
+                    ),
+                    with_={
+                        "report_times": binding_value("fold_change.report_times"),
+                        "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
+                        "agg": binding_value("fold_change.agg", "median"),
+                        "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
+                        "group_by": binding_value("fold_change.group_by", ["design_id"]),
+                        "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
+                        "global_baseline_value": binding_value("fold_change.global_baseline_value", None),
+                        "overrides": binding_value("fold_change.overrides", []),
+                        "fc_column": binding_value("fold_change.fc_column", "FC"),
+                        "log2fc_column": binding_value("fold_change.log2fc_column", "log2FC"),
+                    },
+                ),
+            ),
+            compiler=compile_plate_reader_single_reporter_screen,
+        ),
+    )
+
+    retron_protocol = ProtocolDescriptor(
+        protocol="plate_reader/retron_sponge_screen",
+        domain="plate_reader",
+        family="matched_control_screen",
+        summary=(
+            "Plate-reader retron sponge screen with explicit matched-control kinetics, burden, leakiness, "
+            "and cross-sensor ranking summaries."
+        ),
+        tags=("plate_reader", "retron", "sponge", "matched_control", "screen", "ratio"),
+        input_fields=map_free_kinetic_input_fields,
+        analysis_fields=(
+            measurement_field,
+            field(
+                "reporter_channel",
+                "Reporter channel used when measurement=single_reporter.",
+                kind="string",
+                default="RFP",
+            ),
+            field(
+                "growth_channel",
+                "Growth / biomass proxy channel used when measurement=single_reporter.",
+                kind="string",
+                default="OD600",
+            ),
+            field(
+                "include_fold_change",
+                "Optionally build the fold-change comparison table.",
+                kind="bool",
+                default=False,
+            ),
+            dual_preprocessing_field,
+            field(
+                "semantic_metrics",
+                "Matched-control sponge-analysis settings.",
+                children=(
+                    field(
+                        "design_column",
+                        "Design label column used to derive sensor/sponge identities.",
+                        kind="string",
+                        default="design_id_alias",
+                    ),
+                    field("state_column", "2x2 state label column.", kind="string", default="treatment_alias"),
+                    field(
+                        "raw_treatment_column",
+                        "Raw treatment column used to recover the actual stress label.",
+                        kind="string",
+                        default="treatment",
+                    ),
+                    field(
+                        "plate_column",
+                        "Plate-normalization boundary column. Set to null when workbook sheets are acquisition segments of one plate; set it explicitly when sheets encode distinct biological plates.",
+                        kind="string",
+                        allow_none=True,
+                        default=None,
+                    ),
+                    field("replicate_column", "Replicate-well identifier column.", kind="string", default="position"),
+                    field("sensor_column", "Optional explicit sensor column.", kind="string", allow_none=True),
+                    field("sponge_column", "Optional explicit sponge column.", kind="string", allow_none=True),
+                    field("genotype_column", "Optional explicit genotype-id column.", kind="string", allow_none=True),
+                    field(
+                        "stress_condition_column",
+                        "Optional explicit stress-condition column when raw treatment parsing is not canonical.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "relevant_stress_column",
+                        "Optional explicit boolean column marking relevant stress rows.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "expected_sign_column",
+                        "Optional explicit sign column (-1/+1) for cross-sensor ranking.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "relevant_sensor_pair_column",
+                        "Optional explicit boolean column marking on-target sensor/sponge pairs.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "matched_control_group_column",
+                        "Optional explicit grouping column for same-sensor tetO control matching.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "sponge_family_size_column",
+                        "Optional explicit sponge-family size/category column.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    field(
+                        "design_separator",
+                        "Separator used when deriving sensor/sponge from the design label.",
+                        kind="string",
+                        default="/",
+                    ),
+                    field(
+                        "control_name",
+                        "Control sponge label used for same-sensor matching.",
+                        kind="string",
+                        default="tetO",
+                    ),
+                    field(
+                        "no_stress_label",
+                        "Canonical no-stress label for summary outputs.",
+                        kind="string",
+                        default="H2O",
+                    ),
+                    field(
+                        "stress_time_zero_policy",
+                        "How to resolve the stress-addition boundary on the assay clock.",
+                        kind="string",
+                        choices=("explicit", "largest_gap_midpoint"),
+                        default="largest_gap_midpoint",
+                    ),
+                    field(
+                        "stress_time_zero_h",
+                        "Explicit stress-addition time in hours on the assay clock when policy=explicit.",
+                        kind="number",
+                        allow_none=True,
+                        default=None,
+                    ),
+                    field(
+                        "max_post_stress_hours",
+                        "Optional cap on the primary post-stress window, measured in hours after stress addition, "
+                        "before both AUC and endpoint summaries are computed.",
+                        kind="number",
+                        allow_none=True,
+                        default=DEFAULT_PRIMARY_POST_STRESS_HOURS,
+                    ),
+                    field(
+                        "pre_reads",
+                        "Number of pre-stress reads used for the baseline window.",
+                        kind="integer",
+                        default=3,
+                    ),
+                    field("endpoint_reads", "Number of reads used in the endpoint window.", kind="integer", default=3),
+                    field(
+                        "states",
+                        "Explicit 2x2 IPTG/stress state labels.",
+                        children=(
+                            field(
+                                "uninduced_unstressed",
+                                "Label for the H2O, -IPTG state.",
+                                kind="string",
+                                default="-IPTG/-stress",
+                            ),
+                            field(
+                                "induced_unstressed",
+                                "Label for the H2O, +IPTG state.",
+                                kind="string",
+                                default="+IPTG/-stress",
+                            ),
+                            field(
+                                "uninduced_stressed",
+                                "Label for the relevant-stress, -IPTG state.",
+                                kind="string",
+                                default="-IPTG/+stress",
+                            ),
+                            field(
+                                "induced_stressed",
+                                "Label for the relevant-stress, +IPTG state.",
+                                kind="string",
+                                default="+IPTG/+stress",
+                            ),
+                        ),
+                    ),
+                    field(
+                        "plateau",
+                        "Primary post-stress window policy.",
+                        children=(
+                            field(
+                                "mode",
+                                "Window selector: full trace after stress, or stop once the matched tetO control plateaus.",
+                                kind="string",
+                                choices=("full_post_stress", "control_plateau"),
+                                default="full_post_stress",
+                            ),
+                            field(
+                                "slope_tolerance",
+                                "Absolute OD slope threshold used for plateau detection.",
+                                kind="number",
+                                default=0.01,
+                            ),
+                            field(
+                                "min_intervals",
+                                "Minimum number of trailing low-slope intervals before calling plateau.",
+                                kind="integer",
+                                default=2,
+                            ),
+                        ),
+                    ),
+                    field(
+                        "relevant_stress_map",
+                        "Sensor -> relevant stress label mapping.",
+                        kind="mapping",
+                        allow_unknown=True,
+                    ),
+                    field(
+                        "sensor_target_map",
+                        "Sensor -> cognate sponge motif list.",
+                        kind="mapping",
+                        allow_unknown=True,
+                    ),
+                    field(
+                        "expected_sign_map",
+                        "Optional explicit sign overrides for cross-sensor ranking.",
+                        kind="mapping",
+                        allow_unknown=True,
+                    ),
+                ),
+            ),
+        ),
+        factors=(
+            ProtocolFactorSpec(name="sensor", role="sensor", summary="Reporter promoter / sensor arm."),
+            ProtocolFactorSpec(name="sponge", role="construct", summary="Real or tetO sponge arm."),
+            ProtocolFactorSpec(name="stress_condition", role="stress", summary="Relevant stress or H2O control."),
+            ProtocolFactorSpec(name="IPTG", role="induction", summary="IPTG-driven retron-expression state."),
+            ProtocolFactorSpec(name="replicate_id", role="replicate", summary="Replicate well identifier."),
+            ProtocolFactorSpec(name="time", role="time", summary="Time on the assay clock in hours."),
+            ProtocolFactorSpec(name="plate_id", role="plate", summary="Plate-local normalization boundary."),
+            ProtocolFactorSpec(name="genotype_id", role="construct", summary="Sensor/sponge genotype identifier."),
+        ),
+        semantic_profiles=(
+            ProtocolSemanticProfileSpec(
+                id="yfp_cfp",
+                family="matched_control_dual_reporter",
+                summary="Dual-reporter sponge-screen semantics on the log2(YFP/CFP) axis.",
+                primary_metric="O_abs_AUC",
+                primary_readout="log2(YFP / CFP)",
+                tags=("dual_reporter", "matched_control", "sponge"),
+            ),
+            ProtocolSemanticProfileSpec(
+                id="single_reporter",
+                family="matched_control_single_reporter",
+                summary="Single-reporter sponge-screen semantics on the log2(configured reporter / configured growth channel) axis.",
+                primary_metric="O_abs_AUC",
+                primary_readout="log2(configured_reporter_channel / configured_growth_channel)",
+                tags=("single_reporter", "matched_control", "sponge"),
+            ),
+        ),
+        control_rules=(
+            ProtocolControlRule(
+                id="matched_same_sensor_control",
+                summary=(
+                    "Normalize every real sponge well to the same-sensor tetO control on the same plate, "
+                    "matched by stress state, IPTG state, and timepoint."
+                ),
+                match_on=("sensor", "plate_id", "stress_condition", "IPTG", "time"),
+                control_selector="matched_tetO_group",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+        ),
+        windows=(
+            ProtocolWindowSpec(
+                id="pre_stress_last_n",
+                summary="Use the last N reads before stress addition as the baseline window.",
+                anchor="stress_time_zero",
+                selector="last_n_before",
+                params={"n": 3},
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolWindowSpec(
+                id="primary_post_stress",
+                summary="Use the post-stress kinetic window through the configured end-of-window policy.",
+                anchor="stress_time_zero",
+                selector="configured_post_stress_window",
+                params={"policy": "semantic_metrics.plateau"},
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolWindowSpec(
+                id="endpoint_last_n",
+                summary="Use the last N reads inside the primary post-stress window as the endpoint window after any "
+                "configured post-stress time cap is applied.",
+                anchor="primary_post_stress",
+                selector="last_n_within",
+                params={"n": 3},
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+        ),
+        metrics=(
+            ProtocolMetricSpec(
+                id="OD",
+                stage="raw",
+                summary="Raw OD600 trace.",
+                formula="OD600",
+                profile_overrides={
+                    "single_reporter": ProtocolSemanticProfileOverride(
+                        summary="Raw configured growth-proxy trace.",
+                        formula="configured_growth_channel",
+                    )
+                },
+            ),
+            ProtocolMetricSpec(id="CFP", stage="raw", summary="Raw CFP trace.", formula="CFP", profiles=("yfp_cfp",)),
+            ProtocolMetricSpec(id="YFP", stage="raw", summary="Raw YFP trace.", formula="YFP", profiles=("yfp_cfp",)),
+            ProtocolMetricSpec(
+                id="Reporter",
+                stage="raw",
+                summary="Raw configured reporter trace.",
+                formula="configured_reporter_channel",
+                profiles=("single_reporter",),
+            ),
+            ProtocolMetricSpec(
+                id="YFP_OD",
+                stage="support",
+                summary="Supporting YFP per biomass proxy.",
+                formula="YFP / OD600",
+                depends_on=("YFP", "OD"),
+                value_space="linear_ratio",
+                unit="ratio",
+                comparable_group="support_ratio_linear",
+                profiles=("yfp_cfp",),
+            ),
+            ProtocolMetricSpec(
+                id="CFP_OD",
+                stage="support",
+                summary="Supporting CFP per biomass proxy.",
+                formula="CFP / OD600",
+                depends_on=("CFP", "OD"),
+                value_space="linear_ratio",
+                unit="ratio",
+                comparable_group="support_ratio_linear",
+                profiles=("yfp_cfp",),
+            ),
+            ProtocolMetricSpec(
+                id="Reporter_OD",
+                stage="support",
+                summary="Supporting configured reporter per biomass proxy.",
+                formula="configured_reporter_channel / configured_growth_channel",
+                depends_on=("Reporter", "OD"),
+                value_space="linear_ratio",
+                unit="ratio",
+                comparable_group="support_ratio_linear",
+                profiles=("single_reporter",),
+            ),
+            ProtocolMetricSpec(
+                id="R",
+                stage="derived",
+                summary="Primary within-well log2 ratio.",
+                formula="log2(YFP / CFP)",
+                depends_on=("YFP", "CFP"),
+                value_space="log2_ratio",
+                unit="log2_ratio",
+                comparable_group="primary_ratio_log2",
+                profile_overrides={
+                    "single_reporter": ProtocolSemanticProfileOverride(
+                        summary="Primary within-well single-reporter log2 ratio.",
+                        formula="log2(configured_reporter_channel / configured_growth_channel)",
+                        depends_on=("Reporter", "OD", "Reporter_OD"),
+                        value_space="log2_ratio",
+                        unit="log2_ratio",
+                        comparable_group="primary_ratio_log2",
+                    )
+                },
+            ),
+            ProtocolMetricSpec(
+                id="R_pre",
+                stage="summary",
+                summary="Mean of the primary ratio in the pre-stress window.",
+                formula="mean(R over pre_stress_last_n)",
+                depends_on=("R", "pre_stress_last_n"),
+                value_space="log2_ratio",
+                unit="log2_ratio",
+                comparable_group="primary_ratio_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="P_pre",
+                stage="summary",
+                summary="Pre-stress matched-control preload shift between +IPTG and -IPTG states.",
+                formula="mean(R_pre - R_pre_tetO,matched)(+IPTG) - mean(R_pre - R_pre_tetO,matched)(-IPTG)",
+                depends_on=("R_pre", "matched_same_sensor_control"),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="mu",
+                stage="support",
+                summary="Approximate growth-rate trace from the slope of log(OD600).",
+                formula="d(log(OD600)) / dt",
+                depends_on=("OD",),
+                profile_overrides={
+                    "single_reporter": ProtocolSemanticProfileOverride(
+                        summary="Approximate growth-rate trace from the slope of log(configured growth channel).",
+                        formula="d(log(configured_growth_channel)) / dt",
+                    )
+                },
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="B",
+                stage="derived",
+                summary="Baseline-shifted reporter ratio relative to the well's own pre-stress state.",
+                formula="R(t) - R_pre",
+                depends_on=("R", "R_pre"),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="C",
+                stage="comparison",
+                summary="Matched-control-normalized sponge deviation.",
+                formula="B(t) - mean(B matched_same_sensor_control at t)",
+                depends_on=("B", "matched_same_sensor_control"),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="C_AUC",
+                stage="summary",
+                summary="AUC of the matched-control-normalized trace over the primary post-stress window.",
+                formula="AUC(C over primary_post_stress)",
+                depends_on=("C", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="C_END",
+                stage="summary",
+                summary="Endpoint mean of the matched-control-normalized trace.",
+                formula="mean(C over endpoint_last_n)",
+                depends_on=("C", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D",
+                stage="comparison",
+                summary="IPTG-state effect after matched-control normalization.",
+                formula="mean(C +IPTG) - mean(C -IPTG)",
+                depends_on=("C",),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_AUC",
+                stage="summary",
+                summary="AUC of the IPTG-state effect.",
+                formula="AUC(D over primary_post_stress)",
+                depends_on=("D", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_END",
+                stage="summary",
+                summary="Endpoint mean of the IPTG-state effect.",
+                formula="mean(D over endpoint_last_n)",
+                depends_on=("D", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_abs",
+                stage="comparison",
+                summary="Absolute matched-control IPTG-state effect that retains pre-stress preload differences.",
+                formula="mean(R - R_tetO,matched)(+IPTG) - mean(R - R_tetO,matched)(-IPTG)",
+                depends_on=("R", "matched_same_sensor_control"),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_abs_AUC",
+                stage="summary",
+                summary="AUC of the absolute matched-control IPTG-state effect.",
+                formula="AUC(D_abs over primary_post_stress)",
+                depends_on=("D_abs", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_abs_END",
+                stage="summary",
+                summary="Endpoint mean of the absolute matched-control IPTG-state effect.",
+                formula="mean(D_abs over endpoint_last_n)",
+                depends_on=("D_abs", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_growth",
+                stage="burden",
+                summary="Construct-specific growth burden after same-sensor tetO subtraction.",
+                formula="mean(mu - mu_tetO,matched)(+IPTG) - mean(mu - mu_tetO,matched)(-IPTG)",
+                depends_on=("mu", "matched_same_sensor_control"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_growth_AUC",
+                stage="burden",
+                summary="AUC of construct-specific growth burden over the primary window.",
+                formula="AUC(D_growth over primary_post_stress)",
+                depends_on=("D_growth", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="D_growth_END",
+                stage="burden",
+                summary="Endpoint mean of construct-specific growth burden.",
+                formula="mean(D_growth over endpoint_last_n)",
+                depends_on=("D_growth", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="M",
+                stage="comparison",
+                summary="Stress modulation of the IPTG-state effect after stress addition.",
+                formula="D(relevant_stress) - D(H2O)",
+                depends_on=("D",),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="M_AUC",
+                stage="summary",
+                summary="AUC of stress modulation over the post-stress window.",
+                formula="AUC(M over primary_post_stress)",
+                depends_on=("M", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="M_END",
+                stage="summary",
+                summary="Endpoint mean of the stress modulation trace.",
+                formula="mean(M over endpoint_last_n)",
+                depends_on=("M", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="O",
+                stage="ranking",
+                summary="Expected-direction-aligned IPTG-state effect.",
+                formula="expected_decoy_sign * D",
+                depends_on=("D",),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="O_AUC",
+                stage="ranking",
+                summary="Positive-area integral of the expected-direction-aligned IPTG-state effect.",
+                formula="∫ max(O, 0) dt over primary_post_stress",
+                depends_on=("O", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="O_abs",
+                stage="ranking",
+                summary="Expected-direction-aligned absolute matched-control IPTG-state effect.",
+                formula="expected_decoy_sign * D_abs",
+                depends_on=("D_abs",),
+                value_space="delta_log2_ratio",
+                unit="log2_ratio_delta",
+                comparable_group="response_delta_log2",
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="O_abs_AUC",
+                stage="ranking",
+                summary="Positive-area integral of the expected-direction-aligned absolute matched-control IPTG-state effect.",
+                formula="∫ max(O_abs, 0) dt over primary_post_stress",
+                depends_on=("O_abs", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="G_sensor",
+                stage="summary",
+                summary="Native tetO sensor response used for cross-sensor scaling.",
+                formula="AUC(mean(B tetO,-IPTG,relevant stress) - mean(B tetO,-IPTG,H2O))",
+                depends_on=("B", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="S_AUC",
+                stage="ranking",
+                summary="Cross-sensor scaled expected-direction post-stress area relative to the native sensor response.",
+                formula="O_AUC / abs(G_sensor)",
+                depends_on=("O_AUC", "G_sensor"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="S_abs_AUC",
+                stage="ranking",
+                summary="Cross-sensor scaled expected-direction total area relative to the native sensor response.",
+                formula="O_abs_AUC / abs(G_sensor)",
+                depends_on=("O_abs_AUC", "G_sensor"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="L_pre",
+                stage="leakiness",
+                summary="Pre-stress leakiness relative to the matched control.",
+                formula="R_pre(real,-IPTG) - mean(R_pre tetO,-IPTG)",
+                depends_on=("R_pre", "matched_same_sensor_control"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="L_post_AUC",
+                stage="leakiness",
+                summary="Uninduced post-stress leakiness over the primary window.",
+                formula="AUC(mean(C -IPTG))",
+                depends_on=("C", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="T_ratio_AUC",
+                stage="burden",
+                summary="tetO ratio burden from the +IPTG versus -IPTG state contrast.",
+                formula="AUC(mean(B tetO,+IPTG) - mean(B tetO,-IPTG))",
+                depends_on=("B", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="T_growth_AUC",
+                stage="burden",
+                summary="tetO growth burden from the +IPTG versus -IPTG state contrast.",
+                formula="AUC(mean(mu tetO,+IPTG) - mean(mu tetO,-IPTG))",
+                depends_on=("mu", "primary_post_stress"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+            ProtocolMetricSpec(
+                id="T_finalOD",
+                stage="burden",
+                summary="Endpoint OD burden for the tetO control.",
+                formula="mean(OD tetO,+IPTG,end) - mean(OD tetO,-IPTG,end)",
+                depends_on=("OD", "endpoint_last_n"),
+                profiles=("yfp_cfp", "single_reporter"),
+            ),
+        ),
+        effect_signs=(
+            ProtocolEffectSignSpec(
+                target="spyP",
+                expected_sign="negative",
+                summary="Effective decoys reduce the spyP ratio after sign correction.",
+            ),
+            ProtocolEffectSignSpec(
+                target="sulAp",
+                expected_sign="positive",
+                summary="Effective LexA decoys increase the sulAp ratio.",
+            ),
+            ProtocolEffectSignSpec(
+                target="soxSp",
+                expected_sign="negative",
+                summary="Effective SoxR/SoxS decoys reduce the soxSp ratio after sign correction.",
+            ),
+        ),
+        figures=retron_sponge_figures,
+        plot_profiles=retron_sponge_plot_profiles,
+        default_plot_profile="screen_overview",
+        artifacts=(
+            ProtocolArtifactSpec(
+                id="semantic_trace_table",
+                summary="CSV export of the matched-control sponge trace table.",
+                default=True,
+            ),
+            ProtocolArtifactSpec(
+                id="semantic_summary_table",
+                summary="CSV export of the matched-control sponge summary table.",
+                default=True,
+            ),
+        ),
+        ranking=ProtocolRankingSpec(
+            primary_metric="O_abs_AUC",
+            direction="higher_is_better",
+            penalties=("T_ratio_AUC", "T_finalOD", "L_pre", "L_post_AUC"),
+            supporting_metrics=("S_abs_AUC", "P_pre", "O_AUC", "M_AUC"),
+            summary="Rank hits by expected-direction total area, then inspect preload, expected-direction post-stress area, burden, and leakiness.",
+            profiles=("yfp_cfp", "single_reporter"),
+        ),
+        execution=ProtocolExecutionPlan(
+            notebook=ProtocolNotebookPolicy(
+                default_template="notebook/retron_sponge",
+                allowed_templates=("notebook/retron_sponge", "notebook/eda", "notebook/basic"),
+                summary=(
+                    "Retron sponge screens default to the protocol-specific review notebook and keep the generic "
+                    "record explorers available for general record inspection."
+                ),
+            ),
+            plugin_defaults=(
+                ProtocolPluginDefaultsSpec(
+                    plugin="ingest/synergy_h1",
+                    summary=(
+                        "Retron sponge screens inherit generic ingest settings here; "
+                        "the compiler derives the required measurement-family channels."
+                    ),
+                    with_={
+                        "mode": binding_value("ingest.mode", "kinetic_only"),
+                        "channel_map": binding_value("ingest.channel_map", None),
+                        "sheet_names": binding_value("ingest.sheet_names", None),
+                        "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
+                        "time_step_h": binding_value("ingest.time_step_h", None),
+                        "auto_roots": binding_value("ingest.auto_roots", None),
+                        "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
+                        "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
+                        "auto_pick": binding_value("ingest.auto_pick", "single"),
+                        "auto_recursive": binding_value("ingest.auto_recursive", False),
+                        "print_summary": binding_value("ingest.print_summary", True),
+                    },
+                ),
+                ProtocolPluginDefaultsSpec(
+                    plugin="transform/fold_change",
+                    summary=(
+                        "Retron sponge fold-change inherits generic comparison settings here; "
+                        "the compiler sets the target to the compiled primary ratio."
+                    ),
+                    with_={
+                        "report_times": binding_value("fold_change.report_times"),
+                        "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
+                        "agg": binding_value("fold_change.agg", "median"),
+                        "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
+                        "group_by": binding_value("fold_change.group_by", ["design_id"]),
+                        "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
+                        "global_baseline_value": binding_value("fold_change.global_baseline_value", None),
+                        "overrides": binding_value("fold_change.overrides", []),
+                        "fc_column": binding_value("fold_change.fc_column", "FC"),
+                        "log2fc_column": binding_value("fold_change.log2fc_column", "log2FC"),
+                    },
+                ),
+            ),
+            compiler=compile_plate_reader_retron_sponge_screen,
+        ),
+    )
+
+    return single_reporter_protocol, retron_protocol

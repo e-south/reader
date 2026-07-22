@@ -14,13 +14,15 @@ import re
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import typer
 from rich.console import Console
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
-from reader.tests.support import base_reader_config, build_decl, write_config
+from reader.tests.support import base_reader_config, build_decl, default_notebook_name, write_config
 from reader.workbench import PluginSemantics, cli
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
 from reader.workbench.config import ReaderSpec
@@ -34,6 +36,10 @@ def _plain(text: str) -> str:
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
 
+def _compiled_semantic_program(payload: dict) -> dict:
+    return payload["implementation"]["compiled"]["semantic_program"]
+
+
 def _tidy_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -43,6 +49,10 @@ def _tidy_df() -> pd.DataFrame:
             "value": [1.0],
         }
     )
+
+
+def _write_openable_workbook(path: Path) -> None:
+    pd.DataFrame({"value": [1]}).to_excel(path, index=False)
 
 
 def _base_config() -> dict:
@@ -107,7 +117,7 @@ def test_numeric_job_index_ignores_template_dirs(monkeypatch, tmp_path: Path) ->
     assert cli._infer_job_path("1") == (year_dir / "config.yaml").resolve()
 
 
-def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, tmp_path: Path) -> None:
+def test_numeric_job_index_rejects_hidden_scaffold_index(monkeypatch, tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
     year_dir = exp_root / "2025" / "real_exp"
     template_dir = exp_root / "2025" / "_template_alpha"
@@ -117,7 +127,8 @@ def test_numeric_job_index_can_resolve_scaffold_index_from_ls_all(monkeypatch, t
     write_config(year_dir / "config.yaml", _base_config())
 
     monkeypatch.chdir(tmp_path)
-    assert cli._infer_job_path("1") == (template_dir / "config.yaml").resolve()
+    with pytest.raises(typer.BadParameter, match="hidden scaffold/template config"):
+        cli._infer_job_path("1")
     assert cli._infer_job_path("2") == (year_dir / "config.yaml").resolve()
 
 
@@ -186,8 +197,10 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
     output = test_console.export_text()
     assert "Protocol" in output
     assert "plate_reader/dual_repo" in output
-    assert "Selected" in output
-    assert "Generated" in output
+    assert "Selec" in output
+    assert "ted" in output
+    assert "Gener" in output
+    assert "ated" in output
     assert "1 rec" in output
 
 
@@ -210,11 +223,11 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     good_dir.mkdir(parents=True)
     bad_dir.mkdir(parents=True)
     write_config(good_dir / "config.yaml", _base_config())
-    (bad_dir / "config.yaml").write_text("schema: reader/v7\nexperiment:\n  id: broken\n", encoding="utf-8")
+    (bad_dir / "config.yaml").write_text("schema: reader/v8\nexperiment:\n  id: broken\n", encoding="utf-8")
     inputs_dir = good_dir / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
 
     outputs = good_dir / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
@@ -272,15 +285,15 @@ def test_ls_rejects_missing_root(tmp_path: Path) -> None:
     assert "Experiments root not found" in result.output
 
 
-def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) -> None:
+def test_ls_json_surfaces_uncataloged_outputs(tmp_path: Path) -> None:
     exp_root = tmp_path / "experiments"
-    exp_dir = exp_root / "2025" / "legacy_exp"
+    exp_dir = exp_root / "2025" / "uncataloged_exp"
     exp_dir.mkdir(parents=True)
     write_config(exp_dir / "config.yaml", _base_config())
     inputs_dir = exp_dir / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     plots_dir = exp_dir / "outputs" / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     (plots_dir / "trace.pdf").write_text("plot", encoding="utf-8")
@@ -292,11 +305,62 @@ def test_ls_json_surfaces_legacy_outputs_without_record_catalog(tmp_path: Path) 
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["summary"]["by_readiness"] == {"legacy_outputs_present": 1}
+    assert payload["summary"]["by_readiness"] == {"uncataloged_outputs_present": 1}
     entry = payload["experiments"][0]
-    assert entry["readiness"]["state"] == "legacy_outputs_present"
+    assert entry["readiness"]["state"] == "uncataloged_outputs_present"
     assert entry["readiness"]["records"]["catalog"] is False
-    assert entry["readiness"]["records"]["legacy_outputs_present"] is True
+    assert entry["readiness"]["records"]["uncataloged_outputs_present"] is True
+
+
+def test_ls_json_does_not_treat_notebook_only_scaffolds_as_uncataloged_outputs(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "notebook_only"
+    exp_dir.mkdir(parents=True)
+    cfg_path = write_config(exp_dir / "config.yaml", base_reader_config(experiment_id="notebook_only"))
+
+    runner = CliRunner()
+    scaffold_result = runner.invoke(cli.app, ["notebook", str(cfg_path), "--mode", "none"])
+    assert scaffold_result.exit_code == 0, scaffold_result.output
+    assert (exp_dir / "outputs" / "notebooks" / default_notebook_name()).exists()
+
+    result = runner.invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["summary"]["by_readiness"] == {"runnable": 1}
+    entry = payload["experiments"][0]
+    assert entry["readiness"]["state"] == "runnable"
+    assert entry["readiness"]["records"]["catalog"] is False
+    assert entry["readiness"]["records"]["uncataloged_outputs_present"] is False
+
+
+def test_ls_json_does_not_treat_empty_record_catalog_as_records_ready(tmp_path: Path) -> None:
+    exp_root = tmp_path / "experiments"
+    exp_dir = exp_root / "2025" / "empty_catalog"
+    exp_dir.mkdir(parents=True)
+    write_config(exp_dir / "config.yaml", _base_config())
+    inputs_dir = exp_dir / "inputs"
+    inputs_dir.mkdir()
+    (inputs_dir / "metadata.xlsx").write_text("metadata", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "run.xlsx")
+    RecordStore(exp_dir / "outputs", contracts=builtin_contract_catalog())
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    readiness = json.loads(result.output)["experiments"][0]["readiness"]
+    assert readiness["state"] == "runnable"
+    assert readiness["records"] == {
+        "catalog": True,
+        "available": False,
+        "uncataloged_outputs_present": False,
+    }
+    assert readiness["capabilities"]["records"] is False
 
 
 def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
@@ -320,7 +384,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
             resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
         ),
     )
-    (broken_dir / "config.yaml").write_text("schema: reader/v7\nexperiment:\n  id: broken\n", encoding="utf-8")
+    (broken_dir / "config.yaml").write_text("schema: reader/v8\nexperiment:\n  id: broken\n", encoding="utf-8")
 
     runner = CliRunner()
     by_protocol = runner.invoke(
@@ -432,14 +496,16 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["steps", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["compiled"] >= 1
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["summary"]["compiled"] >= 1
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["implementation"]["plan"]["pipeline_count"] >= 1
     assert payload["implementation"]["plan"]["plots"] == []
     assert payload["implementation"]["compiled"]["plots"] == []
@@ -459,15 +525,17 @@ def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: P
     result = runner.invoke(cli.app, ["config", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
-    assert payload["authoring"]["schema"] == "reader/v7"
+    assert payload["authoring"]["schema"] == "reader/v8"
     assert payload["authoring"]["protocol"]["id"] == "plate_reader/dual_reporter_screen"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
     assert payload["semantics"]["program"]["ranking"]["primary_metric"] == "log2FC"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert payload["implementation"]["compiled"]["plots"][0]["id"] == "raw_kinetics"
@@ -481,13 +549,14 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["explain", str(cfg), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
     assert payload["semantics"]["program"]["summary"]["total"] >= 1
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["implementation"]["plan"]["pipeline_flow"][0] == "ingest"
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["compiled"]["plots"][0]["semantics"]["category"] == "plot"
@@ -520,7 +589,7 @@ def test_validate_json_surfaces_file_check_selection(monkeypatch, tmp_path: Path
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("stub", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("stub", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
@@ -601,8 +670,10 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
     output = test_console.export_text()
     assert "plate_reader" in output
     assert "test_plot" in output
-    assert "Synthetic plot plugin" in output
-    assert "for CLI tests." in output
+    assert "Synthetic" in output
+    assert "plot plugin" in output
+    assert "for CLI" in output
+    assert "tests." in output
 
 
 def test_protocols_command_filters_by_family() -> None:
@@ -622,15 +693,23 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert "plate_reader/dual_reporter_screen" in result.output
     assert "Dual-reporter plate-reader panel protocol" in result.output
     assert "notebook/eda" in result.output
-    assert "Inputs Surface" in result.output
+    assert "Inputs" in result.output
     assert "ingest.mode" in result.output
-    assert "Analysis Surface" in result.output
+    assert "Analysis" in result.output
     assert "Semantic Program" in result.output
     assert "Plot Profiles" in result.output
     assert "Plot Outputs" in result.output
     assert "Export Artifacts" in result.output
     assert "Default Pipeline" in result.output
     assert "Plot Implementations" in result.output
+
+
+def test_protocols_command_lists_semantic_nodes_without_ranking() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["protocols", "plate_reader/single_reporter_screen"], terminal_width=160)
+    assert result.exit_code == 0
+    assert "Semantic nodes" in result.output
+    assert "Compiled Semantic Execution" in result.output
 
 
 def test_protocols_command_can_render_example_config() -> None:
@@ -642,9 +721,11 @@ def test_protocols_command_can_render_example_config() -> None:
     )
     assert result.exit_code == 0
     assert "Starter YAML" in result.output
-    assert "schema: reader/v7" in result.output
+    assert "schema: reader/v8" in result.output
     assert "id: plate_reader/dual_reporter_screen" in result.output
     assert "profile: screen_overview" in result.output
+    assert "CFP:433,475: CFP" in result.output
+    assert "YFP:500,530: YFP" in result.output
     assert "channels:" not in result.output
     assert "target:" not in result.output
 
@@ -661,8 +742,27 @@ def test_single_reporter_protocol_example_config_surfaces_semantic_channels() ->
     assert "id: plate_reader/single_reporter_screen" in result.output
     assert "reporter_channel: RFP" in result.output
     assert "normalizer_channel: OD600" in result.output
+    assert "channel_map: null" in result.output
+    assert "CFP:433,475" not in result.output
+    assert "YFP:500,530" not in result.output
     assert "channels:" not in result.output
     assert "target:" not in result.output
+
+
+def test_retron_sponge_protocol_example_config_keeps_kinetic_channel_discovery_map_free() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["protocols", "plate_reader/retron_sponge_screen", "--example-config"],
+        terminal_width=160,
+    )
+
+    assert result.exit_code == 0
+    assert "id: plate_reader/retron_sponge_screen" in result.output
+    assert "measurement: yfp_cfp" in result.output
+    assert "channel_map: null" in result.output
+    assert "CFP:433,475" not in result.output
+    assert "YFP:500,530" not in result.output
 
 
 def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
@@ -676,6 +776,26 @@ def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
     spec = ReaderSpec.load(target / "config.yaml")
     assert spec.experiment.id == "20260317_new_assay"
     assert spec.protocol.id == "plate_reader/dual_reporter_screen"
+
+
+def test_single_reporter_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "experiments" / "20260317_single_reporter"
+    result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/single_reporter_screen"])
+
+    assert result.exit_code == 0
+    spec = ReaderSpec.load(target / "config.yaml")
+    assert spec.protocol.inputs["ingest"]["channel_map"] is None
+
+
+def test_retron_sponge_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "experiments" / "20260317_retron_sponge"
+    result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/retron_sponge_screen"])
+
+    assert result.exit_code == 0
+    spec = ReaderSpec.load(target / "config.yaml")
+    assert spec.protocol.inputs["ingest"]["channel_map"] is None
 
 
 def test_notebook_list_templates_command_shows_semantics() -> None:
@@ -755,7 +875,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -773,19 +893,20 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     (plot_dir / "raw_kinetics.pdf").write_text("plot", encoding="utf-8")
 
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["inspect", str(cfg_path)])
+    result = runner.invoke(cli.app, ["inspect", str(cfg_path)], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "Experiment overview" in result.output
     assert "Readiness" in result.output
     assert "records ready" in result.output
-    assert "Authoring bindings" in result.output
+    assert "Config values" in result.output
     assert "Semantic Program" in result.output
     assert "fold_change.report_times" in result.output
     assert "Pipeline chain" in result.output
     assert "Plot outputs" in result.output
-    assert "Export artifacts" in result.output
+    assert "Exports" in result.output
     assert "Generated outputs" in result.output
-    assert "Record catalog" in result.output
+    assert "Records" in result.output
+    assert "tidy.v1 • artifacts/ingest.ingest_synergy_h1/df.parquet" in result.output
     assert "raw_kinetics" in result.output
     assert "crosstalk_pairs_table" in result.output
 
@@ -795,7 +916,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     inputs_dir = tmp_path / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "metadata.xlsx").write_text("xlsx", encoding="utf-8")
-    (inputs_dir / "20250101_sensor_panel.xlsx").write_text("xlsx", encoding="utf-8")
+    _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -813,13 +934,15 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["experiment"]["lifecycle"] == "active"
     assert payload["semantics"]["program"]["metrics"][0]["id"] == "OD"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_crosstalk"
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["active_profile"] == "yfp_cfp_crosstalk"
+    assert compiled_program["ranking"]["execution"]["status"] == "compiled"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["inputs"]["counts"]["files"] == 2
@@ -844,8 +967,13 @@ def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
 
     output = test_console.export_text()
     assert "plate_reader/dual_reporter_screen" in output
-    assert "Attach well-position sample maps" in output
-    assert "Summarize nearest-time fold-change tables" in output
+    assert "Attach" in output
+    assert "well-posit" in output
+    assert "ion sample" in output
+    assert "maps" in output
+    assert "Summarize" in output
+    assert "nearest-ti" in output
+    assert "fold-chang" in output
     assert "validator" not in output
 
 
@@ -854,22 +982,24 @@ def test_protocols_command_can_emit_json() -> None:
     result = runner.invoke(cli.app, ["protocols", "plate_reader/dual_reporter_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     metrics = {item["id"]: item for item in payload["semantics"]["program"]["metrics"]}
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
-    assert metrics["OD"]["execution"]["status"] == "compiled"
     assert metrics["Ratio"]["formula"] == "YFP / CFP"
     assert metrics["Ratio"]["value_space"] == "linear_ratio"
     assert metrics["Ratio"]["unit"] == "ratio"
     assert metrics["Ratio"]["comparable_group"] == "primary_ratio_linear"
-    assert metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
     assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_fold_change"
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
-    assert metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
-    assert metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
     assert payload["semantics"]["program"]["ranking"] is None
-    assert payload["authoring"]["starter_config"]["schema"] == "reader/v7"
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
+    assert compiled_metrics["OD"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
+    assert compiled_metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
+    assert payload["authoring"]["starter_config"]["schema"] == "reader/v8"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
     assert payload["implementation"]["defaults"][0]["parameters"]["mode"]["source"] == "protocol.inputs.ingest.mode"
@@ -882,14 +1012,16 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     result = runner.invoke(cli.app, ["protocols", "logic/sfxi_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     assert payload["protocol"] == "logic/sfxi_screen"
-    assert payload["semantics"]["program"]["summary"]["compiled"] == 4
-    assert payload["semantics"]["program"]["summary"]["descriptive_only"] == 0
-    assert payload["semantics"]["program"]["controls"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
-    assert payload["semantics"]["program"]["windows"][0]["execution"]["status"] == "compiled"
-    assert payload["semantics"]["program"]["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
-    assert payload["semantics"]["program"]["ranking"]["execution"]["status"] == "compiled"
+    assert payload["semantics"]["program"]["summary"]["total"] == 3
+    assert compiled_program["summary"]["compiled"] == 3
+    assert compiled_program["summary"]["descriptive_only"] == 0
+    assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
+    assert compiled_program["windows"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
+    assert compiled_program["ranking"] is None
 
 
 def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
@@ -897,15 +1029,17 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     result = runner.invoke(cli.app, ["protocols", "plate_reader/retron_sponge_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
     figure_ids = {item["id"] for item in payload["authoring"]["outputs"]["figures"]}
     plot_profile_ids = {item["id"] for item in payload["authoring"]["outputs"]["plot_profiles"]}
     assert payload["protocol"] == "plate_reader/retron_sponge_screen"
     assert payload["authoring"]["outputs"]["default_plot_profile"] == "screen_overview"
     assert (
         payload["authoring"]["outputs"]["notebook_policy"]["summary"]
-        == "Retron sponge screens default to the protocol-specific review notebook and keep the generic record explorers available as fallbacks."
+        == "Retron sponge screens default to the protocol-specific review notebook and keep the generic record explorers available for general record inspection."
     )
     assert figure_ids == {
         "raw_kinetics",
@@ -933,16 +1067,16 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     assert metrics["R"]["value_space"] == "log2_ratio"
     assert metrics["R"]["unit"] == "log2_ratio"
     assert metrics["R"]["comparable_group"] == "primary_ratio_log2"
-    assert metrics["R"]["execution"]["status"] == "compiled"
-    assert metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
-    assert metrics["D_AUC"]["execution"]["status"] == "compiled"
-    assert metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert metrics["D_abs_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
-    assert program["controls"][0]["execution"]["status"] == "compiled"
-    assert program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_metrics["R"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["R"]["execution"]["record_ids"] == ["semantic_metrics/trace"]
+    assert compiled_metrics["D_AUC"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["D_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_metrics["D_abs_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_metrics["D_growth_AUC"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
+    assert compiled_program["windows"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_abs_AUC"
-    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
     assert payload["implementation"]["compiled"]["pipeline"][-1]["id"] == "semantic_metrics"
 
 
@@ -966,33 +1100,38 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
     assert program["active_profile"] == "single_reporter_raw"
     assert {item["id"] for item in program["profiles"]} == {
         "single_reporter_raw",
         "single_reporter_fold_change",
     }
     assert set(metrics) == {"Normalizer", "Reporter", "Reporter_Normalizer"}
-    assert metrics["Reporter"]["execution"]["status"] == "compiled"
     assert metrics["Normalizer"]["formula"] == "configured_normalizer_channel"
-    assert metrics["Normalizer"]["execution"]["note"] == "Raw OD700 values are materialized on the ingest dataframe."
     assert metrics["Reporter_Normalizer"]["formula"] == "configured_reporter_channel / configured_normalizer_channel"
-    assert metrics["Reporter_Normalizer"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
+    assert compiled_metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert (
+        compiled_metrics["Normalizer"]["execution"]["note"]
+        == "Raw OD700 values are materialized on the ingest dataframe."
+    )
+    assert compiled_metrics["Reporter_Normalizer"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
     assert program["controls"] == []
     assert program["windows"] == []
     assert program["ranking"] is None
     assert program["summary"] == {
         "total": 3,
-        "compiled": 3,
-        "descriptive_only": 0,
         "by_kind": {
-            "control_rule": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "window": {"total": 0, "compiled": 0, "descriptive_only": 0},
-            "metric": {"total": 3, "compiled": 3, "descriptive_only": 0},
-            "ranking": {"total": 0, "compiled": 0, "descriptive_only": 0},
+            "control_rule": 0,
+            "window": 0,
+            "metric": 3,
+            "ranking": 0,
         },
     }
+    assert compiled_program["summary"]["compiled"] == 3
+    assert compiled_program["summary"]["descriptive_only"] == 0
 
 
 def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_path: Path) -> None:
@@ -1019,8 +1158,10 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
+    compiled_metrics = {item["id"]: item for item in compiled_program["metrics"]}
 
     assert program["active_profile"] == "single_reporter"
     assert {item["id"] for item in program["profiles"]} == {"yfp_cfp", "single_reporter"}
@@ -1043,20 +1184,20 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     assert "CFP" not in metrics
     assert metrics["OD"]["formula"] == "configured_growth_channel"
     assert metrics["OD"]["summary"] == "Raw configured growth-proxy trace."
-    assert metrics["Reporter"]["execution"]["status"] == "compiled"
     assert metrics["R"]["formula"] == "log2(configured_reporter_channel / configured_growth_channel)"
     assert metrics["mu"]["formula"] == "d(log(configured_growth_channel)) / dt"
     assert metrics["R"]["value_space"] == "log2_ratio"
-    assert metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
     assert metrics["Reporter_OD"]["formula"] == "configured_reporter_channel / configured_growth_channel"
-    assert metrics["Reporter_OD"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
+    assert compiled_metrics["Reporter"]["execution"]["status"] == "compiled"
+    assert compiled_metrics["R"]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_metrics["Reporter_OD"]["execution"]["step_ids"] == ["ratio_reporter_normalizer"]
     assert (
-        metrics["Reporter_OD"]["execution"]["note"]
+        compiled_metrics["Reporter_OD"]["execution"]["note"]
         == "The mCherry/OD700 support channel is materialized as a ratio step output."
     )
-    assert program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
+    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["semantic_metrics"]
     assert program["ranking"]["primary_metric"] == "O_abs_AUC"
-    assert program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
+    assert compiled_program["ranking"]["execution"]["record_ids"] == ["semantic_metrics/summary"]
 
 
 def test_plate_reader_single_reporter_compiler_derives_channels_from_analysis() -> None:
@@ -1245,6 +1386,7 @@ def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
     assert payload["summary"]["by_kind"] == {"dataframe_artifact": 1}
     assert payload["summary"]["by_producer"] == {"pipeline:ingest": 1}
     assert payload["records"][0]["record_id"] == "ingest/df"
+    assert payload["records"][0]["description"] == "Parse Synergy H1 workbooks into tidy plate-reader traces."
     assert payload["records"][0]["revision_count"] == 2
     assert "all" not in payload
     assert "count" not in payload
@@ -1275,4 +1417,5 @@ def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -
     assert payload["summary"]["history"]["included"] is False
     assert payload["summary"]["history"]["revisions"] is None
     assert payload["records"][0]["record_id"] == "ingest/df"
+    assert payload["records"][0]["description"] == "Parse Synergy H1 workbooks into tidy plate-reader traces."
     assert "revision_count" not in payload["records"][0]

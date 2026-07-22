@@ -26,11 +26,6 @@ dependencies = [
   "flowio>=1.4.0",
 ]
 
-[project.optional-dependencies]
-dnadesign = [
-  "dnadesign",
-]
-
 [project.scripts]
 reader = "reader.workbench.cli:app"
 
@@ -46,6 +41,9 @@ namespaces = false
 "reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
 
 [dependency-groups]
+dnadesign = [
+  "dnadesign",
+]
 dev = [
   "pytest>=8.2",
   "pytest-cov>=7.0",
@@ -56,14 +54,14 @@ dev = [
 notebooks = [
   "altair>=6.0.0",
   "duckdb>=1.4.3",
-  "marimo>=0.19.1",
+  "marimo>=0.23.0,<0.24",
 ]
 
 [tool.uv]
 required-version = ">=0.9.18,<0.10"
 
 [tool.uv.sources]
-dnadesign = { git = "https://github.com/e-south/dnadesign", branch = "main" }
+dnadesign = { git = "https://github.com/e-south/dnadesign", rev = "1245cb7ad976896ea51df41e4e5de9b20574460a" } # pragma: allowlist secret
 
 [tool.ruff]
 target-version = "py312"
@@ -101,11 +99,11 @@ addopts = [
   "--strict-markers",
   "-ra",
   "-m",
-  "not integration and not fleet",
+  "not active_experiments",
 ]
 
 markers = [
-  "fleet: full data-backed active-experiment end-to-end matrix excluded from the default lane",
+  "active_experiments: full data-backed active-experiment end-to-end matrix excluded from the default lane",
   "integration: cross-surface integration coverage",
   "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
   "smoke: representative real-experiment runtime coverage kept in the default test lane",

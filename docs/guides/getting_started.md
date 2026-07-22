@@ -1,3 +1,11 @@
+---
+doc_id: reader-getting-started
+surface: tutorial
+owner: reader-maintainers
+last_verified: 2026-07-17
+summary: Minimal setup and first-inspection path for a new Reader user.
+---
+
 # Getting started
 
 `reader` uses `uv` for environment management and command execution. Install the project, verify the checkout, then inspect an experiment before running anything.
@@ -18,16 +26,16 @@ uv run ruff check .
 uv run ruff format . --check
 ```
 
-`uv run pytest -q` is the default test lane. It excludes only the full data-backed `fleet` matrix. The Ruff commands check lint and formatting.
+`uv run pytest -q` is the default test run. It excludes only the full data-backed active-experiment run. The Ruff commands check lint and formatting.
 
-## Inspect the experiment inventory
+## Inspect the experiment list
 
 ```bash
 uv run reader ls --root experiments
 uv run reader ls --root experiments --details --readiness
 ```
 
-Start with `reader ls` to see the experiment catalog. Add `--details --readiness` when you need protocol, output, and readiness state in the same view.
+Start with `reader ls` to see the experiment list. Add `--details --readiness` when you need protocol, output, and readiness state in the same view.
 
 ## Inspect one experiment before execution
 
@@ -45,5 +53,5 @@ Use `inspect` for the bound experiment summary, `validate` for preflight checks,
 - [Preflight, run, verify](./preflight_run_verify.md)
 - [Automation and JSON](./automation.md)
 - [CLI reference](../core/cli.md)
-- [Configuring `reader/v7`](../core/pipeline.md)
+- [Configuring `reader/v8`](../core/pipeline.md)
 - [Notebooks](./notebooks.md)

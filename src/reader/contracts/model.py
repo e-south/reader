@@ -43,6 +43,7 @@ class DataFrameContract:
     kind: str | None = None
     primary_index: list[str] | None = None
     notes: str | None = None
+    allow_extra_columns: bool = True
 
 
 def _is_dtype(series: pd.Series, want: DType) -> bool:
@@ -64,6 +65,11 @@ def _is_dtype(series: pd.Series, want: DType) -> bool:
 def validate_df(df: pd.DataFrame, contract: DataFrameContract, *, where: str) -> None:
     """Assert df matches the contract exactly; raise ContractError on first failure."""
     cols = set(df.columns)
+    declared = {rule.name for rule in contract.columns}
+    if not contract.allow_extra_columns:
+        extras = sorted(cols - declared)
+        if extras:
+            raise ContractError(f"[{where}] contract {contract.id}: unexpected columns {extras}")
 
     for rule in contract.columns:
         if rule.required and rule.name not in cols:

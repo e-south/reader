@@ -30,6 +30,5 @@ class RunContext:
     records_path: Path
     logger: logging.Logger
     palette_book: PaletteBook | None
-    strict: bool = True
     experiment: ExperimentSemantics | None = None
     protocol: BoundProtocol | None = None

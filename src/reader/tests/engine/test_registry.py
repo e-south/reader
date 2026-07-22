@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata as md
+import sys
 
 import pytest
 
@@ -57,6 +58,43 @@ def test_load_plugin_catalog_registers_validator_plugins(monkeypatch) -> None:
     registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
 
     assert registry.resolve("validator/external_validator") is _ValidatorPlugin
+
+
+def test_load_plugin_catalog_does_not_import_unrequested_external_categories(monkeypatch) -> None:
+    class _UnrequestedEntryPoint:
+        name = "plot/external_plot"
+
+        def load(self):
+            raise AssertionError("unrequested entry point was imported")
+
+    monkeypatch.setattr(
+        md,
+        "entry_points",
+        lambda *, group: [_UnrequestedEntryPoint()] if group == "reader.plugins" else [],
+    )
+
+    registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+
+    assert "external_plot" not in registry.categories()["plot"]
+
+
+def test_validator_only_catalog_does_not_import_unrequested_builtin_categories(monkeypatch) -> None:
+    unrelated_plugin_prefixes = (
+        "reader.plugins.export.",
+        "reader.plugins.ingest.",
+        "reader.plugins.plot.",
+        "reader.plugins.transform.",
+    )
+    manifest_prefix = "reader.workbench.assets.plugin_manifests."
+    for module_name in tuple(sys.modules):
+        if module_name.startswith(unrelated_plugin_prefixes) or module_name.startswith(manifest_prefix):
+            monkeypatch.delitem(sys.modules, module_name)
+    monkeypatch.setattr(md, "entry_points", lambda *, group: [])
+
+    registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+
+    assert registry.resolve("validator/to_tidy_plus_map")
+    assert not [module_name for module_name in sys.modules if module_name.startswith(unrelated_plugin_prefixes)]
 
 
 def test_load_plugin_catalog_rejects_bare_plugin_classes(monkeypatch) -> None:

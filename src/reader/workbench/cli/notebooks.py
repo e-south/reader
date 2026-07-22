@@ -55,7 +55,7 @@ def render_marimo_routes(*, target: Path, url: str, runtime_root: Path) -> None:
             "Review routes:\n"
             f"  Static check: {check_cmd}\n"
             f"  Browser review: {url}\n"
-            "  Chrome MCP: open the URL in a fresh isolated page.\n\n"
+            "  In-app browser: open the URL in a fresh isolated page.\n\n"
             f"Managed runtime root: [path]{runtime_root}[/path]",
             border_style="accent",
             box=box.ROUNDED,
@@ -70,6 +70,7 @@ def _launch_marimo(
     has_fcs: bool,
     headless: bool = False,
     port: int | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     launch = _load("reader.workbench.notebooks.launch")
     plan = launch.plan_marimo_launch(
@@ -78,6 +79,7 @@ def _launch_marimo(
         headless=headless,
         preferred_port=port,
         base_env=os.environ.copy(),
+        repo_root=repo_root,
     )
     if plan.terminated_sessions:
         shared.console.print(
@@ -120,6 +122,7 @@ def _launch_marimo(
         host=plan.host,
         mode=mode,
         target=target,
+        repo_root=plan.repo_root,
     )
     try:
         returncode = proc.wait()
@@ -263,7 +266,7 @@ def notebook(
     job: str | None = typer.Argument(
         None,
         metavar="CONFIG|DIR|INDEX",
-        help="Experiment config path, directory, or index from 'uv run reader ls'.",
+        help=shared.JOB_ARG_HELP_SHORT,
     ),
     name: str | None = typer.Option(
         None,
@@ -300,7 +303,7 @@ def notebook(
     headless: bool = typer.Option(
         False,
         "--headless",
-        help="Launch without opening a browser. Reader prints a loopback URL suitable for Chrome MCP review.",
+        help="Launch without opening a browser. Reader prints a loopback URL suitable for in-app review.",
     ),
     port: int | None = typer.Option(
         None,

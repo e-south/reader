@@ -6,18 +6,9 @@ from typing import Any
 
 import pandas as pd
 
-from reader.workbench.notebooks import _retron_review_aggregate_data as retron_review_aggregate_data
+from reader.domains.plate_reader.analysis import retron_review_aggregate
 from reader.workbench.notebooks import _retron_review_aggregate_figures as retron_review_aggregate_figures
 from reader.workbench.notebooks import _retron_review_catalog as retron_review_catalog
-
-aggregate_on_target_scores = retron_review_aggregate_data.aggregate_on_target_scores
-available_aggregate_score_metrics = retron_review_aggregate_data.available_aggregate_score_metrics
-available_multifunctional_sponges = retron_review_aggregate_data.available_multifunctional_sponges
-build_aggregate_pareto_frame = retron_review_aggregate_data.build_aggregate_pareto_frame
-build_architecture_frame = retron_review_aggregate_data.build_architecture_frame
-build_expected_vs_observed_frame = retron_review_aggregate_data.build_expected_vs_observed_frame
-build_fingerprint_frame = retron_review_aggregate_data.build_fingerprint_frame
-build_specificity_matrix = retron_review_aggregate_data.build_specificity_matrix
 
 
 @dataclass(frozen=True)
@@ -109,7 +100,10 @@ def aggregate_plot_specs() -> dict[str, _AggregatePlotSpec]:
 
 
 def _specificity_matrix_payload(context: _AggregatePlotContext) -> AggregatePlotPayload:
-    matrix = build_specificity_matrix(context.summary_df, score_metric=context.score_metric)
+    matrix = retron_review_aggregate.build_specificity_matrix(
+        context.summary_df,
+        score_metric=context.score_metric,
+    )
     supporting_table = matrix.reset_index().rename(columns={"index": "sponge"})
     return AggregatePlotPayload(
         figure=retron_review_aggregate_figures.build_specificity_matrix_figure(
@@ -121,7 +115,10 @@ def _specificity_matrix_payload(context: _AggregatePlotContext) -> AggregatePlot
 
 
 def _aggregate_pareto_payload(context: _AggregatePlotContext) -> AggregatePlotPayload:
-    supporting_table = build_aggregate_pareto_frame(context.summary_df, score_metric=context.score_metric)
+    supporting_table = retron_review_aggregate.build_aggregate_pareto_frame(
+        context.summary_df,
+        score_metric=context.score_metric,
+    )
     return AggregatePlotPayload(
         figure=retron_review_aggregate_figures.build_aggregate_pareto_figure(
             pareto_df=supporting_table,
@@ -133,7 +130,7 @@ def _aggregate_pareto_payload(context: _AggregatePlotContext) -> AggregatePlotPa
 
 
 def _architecture_plot_payload(context: _AggregatePlotContext) -> AggregatePlotPayload:
-    supporting_table = build_architecture_frame(
+    supporting_table = retron_review_aggregate.build_architecture_frame(
         context.summary_df,
         sensor_target_map=dict(context.sensor_target_map),
         score_metric=context.score_metric,
@@ -149,7 +146,7 @@ def _architecture_plot_payload(context: _AggregatePlotContext) -> AggregatePlotP
 
 
 def _expected_vs_observed_payload(context: _AggregatePlotContext) -> AggregatePlotPayload:
-    supporting_table = build_expected_vs_observed_frame(
+    supporting_table = retron_review_aggregate.build_expected_vs_observed_frame(
         context.summary_df,
         sensor_target_map=dict(context.sensor_target_map),
         score_metric=context.score_metric,
@@ -165,7 +162,7 @@ def _expected_vs_observed_payload(context: _AggregatePlotContext) -> AggregatePl
 
 
 def _sponge_fingerprint_payload(context: _AggregatePlotContext) -> AggregatePlotPayload:
-    supporting_table = build_fingerprint_frame(
+    supporting_table = retron_review_aggregate.build_fingerprint_frame(
         context.summary_df,
         score_metric=context.score_metric,
         fingerprint_sponge=context.fingerprint_sponge,

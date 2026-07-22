@@ -1,17 +1,25 @@
+---
+doc_id: reader-repo-maintenance
+surface: maintainer-runbook
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Broader Reader branch, CI, repository health, and delivery workflow beyond the minimum change gate.
+---
+
 # Repo Maintenance
 
-This document is the maintainer guide for repo-wide changes, publish flow, and ongoing workbench hygiene.
+This document is the maintainer guide for repo-wide changes, publish flow, and ongoing repo hygiene.
 
 ## Use This When
 
 - the change crosses multiple package boundaries
 - branch or publish state matters
 - CI or verification policy needs to change
-- docs, CLI, and runtime contracts need to be kept in sync across the repo
+- docs, CLI, and runtime behavior need to stay in sync across the repo
 
 For the smaller tracked-change workflow, start with [repo-change-gate.md](./repo-change-gate.md).
 
-## Maintenance Surfaces
+## Reference Points
 
 - Repo entry point:
   [README.md](../README.md)
@@ -32,13 +40,13 @@ For the smaller tracked-change workflow, start with [repo-change-gate.md](./repo
 
 - Keep the workbench discoverable from the CLI before requiring people to read source.
 - Prefer explicit registries and typed contracts over implicit discovery.
-- Keep docs aligned with the actual runtime and CLI surface.
+- Keep docs aligned with the actual runtime and CLI behavior.
 - Keep protocol semantics tighter than plugin mechanics.
-- Favor small, reviewable changes over broad rewrites unless the rooted cut is clear.
+- Favor small, reviewable changes over broad rewrites unless the broader cut is clearly justified.
 
 ## Verification Strategy
 
-Choose the cheapest verification bundle that still exercises the risk:
+Choose the smallest verification set that still exercises the risk:
 
 - docs and routing
 - CLI discovery and preflight
@@ -46,7 +54,7 @@ Choose the cheapest verification bundle that still exercises the risk:
 - plugin or contract boundary changes
 - repo-wide smoke and lint checks
 
-The quality bar for those bundles is defined in [QUALITY.md](../QUALITY.md).
+The quality bar for those checks is defined in [QUALITY.md](../QUALITY.md).
 
 For docs and routing changes, start with:
 
@@ -59,14 +67,17 @@ git diff --check
 
 `reader` uses two GitHub Actions workflows:
 
-- `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): pull-request and push feedback. It runs docs integrity, lockfile drift checks, lint, format, compile, build, and the default test lane with coverage. The default lane is `uv run pytest -q`, which excludes only `fleet`.
-- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slower main-branch, nightly, and manual validation. It runs `pytest -m integration` with `--durations=25` and uploads the experiment readiness inventory as an artifact.
+- `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): pull-request and push feedback. It runs docs integrity, lockfile drift checks, lint, format, compile, build, and the default test run with coverage. The default run is `uv run pytest -q`, which excludes only the active-experiment run.
+- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slower main-branch, nightly, and manual validation. It runs `pytest -m integration` with `--durations=25` and uploads the experiment readiness summary as an artifact.
 
-Local command contract:
+Local commands:
 
+- `uv run ruff check .`: repo-wide lint
+- `uv run ruff format . --check`: formatting check
 - `uv run python tools/check_docs.py`: docs links and routing integrity
-- `uv run pytest -q`: fast default lane, excludes only `fleet`
+- `uv run pytest -q`: fast default test run, excludes only the active-experiment run
 - `uv run pytest -q -m repo_matrix`: repo-wide config and metadata sweeps
 - `uv run pytest -q -m smoke`: representative real-experiment smoke tests
-- `uv run pytest -q -m fleet`: full active-experiment end-to-end matrix
-- `uv run pytest -q -m integration`: full integration surface, including `repo_matrix` and `fleet`
+- `uv run pytest -q -m active_experiments`: full active-experiment end-to-end run
+- `uv run pytest -q -m integration`: full integration set, including `repo_matrix` and `active_experiments`
+- `git diff --check`: whitespace and merge-marker hygiene

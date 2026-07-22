@@ -35,7 +35,7 @@ def build_next_steps(
         configured_template=(notebook_specs[0].template if notebook_specs else None)
     )
     require_notebook_template_for_protocol(notebook_template, protocol=bound_protocol)
-    steps.append((_cmd("records"), "Review generated workbench records (QC)"))
+    steps.append((_cmd("records"), "Review generated records"))
     if plot_specs:
         steps.append((_cmd("plot"), "Save plot files to outputs/plots"))
     if export_specs:

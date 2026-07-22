@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from reader.domains.plate_reader.analysis import retron_review_semantics
 from reader.domains.plate_reader.plots.retron_sponge import (
     build_retron_decomposition_frame,
     plot_retron_sponge_summary,
@@ -14,11 +15,10 @@ from reader.domains.plate_reader.plots.retron_sponge import (
 from reader.domains.plate_reader.plots.time_series import plot_time_series
 from reader.workbench.notebooks import _retron_review_bundle as retron_review_bundle
 from reader.workbench.notebooks import _retron_review_catalog as retron_review_catalog
-from reader.workbench.notebooks import _retron_review_shared as retron_review_shared
 
 RetronReviewSourceSurface = retron_review_bundle.RetronReviewSourceSurface
 
-_normalize_optional_str = retron_review_shared.normalize_optional_str
+_normalize_optional_str = retron_review_semantics.normalize_optional_str
 
 
 @dataclass(frozen=True)
@@ -215,7 +215,7 @@ def load_source_plot_datasets(
     *,
     surface: RetronReviewSourceSurface,
     plot_spec: Mapping[str, Any],
-    load_frame: Callable[[str], pd.DataFrame],
+    load_frame: Callable[[str, str], pd.DataFrame],
     semantic_datasets: Mapping[str, pd.DataFrame] | None = None,
 ) -> dict[str, pd.DataFrame]:
     record_paths = dict(surface.record_paths)
@@ -233,7 +233,7 @@ def load_source_plot_datasets(
             errors.append(f"Missing dataframe record `{record_id}` for the selected source plot.")
             continue
         try:
-            datasets[record_id] = load_frame(record_path)
+            datasets[record_id] = load_frame(record_id, record_path)
         except Exception as exc:
             errors.append(f"Failed to load `{record_id}`: {exc}")
     if errors:

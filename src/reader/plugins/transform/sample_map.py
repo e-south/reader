@@ -93,12 +93,12 @@ class SampleMapMerge(Plugin):
         sm_path: Path = inputs["sample_map"]
 
         try:
-            sm_raw = parse_sample_map(str(sm_path))
+            sm_raw = parse_sample_map(sm_path)
             sm = self._clean_plate_map(sm_raw)
             if sm.empty:
                 raise MergeError("Plate map has no usable metadata rows after cleaning")
 
-            # (legacy parity) Drop raw rows for positions that carried no metadata.
+            # A position row with no metadata explicitly excludes that well from annotated output.
             removed_positions = sorted(set(sm_raw["position"].astype(str)) - set(sm["position"].astype(str)))
             if removed_positions:
                 before = len(df)
@@ -157,7 +157,7 @@ class SampleMapMerge(Plugin):
                 if bad:
                     raise MergeError(f"Required metadata column(s) contain NaN: {bad}")
 
-            # ---- NEW: concise merge summary ----
+            # Concise merge summary.
             try:
                 added_cols = [c for c in merged.columns if c not in df.columns]
                 ctx.logger.info(

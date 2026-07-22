@@ -32,11 +32,40 @@ def test_load_rejects_non_mapping(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_load_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+schema: reader/v8
+experiment:
+  id: first
+  id: second
+protocol:
+  id: workbench/generic
+""",
+    )
+
+    with pytest.raises(ConfigError, match="duplicate key 'id'"):
+        ReaderSpec.load(path)
+
+
 def test_load_requires_schema_marker(tmp_path: Path) -> None:
     data = _base_config()
     data.pop("schema")
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="reader/v7"):
+    with pytest.raises(ConfigError, match="reader/v8"):
+        ReaderSpec.load(path)
+
+
+def test_load_rejects_reader_v7_without_a_compatibility_path(tmp_path: Path) -> None:
+    data = _base_config()
+    data["schema"] = "reader/v7"
+    path = write_config(tmp_path, data)
+
+    with pytest.raises(
+        ConfigError,
+        match=r"Config schema must be 'reader/v8'\. This repo only supports reader/v8 \(found 'reader/v7'\)",
+    ):
         ReaderSpec.load(path)
 
 
@@ -70,7 +99,7 @@ def test_load_accepts_explicit_experiment_lifecycle(tmp_path: Path) -> None:
 
 def test_load_rejects_unknown_experiment_lifecycle(tmp_path: Path) -> None:
     data = _base_config()
-    data["experiment"]["lifecycle"] = "legacy"
+    data["experiment"]["lifecycle"] = "unsupported"
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError, match="experiment.lifecycle must be one of"):
         ReaderSpec.load(path)
@@ -118,15 +147,15 @@ def test_normalize_input_binding_rejects_file_symlink_escape(tmp_path: Path) -> 
         )
 
 
-def test_load_rejects_legacy_workflow_sections(tmp_path: Path) -> None:
+def test_load_rejects_removed_workflow_sections(tmp_path: Path) -> None:
     data = _base_config()
     data["pipeline"] = {"steps": []}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="Unsupported legacy/removed"):
+    with pytest.raises(ConfigError, match="reader/v8 rejects removed config keys"):
         ReaderSpec.load(path)
 
 
-def test_load_rejects_legacy_protocol_with_key(tmp_path: Path) -> None:
+def test_load_rejects_removed_protocol_with_key(tmp_path: Path) -> None:
     data = _base_config()
     data["protocol"] = {"id": "workbench/generic", "with": {"x": 1}}
     path = write_config(tmp_path, data)
@@ -170,7 +199,7 @@ def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "preprocessing": {
                 "overflow": {
@@ -184,10 +213,11 @@ def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -277,17 +307,18 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     data = base_reader_config(
         experiment_id="exp_logic",
         protocol_id="logic/sfxi_screen",
-        protocol_inputs={"logic_map_ref": "induction_logic"},
+        protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={"include_vec8": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none", "include": ["logic_symmetry"]},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
-            "logic_maps": {
+            "ordered_state_spaces": {
                 "induction_logic": {
                     "column": "treatment",
-                    "corners": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
                 }
             }
         },
@@ -299,6 +330,105 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
     assert [step.id for step in workbench.plots] == ["logic_symmetry"]
     assert workbench.exports == ()
+
+
+def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"state_map_ref": "induction_logic"},
+        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "ordered_state_spaces": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+    workbench = resolve_workbench(decl)
+
+    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
+    assert "sfxi_vec8_heatmap" not in [plot.id for plot in workbench.plots]
+    assert [plot.id for plot in workbench.plots] == [
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "intensity_overview",
+    ]
+
+
+def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"state_map_ref": "induction_logic"},
+        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_outputs={
+            "plots": {"profile": "none"},
+            "exports": {"include": ["logic_summary_workbook"]},
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "ordered_state_spaces": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+
+    workbench = resolve_workbench(decl)
+
+    assert [step.id for step in workbench.pipeline][-2:] == ["promote_to_tidy_plus_map", "sfxi_vec8"]
+    assert [export.id for export in workbench.exports] == ["logic_summary_workbook"]
+    assert workbench.exports[0].reads["df"].record_id == "sfxi_vec8/vec8"
+
+
+def test_sfxi_objective_delta_reaches_vec8_and_setpoint_plot_configs(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_logic",
+        protocol_id="logic/sfxi_screen",
+        protocol_inputs={"state_map_ref": "induction_logic"},
+        protocol_analysis={
+            "include_vec8": True,
+            "include_fold_change": False,
+            "sfxi_objective": {
+                "intensity_log2_offset_delta": 0.25,
+                "setpoints": {"and": [0.0, 0.0, 0.0, 1.0]},
+                "scaling": {"percentile": 95, "min_n": 1, "eps": 1.0e-8},
+            },
+        },
+        protocol_outputs={"plots": {"profile": "none", "include": ["sfxi_setpoint_scatter"]}},
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+        annotations={
+            "ordered_state_spaces": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {"00": "A", "10": "B", "01": "C", "11": "D"},
+                }
+            }
+        },
+    )
+    path = write_config(tmp_path, data)
+    _, decl = load_models(path)
+    workbench = resolve_workbench(decl)
+
+    vec8_step = next(step for step in workbench.pipeline if step.id == "sfxi_vec8")
+    scatter_plot = next(step for step in workbench.plots if step.id == "sfxi_setpoint_scatter")
+
+    assert vec8_step.with_["log2_offset_delta"] == pytest.approx(0.25)
+    assert scatter_plot.with_["intensity_log2_offset_delta"] == pytest.approx(0.25)
 
 
 def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:

@@ -9,7 +9,6 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -19,9 +18,11 @@ from reader.errors import ExecutionError
 from reader.workbench.ports import dataframe_input, file_path_output
 from reader.workbench.registry import Plugin, PluginConfig
 
+from ._paths import resolve_export_path
+
 
 class ExportXlsxCfg(PluginConfig):
-    path: str = Field(..., description="Output XLSX path (relative to outputs/ if not absolute).")
+    path: str = Field(..., description="Output XLSX path relative to the experiment exports directory.")
     sheet_name: str = "Sheet1"
     index: bool = False
 
@@ -41,9 +42,7 @@ class ExportXlsx(Plugin):
         df = inputs["df"]
         if not isinstance(df, pd.DataFrame):
             raise ExecutionError(f"export/xlsx expects a DataFrame input, got {type(df).__name__}")
-        out_path = Path(cfg.path)
-        if not out_path.is_absolute():
-            out_path = ctx.exports_dir / out_path
+        out_path = resolve_export_path(cfg.path, exports_dir=ctx.exports_dir)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with pd.ExcelWriter(out_path, engine="openpyxl") as writer:

@@ -39,30 +39,19 @@ class SampleMetadataMerge(Plugin):
 
     @classmethod
     def output_ports(cls):
-        return cls.promoted_output_ports(
-            outputs={"df": dataframe_output("df", "tidy.v1")},
-            promotions={"df": ("plate_reader.annotated.v1",)},
-            note="promotion requires merged metadata columns that satisfy the richer contract",
-        )
-
-    def resolve_output_ports(self, *, inputs, outputs, cfg, where):
-        del inputs, cfg
-        resolved = dict(self.output_ports())
-        merged = outputs.get("df")
-        if not isinstance(merged, pd.DataFrame):
-            return resolved
-        try:
-            self.contracts.validate(merged, contract_id="plate_reader.annotated.v1", where=f"{where}:df")
-        except Exception:
-            return resolved
-        resolved["df"] = dataframe_output("df", "plate_reader.annotated.v1", surface=resolved["df"].surface)
-        return resolved
+        return {"df": dataframe_output("df", "tidy.v1")}
 
     def _load_metadata(self, path: Path) -> pd.DataFrame:
+        if not path.exists():
+            raise MergeError(f"Metadata file does not exist: {path}")
+        if not path.is_file():
+            raise MergeError(f"Metadata path must be a regular file: {path}")
         suffix = path.suffix.lower()
-        if suffix in {".xls", ".xlsx"}:
+        if suffix == ".xlsx":
             return pd.read_excel(path)
-        return pd.read_csv(path)
+        if suffix == ".csv":
+            return pd.read_csv(path)
+        raise MergeError(f"Unsupported metadata format {suffix or '<none>'!r}; expected .csv or .xlsx")
 
     def run(self, ctx, inputs, cfg: SampleMetadataCfg):
         df: pd.DataFrame = inputs["df"]
@@ -78,8 +67,18 @@ class SampleMetadataMerge(Plugin):
             raise MergeError(f"Metadata merge key '{key}' missing from input dataframe")
         if key not in meta.columns:
             raise MergeError(f"Metadata merge key '{key}' missing from metadata file")
+        missing_keys = meta[key].isna() | meta[key].astype("string").str.strip().eq("")
+        if missing_keys.any():
+            rows = [int(index) + 2 for index in meta.index[missing_keys].tolist()]
+            raise MergeError(f"Metadata merge key '{key}' is blank at file rows: {rows}")
+        duplicate_keys = sorted(meta.loc[meta[key].duplicated(keep=False), key].astype(str).unique().tolist())
+        if duplicate_keys:
+            raise MergeError(f"Metadata merge key '{key}' must be unique; duplicates: {duplicate_keys}")
 
-        merged = df.merge(meta, on=key, how="left", validate="m:1")
+        try:
+            merged = df.merge(meta, on=key, how="left", validate="m:1")
+        except (TypeError, ValueError, pd.errors.MergeError) as exc:
+            raise MergeError(f"Metadata merge failed for key '{key}': {exc}") from exc
 
         missing_cols = [c for c in cfg.require_columns if c not in merged.columns]
         if missing_cols:

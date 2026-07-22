@@ -72,3 +72,26 @@ def test_discover_auto_input_files_rejects_symlink_escape(tmp_path: Path):
             discovery_label="raw .xlsx files",
             singular_label="workbook",
         )
+
+
+def test_discover_auto_input_files_rejects_symlinked_file_escape(tmp_path: Path):
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    outside = tmp_path.parent / "outside.xlsx"
+    outside.write_text("outside", encoding="utf-8")
+    try:
+        (inputs / "raw.xlsx").symlink_to(outside)
+    except OSError as err:
+        pytest.skip(f"symlinks unavailable: {err}")
+
+    with pytest.raises(ParseError, match="Discovered input.*must stay under the experiment root"):
+        discover_auto_input_files(
+            exp_dir=tmp_path,
+            auto_roots=None,
+            auto_include=["*.xlsx"],
+            auto_exclude=[],
+            auto_recursive=False,
+            auto_pick="single",
+            discovery_label="raw .xlsx files",
+            singular_label="workbook",
+        )

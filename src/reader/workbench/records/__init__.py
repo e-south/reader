@@ -2,6 +2,7 @@ from .discovery import discover_dataframe_records
 from .model import (
     DataFrameArtifactRecord,
     FileBundleRecord,
+    PathDescription,
     RecordProducer,
     RecordRecipeSource,
     WorkbenchRecord,
@@ -14,6 +15,7 @@ from .store import RecordStore
 __all__ = [
     "DataFrameArtifactRecord",
     "FileBundleRecord",
+    "PathDescription",
     "RecordProducer",
     "RecordRecipeSource",
     "RecordStore",

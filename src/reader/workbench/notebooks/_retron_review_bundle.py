@@ -6,15 +6,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import yaml
 
-from reader.plugins.transform.retron_sponge_metrics import RetronSpongeMetricsCfg
+from reader.domains.plate_reader.analysis import retron_review_semantics
+from reader.errors import RecordError
+from reader.runtime import builtin_runtime
 from reader.workbench.notebooks import _retron_review_catalog as retron_review_catalog
-from reader.workbench.notebooks import _retron_review_shared as retron_review_shared
 from reader.workbench.notebooks import context as notebook_context
-from reader.workbench.records import discover_dataframe_records
+from reader.workbench.records import DataFrameArtifactRecord, discover_dataframe_records
 
 
 @dataclass(frozen=True)
@@ -61,27 +61,15 @@ class _ResolvedSourcePaths:
     trace_path: Path
 
 
-_SUMMARY_IDENTITY_COLUMNS = (
-    "plate_id",
-    "sensor",
-    "sponge",
-    "genotype_id",
-    "stress_condition",
-    "IPTG",
-)
-_DEFAULT_MIN_ABS_G_SENSOR = float(RetronSpongeMetricsCfg().min_abs_g_sensor)
-_LEGACY_TRACE_FLAG_COLUMNS = (
+_TRACE_FLAG_COLUMNS = (
     "in_pre_window",
     "in_primary_post_stress",
     "in_endpoint_window",
 )
-_DEFAULT_CONTROL_NAME = str(RetronSpongeMetricsCfg().control_name)
-_LEGACY_TRACE_SCOPE_COLUMNS = (
-    "plate_id",
-    "sensor",
-    "sponge",
-    "stress_condition",
-)
+_SEMANTIC_CONTRACT_BY_RECORD_ID = {
+    "semantic_metrics/summary": "plate_reader.sponge_summary.v1",
+    "semantic_metrics/trace": "plate_reader.sponge_trace.v1",
+}
 
 
 def load_retron_semantic_maps_from_config(
@@ -109,12 +97,50 @@ def _load_cached_parquet_frame(path: str, mtime_ns: int, size_bytes: int) -> pd.
     return pd.read_parquet(path)
 
 
+def load_retron_source_record_frame(
+    source: RetronReviewSource,
+    *,
+    record_id: str,
+    path: str | Path,
+) -> pd.DataFrame:
+    resolved_path = Path(path).expanduser().resolve()
+    if source.experiment_root is None:
+        return load_cached_parquet_frame(resolved_path)
+    outputs_dir = source.experiment_root / "outputs"
+    store = builtin_runtime().record_store(outputs_dir, create=False)
+    record = store.read_dataframe(record_id)
+    if record.path.resolve() != resolved_path:
+        raise RecordError(f"retron_review: path for record {record_id!r} does not match the current record catalog")
+    stat = record.path.stat()
+    return _load_cached_record_frame(
+        str(outputs_dir.resolve()),
+        record_id,
+        record.content_digest,
+        stat.st_mtime_ns,
+        stat.st_size,
+    )
+
+
+@lru_cache(maxsize=64)
+def _load_cached_record_frame(
+    outputs_dir: str,
+    record_id: str,
+    content_digest: str,
+    mtime_ns: int,
+    size_bytes: int,
+) -> pd.DataFrame:
+    del mtime_ns, size_bytes
+    store = builtin_runtime().record_store(Path(outputs_dir), create=False)
+    record = store.read_dataframe(record_id)
+    if record.content_digest != content_digest:
+        raise RecordError(f"retron_review: record {record_id!r} changed while loading; reload the source review")
+    return record.load_dataframe()
+
+
 def load_cached_semantic_frame(
     path: str | Path,
     *,
     kind: str,
-    min_abs_g_sensor: float = _DEFAULT_MIN_ABS_G_SENSOR,
-    control_name: str = _DEFAULT_CONTROL_NAME,
 ) -> pd.DataFrame:
     resolved = Path(path).expanduser().resolve()
     stat = resolved.stat()
@@ -123,8 +149,6 @@ def load_cached_semantic_frame(
         stat.st_mtime_ns,
         stat.st_size,
         kind,
-        float(min_abs_g_sensor),
-        str(control_name),
     )
 
 
@@ -134,16 +158,27 @@ def _load_cached_semantic_frame(
     mtime_ns: int,
     size_bytes: int,
     kind: str,
-    min_abs_g_sensor: float,
-    control_name: str,
 ) -> pd.DataFrame:
     del mtime_ns, size_bytes
-    return _read_semantic_table(
-        Path(path),
-        kind=kind,
-        min_abs_g_sensor=min_abs_g_sensor,
-        control_name=control_name,
-    )
+    frame = _read_semantic_table(Path(path), kind=kind)
+    _validate_semantic_frame(frame, record_id=f"semantic_metrics/{kind}", where=path)
+    return frame
+
+
+@lru_cache(maxsize=64)
+def _load_cached_record_semantic_frame(
+    outputs_dir: str,
+    record_id: str,
+    content_digest: str,
+    mtime_ns: int,
+    size_bytes: int,
+    kind: str,
+) -> pd.DataFrame:
+    del mtime_ns, size_bytes
+    record = _resolve_semantic_record(Path(outputs_dir), record_id=record_id)
+    if record.content_digest != content_digest:
+        raise RecordError(f"retron_review: record {record_id!r} changed while loading; reload the review bundle")
+    return _normalize_semantic_frame(record.load_dataframe(), kind=kind)
 
 
 def load_retron_source_semantic_datasets(
@@ -151,35 +186,25 @@ def load_retron_source_semantic_datasets(
     *,
     record_ids: Sequence[str] | None = None,
 ) -> dict[str, pd.DataFrame]:
-    min_abs_g_sensor = _resolve_min_abs_g_sensor(source.config_path)
-    control_name = _resolve_control_name(source.config_path)
     selected = set(record_ids or ("semantic_metrics/summary", "semantic_metrics/trace"))
     datasets: dict[str, pd.DataFrame] = {}
     if "semantic_metrics/summary" in selected:
-        datasets["semantic_metrics/summary"] = load_cached_semantic_frame(
-            source.summary_path,
+        datasets["semantic_metrics/summary"] = _load_source_semantic_frame(
+            source,
+            record_id="semantic_metrics/summary",
             kind="summary",
-            min_abs_g_sensor=min_abs_g_sensor,
-            control_name=control_name,
         )
     if "semantic_metrics/trace" in selected:
-        datasets["semantic_metrics/trace"] = load_cached_semantic_frame(
-            source.trace_path,
+        datasets["semantic_metrics/trace"] = _load_source_semantic_frame(
+            source,
+            record_id="semantic_metrics/trace",
             kind="trace",
-            min_abs_g_sensor=min_abs_g_sensor,
-            control_name=control_name,
         )
     return datasets
 
 
-def retron_plot_rendered_files(plots_dir: Path, *, plot_id: str, plugin: str) -> list[str]:
-    patterns = [f"{plot_id}*.pdf"]
-    if str(plot_id) == "raw_kinetics" and str(plugin) == "plot/time_series":
-        patterns.append("ts_*.pdf")
-    matches: list[str] = []
-    for pattern in patterns:
-        matches.extend(path.name for path in plots_dir.glob(pattern))
-    return sorted(set(matches))
+def retron_plot_rendered_files(plots_dir: Path, *, plot_id: str) -> list[str]:
+    return sorted(path.name for path in plots_dir.glob(f"{plot_id}*.pdf"))
 
 
 def load_retron_source_surface(source: RetronReviewSource) -> RetronReviewSourceSurface:
@@ -213,19 +238,15 @@ def load_retron_review_bundle(
     summary_frames = []
     trace_frames = []
     for source in sources:
-        min_abs_g_sensor = _resolve_min_abs_g_sensor(source.config_path)
-        control_name = _resolve_control_name(source.config_path)
-        summary_frame = load_cached_semantic_frame(
-            source.summary_path,
+        summary_frame = _load_source_semantic_frame(
+            source,
+            record_id="semantic_metrics/summary",
             kind="summary",
-            min_abs_g_sensor=min_abs_g_sensor,
-            control_name=control_name,
         )
-        trace_frame = load_cached_semantic_frame(
-            source.trace_path,
+        trace_frame = _load_source_semantic_frame(
+            source,
+            record_id="semantic_metrics/trace",
             kind="trace",
-            min_abs_g_sensor=min_abs_g_sensor,
-            control_name=control_name,
         )
         summary_frames.append(_annotate_source(summary_frame, source=source))
         trace_frames.append(_annotate_source(trace_frame, source=source))
@@ -320,7 +341,6 @@ def _source_surface_rendered(
     rendered_files = retron_plot_rendered_files(
         source_context.plots_dir,
         plot_id=plot_id,
-        plugin=str(plot_spec.get("plugin", "")),
     )
     return "yes" if rendered_files else "no"
 
@@ -400,7 +420,7 @@ def _resolve_source_entry(
         raw_source=raw_source,
         source_root=source_root,
     )
-    _ensure_source_exports_exist(label=label, paths=paths)
+    _ensure_source_tables_exist(label=label, paths=paths)
     return RetronReviewSource(
         label=label,
         experiment_id=_source_experiment_id(raw_source, experiment_root=paths.experiment_root, label=label),
@@ -430,6 +450,7 @@ def _resolve_source_paths(
     raw_source: Mapping[str, Any],
     source_root: Path | None,
 ) -> _ResolvedSourcePaths:
+    _validate_source_mode(raw_source)
     experiment_root, config_path = _resolve_source_scope(
         manifest_path=manifest_path,
         raw_source=raw_source,
@@ -444,7 +465,6 @@ def _resolve_source_paths(
             field="summary",
             experiment_root=experiment_root,
             record_id="semantic_metrics/summary",
-            export_name="semantic_summary.csv",
         ),
         trace_path=_resolve_source_export_path(
             manifest_path=manifest_path,
@@ -452,9 +472,20 @@ def _resolve_source_paths(
             field="trace",
             experiment_root=experiment_root,
             record_id="semantic_metrics/trace",
-            export_name="semantic_trace.csv",
         ),
     )
+
+
+def _validate_source_mode(raw_source: Mapping[str, Any]) -> None:
+    scope_fields = [field for field in ("experiment", "config") if raw_source.get(field) is not None]
+    explicit_fields = [field for field in ("summary", "trace") if raw_source.get(field) is not None]
+    if len(scope_fields) > 1:
+        raise ValueError("retron_review: a source must not declare both 'experiment' and 'config'")
+    if scope_fields and explicit_fields:
+        raise ValueError(
+            "retron_review: experiment/config sources use cataloged semantic records and must not declare "
+            "explicit summary or trace paths"
+        )
 
 
 def _resolve_source_scope(
@@ -489,7 +520,6 @@ def _resolve_source_export_path(
     field: str,
     experiment_root: Path | None,
     record_id: str,
-    export_name: str,
 ) -> Path:
     raw_value = raw_source.get(field)
     if raw_value is not None:
@@ -498,21 +528,17 @@ def _resolve_source_export_path(
         raise ValueError(
             "retron_review: each source must declare either 'experiment' or explicit 'summary'/'trace' paths"
         )
-    return _resolve_default_semantic_table(
-        experiment_root,
-        record_id=record_id,
-        export_name=export_name,
-    )
+    return _resolve_default_semantic_table(experiment_root, record_id=record_id)
 
 
-def _ensure_source_exports_exist(*, label: str, paths: _ResolvedSourcePaths) -> None:
+def _ensure_source_tables_exist(*, label: str, paths: _ResolvedSourcePaths) -> None:
     missing = [str(path) for path in (paths.summary_path, paths.trace_path) if not path.exists()]
     if not missing:
         return
     command = ""
     if paths.config_path is not None:
-        command = f" Run 'uv run reader run {paths.config_path}' and 'uv run reader export {paths.config_path}'."
-    raise FileNotFoundError(f"retron_review: source exports are missing for {label}: {missing}.{command}")
+        command = f" Run 'uv run reader run {paths.config_path}'."
+    raise FileNotFoundError(f"retron_review: source semantic tables are missing for {label}: {missing}.{command}")
 
 
 def _resolve_semantic_maps(
@@ -600,53 +626,60 @@ def _resolve_manifest_path(
     return path
 
 
-def _resolve_default_semantic_table(experiment_root: Path, *, record_id: str, export_name: str) -> Path:
-    export_path = experiment_root / "outputs" / "exports" / "retron" / export_name
-    if export_path.exists():
-        return export_path
-    record_info, _, _, _ = discover_dataframe_records(experiment_root / "outputs", allow_scan=False)
-    for info in record_info.values():
-        if str(info.get("record_id")) == str(record_id):
-            return Path(info["path"]).resolve()
-    return export_path
+def _resolve_default_semantic_table(experiment_root: Path, *, record_id: str) -> Path:
+    return _resolve_semantic_record(experiment_root / "outputs", record_id=record_id).path.resolve()
 
 
-def _resolve_min_abs_g_sensor(config_path: Path | None) -> float:
-    if config_path is None or not config_path.exists():
-        return _DEFAULT_MIN_ABS_G_SENSOR
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    analysis = ((payload.get("protocol") or {}).get("analysis") or {}).get("semantic_metrics") or {}
-    if not isinstance(analysis, dict):
-        return _DEFAULT_MIN_ABS_G_SENSOR
-    raw_value = analysis.get("min_abs_g_sensor")
-    if raw_value is None:
-        return _DEFAULT_MIN_ABS_G_SENSOR
+def _resolve_semantic_record(outputs_dir: Path, *, record_id: str) -> DataFrameArtifactRecord:
+    expected_contract = _SEMANTIC_CONTRACT_BY_RECORD_ID.get(record_id)
+    if expected_contract is None:
+        raise ValueError(f"retron_review: unsupported semantic record id {record_id!r}")
+    store = builtin_runtime().record_store(outputs_dir, create=False)
+    if not store.catalog_exists():
+        raise FileNotFoundError(
+            f"retron_review: record catalog is missing for {record_id!r}: {store.records_path}. "
+            "Run the source experiment before opening the review."
+        )
     try:
-        return float(raw_value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"retron_review: protocol.analysis.semantic_metrics.min_abs_g_sensor must be numeric in {config_path}"
+        record = store.read_dataframe(record_id)
+    except RecordError as exc:
+        raise FileNotFoundError(
+            f"retron_review: required dataframe record {record_id!r} is missing from {store.records_path}. "
+            "Run the source experiment before opening the review."
         ) from exc
+    if record.contract_id != expected_contract:
+        raise RecordError(
+            f"retron_review: record {record_id!r} declares contract {record.contract_id!r}; "
+            f"expected {expected_contract!r}"
+        )
+    return record
 
 
-def _resolve_control_name(config_path: Path | None) -> str:
-    if config_path is None or not config_path.exists():
-        return _DEFAULT_CONTROL_NAME
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    analysis = ((payload.get("protocol") or {}).get("analysis") or {}).get("semantic_metrics") or {}
-    if not isinstance(analysis, dict):
-        return _DEFAULT_CONTROL_NAME
-    raw_value = analysis.get("control_name")
-    return str(raw_value).strip() if raw_value is not None and str(raw_value).strip() else _DEFAULT_CONTROL_NAME
-
-
-def _read_semantic_table(
-    path: Path,
+def _load_source_semantic_frame(
+    source: RetronReviewSource,
     *,
+    record_id: str,
     kind: str,
-    min_abs_g_sensor: float = _DEFAULT_MIN_ABS_G_SENSOR,
-    control_name: str = _DEFAULT_CONTROL_NAME,
 ) -> pd.DataFrame:
+    source_path = source.summary_path if kind == "summary" else source.trace_path
+    if source.experiment_root is None:
+        return load_cached_semantic_frame(source_path, kind=kind)
+    outputs_dir = source.experiment_root / "outputs"
+    record = _resolve_semantic_record(outputs_dir, record_id=record_id)
+    if record.path.resolve() != source_path.resolve():
+        raise RecordError(f"retron_review: source path for {record_id!r} does not match the current cataloged record")
+    stat = record.path.stat()
+    return _load_cached_record_semantic_frame(
+        str(outputs_dir.resolve()),
+        record_id,
+        record.content_digest,
+        stat.st_mtime_ns,
+        stat.st_size,
+        kind,
+    )
+
+
+def _read_semantic_table(path: Path, *, kind: str) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
         frame = pd.read_csv(path)
@@ -654,413 +687,52 @@ def _read_semantic_table(
         frame = pd.read_parquet(path)
     else:
         raise ValueError(f"retron_review: unsupported semantic table format for {path}")
-    if "metric" in frame.columns:
-        frame["metric"] = frame["metric"].astype(str)
-    if "value" in frame.columns:
-        frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-    for column in ("relevant_sensor_pair", "is_relevant_stress"):
-        if column in frame.columns:
-            frame[column] = retron_review_shared.coerce_optional_bool_series(frame[column], label=column)
-    if kind == "trace":
-        for column in _LEGACY_TRACE_FLAG_COLUMNS:
-            if column in frame.columns:
-                frame[column] = retron_review_shared.coerce_optional_bool_series(frame[column], label=column)
-    if kind == "summary":
-        frame = _upgrade_legacy_summary_metrics(
-            frame,
-            min_abs_g_sensor=min_abs_g_sensor,
-            control_name=control_name,
-        )
-    elif kind == "trace":
-        frame = _upgrade_legacy_trace_contract(frame)
-    frame["source_kind"] = kind
-    return frame
+    return _normalize_semantic_frame(frame, kind=kind)
 
 
-def _upgrade_legacy_trace_contract(frame: pd.DataFrame) -> pd.DataFrame:
-    if frame.empty:
-        return frame
-    upgraded = frame.copy()
-    for column in ("time", "time_from_stress", "configured_max_post_stress_hours"):
-        if column in upgraded.columns:
-            upgraded[column] = pd.to_numeric(upgraded[column], errors="coerce")
-    if "matched_control_key" not in upgraded.columns and {
-        "plate_id",
-        "sensor",
-        "stress_condition",
-    }.issubset(upgraded.columns):
-        upgraded["matched_control_key"] = upgraded.apply(
-            lambda row: f"{row['plate_id']}::{row['sensor']}::{row['stress_condition']}",
-            axis=1,
-        )
-    if "stress_time_zero_h" not in upgraded.columns and {"time", "time_from_stress"}.issubset(upgraded.columns):
-        upgraded["stress_time_zero_h"] = pd.to_numeric(upgraded["time"], errors="coerce") - pd.to_numeric(
-            upgraded["time_from_stress"],
-            errors="coerce",
-        )
-    metadata = _legacy_trace_scope_metadata(upgraded)
-    if not metadata.empty:
-        upgraded = upgraded.merge(
-            metadata,
-            on=[column for column in _LEGACY_TRACE_SCOPE_COLUMNS if column in upgraded.columns],
-            how="left",
-            validate="many_to_one",
-            suffixes=("", "__legacy"),
-        )
-        upgraded = _coalesce_string_column(upgraded, "matched_control_key")
-        for column in (
-            "summary_window_start_h",
-            "summary_window_end_h",
-            "summary_window_duration_h",
-            "pre_stress_read_count",
-            "post_stress_read_count",
-            "matched_group_sample_count",
-            "stress_time_zero_h",
-            "stress_addition_gap_h",
-        ):
-            upgraded = _coalesce_numeric_column(upgraded, column)
-    return upgraded
-
-
-def _legacy_trace_scope_metadata(frame: pd.DataFrame) -> pd.DataFrame:
-    required = {
-        "plate_id",
-        "sensor",
-        "sponge",
-        "stress_condition",
-        "replicate_id",
-        "time",
-        "time_from_stress",
-    }
-    if not required.issubset(frame.columns):
-        return pd.DataFrame()
-    stress_gap_by_plate = _legacy_trace_stress_gap_by_plate(frame)
-    rows: list[dict[str, Any]] = []
-    for keys, group in frame.groupby(list(_LEGACY_TRACE_SCOPE_COLUMNS), dropna=False, sort=False):
-        plate_id, sensor, sponge, stress_condition = keys
-        post = group[group.get("in_primary_post_stress", pd.Series(False, index=group.index)).fillna(False)].copy()
-        time_from_stress = pd.to_numeric(post.get("time_from_stress"), errors="coerce").to_numpy(dtype=float)
-        finite = time_from_stress[np.isfinite(time_from_stress)]
-        if finite.size == 0:
-            start_h = end_h = duration_h = np.nan
-        else:
-            start_h = float(finite.min())
-            end_h = float(finite.max())
-            duration_h = float(end_h - start_h)
-        rows.append(
-            {
-                "plate_id": plate_id,
-                "sensor": sensor,
-                "sponge": sponge,
-                "stress_condition": stress_condition,
-                "matched_control_key": f"{plate_id}::{sensor}::{stress_condition}",
-                "summary_window_start_h": start_h,
-                "summary_window_end_h": end_h,
-                "summary_window_duration_h": duration_h,
-                "pre_stress_read_count": _legacy_flagged_unique_time_count(group, flag_column="in_pre_window"),
-                "post_stress_read_count": _legacy_flagged_unique_time_count(
-                    group,
-                    flag_column="in_primary_post_stress",
-                ),
-                "matched_group_sample_count": float(group["replicate_id"].astype(str).nunique()),
-                "stress_time_zero_h": _legacy_stress_time_zero(group),
-                "stress_addition_gap_h": stress_gap_by_plate.get(_normalize_key_component(plate_id), np.nan),
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def _legacy_stress_time_zero(frame: pd.DataFrame) -> float:
-    if not {"time", "time_from_stress"}.issubset(frame.columns):
-        return float("nan")
-    stress_zero = pd.to_numeric(frame["time"], errors="coerce") - pd.to_numeric(
-        frame["time_from_stress"], errors="coerce"
-    )
-    finite = stress_zero[np.isfinite(stress_zero)]
-    if finite.empty:
-        return float("nan")
-    return float(finite.median())
-
-
-def _legacy_trace_stress_gap_by_plate(frame: pd.DataFrame) -> dict[object, float]:
-    if "time_from_stress" not in frame.columns or "plate_id" not in frame.columns:
-        return {}
-    resolved: dict[object, float] = {}
-    for plate_id, group in frame.groupby("plate_id", dropna=False, sort=False):
-        offsets = np.sort(pd.unique(pd.to_numeric(group["time_from_stress"], errors="coerce").dropna()))
-        pre = offsets[offsets < 0]
-        post = offsets[offsets > 0]
-        resolved[_normalize_key_component(plate_id)] = (
-            float("nan") if len(pre) == 0 or len(post) == 0 else float(post[0] - pre[-1])
-        )
-    return resolved
-
-
-def _legacy_flagged_unique_time_count(frame: pd.DataFrame, *, flag_column: str) -> float:
-    if (
-        frame.empty
-        or flag_column not in frame.columns
-        or "replicate_id" not in frame.columns
-        or "time" not in frame.columns
-    ):
-        return float("nan")
-    flagged = frame[frame[flag_column].fillna(False)].copy()
-    if flagged.empty:
-        return float("nan")
-    counts = flagged.groupby("replicate_id", dropna=False)["time"].nunique().to_numpy(dtype=float, copy=False)
-    finite = counts[np.isfinite(counts)]
-    if finite.size == 0:
-        return float("nan")
-    return float(np.median(finite))
-
-
-def _coalesce_numeric_column(frame: pd.DataFrame, column: str) -> pd.DataFrame:
-    legacy_column = f"{column}__legacy"
-    if legacy_column not in frame.columns:
-        return frame
-    existing = pd.to_numeric(frame.get(column, pd.Series(np.nan, index=frame.index)), errors="coerce")
-    legacy = pd.to_numeric(frame[legacy_column], errors="coerce")
-    frame[column] = existing.where(existing.notna(), legacy)
-    return frame.drop(columns=[legacy_column])
-
-
-def _coalesce_string_column(frame: pd.DataFrame, column: str) -> pd.DataFrame:
-    legacy_column = f"{column}__legacy"
-    if legacy_column not in frame.columns:
-        return frame
-    existing = frame.get(column, pd.Series(pd.NA, index=frame.index))
-    frame[column] = existing.where(existing.notna(), frame[legacy_column])
-    return frame.drop(columns=[legacy_column])
-
-
-def _upgrade_legacy_summary_metrics(
-    frame: pd.DataFrame,
-    *,
-    min_abs_g_sensor: float,
-    control_name: str,
-) -> pd.DataFrame:
-    upgraded = frame.copy()
-    upgraded = _append_preload_metric(
-        upgraded,
-        source_metric="R_pre",
-        target_metric="P_pre",
-        control_name=control_name,
-    )
-    del min_abs_g_sensor
-    return upgraded
-
-
-def _append_preload_metric(
-    frame: pd.DataFrame,
-    *,
-    source_metric: str,
-    target_metric: str,
-    control_name: str,
-) -> pd.DataFrame:
-    required = {
-        "metric",
+def _normalize_semantic_frame(frame: pd.DataFrame, *, kind: str) -> pd.DataFrame:
+    if kind not in {"summary", "trace"}:
+        raise ValueError(f"retron_review: unsupported semantic table kind {kind!r}")
+    normalized = frame.copy()
+    for column in (
         "plate_id",
         "sensor",
         "sponge",
         "genotype_id",
+        "replicate_id",
         "stress_condition",
         "IPTG",
-        "value",
-    }
-    if not required.issubset(frame.columns):
-        return frame
-    source_rows = frame[frame["metric"] == str(source_metric)].copy()
-    if source_rows.empty:
-        return frame
-    control_rows = source_rows[source_rows["sponge"].astype(str) == str(control_name)].copy()
-    sample_rows = source_rows[source_rows["sponge"].astype(str) != str(control_name)].copy()
-    if control_rows.empty or sample_rows.empty:
-        return frame
-    control_lookup = (
-        control_rows.rename(columns={"value": "control_value"})
-        .loc[:, ["plate_id", "sensor", "stress_condition", "IPTG", "control_value"]]
-        .drop_duplicates()
-    )
-    preload_rows = sample_rows.merge(
-        control_lookup,
-        on=["plate_id", "sensor", "stress_condition", "IPTG"],
-        how="left",
-        validate="many_to_one",
-    )
-    preload_rows["value"] = pd.to_numeric(preload_rows["value"], errors="coerce") - pd.to_numeric(
-        preload_rows["control_value"],
-        errors="coerce",
-    )
-    candidate_rows = _summary_difference_by_state(
-        preload_rows,
-        value_column="value",
-        positive_state="+IPTG",
-        negative_state="-IPTG",
-        target_metric=target_metric,
-    )
-    candidate_rows = _filter_missing_metric_rows(frame, candidate_rows, target_metric=target_metric)
-    if candidate_rows.empty:
-        return frame
-    return pd.concat([frame, candidate_rows], ignore_index=True)
-
-
-def _append_expected_direction_metric(
-    frame: pd.DataFrame,
-    *,
-    source_metric: str,
-    target_metric: str,
-) -> pd.DataFrame:
-    if "metric" not in frame.columns or "expected_decoy_sign" not in frame.columns:
-        return frame
-    source_rows = frame[frame["metric"] == str(source_metric)].copy()
-    if source_rows.empty:
-        return frame
-    source_rows["expected_decoy_sign"] = pd.to_numeric(source_rows["expected_decoy_sign"], errors="coerce")
-    source_rows["value"] = pd.to_numeric(source_rows["value"], errors="coerce") * source_rows["expected_decoy_sign"]
-    source_rows["metric"] = str(target_metric)
-    source_rows = _filter_missing_metric_rows(frame, source_rows, target_metric=target_metric)
-    if source_rows.empty:
-        return frame
-    return pd.concat([frame, source_rows], ignore_index=True)
-
-
-def _append_scaled_metric(
-    frame: pd.DataFrame,
-    *,
-    source_metric: str,
-    target_metric: str,
-    min_abs_g_sensor: float,
-) -> pd.DataFrame:
-    if "metric" not in frame.columns or "sensor" not in frame.columns or "plate_id" not in frame.columns:
-        return frame
-    source_rows = frame[frame["metric"] == str(source_metric)].copy()
-    if "is_relevant_stress" in source_rows.columns:
-        source_rows = source_rows[source_rows["is_relevant_stress"].fillna(False)]
-    if source_rows.empty:
-        return frame
-    g_sensor_rows = frame[frame["metric"] == "G_sensor"].copy()
-    if g_sensor_rows.empty:
-        return frame
-    g_sensor_rows["value"] = pd.to_numeric(g_sensor_rows["value"], errors="coerce")
-    g_sensor_lookup = {
-        (
-            _normalize_key_component(row.get("plate_id")),
-            _normalize_key_component(row.get("sensor")),
-        ): row["value"]
-        for _, row in g_sensor_rows.iterrows()
-    }
-    scaled_rows: list[dict[str, Any]] = []
-    for _, row in source_rows.iterrows():
-        native = g_sensor_lookup.get(
-            (
-                _normalize_key_component(row.get("plate_id")),
-                _normalize_key_component(row.get("sensor")),
+        "metric",
+        "sponge_family_size",
+        "matched_tetO_group",
+        "matched_control_key",
+    ):
+        if column in normalized.columns:
+            normalized[column] = normalized[column].astype("string")
+    if "value" in normalized.columns:
+        normalized["value"] = pd.to_numeric(normalized["value"], errors="coerce")
+    for column in ("relevant_sensor_pair", "is_relevant_stress"):
+        if column in normalized.columns:
+            normalized[column] = retron_review_semantics.coerce_optional_bool_series(
+                normalized[column],
+                label=column,
             )
-        )
-        native_abs = np.nan if native is None or not np.isfinite(native) else abs(float(native))
-        scaled_row = row.to_dict()
-        if not np.isfinite(native_abs):
-            scaled_row["value"] = np.nan
-            scaled_row["scaling_available"] = False
-            scaled_row["warning_flag"] = "missing_G_sensor"
-        elif native_abs < float(min_abs_g_sensor):
-            scaled_row["value"] = np.nan
-            scaled_row["scaling_available"] = False
-            scaled_row["warning_flag"] = "unstable_scaled_metric"
-        else:
-            scaled_row["value"] = float(row["value"]) / native_abs
-            scaled_row["scaling_available"] = True
-            scaled_row["warning_flag"] = None
-        scaled_row["scale_reference_abs_g_sensor"] = native_abs
-        scaled_row["scale_min_abs_g_sensor"] = float(min_abs_g_sensor)
-        scaled_row["metric"] = str(target_metric)
-        scaled_rows.append(scaled_row)
-    candidate_rows = _filter_missing_metric_rows(
-        frame,
-        pd.DataFrame(scaled_rows),
-        target_metric=target_metric,
-    )
-    if candidate_rows.empty:
-        return frame
-    return pd.concat([frame, candidate_rows], ignore_index=True)
+    if kind == "trace":
+        for column in _TRACE_FLAG_COLUMNS:
+            if column in normalized.columns:
+                normalized[column] = retron_review_semantics.coerce_optional_bool_series(
+                    normalized[column],
+                    label=column,
+                )
+    normalized["source_kind"] = kind
+    return normalized
 
 
-def _summary_difference_by_state(
-    frame: pd.DataFrame,
-    *,
-    value_column: str,
-    positive_state: str,
-    negative_state: str,
-    target_metric: str,
-) -> pd.DataFrame:
-    if frame.empty:
-        return pd.DataFrame()
-    index_columns = [
-        column
-        for column in (
-            "plate_id",
-            "sensor",
-            "sponge",
-            "genotype_id",
-            "stress_condition",
-            "expected_decoy_sign",
-            "is_relevant_stress",
-            "relevant_sensor_pair",
-            "sponge_family_size",
-            "matched_control_key",
-            "summary_window_start_h",
-            "summary_window_end_h",
-            "summary_window_duration_h",
-            "pre_stress_read_count",
-            "post_stress_read_count",
-            "matched_group_sample_count",
-            "stress_time_zero_h",
-            "stress_addition_gap_h",
-        )
-        if column in frame.columns
-    ]
-    pivot = frame.pivot_table(index=index_columns, columns="IPTG", values=value_column, aggfunc="first").reset_index()
-    if positive_state not in pivot.columns or negative_state not in pivot.columns:
-        return pd.DataFrame()
-    pivot["metric"] = str(target_metric)
-    pivot["IPTG"] = pd.NA
-    pivot["value"] = pd.to_numeric(pivot[positive_state], errors="coerce") - pd.to_numeric(
-        pivot[negative_state],
-        errors="coerce",
-    )
-    keep_columns = [*index_columns, "IPTG", "metric", "value"]
-    return pivot.loc[:, keep_columns]
-
-
-def _filter_missing_metric_rows(
-    frame: pd.DataFrame,
-    candidate_rows: pd.DataFrame,
-    *,
-    target_metric: str,
-) -> pd.DataFrame:
-    if candidate_rows.empty:
-        return candidate_rows
-    identity_columns = [column for column in _SUMMARY_IDENTITY_COLUMNS if column in candidate_rows.columns]
-    if not identity_columns:
-        return (
-            candidate_rows
-            if str(target_metric) not in set(frame.get("metric", pd.Series(dtype=str)).astype(str))
-            else pd.DataFrame()
-        )
-    existing_rows = frame[frame["metric"] == str(target_metric)]
-    existing_keys = {_summary_row_identity(row, identity_columns) for _, row in existing_rows.iterrows()}
-    keep_mask = [
-        _summary_row_identity(row, identity_columns) not in existing_keys for _, row in candidate_rows.iterrows()
-    ]
-    return candidate_rows.loc[keep_mask].reset_index(drop=True)
-
-
-def _summary_row_identity(row: Mapping[str, Any], identity_columns: Sequence[str]) -> tuple[object, ...]:
-    return tuple(_normalize_key_component(row.get(column)) for column in identity_columns)
-
-
-def _normalize_key_component(value: object) -> object:
-    return None if pd.isna(value) else value
+def _validate_semantic_frame(frame: pd.DataFrame, *, record_id: str, where: str) -> None:
+    contract_id = _SEMANTIC_CONTRACT_BY_RECORD_ID.get(record_id)
+    if contract_id is None:
+        raise ValueError(f"retron_review: unsupported semantic record id {record_id!r}")
+    builtin_runtime().contracts.validate(frame, contract_id=contract_id, where=f"retron_review:{where}")
 
 
 def _annotate_source(frame: pd.DataFrame, *, source: RetronReviewSource) -> pd.DataFrame:

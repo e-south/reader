@@ -118,25 +118,34 @@ def compute_vec8(
             for _, rr in ref_tab.iterrows():
                 anchors[str(rr["corner"])] = float(rr["anchor_mean"])
 
-        def ystar(b: float, a: float) -> float:
+        def ystar(b: float, a: float, *, corner: str, design_label: object) -> float:
             # Spec-aligned:
             #   denom = max(a + α, eps_ref)
             #   y_linear = (b + eps_abs) / denom
             #   y* = log2( max(y_linear + δ, eps_ratio) )
-            if np.isnan(a):
-                raise ValueError("SFXI: missing anchor for a corner; check reference configuration")
-            denom = max(float(a) + float(ref_add_alpha), float(eps_ref))
+            anchor = float(a)
+            sample = float(b)
+            if not np.isfinite(anchor):
+                raise ValueError(
+                    f"SFXI: missing anchor or non-finite anchor for corner {corner}; check reference configuration"
+                )
+            if not np.isfinite(sample):
+                raise ValueError(
+                    f"SFXI: non-finite intensity for design {design_label!r} corner {corner}; check input data"
+                )
+            denom = max(anchor + float(ref_add_alpha), float(eps_ref))
             if not np.isfinite(denom) or denom <= 0:
                 raise ValueError(f"SFXI: invalid anchor denominator (max(A+alpha, eps_ref))={denom}")
-            y_linear = (float(b) + float(eps_abs)) / denom
+            y_linear = (sample + float(eps_abs)) / denom
             log_arg = y_linear + float(log2_offset_delta)
             # Guard only for the log argument (assertive, no silent backfills elsewhere)
             return float(np.log2(np.maximum(log_arg, float(eps_ratio))))
 
-        y00 = ystar(float(row["b00_intensity"]), anchors["00"])
-        y10 = ystar(float(row["b10_intensity"]), anchors["10"])
-        y01 = ystar(float(row["b01_intensity"]), anchors["01"])
-        y11 = ystar(float(row["b11_intensity"]), anchors["11"])
+        design_label = row[idx_cols[0]] if idx_cols else "<unknown>"
+        y00 = ystar(float(row["b00_intensity"]), anchors["00"], corner="00", design_label=design_label)
+        y10 = ystar(float(row["b10_intensity"]), anchors["10"], corner="10", design_label=design_label)
+        y01 = ystar(float(row["b01_intensity"]), anchors["01"], corner="01", design_label=design_label)
+        y11 = ystar(float(row["b11_intensity"]), anchors["11"], corner="11", design_label=design_label)
 
         rec: dict[str, object] = {c: row[c] for c in idx_cols}
         rec.update(

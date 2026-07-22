@@ -1,9 +1,17 @@
+---
+doc_id: reader-cli-reference
+surface: cli-reference
+owner: reader-maintainers
+last_verified: 2026-07-20
+summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
+---
+
 # CLI reference
 
 This page is the full CLI reference. For setup and the shortest common paths,
 start with [Getting started](../guides/getting_started.md) and
 [Common tasks](../guides/common_routes.md). For the operating loop and
-machine-readable routes, use [Preflight, run, verify](../guides/preflight_run_verify.md)
+machine-readable output, use [Preflight, run, verify](../guides/preflight_run_verify.md)
 and [Automation and JSON](../guides/automation.md).
 
 A typical order is:
@@ -15,6 +23,31 @@ A typical order is:
 5. `uv run reader validate` to run preflight checks.
 6. `uv run reader run`, `uv run reader plot`, `uv run reader export`, and `uv run reader notebook` to materialize outputs.
 
+Manifest-backed multi-experiment response summaries use a separate explicit
+lifecycle:
+
+```bash
+uv run reader response-window preflight REQUEST.yaml --format json
+uv run reader response-window build REQUEST.yaml --out-dir BUNDLE --format json
+uv run reader response-window verify BUNDLE --format json
+uv run reader response-window review BUNDLE --mode run
+uv run reader response-window promoter-evidence BUNDLE BINDINGS \
+  --out-dir EVIDENCE --experiment-id EXPERIMENT --design-id DESIGN \
+  --reduction-id REDUCTION --format json
+uv run reader response-window promoter-evidence-verify EVIDENCE --format json
+```
+
+These commands consume published experiment records. They do not bypass the
+normal experiment pipeline or infer treatment semantics from file names.
+The response service accepts `reader.response_window.request.v3`, publishes
+`reader.response_window.bundle.v5`, and publishes promoter evidence under
+`reader.response_window.promoter_evidence_bundle.v5`.
+Promoter evidence additionally consumes an explicit, study-owned candidate
+binding; Reader does not open the study candidate table or calculate an OPAL
+objective. Its optional v2 objective overlay accepts screen-only raw components
+plus a study-supplied compact objective display label and rejects production
+claims.
+
 `uv run reader` commands accept a config path, experiment directory, or an index from `uv run reader ls` (shown below as `CONFIG|DIR|INDEX`).
 
 ```bash
@@ -23,8 +56,9 @@ uv run reader <command> CONFIG|DIR|INDEX [options]
 
 If `CONFIG|DIR|INDEX` is omitted, `uv run reader` searches upward from the current working directory for
 `config.yaml`. If a numeric index is provided, it is resolved against the nearest `experiments/`
-directory (or `./experiments` if none is found) using the same default experiment inventory as
-`uv run reader ls`; indices shown by `uv run reader ls --all` are accepted too.
+directory (or `./experiments` if none is found) using the same default experiment list as
+`uv run reader ls`. Hidden scaffold/template entries shown by `uv run reader ls --all` must be
+addressed by explicit path.
 
 ---
 
@@ -36,20 +70,21 @@ List experiments:
 uv run reader ls --root experiments
 ```
 
-Show protocol ids, selected-plan summaries, and current output counts:
+Show protocol ids, selected step summaries, and current output counts:
 
 ```bash
 uv run reader ls --root experiments --details
 ```
 
-Add readiness state so the inventory tells you whether each experiment is
-draft/template, blocked, ready to run, or already has a record catalog:
+Add readiness state so the list tells you whether each experiment is
+draft/template, blocked, ready to run, or has a usable non-empty records
+catalog:
 
 ```bash
 uv run reader ls --root experiments --details --readiness
 ```
 
-Emit the same inventory as JSON for agents or automation:
+Emit the same list as JSON for agents or automation:
 
 ```bash
 uv run reader ls --root experiments --details --format json
@@ -57,14 +92,19 @@ uv run reader ls --root experiments --details --readiness --format json
 ```
 
 The JSON payload uses explicit `catalog`, `selection`, `summary`, and
-`experiments` blocks so agents do not need to reconstruct fleet state by
+`experiments` blocks so agents do not need to reconstruct the experiment list by
 walking every row or guessing which filters produced the current view.
 When `--readiness` is enabled, `selection.readiness` is `true`, each experiment
-entry gains a `readiness` block, and `summary.by_readiness` counts the fleet by
+entry gains a `readiness` block, and `summary.by_readiness` counts experiments by
 `config_error`, `draft`, `template`, `dependency_blocked`, `blocked`, `runnable`,
-`legacy_outputs_present`, or `records_ready`.
+`uncataloged_outputs_present`, or `records_ready`.
 
-Filter the inventory down to one assay family, one lifecycle, or just broken configs:
+Within each readiness block, `records.catalog` reports whether `records.json`
+exists and `records.available` reports whether it contains usable current
+records. An empty catalog is runnable, not records-ready. An invalid catalog is
+blocked and is reported without interpreting its record entries.
+
+Filter the list down to one assay family, one lifecycle, or just broken configs:
 
 ```bash
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
@@ -79,6 +119,9 @@ Include scaffold/template directories too:
 ```bash
 uv run reader ls --root experiments --all
 ```
+
+Use explicit paths for scaffold/template configs when acting on them. Numeric
+indexes only target the default `uv run reader ls` experiment list.
 
 If `--root` is omitted, `uv run reader` auto-detects the nearest `experiments/` directory.
 
@@ -97,6 +140,9 @@ uv run reader protocols plate_reader/retron_sponge_screen
 uv run reader protocols <protocol-id> --example-config
 uv run reader protocols --family screen_analysis
 uv run reader protocols --family matched_control_screen
+uv run reader dop classes
+uv run reader dop classes --protocol plate_reader/retron_sponge_screen --format json
+uv run reader dop ready-specs --format json
 uv run reader notebook --list-templates
 ```
 
@@ -108,7 +154,7 @@ uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
 
 Use `plate_reader/dual_reporter_screen` for CFP/YFP-style dual-reporter panels. Use `plate_reader/single_reporter_screen` for RFP-or-other single-reporter panels normalized to a configured denominator. Use `plate_reader/retron_sponge_screen` when the assay contract depends on matched same-sensor tetO controls plus compiled burden, leakiness, induced-effect, and cross-sensor ranking nodes.
 
-For the matched-control sponge workflow itself, use the [Retron sponge screen guide](../guides/retron_sponge_screen.md). That guide maps the direct-ratio analysis sequence, the compiled semantic tables, and the retron-specific plot/export surface.
+For the matched-control sponge workflow itself, use the [Retron sponge screen guide](../guides/retron_sponge_screen.md). That guide maps the direct-ratio analysis sequence, the compiled assay tables, and the retron-specific plots and exports.
 
 Inspect one experiment end to end:
 
@@ -116,12 +162,17 @@ Inspect one experiment end to end:
 uv run reader inspect CONFIG|DIR|INDEX
 ```
 
-Emit the experiment as layered JSON with `authoring`, `semantics`, and
+Emit the experiment as structured JSON with `authoring`, `semantics`, and
 `implementation`:
 
 ```bash
 uv run reader inspect CONFIG|DIR|INDEX --format json
 ```
+
+In JSON mode, `semantics.program` is the authored view of the active semantic
+program for the experiment. The same program, with execution bindings and
+coverage, lives under `implementation.compiled.semantic_program` beside the
+compiled plugin wiring.
 
 List just the pipeline chain and bindings:
 
@@ -136,16 +187,16 @@ Guided walkthrough:
 uv run reader demo
 ```
 
-Protocol descriptions are the main discovery surface for assay-specific inputs
+Protocol descriptions are the main place to check assay-specific inputs
 and outputs. For the compact route, use [Common tasks](../guides/common_routes.md).
-For machine-readable contracts, use [Automation and JSON](../guides/automation.md).
+For machine-readable output, use [Automation and JSON](../guides/automation.md).
 
 In short:
 
-- `uv run reader protocols <id>` shows the protocol authoring surface, selected outputs, and compiled defaults.
-- `uv run reader protocols <id> --example-config` prints a starter `reader/v7` outline.
+- `uv run reader protocols <id>` shows the protocol inputs, selected outputs, and compiled defaults.
+- `uv run reader protocols <id> --example-config` prints a starter `reader/v8` outline.
 - `uv run reader inspect`, `config`, `steps`, and `explain` show one bound experiment; JSON mode uses shared `authoring`, `semantics`, and `implementation` sections.
-- `uv run reader ls --details --readiness` is the fleet-level inventory and preflight view.
+- `uv run reader ls --details --readiness` is the experiment list with preflight state.
 - `uv run reader plot --list`, `uv run reader export --list`, and `uv run reader records` show selected outputs and generated records.
 - `uv run reader plugins --protocol <id> --category ...` scopes registry inspection to the plugins a protocol uses by default.
 
@@ -159,7 +210,7 @@ Inspect the experiment summary before reading the lower-level plan:
 uv run reader inspect CONFIG|DIR|INDEX
 ```
 
-The default table view now includes a readiness panel so you can see, in one place,
+The default table view includes a readiness panel so you can see, in one place,
 whether the config is blocked by files or dependencies, already has records,
 and which next command is appropriate.
 
@@ -175,8 +226,9 @@ Print the config as JSON:
 uv run reader config CONFIG|DIR|INDEX --format json
 ```
 
-In JSON mode, `authoring` is the full `reader/v7` document, while
-`implementation` carries the compiled plan.
+In JSON mode, `authoring` is the full `reader/v8` document, while
+`implementation` carries the compiled plan and the execution-bound semantic
+program.
 
 Validate schema, wiring, and inputs:
 
@@ -190,7 +242,7 @@ then separates overall status/counts into `summary` from file-check details in
 `validation`. `uv run reader validate --no-files --format json` still reports
 declared file and auto-root counts even when the checks are skipped.
 
-If you want the same preflight signal while browsing the whole workbench, use
+If you want the same preflight signal while browsing the whole experiment list, use
 `uv run reader ls --details --readiness`. If you want the readiness view beside
 one experiment’s compiled plan and current outputs, use `uv run reader inspect`.
 For the full operating loop, use [Preflight, run, verify](../guides/preflight_run_verify.md).
@@ -230,7 +282,7 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
 
-Inspect the emitted record catalog:
+Inspect the emitted records catalog:
 
 ```bash
 uv run reader records CONFIG|DIR|INDEX
@@ -240,9 +292,18 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 
 In JSON mode, `uv run reader records` keeps experiment identity at the top level, then
 adds the record-manifest path, a summary by record kind and producer, and the
-latest record entries. `--all` does not dump every historical revision; it adds
-per-record revision counts and a total revision summary so the surface stays
-compact.
+latest record entries. File-bundle record schema v4 requires new plot entries
+to include one typed description for every path, sourced from the matching
+protocol figure or explicit producer metadata. Export entries carry the
+producing plugin's operational bundle description. Reader can inspect schema v3
+file bundles whose descriptions were not recorded and preserves absolute bundle
+paths written by that schema. Current schema v4 publication remains confined
+below `outputs/`. Missing descriptions are reported rather than inferred from
+filenames. `--all` does not dump every stored
+revision. It adds per-record revision counts and a total
+revision summary so the output stays compact. The table view summarizes
+multi-file bundles by count and location. JSON keeps the full structured
+`files` and `path_descriptions` arrays without a redundant joined path string.
 
 Useful flags:
 
@@ -268,13 +329,17 @@ Run plots for all experiments in a year (expects `experiments/YYYY`):
 uv run reader plot --year 2025
 ```
 
+For mutating runs, `reader plot --year` preflights the full batch first. If any
+selected experiment is not runnable, the command aborts before writing plot
+files so the year run does not leave partial state behind.
+
 Override the experiments root when using `--year`:
 
 ```bash
 uv run reader plot --year 2025 --root /path/to/experiments
 ```
 
-List resolved semantic plot outputs and their upstream dataframe bindings:
+List plot outputs and their upstream dataframe bindings:
 
 ```bash
 uv run reader plot CONFIG|DIR|INDEX --list
@@ -319,7 +384,7 @@ Run export specs only:
 uv run reader export CONFIG|DIR|INDEX
 ```
 
-List resolved semantic export artifacts and their upstream dataframe bindings:
+List exports and their upstream dataframe bindings:
 
 ```bash
 uv run reader export CONFIG|DIR|INDEX --list
@@ -351,15 +416,41 @@ uv run reader export CONFIG|DIR|INDEX --only crosstalk_pairs_table --set with.pa
 
 ---
 
+## Aggregate SFXI vec8
+
+Render a cross-experiment heatmap from completed SFXI vec8 records or explicit
+vec8 table files:
+
+```bash
+uv run reader aggregate-sfxi-vec8 SOURCE... --out-dir outputs/reviews/sfxi_vec8_aggregate
+```
+
+`SOURCE` may be an experiment config, experiment directory, outputs directory,
+or a direct `.csv`, `.parquet`, or `.xlsx` vec8 table. Experiment and outputs
+directory sources require the `sfxi_vec8/vec8` dataframe record. Pass
+`outputs/exports/sfxi/vec8.xlsx` directly only when reviewing that exported
+workbook snapshot.
+
+Useful flags:
+
+- `--filename <name>` changes the artifact filename stem.
+- `--title <text>` sets the heatmap title.
+- `--dpi <n>` sets PNG resolution; the default is 300 DPI.
+- `--overwrite` replaces an existing artifact bundle.
+- `--format json` emits artifact paths, source rows, and summary counts.
+
+The aggregate command writes a PNG heatmap, tidy CSV, and manifest. See
+[SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md#aggregate-vec8-heatmap)
+for the source and provenance rules.
+
+---
+
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution). If `--template` is omitted, the CLI
-uses the first configured `notebooks.specs` entry, otherwise auto-picks a default
-template from declared template capabilities:
-
-- plot-capable template when plots exist
-- cytometry EDA template when the pipeline is cytometry-shaped
-- fallback basic template otherwise
+Scaffold a marimo notebook (no pipeline execution). Template selection is
+ordered and protocol-constrained: explicit `--template`, then the first
+compiled notebook spec from `config.yaml`, then the bound protocol default.
+The selected template must be allowed by the protocol.
 
 Notebooks are written under `outputs/notebooks/`.
 
@@ -388,7 +479,7 @@ uv run reader notebook CONFIG|DIR|INDEX --name EDA_custom.py
 Launch modes:
 
 - `--mode edit` (default): open Marimo editor
-- `--mode run`: run as a read-only app
+- `--mode run`: run as an app without the editor
 - `--mode none`: create only (no launch)
 - `--headless`: keep the server in the terminal and print a loopback URL for browser automation
 - `--port <n>`: request a specific loopback port instead of the reader-managed clean-port selection
@@ -396,10 +487,11 @@ Launch modes:
 Runtime notes:
 
 - `reader notebook` manages Marimo runtime state under `.cache/marimo/`.
-- It reuses a live reader-managed session for the same notebook only when the notebook file and reader runtime fingerprint still match.
+- It reuses a live reader-managed session for the same notebook only when the notebook file and Reader runtime fingerprint match.
 - If the notebook or runtime has drifted, it restarts the stale session instead of silently reusing it.
 - It prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
-- For agent review, prefer `--mode run --headless`, then open the printed URL in Chrome MCP.
+- For agent review, prefer `--mode run --headless`, then open the printed URL in the in-app browser.
+- Static HTML export can catch execution failures, but it does not validate live widget behavior. Use a served Marimo app for dropdown, slider, export-button, and chart-rerender checks.
 
 See templates:
 
@@ -443,7 +535,7 @@ List pipeline steps (resolved):
 uv run reader steps CONFIG|DIR|INDEX
 ```
 
-List workbench records from `outputs/manifests/records.json`:
+List records from `outputs/manifests/records.json`:
 
 ```bash
 uv run reader records CONFIG|DIR|INDEX

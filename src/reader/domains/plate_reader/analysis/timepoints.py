@@ -60,4 +60,24 @@ def choose_nearest_time(
     return chosen_time
 
 
-__all__ = ["choose_nearest_time", "nearest_time_per_key"]
+def infer_acquisition_transition_time_h(df: pd.DataFrame, *, time_col: str) -> float | None:
+    """Return the first time in a later workbook acquisition segment.
+
+    A sheet transition is acquisition provenance. It does not identify a
+    biological intervention unless a separate, explicit event contract says
+    that it does.
+    """
+    if "sheet_index" not in df.columns:
+        return None
+    sheet_values = pd.to_numeric(df["sheet_index"], errors="coerce").dropna()
+    if sheet_values.empty:
+        return None
+    min_sheet = float(sheet_values.min())
+    sheet_series = pd.to_numeric(df["sheet_index"], errors="coerce")
+    times = pd.to_numeric(df.loc[sheet_series > min_sheet, time_col], errors="coerce").dropna()
+    if times.empty:
+        return None
+    return float(times.min())
+
+
+__all__ = ["choose_nearest_time", "infer_acquisition_transition_time_h", "nearest_time_per_key"]

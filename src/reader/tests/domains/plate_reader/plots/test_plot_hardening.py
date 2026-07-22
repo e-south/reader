@@ -28,7 +28,7 @@ from reader.domains.plate_reader.plots.time_series import plot_time_series
 from reader.errors import ConfigError
 from reader.plugins.plot.snapshot_barplot import SnapshotBarCfg
 from reader.plugins.plot.snapshot_heatmap import HeatmapCfg, SnapshotHeatmapPlot
-from reader.protocols import ProtocolBinding
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.tests.support import load_decl, write_config
 from reader.workbench.engine import validate as validate_job
 from reader.workbench.experiment import (
@@ -213,6 +213,7 @@ def test_snapshot_heatmap_render_resolves_order_refs_from_semantics() -> None:
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="plate_reader/dual_reporter_screen"),
             annotations=AnnotationSemantics(
                 orders=AnnotationOrders(
                     by_id={
@@ -261,6 +262,7 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
         logger=logging.getLogger("reader.tests"),
         experiment=ExperimentSemantics(
             protocol=ProtocolBinding(id="plate_reader/dual_reporter_screen"),
+            protocol_program=ProtocolSemanticProgram(protocol="plate_reader/dual_reporter_screen"),
             annotations=AnnotationSemantics(orders=AnnotationOrders()),
             resources=ResourceCatalog(),
             layout=OutputLayout(
@@ -293,7 +295,7 @@ def test_snapshot_heatmap_render_rejects_unknown_order_ref() -> None:
 
 def test_validate_rejects_unknown_heatmap_order_ref(tmp_path) -> None:
     data = {
-        "schema": "reader/v7",
+        "schema": "reader/v8",
         "experiment": {"id": "exp_semantics"},
         "protocol": {
             "id": "plate_reader/dual_reporter_screen",
@@ -2036,7 +2038,7 @@ def test_retron_decomposition_fails_fast_when_expected_decoy_sign_is_missing() -
         )
 
 
-def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_is_still_recoverable() -> None:
+def test_retron_decomposition_rejects_missing_analysis_owned_window_metadata() -> None:
     trace = pd.DataFrame(
         [
             {
@@ -2094,23 +2096,18 @@ def test_retron_decomposition_derives_missing_window_metadata_when_trace_shape_i
         ]
     )
 
-    figures = plot_retron_sponge_summary(
-        summary=summary,
-        trace=trace,
-        output_dir=None,
-        view="decomposition",
-        title="Sponge vs matched tetO",
-        filename="control_anchored_decomposition",
-        palette_book=None,
-        control_name="tetO",
-        fig_kwargs={},
-    )
-
-    figure = figures[0].fig
-    assert len(figure.axes) == 5
-    visible_axes = [axis for axis in figure.axes if axis.axison]
-    assert visible_axes[0].get_xlabel() == "Time from stress addition (h)"
-    plt.close(figure)
+    with pytest.raises(ValueError, match="matched_control_key"):
+        plot_retron_sponge_summary(
+            summary=summary,
+            trace=trace,
+            output_dir=None,
+            view="decomposition",
+            title="Sponge vs matched tetO",
+            filename="control_anchored_decomposition",
+            palette_book=None,
+            control_name="tetO",
+            fig_kwargs={},
+        )
 
 
 def test_retron_decomposition_rejects_missing_required_decision_metrics() -> None:

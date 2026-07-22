@@ -1,3 +1,11 @@
+---
+doc_id: reader-retron-sponge-screen
+surface: assay-guide
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Reader-owned retron sponge assay setup, semantic metrics, plots, exports, and review path.
+---
+
 # Retron Sponge Screen Guide
 
 `plate_reader/retron_sponge_screen` is the matched-control sponge assay in `reader`.
@@ -33,7 +41,9 @@ The transform `transform/retron_sponge_metrics` materializes two typed assay rec
   - contract: `plate_reader.sponge_summary.v1`
   - carries `R_pre`, `P_pre`, `C_AUC`, `C_END`, `D_AUC`, `D_END`, `D_abs_AUC`, `D_abs_END`, `D_growth_AUC`, `D_growth_END`, `M_AUC`, `M_END`, `O_AUC`, `O_abs_AUC`, `S_AUC`, `S_abs_AUC`, `L_pre`, `L_post_AUC`, `T_ratio_AUC`, `T_growth_AUC`, and `T_finalOD`
 
-The internal config key is still `protocol.analysis.semantic_metrics` for compatibility. In the user-facing docs and notebooks, treat those outputs as derived assay metrics rather than a separate semantic layer.
+The canonical internal config key is `protocol.analysis.semantic_metrics`. In
+the user-facing docs and notebooks, treat those outputs as derived assay metrics
+rather than a separate semantic layer.
 
 ## Metric flow
 
@@ -98,7 +108,7 @@ The default `screen_overview` profile materializes the core review portfolio:
 - `library_heatmaps`
 - `pareto_ranking`
 
-`control_anchored_decomposition` is now the decision-card view: relevant-stress and H2O `R(t)=log2(YFP/CFP)` traces for the selected sample and matched `tetO`, plus summary intervals for `P_pre`, `D_abs_AUC`, `D_AUC`, and `D_growth_AUC`.
+`control_anchored_decomposition` is the decision-card view: relevant-stress and H2O `R(t)=log2(YFP/CFP)` traces for the selected sample and matched `tetO`, plus summary intervals for `P_pre`, `D_abs_AUC`, `D_AUC`, and `D_growth_AUC`.
 
 Additional profiles:
 
@@ -121,27 +131,41 @@ That scaffold is experiment-scoped and progressive:
 - it inventories the selected plot portfolio by review phase
 - it collapses raw and support QC channels into one `QC traces` review path instead of duplicating two notebook routes
 - it keeps the experiment-scoped notebook focused on QC and direct assay-kinetics views instead of repeating ranking-heavy review figures that are better compared cross-run
-- it now favors the decision-card view over baseline-only debug plots in the source selector so the direct control-anchored answer stays visible
+- it favors the decision-card view over baseline-only debug plots in the source selector so the direct control-anchored answer stays visible
 - it adds a direct-ratio transform ladder so each figure is tied back to the math that produced it
 - it shows whether each selected plot/export has already been rendered
-- it prefers the derived trace and summary records when present
+- it loads derived trace and summary data through their verified records
 - it keeps the assay table review decoupled from bespoke assay plotting code
 
 The guide figures from the full analysis template that are not first-class compiled plot ids should be built from the exported assay tables rather than by adding assay-specific one-off plot plugins prematurely.
-For cross-run library review, scaffold a small manifest-backed `workbench/generic`
-experiment that selects `notebook/retron_sponge_aggregate`. That notebook combines
-derived assay exports from the March 2026 screen families into cross-run figures such as
-target activity matrices, architecture plots, expected-versus-observed multifunction
-comparisons, and sponge fingerprints.
+For cross-run library review, scaffold a small manifest-backed
+`workbench/generic` experiment that selects
+`notebook/retron_sponge_aggregate`. For each source declared by experiment, the
+notebook resolves `semantic_metrics/summary` and `semantic_metrics/trace` from
+`outputs/manifests/records.json` and verifies their content digests. It does not
+prefer a nearby CSV export. Those records feed cross-run target activity,
+architecture, expected-versus-observed, and sponge-fingerprint figures.
 
-## Export surface
+## Record and export surfaces
+
+The current semantic records are the machine-facing review inputs:
+
+- `semantic_metrics/trace` with contract `plate_reader.sponge_trace.v1`
+- `semantic_metrics/summary` with contract `plate_reader.sponge_summary.v1`
+
+The trace contract carries matched-control identity, summary-window bounds,
+window membership, read counts, and stress-timing metadata. Plot code consumes
+those analysis-owned values and fails when they are missing; it does not infer
+replacement values.
 
 The retron assay exports the derived assay tables directly:
 
 - `semantic_trace_table` -> `outputs/exports/retron/semantic_trace.csv`
 - `semantic_summary_table` -> `outputs/exports/retron/semantic_summary.csv`
 
-Those exports are the didactic and extensible bridge between the compiled assay program and downstream figures such as architecture comparisons, constituent-vs-multifunction expected/observed plots, sponge fingerprints, or plate-position diagnostics.
+The CSV exports are human-readable transfer artifacts. They are not the
+authoritative input for an experiment-scoped Reader review. An explicit file
+source is accepted only when it satisfies the same current dataframe contract.
 
 ## Config guidance
 

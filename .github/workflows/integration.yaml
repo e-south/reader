@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 9 * * *"
-  push:
-    branches: [main]
 
 concurrency:
   group: integration-${{ github.workflow }}-${{ github.ref }}
@@ -39,7 +37,7 @@ jobs:
       - name: Run integration suite
         run: |
           mkdir -p .artifacts
-          uv run pytest -q \
+          uv run --locked pytest -q \
             -o addopts='--strict-config --strict-markers -ra' \
             -m integration \
             --durations=25 \

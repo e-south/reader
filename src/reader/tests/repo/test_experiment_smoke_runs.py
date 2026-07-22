@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
 from reader.tests.repo.experiment_matrix import END_TO_END_RUNNABLE_CONFIGS, repo_rel
-from reader.tests.support import REPO_ROOT, load_decl
+from reader.tests.support import REPO_ROOT, default_notebook_name, load_decl
 from reader.workbench import resolve_workbench
+from reader.workbench.cli import app
 from reader.workbench.engine import run_spec
-from reader.workbench.records import RecordStore
+from reader.workbench.graph import FileRef
+from reader.workbench.records import RecordStore, record_paths
 
 pytestmark = pytest.mark.integration
 
@@ -51,7 +55,15 @@ def _run(
     )
 
 
-@pytest.mark.fleet
+def _assert_file_bundle_records_exist(store: RecordStore, record_ids: set[str]) -> None:
+    for record_id in sorted(record_ids):
+        record = store.read_record(record_id)
+        paths = record_paths(record)
+        assert paths, f"Record {record_id} did not include any materialized files."
+        assert all(path.is_file() for path in paths), f"Record {record_id} referenced missing files: {paths!r}"
+
+
+@pytest.mark.active_experiments
 @pytest.mark.parametrize("config_path", END_TO_END_RUNNABLE_CONFIGS, ids=repo_rel)
 def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path: Path) -> None:
     rel_dir = str(config_path.parent.relative_to(REPO_ROOT / "experiments"))
@@ -74,17 +86,12 @@ def test_repo_data_backed_experiments_run_end_to_end(tmp_path: Path, config_path
     latest_ids = {record.record_id for record in store.iter_latest_records()}
     expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
     expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
-    plots_dir = outputs / layout.plots_subdir
-    exports_dir = outputs / layout.exports_subdir
 
     assert (outputs / "manifests" / "records.json").exists()
     assert "ingest/df" in latest_ids
     assert expected_plot_ids.issubset(latest_ids)
     assert expected_export_ids.issubset(latest_ids)
-    if expected_plot_ids:
-        assert any(path.is_file() for path in plots_dir.rglob("*"))
-    if expected_export_ids:
-        assert any(path.is_file() for path in exports_dir.rglob("*"))
+    _assert_file_bundle_records_exist(store, expected_plot_ids | expected_export_ids)
 
 
 @pytest.mark.smoke
@@ -100,7 +107,6 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
     manifests = outputs / "manifests"
-    plots_dir = outputs / layout.plots_subdir
     store = RecordStore(
         outputs,
         contracts=builtin_contract_catalog(),
@@ -117,7 +123,12 @@ def test_plate_reader_panel_v3_generates_records_and_plots_from_clean_temp_copy(
     assert not (manifests / "exports_manifest.json").exists()
     assert "ingest/df" in latest_ids
     assert "plot:raw_kinetics" in latest_ids
-    assert any(plots_dir.glob("*.pdf"))
+    ingest_record = store.read_dataframe("ingest/df")
+    assert len(ingest_record.inputs) == 1
+    assert ingest_record.inputs[0].label == "raw"
+    assert isinstance(ingest_record.inputs[0].ref, FileRef)
+    assert ingest_record.inputs[0].ref.path.name == "20250614_sensor_panel_m9_glu.xlsx"
+    _assert_file_bundle_records_exist(store, {"plot:raw_kinetics"})
 
 
 @pytest.mark.smoke
@@ -149,6 +160,7 @@ def test_sfxi_v3_generates_records_and_export_from_clean_temp_copy(tmp_path: Pat
     assert not (manifests / "exports_manifest.json").exists()
     assert "sfxi_vec8/vec8" in latest_ids
     assert "export:logic_summary_workbook" in latest_ids
+    _assert_file_bundle_records_exist(store, {"export:logic_summary_workbook"})
     assert (outputs / layout.exports_subdir / "sfxi" / "vec8.xlsx").exists()
 
 
@@ -165,7 +177,6 @@ def test_sfxi_logic_geometry_experiment_runs_and_plots_from_clean_temp_copy(tmp_
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
     manifests = outputs / "manifests"
-    plots_dir = outputs / layout.plots_subdir
     store = RecordStore(
         outputs,
         contracts=builtin_contract_catalog(),
@@ -180,17 +191,102 @@ def test_sfxi_logic_geometry_experiment_runs_and_plots_from_clean_temp_copy(tmp_
     assert "promote_to_tidy_plus_map/df" in latest_ids
     assert "sfxi_vec8/vec8" not in latest_ids
     assert "plot:logic_symmetry" in latest_ids
-    assert any(plots_dir.glob("*.pdf"))
+    _assert_file_bundle_records_exist(store, {"plot:logic_symmetry"})
 
 
 @pytest.mark.smoke
-def test_retron_sponge_experiment_generates_semantic_outputs_from_clean_temp_copy(tmp_path: Path) -> None:
+def test_cli_notebook_scaffold_on_staged_experiment_preserves_runnable_readiness(tmp_path: Path) -> None:
+    cfg_path = _stage_experiment(tmp_path, "2025/20250614_sensor_panel_M9_glu")
+    runner = CliRunner()
+
+    notebook_result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"], env={"COLUMNS": "200"})
+    assert notebook_result.exit_code == 0, notebook_result.output
+
+    notebook_path = cfg_path.parent / "outputs" / "notebooks" / default_notebook_name()
+    assert notebook_path.exists()
+
+    inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
+    assert inspect_result.exit_code == 0
+    inspect_payload = json.loads(inspect_result.output)
+    assert inspect_payload["implementation"]["readiness"]["state"] == "runnable"
+
+
+@pytest.mark.smoke
+def test_cli_preflight_surface_contracts_on_staged_retron_experiment(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
+    runner = CliRunner()
+
+    validate_no_files = runner.invoke(app, ["validate", str(cfg_path), "--no-files", "--format", "json"])
+    validate_files = runner.invoke(app, ["validate", str(cfg_path), "--format", "json"])
+    dry_run = runner.invoke(app, ["run", str(cfg_path), "--dry-run", "--format", "json"])
+    plot_list = runner.invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
+    export_list = runner.invoke(app, ["export", str(cfg_path), "--list", "--format", "json"])
+    inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
+
+    assert validate_no_files.exit_code == 0, validate_no_files.output
+    assert validate_files.exit_code == 0, validate_files.output
+    assert dry_run.exit_code == 0, dry_run.output
+    assert plot_list.exit_code == 0, plot_list.output
+    assert export_list.exit_code == 0, export_list.output
+    assert inspect_result.exit_code == 0, inspect_result.output
+
+    validate_no_files_payload = json.loads(validate_no_files.output)
+    validate_files_payload = json.loads(validate_files.output)
+    dry_run_payload = json.loads(dry_run.output)
+    plot_payload = json.loads(plot_list.output)
+    export_payload = json.loads(export_list.output)
+    inspect_payload = json.loads(inspect_result.output)
+
+    assert validate_no_files_payload["summary"]["status"] == "ok"
+    assert validate_files_payload["summary"]["status"] == "ok"
+    assert dry_run_payload["dry_run"] is True
+    assert (
+        dry_run_payload["implementation"]["compiled"]["semantic_program"]["ranking"]["execution"]["status"]
+        == "compiled"
+    )
+    assert "baseline_shifted_kinetics" in {item["id"] for item in plot_payload["plots"]}
+    assert "semantic_summary_table" in {item["id"] for item in export_payload["exports"]}
+    assert inspect_payload["experiment"]["notebook_template"] == "notebook/retron_sponge"
+
+
+@pytest.mark.smoke
+def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journal(tmp_path: Path) -> None:
+    cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
+    runner = CliRunner()
+
+    validate_result = runner.invoke(app, ["validate", str(cfg_path), "--format", "json"])
+    assert validate_result.exit_code == 0
+    validate_payload = json.loads(validate_result.output)
+    assert validate_payload["summary"]["status"] == "ok"
+
+    for command in (
+        ["run", str(cfg_path), "--compact"],
+        ["plot", str(cfg_path)],
+        ["export", str(cfg_path)],
+    ):
+        result = runner.invoke(app, command, env={"COLUMNS": "200"})
+        assert result.exit_code == 0, result.output
+
+    inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
+    assert inspect_result.exit_code == 0
+    inspect_payload = json.loads(inspect_result.output)
+    assert inspect_payload["implementation"]["readiness"]["state"] == "records_ready"
+    assert (
+        inspect_payload["implementation"]["compiled"]["semantic_program"]["ranking"]["execution"]["status"]
+        == "compiled"
+    )
+
+    records_result = runner.invoke(app, ["records", str(cfg_path), "--format", "json"])
+    assert records_result.exit_code == 0
+    records_payload = json.loads(records_result.output)
+    record_ids = {item["record_id"] for item in records_payload["records"]}
+    assert "semantic_metrics/trace" in record_ids
+    assert "semantic_metrics/summary" in record_ids
+    assert "plot:baseline_shifted_kinetics" in record_ids
+    assert "export:semantic_summary_table" in record_ids
+
     decl = load_decl(cfg_path)
     workbench = resolve_workbench(decl)
-
-    _run(decl, include_pipeline=True, include_plots=True, include_exports=True)
-
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
     manifests = outputs / "manifests"
@@ -202,18 +298,20 @@ def test_retron_sponge_experiment_generates_semantic_outputs_from_clean_temp_cop
         exports_subdir=layout.exports_subdir,
         create=False,
     )
-
-    latest_ids = {record.record_id for record in store.iter_latest_records()}
     expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
     expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
 
     assert (manifests / "records.json").exists()
-    assert "semantic_metrics/trace" in latest_ids
-    assert "semantic_metrics/summary" in latest_ids
-    assert expected_plot_ids.issubset(latest_ids)
-    assert expected_export_ids.issubset(latest_ids)
-    assert "plot:baseline_shifted_kinetics" in latest_ids
-    assert any(plots_dir.glob("*.pdf"))
+    assert expected_plot_ids.issubset(record_ids)
+    assert expected_export_ids.issubset(record_ids)
+    _assert_file_bundle_records_exist(store, expected_plot_ids | expected_export_ids)
     assert any(plots_dir.glob("raw_kinetics*.pdf"))
     assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()
     assert (outputs / layout.exports_subdir / "retron" / "semantic_trace.csv").exists()
+
+    journal = cfg_path.parent / "JOURNAL.md"
+    assert journal.exists()
+    journal_text = journal.read_text(encoding="utf-8")
+    assert "uv run reader run" in journal_text
+    assert "uv run reader plot" in journal_text
+    assert "uv run reader export" in journal_text

@@ -140,12 +140,13 @@ def cornerize_and_aggregate(
     require_all_corners_per_design: bool,
     preferred_treatment_column: str | None = None,
 ) -> CornerizeResult:
-    _enforce_columns(df, design_by)
-
     if time_column != "time":
         if time_column not in df.columns:
             raise ValueError(f"SFXI: time column '{time_column}' not found.")
-        df = df.rename(columns={time_column: "time"})
+        df = df.copy()
+        df["time"] = df[time_column]
+
+    _enforce_columns(df, design_by)
 
     snap, chosen_time, warn_note = select_times(
         df,

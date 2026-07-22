@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.1"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 
@@ -24,7 +24,7 @@ def _():
             "filter_supporting_table_for_figure",
             "load_retron_review_bundle",
             "load_retron_source_surface",
-            "render_retron_source_plot_cached",
+            "render_retron_source_plot",
             "retron_aggregate_figure_rows",
             "retron_aggregate_plot_rows",
             "retron_assay_context_rows",
@@ -37,7 +37,7 @@ def _():
             "retron_table_kwargs",
             "retron_transform_ladder_rows",
             "source_rows",
-            "try_render_retron_aggregate_plot_cached",
+            "try_render_retron_aggregate_plot",
         ],
     )
     available_aggregate_score_metrics = retron_review_module.available_aggregate_score_metrics
@@ -50,7 +50,7 @@ def _():
     load_notebook_workbench_context = context_module.load_notebook_workbench_context
     load_retron_review_bundle = retron_review_module.load_retron_review_bundle
     load_retron_source_surface = retron_review_module.load_retron_source_surface
-    render_retron_source_plot_cached = retron_review_module.render_retron_source_plot_cached
+    render_retron_source_plot = retron_review_module.render_retron_source_plot
     retron_aggregate_figure_rows = retron_review_module.retron_aggregate_figure_rows
     retron_aggregate_plot_rows = retron_review_module.retron_aggregate_plot_rows
     retron_assay_context_rows = retron_review_module.retron_assay_context_rows
@@ -63,7 +63,7 @@ def _():
     retron_table_kwargs = retron_review_module.retron_table_kwargs
     retron_transform_ladder_rows = retron_review_module.retron_transform_ladder_rows
     source_rows = retron_review_module.source_rows
-    try_render_retron_aggregate_plot_cached = retron_review_module.try_render_retron_aggregate_plot_cached
+    try_render_retron_aggregate_plot = retron_review_module.try_render_retron_aggregate_plot
     return (
         Path,
         available_aggregate_score_metrics,
@@ -77,8 +77,8 @@ def _():
         load_retron_review_bundle,
         load_retron_source_surface,
         mo,
-        render_retron_source_plot_cached,
-        try_render_retron_aggregate_plot_cached,
+        render_retron_source_plot,
+        try_render_retron_aggregate_plot,
         retron_notebook_table_preview,
         retron_aggregate_figure_rows,
         retron_aggregate_plot_rows,
@@ -429,7 +429,7 @@ def _(
     retron_aggregate_expected_selector,
     retron_aggregate_score_selector,
     retron_aggregate_selected_plot_id,
-    try_render_retron_aggregate_plot_cached,
+    try_render_retron_aggregate_plot,
 ):
     if retron_aggregate_score_selector.value is None:
         retron_aggregate_result = None
@@ -439,7 +439,7 @@ def _(
             "the aggregate notebook."
         )
     else:
-        retron_aggregate_result, retron_aggregate_result_error = try_render_retron_aggregate_plot_cached(
+        retron_aggregate_result, retron_aggregate_result_error = try_render_retron_aggregate_plot(
             retron_aggregate_selected_plot_id,
             summary_df=retron_aggregate_bundle.summary_df,
             sensor_target_map=retron_aggregate_bundle.sensor_target_map,
@@ -766,12 +766,12 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(render_retron_source_plot_cached, retron_source_plot_selector, retron_source_selected_source):
+def _(render_retron_source_plot, retron_source_plot_selector, retron_source_selected_source):
     retron_source_plot_error = None
     retron_source_plot_result = None
     if retron_source_selected_source is not None and retron_source_plot_selector is not None:
         try:
-            retron_source_plot_result = render_retron_source_plot_cached(
+            retron_source_plot_result = render_retron_source_plot(
                 retron_source_selected_source,
                 plot_id=retron_source_plot_selector.value,
             )

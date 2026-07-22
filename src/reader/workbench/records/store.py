@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import json
+import os
 from collections.abc import Iterable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import pandas as pd
@@ -16,16 +18,13 @@ from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.records.model import (
     DataFrameArtifactRecord,
     FileBundleRecord,
+    PathDescription,
     RecordProducer,
     RecordRecipeSource,
     record_from_dict,
     record_to_dict,
+    sha256_file,
 )
-
-
-def _sha256_bytes(blob: bytes) -> str:
-    return "sha256:" + hashlib.sha256(blob).hexdigest()
-
 
 RECORD_CATALOG_SCHEMA_VERSION = 3
 
@@ -95,7 +94,27 @@ class RecordStore:
 
     def _write_catalog(self, payload: dict[str, Any]) -> None:
         self.manifests_dir.mkdir(parents=True, exist_ok=True)
-        self.records_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        staged_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.manifests_dir,
+                prefix=f".{self.records_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as staged:
+                staged_path = Path(staged.name)
+                json.dump(payload, staged, indent=2, sort_keys=True)
+                staged.flush()
+                os.fsync(staged.fileno())
+            try:
+                staged_path.replace(self.records_path)
+            except OSError as exc:
+                raise RecordError(f"Could not atomically replace records.json: {exc}") from exc
+        finally:
+            if staged_path is not None:
+                staged_path.unlink(missing_ok=True)
 
     def _materialize(self, record_id: str, payload: dict[str, Any]) -> DataFrameArtifactRecord | FileBundleRecord:
         record = record_from_dict(payload, outputs_dir=self.root)
@@ -193,13 +212,12 @@ class RecordStore:
         inputs: list[ProvenanceInput],
         config_digest: str,
         code_digest: str | None = None,
-        validate_contract: bool = True,
         producer_kind: WorkbenchProducerKind = "pipeline",
         source_recipe: RecipeSource | None = None,
     ) -> DataFrameArtifactRecord:
         self.ensure_layout()
         base_name = f"{producer_id}.{producer_plugin.replace('/', '_')}"
-        step_dir = self.artifacts_dir / base_name
+        base_step_dir = self.artifacts_dir / base_name
         catalog = self._read_catalog()
         previous_payload = catalog["latest"].get(record_id)
         previous_record = None
@@ -209,44 +227,78 @@ class RecordStore:
                 raise RecordError(
                     f"Record id {record_id!r} is already used by a non-dataframe record; choose a unique id."
                 )
-            step_dir = (
-                previous_record.path.parent
-                if previous_record.config_digest == config_digest
-                else self._revision_dir(step_dir)
-            )
-        else:
-            step_dir = self._revision_dir(step_dir)
-        step_dir.mkdir(parents=True, exist_ok=True)
-        data_path = step_dir / f"{out_name}.parquet"
-        if validate_contract and contract_id != "none":
-            self.contracts.validate(df, contract_id=contract_id, where=f"{producer_id}:{out_name}")
-        df.to_parquet(data_path, index=False)
-        record = DataFrameArtifactRecord(
-            record_id=record_id,
-            kind="dataframe_artifact",
-            producer=RecordProducer(
-                kind=producer_kind,
-                id=producer_id,
-                plugin=producer_plugin,
-                source_recipe=(
-                    RecordRecipeSource(recipe=source_recipe.recipe, with_=dict(source_recipe.with_ or {}))
-                    if source_recipe is not None
-                    else None
-                ),
+        self.contracts.validate(df, contract_id=contract_id, where=f"{producer_id}:{out_name}")
+        producer = RecordProducer(
+            kind=producer_kind,
+            id=producer_id,
+            plugin=producer_plugin,
+            source_recipe=(
+                RecordRecipeSource(recipe=source_recipe.recipe, with_=dict(source_recipe.with_ or {}))
+                if source_recipe is not None
+                else None
             ),
-            created_at=datetime.now(UTC).isoformat(),
-            inputs=tuple(inputs),
-            config_digest=config_digest,
-            contract_id=contract_id,
-            path=data_path,
-            content_digest=_sha256_bytes(data_path.read_bytes()),
-            code_digest=code_digest or "",
         )
-        payload = record_to_dict(record, outputs_dir=self.root)
-        catalog["latest"][record_id] = payload
-        catalog["history"].setdefault(record_id, []).append(payload)
-        self._write_catalog(catalog)
-        return record
+        record_inputs = tuple(inputs)
+        effective_code_digest = code_digest or ""
+        filename = f"{out_name}.parquet"
+        staged_path: Path | None = None
+        revision_dir: Path | None = None
+        data_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                dir=self.artifacts_dir,
+                prefix=f".{base_name}.",
+                suffix=".parquet",
+                delete=False,
+            ) as staged:
+                staged_path = Path(staged.name)
+            df.to_parquet(staged_path, index=False)
+            content_digest = sha256_file(staged_path)
+            if (
+                previous_record is not None
+                and previous_record.config_digest == config_digest
+                and previous_record.content_digest == content_digest
+                and previous_record.contract_id == contract_id
+                and previous_record.code_digest == effective_code_digest
+                and previous_record.producer == producer
+                and previous_record.inputs == record_inputs
+                and previous_record.path.name == filename
+            ):
+                previous_record.verify_content_digest()
+                return previous_record
+
+            revision_dir = self._revision_dir(base_step_dir)
+            revision_dir.mkdir(parents=True)
+            data_path = revision_dir / filename
+            staged_path.replace(data_path)
+            staged_path = None
+            record = DataFrameArtifactRecord(
+                record_id=record_id,
+                kind="dataframe_artifact",
+                producer=producer,
+                created_at=datetime.now(UTC).isoformat(),
+                inputs=record_inputs,
+                config_digest=config_digest,
+                contract_id=contract_id,
+                path=data_path,
+                content_digest=content_digest,
+                code_digest=effective_code_digest,
+            )
+            payload = record_to_dict(record, outputs_dir=self.root)
+            catalog["latest"][record_id] = payload
+            catalog["history"].setdefault(record_id, []).append(payload)
+            self._write_catalog(catalog)
+            return record
+        except Exception:
+            if data_path is not None:
+                data_path.unlink(missing_ok=True)
+            if revision_dir is not None:
+                with suppress(OSError):
+                    revision_dir.rmdir()
+            raise
+        finally:
+            if staged_path is not None:
+                staged_path.unlink(missing_ok=True)
 
     def append_file_bundle(
         self,
@@ -258,9 +310,10 @@ class RecordStore:
         inputs: list[ProvenanceInput],
         config_digest: str,
         files: list[Path],
+        description: str,
+        path_descriptions: tuple[PathDescription, ...] = (),
         source_recipe: RecipeSource | None = None,
     ) -> FileBundleRecord:
-        self.ensure_layout()
         record = FileBundleRecord(
             record_id=record_id,
             kind="file_bundle",
@@ -278,7 +331,23 @@ class RecordStore:
             inputs=tuple(inputs),
             config_digest=config_digest,
             files=tuple(sorted(dict.fromkeys(files), key=str)),
+            description=description,
+            path_descriptions=path_descriptions,
         )
+        materialized_paths = tuple(path if path.is_absolute() else self.root / path for path in record.files)
+        missing = [path for path in materialized_paths if not path.exists()]
+        if missing:
+            raise RecordError(
+                f"File-bundle record {record_id!r} cannot persist missing files: "
+                + ", ".join(str(path) for path in missing)
+            )
+        non_files = [path for path in materialized_paths if not path.is_file()]
+        if non_files:
+            raise RecordError(
+                f"File-bundle record {record_id!r} cannot persist non-file paths: "
+                + ", ".join(str(path) for path in non_files)
+            )
+        self.ensure_layout()
         catalog = self._read_catalog()
         payload = record_to_dict(record, outputs_dir=self.root)
         catalog["latest"][record_id] = payload

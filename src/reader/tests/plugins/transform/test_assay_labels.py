@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from reader.plugins.transform.assay_labels import AnnotationLabelsCfg, AnnotationLabelsTransform
-from reader.protocols import ProtocolBinding
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.workbench.experiment import (
     AnnotationLabels,
     AnnotationLabelSpec,
@@ -22,6 +22,7 @@ def _ctx(labels):
     logger = SimpleNamespace(info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None)
     semantics = ExperimentSemantics(
         protocol=ProtocolBinding(id="workbench/generic"),
+        protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
         annotations=AnnotationSemantics(
             labels=AnnotationLabels(
                 by_id={

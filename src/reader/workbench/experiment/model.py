@@ -126,38 +126,67 @@ class AnnotationCollections:
 
 
 @dataclass(frozen=True)
-class LogicMapSpec:
+class OrderedStateSpaceSpec:
     column: str
-    corners: dict[str, str]
+    state_order: tuple[str, ...]
+    source_values: dict[str, str]
     case_sensitive: bool = True
 
 
 @dataclass(frozen=True)
-class ResolvedLogicMap:
+class ResolvedOrderedStateSpace:
+    ref: str
     column: str
-    corners: dict[str, str]
+    state_ids: tuple[str, ...]
+    source_values: dict[str, str]
     case_sensitive: bool
 
 
 @dataclass(frozen=True)
-class LogicMaps:
-    by_id: dict[str, LogicMapSpec] = field(default_factory=dict)
+class OrderedStateSpaces:
+    by_id: dict[str, OrderedStateSpaceSpec] = field(default_factory=dict)
 
-    def resolve(self, *, ref: str) -> ResolvedLogicMap:
-        logic_ref = str(ref).strip()
-        if not logic_ref:
-            raise ValueError("logic_map_ref must be a non-empty string")
-        spec = self.by_id.get(logic_ref)
+    def resolve(self, *, ref: str) -> ResolvedOrderedStateSpace:
+        state_map_ref = str(ref).strip()
+        if not state_map_ref:
+            raise ValueError("state_map_ref must be a non-empty string")
+        spec = self.by_id.get(state_map_ref)
         if spec is None:
             options = ", ".join(sorted(self.by_id)) if self.by_id else "—"
             raise ValueError(
-                f"Unknown logic_map_ref '{logic_ref}'. Define it under annotations.logic_maps.{logic_ref}. (available: {options})"
+                f"Unknown state_map_ref '{state_map_ref}'. "
+                f"Define it under annotations.ordered_state_spaces.{state_map_ref}. (available: {options})"
             )
-        if set(spec.corners) != {"00", "10", "01", "11"}:
-            raise ValueError(f"annotations.logic_maps.{logic_ref}.corners must have exactly 00/10/01/11")
-        return ResolvedLogicMap(
+        if not isinstance(spec.column, str) or not spec.column.strip():
+            raise ValueError(f"annotations.ordered_state_spaces.{state_map_ref}.column must be a non-empty string")
+        state_ids = tuple(str(state_id).strip() for state_id in spec.state_order)
+        if not state_ids:
+            raise ValueError(f"annotations.ordered_state_spaces.{state_map_ref}.state_order must not be empty")
+        if any(not state_id for state_id in state_ids):
+            raise ValueError(f"annotations.ordered_state_spaces.{state_map_ref} state ids must be non-empty")
+        if len(set(state_ids)) != len(state_ids):
+            raise ValueError(f"annotations.ordered_state_spaces.{state_map_ref} state ids must be unique")
+        if set(spec.source_values) != set(state_ids):
+            raise ValueError(
+                f"annotations.ordered_state_spaces.{state_map_ref}.values must have exactly the ids in state_order"
+            )
+        source_values = tuple(str(spec.source_values[state_id]) for state_id in state_ids)
+        if any(not source_value.strip() for source_value in source_values):
+            raise ValueError(f"annotations.ordered_state_spaces.{state_map_ref} source values must be non-empty")
+        comparison_values = (
+            source_values if spec.case_sensitive else tuple(value.strip().casefold() for value in source_values)
+        )
+        if len(set(comparison_values)) != len(comparison_values):
+            sensitivity = "true" if spec.case_sensitive else "false"
+            raise ValueError(
+                f"annotations.ordered_state_spaces.{state_map_ref} source values must be unique "
+                f"under case_sensitive={sensitivity}"
+            )
+        return ResolvedOrderedStateSpace(
+            ref=state_map_ref,
             column=spec.column,
-            corners={str(key): str(value) for key, value in spec.corners.items()},
+            state_ids=state_ids,
+            source_values=dict(zip(state_ids, source_values, strict=True)),
             case_sensitive=bool(spec.case_sensitive),
         )
 
@@ -174,7 +203,7 @@ class AnnotationSemantics:
     labels: AnnotationLabels = field(default_factory=AnnotationLabels)
     orders: AnnotationOrders = field(default_factory=AnnotationOrders)
     collections: AnnotationCollections = field(default_factory=AnnotationCollections)
-    logic_maps: LogicMaps = field(default_factory=LogicMaps)
+    ordered_state_spaces: OrderedStateSpaces = field(default_factory=OrderedStateSpaces)
 
     def resolve_label_specs(self, refs: list[str] | None = None) -> list[ResolvedAnnotationLabelSpec]:
         return self.labels.resolve(refs)
@@ -189,8 +218,8 @@ class AnnotationSemantics:
     ) -> list[str] | None:
         return self.orders.resolve(order=order, order_ref=order_ref, column=column, arg_name=arg_name)
 
-    def resolve_logic_map(self, *, ref: str) -> ResolvedLogicMap:
-        return self.logic_maps.resolve(ref=ref)
+    def resolve_ordered_state_space(self, *, ref: str) -> ResolvedOrderedStateSpace:
+        return self.ordered_state_spaces.resolve(ref=ref)
 
     def resolve_plot_partition(self, *, partition: dict[str, Any] | Any | None) -> ResolvedPlotPartition:
         if partition is None:
@@ -278,4 +307,11 @@ class ExperimentSemantics:
     annotations: AnnotationSemantics
     resources: ResourceCatalog
     layout: OutputLayout
-    protocol_program: ProtocolSemanticProgram | None = None
+    protocol_program: ProtocolSemanticProgram
+
+    def __post_init__(self) -> None:
+        if self.protocol_program.protocol != self.protocol.id:
+            raise ValueError(
+                "ExperimentSemantics.protocol_program must target the bound protocol "
+                f"{self.protocol.id!r}, got {self.protocol_program.protocol!r}."
+            )

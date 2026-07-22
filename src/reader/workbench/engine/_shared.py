@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from typing import Any
 
 from reader.runtime import ReaderRuntime, builtin_runtime
@@ -75,18 +74,3 @@ def pipeline_has_plugin(
             continue
         return True
     return False
-
-
-def snapshot_dir(root: Path) -> dict[Path, float]:
-    if not root.exists():
-        return {}
-    return {path: path.stat().st_mtime for path in root.rglob("*") if path.is_file()}
-
-
-def diff_files(before: dict[Path, float], after: dict[Path, float]) -> list[Path]:
-    changed: list[Path] = []
-    for path, mtime in after.items():
-        prev = before.get(path)
-        if prev is None or mtime > prev + 1e-6:
-            changed.append(path)
-    return changed

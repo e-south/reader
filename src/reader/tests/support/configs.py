@@ -54,7 +54,7 @@ def base_reader_config(
     resources: dict | None = None,
 ) -> dict:
     payload = {
-        "schema": "reader/v7",
+        "schema": "reader/v8",
         "experiment": {"id": experiment_id},
         "protocol": {
             "id": protocol_id,

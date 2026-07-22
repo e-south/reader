@@ -1,3 +1,11 @@
+---
+doc_id: reader-architecture
+surface: architecture
+owner: reader-maintainers
+last_verified: 2026-07-11
+summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
+---
+
 # Architecture
 
 `reader` is a protocol-driven experimental workbench. The architecture is built around one constraint: experiment authors should declare assay intent once in `config.yaml`, while the runtime stays deterministic, inspectable, and extensible for maintainers.
@@ -9,7 +17,7 @@ This file is the top-level map. Use it to understand the layers, ownership bound
 `reader` has four layers.
 
 1. Authoring model
-   Human-facing `reader/v7` YAML in `experiments/<exp>/config.yaml`.
+   Human-facing `reader/v8` YAML in `experiments/<exp>/config.yaml`.
    This is the public contract for users.
 2. Semantic model
    Protocols, annotations, resources, and experiment semantics.
@@ -69,8 +77,8 @@ The main ownership boundaries are:
 
 The deterministic execution path is:
 
-1. Load `reader/v7` YAML.
-2. Validate schema and reject removed legacy keys.
+1. Load `reader/v8` YAML.
+2. Validate schema and reject removed config keys.
 3. Bind the experiment to a protocol.
 4. Compile authored config into a workbench declaration.
 5. Inspect or verify the compiled plan:
@@ -100,7 +108,7 @@ These registries are meant to reduce cognitive load, not increase it. Experiment
 
 These are the invariants the codebase should preserve.
 
-- `reader/v7` is the only supported public config schema.
+- `reader/v8` is the only supported public config schema.
 - `workbench/config/` parses wire format; it does not become the internal authored model or runtime graph.
 - Protocols own assay semantics and user-facing output vocabulary.
 - Plugins are mechanics. They should be thin adapters around domain logic.
@@ -109,13 +117,25 @@ These are the invariants the codebase should preserve.
 - Records and artifacts must be traceable through `outputs/manifests/records.json`.
 - Discovery, validation, and dry-run surfaces must remain available without executing the full pipeline.
 
-## Known Architectural Debt
+## Current Architecture Pressure
 
-The deepest remaining architecture gap is still in protocol execution semantics.
+The compiled semantic program has one path from protocol binding through the
+runtime plan and inspection payloads. The following maintainability problems
+remain:
 
-`protocols/` now owns richer semantic descriptors for controls, windows, metrics, ranking, figures, and artifacts, but not all of that meaning is compiled from one executable typed analysis program yet. Some assay semantics still live partly in protocol metadata and partly in compiler behavior.
+- plate-reader protocol descriptors are concentrated in
+  `src/reader/protocols/_builtins_plate_reader_variants.py`
+- `src/reader/protocols/compiler.py` mixes shared compilation with some
+  assay-specific output assembly
+- retron aggregate figure planning and rendering live under
+  `src/reader/workbench/notebooks/`; dataframe preparation and shared retron
+  semantics belong to `src/reader/domains/plate_reader/analysis/`
+- the retron decomposition renderer remains a large figure-family module even
+  after its analysis-metadata reconstruction code was removed
 
-That is the next rooted cut. When that work lands, `reader inspect`, `reader protocols`, and `reader explain` should report the semantic analysis program directly instead of primarily reporting compiled plugin mechanics.
+New work should move one coherent responsibility at a time into a domain or
+family package. A split is useful when it creates an explicit contract or
+owner; splitting only to reduce line count is not sufficient.
 
 ## Extension Guide
 

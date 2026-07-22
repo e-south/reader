@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
+from reader.errors import RecordError
 from reader.runtime import ReaderRuntime
 from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
@@ -11,6 +12,29 @@ from reader.workbench.engine.validation import validation_summary
 from reader.workbench.graph import resolve_workbench
 
 from .common import summarize_outputs_dir
+
+READINESS_STATES = frozenset(
+    {
+        "config_error",
+        "draft",
+        "template",
+        "dependency_blocked",
+        "blocked",
+        "runnable",
+        "uncataloged_outputs_present",
+        "records_ready",
+    }
+)
+READINESS_CAPABILITY_KEYS = frozenset(
+    {
+        "run",
+        "records",
+        "plot",
+        "export",
+        "notebook_scaffold",
+        "notebook_scan_records",
+    }
+)
 
 
 def config_error_readiness_payload(error: str) -> dict[str, object]:
@@ -25,7 +49,8 @@ def config_error_readiness_payload(error: str) -> dict[str, object]:
         },
         "records": {
             "catalog": False,
-            "legacy_outputs_present": False,
+            "available": False,
+            "uncataloged_outputs_present": False,
         },
         "capabilities": {
             "run": False,
@@ -43,7 +68,7 @@ def config_error_readiness_payload(error: str) -> dict[str, object]:
 def _non_active_lifecycle_payload(*, lifecycle: str, job_path: Path) -> dict[str, object]:
     next_step = {
         "command": reader_command("validate", job_path, "--no-files", "--format", "json"),
-        "description": "Inspect config shape without treating this non-active experiment as run-ready.",
+        "description": "Check the config shape without treating this non-active experiment as ready to run.",
     }
     summary_by_lifecycle = {
         "draft": "draft experiment; add inputs and switch lifecycle to active when ready",
@@ -60,7 +85,8 @@ def _non_active_lifecycle_payload(*, lifecycle: str, job_path: Path) -> dict[str
         },
         "records": {
             "catalog": False,
-            "legacy_outputs_present": False,
+            "available": False,
+            "uncataloged_outputs_present": False,
         },
         "capabilities": {
             "run": False,
@@ -120,13 +146,22 @@ def experiment_readiness_payload(
         create=False,
     )
     records_catalog = store.catalog_exists()
+    records_available = False
+    record_catalog_error: str | None = None
+    if records_catalog:
+        try:
+            records_available = bool(store.iter_latest_records())
+        except RecordError as exc:
+            record_catalog_error = str(exc)
     generated = summarize_outputs_dir(
         outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
         notebooks_subdir=layout.notebooks_subdir,
     )
-    legacy_outputs_present = any(generated.values()) and not records_catalog
+    uncataloged_outputs_present = (
+        any(generated[key] for key in ("records", "plots", "exports")) and not records_available
+    )
     workbench = resolve_workbench(decl)
     can_run = summary["status"] == "ok"
     file_issues = int(summary["files"].get("issues") or 0)
@@ -137,7 +172,7 @@ def experiment_readiness_payload(
         next_steps = [
             {
                 "command": reader_command("validate", job_path, "--format", "json"),
-                "description": "Inspect missing runtime dependencies before running this assay.",
+                "description": "Check missing runtime dependencies before running this assay.",
             }
         ]
     elif not can_run:
@@ -146,23 +181,32 @@ def experiment_readiness_payload(
         next_steps = [
             {
                 "command": reader_command("validate", job_path, "--format", "json"),
-                "description": "Inspect blocking file or dependency issues.",
+                "description": "Check blocking file or dependency issues.",
             }
         ]
-    elif records_catalog:
+    elif record_catalog_error is not None:
+        state = "blocked"
+        summary_text = "blocked (invalid records catalog)"
+        next_steps = [
+            {
+                "command": reader_command("records", job_path, "--format", "json"),
+                "description": "Inspect and repair the invalid records catalog before using persisted outputs.",
+            }
+        ]
+    elif records_available:
         state = "records_ready"
         summary_text = "records ready"
         next_steps = [
             {"command": command, "description": description}
             for command, description in build_next_steps(decl, job_label=str(job_path), runtime=runtime)
         ]
-    elif legacy_outputs_present:
-        state = "legacy_outputs_present"
-        summary_text = "legacy outputs present without current record catalog"
+    elif uncataloged_outputs_present:
+        state = "uncataloged_outputs_present"
+        summary_text = "generated outputs present without usable current records"
         next_steps = [
             {
                 "command": reader_command("run", job_path),
-                "description": "Regenerate the current record catalog and selected outputs from source inputs.",
+                "description": "Rerun from source inputs to rebuild records and selected outputs.",
             }
         ]
     else:
@@ -174,27 +218,31 @@ def experiment_readiness_payload(
                 "description": "Generate dataframe records and selected outputs.",
             }
         ]
+    errors = deepcopy(summary["errors"])
+    if record_catalog_error is not None:
+        errors.append(f"records catalog: {record_catalog_error}")
     return {
         "state": state,
         "summary": summary_text,
         "preflight": {
             "status": summary["status"],
-            "issues": len(summary["errors"]),
+            "issues": len(errors),
             "files": summary["files"]["summary"],
             "dependencies": summary["dependencies"]["summary"],
         },
         "records": {
             "catalog": records_catalog,
-            "legacy_outputs_present": legacy_outputs_present,
+            "available": records_available,
+            "uncataloged_outputs_present": uncataloged_outputs_present,
         },
         "capabilities": {
             "run": can_run,
-            "records": records_catalog,
-            "plot": records_catalog and bool(workbench.plots),
-            "export": records_catalog and bool(workbench.exports),
+            "records": records_available,
+            "plot": records_available and bool(workbench.plots),
+            "export": records_available and bool(workbench.exports),
             "notebook_scaffold": bool(workbench.notebooks),
-            "notebook_scan_records": records_catalog and bool(workbench.notebooks),
+            "notebook_scan_records": records_available and bool(workbench.notebooks),
         },
-        "errors": deepcopy(summary["errors"]),
+        "errors": errors,
         "next_steps": next_steps,
     }

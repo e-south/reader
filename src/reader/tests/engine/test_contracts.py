@@ -7,7 +7,6 @@ Tests for engine contract enforcement and writes aliasing.
 --------------------------------------------------------------------------------
 """
 
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +14,7 @@ import pandas as pd
 import pytest
 
 from reader.contracts import builtin_contract_catalog
-from reader.errors import ExecutionError
+from reader.errors import ExecutionError, RegistryError
 from reader.workbench.engine import (
     _assert_input_ports,
     _assert_output_ports,
@@ -23,10 +22,11 @@ from reader.workbench.engine import (
     _resolve_output_labels,
     _resolve_runtime_output_ports,
 )
+from reader.workbench.engine.inputs import resolve_missing_file_inputs
 from reader.workbench.graph import FileRef, OutputRef
 from reader.workbench.ports import dataframe_input, dataframe_output, file_bundle_output, file_path_input
 from reader.workbench.records import RecordStore
-from reader.workbench.registry import Plugin
+from reader.workbench.registry import Plugin, PluginConfig
 
 
 class DummyPlugin:
@@ -70,6 +70,24 @@ class DummyPromotingPlugin(Plugin):
         return {"df": inputs["df"]}
 
 
+class InvalidFileResolverPlugin(Plugin):
+    @classmethod
+    def input_ports(cls):
+        return {"raw": file_path_input("raw", optional=True)}
+
+    @classmethod
+    def output_ports(cls):
+        return {"df": dataframe_output("df", "tidy.v1")}
+
+    @classmethod
+    def resolve_missing_file_inputs(cls, *, exp_dir, cfg, inputs):
+        del exp_dir, cfg, inputs
+        return {"unknown": Path("raw.xlsx")}
+
+    def run(self, ctx, inputs, cfg):
+        raise AssertionError("not used")
+
+
 def test_assert_input_ports_rejects_extra_inputs():
     plugin = DummyPlugin()
     contracts = builtin_contract_catalog()
@@ -95,14 +113,12 @@ def test_assert_input_ports_accepts_stricter_contract():
     _assert_input_ports(plugin, inputs, contracts=contracts, where="test")
 
 
-def test_assert_input_ports_allows_mismatch_when_non_strict(caplog):
+def test_assert_input_ports_rejects_contract_mismatch():
     plugin = DummyPlugin()
     contracts = builtin_contract_catalog()
     inputs = {"df": SimpleNamespace(contract_id="other.v1")}
-    logger = logging.getLogger("reader.tests")
-    with caplog.at_level(logging.WARNING, logger="reader.tests"):
-        _assert_input_ports(plugin, inputs, contracts=contracts, where="test", strict=False, logger=logger)
-    assert any("contract relaxed" in rec.message for rec in caplog.records)
+    with pytest.raises(ExecutionError):
+        _assert_input_ports(plugin, inputs, contracts=contracts, where="test")
 
 
 def test_assert_input_ports_rejects_file_for_dataframe_port():
@@ -112,20 +128,27 @@ def test_assert_input_ports_rejects_file_for_dataframe_port():
         _assert_input_ports(plugin, {"df": Path("raw.csv")}, contracts=contracts, where="test")
 
 
-def test_assert_output_ports_allows_mismatch_when_non_strict(caplog):
+def test_assert_output_ports_rejects_contract_mismatch():
     bad_df = pd.DataFrame({"position": ["A1"]})
     contracts = builtin_contract_catalog()
-    logger = logging.getLogger("reader.tests")
-    with caplog.at_level(logging.WARNING, logger="reader.tests"):
+    with pytest.raises(ExecutionError):
         _assert_output_ports(
             {"df": dataframe_output("df", "tidy.v1")},
             {"df": bad_df},
             contracts=contracts,
             where="test",
-            strict=False,
-            logger=logger,
         )
-    assert any("contract relaxed" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.parametrize("value", [None, []])
+def test_assert_output_ports_rejects_empty_file_bundle(value):
+    with pytest.raises(ExecutionError, match="must contain at least one file|must be a list"):
+        _assert_output_ports(
+            {"artifacts": file_bundle_output("artifacts")},
+            {"artifacts": value},
+            contracts=builtin_contract_catalog(),
+            where="test",
+        )
 
 
 def test_resolve_runtime_output_ports_accepts_promotion():
@@ -210,3 +233,66 @@ def test_resolve_inputs_rejects_directory_file_input(tmp_path):
     data_dir.mkdir()
     with pytest.raises(ExecutionError):
         _resolve_inputs(store, {"raw": FileRef(path=data_dir)}, input_ports={"raw": file_path_input("raw")})
+
+
+def test_missing_file_resolver_rejects_unknown_ports(tmp_path: Path) -> None:
+    plugin = InvalidFileResolverPlugin()
+    plugin.bind_runtime(
+        descriptor=SimpleNamespace(
+            kind="plugin",
+            cls=InvalidFileResolverPlugin,
+            plugin_id="ingest/invalid_resolver",
+            name="ingest/invalid_resolver",
+        ),
+        contracts=builtin_contract_catalog(),
+    )
+
+    with pytest.raises(ExecutionError, match="returned unknown inputs"):
+        resolve_missing_file_inputs(
+            plugin=plugin,
+            exp_dir=tmp_path,
+            cfg=PluginConfig(),
+            inputs={},
+            input_ports=dict(plugin.input_ports()),
+        )
+
+
+def test_missing_file_resolver_rejects_path_outside_experiment(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    outside = tmp_path / "outside.xlsx"
+    outside.touch()
+
+    class OutsideFileResolverPlugin(InvalidFileResolverPlugin):
+        @classmethod
+        def resolve_missing_file_inputs(cls, *, exp_dir, cfg, inputs):
+            del exp_dir, cfg, inputs
+            return {"raw": outside}
+
+    plugin = OutsideFileResolverPlugin()
+    plugin.bind_runtime(
+        descriptor=SimpleNamespace(
+            kind="plugin",
+            cls=OutsideFileResolverPlugin,
+            plugin_id="ingest/outside_resolver",
+            name="ingest/outside_resolver",
+        ),
+        contracts=builtin_contract_catalog(),
+    )
+
+    with pytest.raises(ExecutionError, match="must stay under the experiment root"):
+        resolve_missing_file_inputs(
+            plugin=plugin,
+            exp_dir=experiment,
+            cfg=PluginConfig(),
+            inputs={},
+            input_ports=dict(plugin.input_ports()),
+        )
+
+
+@pytest.mark.parametrize("contract", ["none", "files"])
+def test_dataframe_ports_reject_reserved_contract_ids(contract: str) -> None:
+    with pytest.raises(RegistryError, match="reserved contract id"):
+        dataframe_input("df", contract)
+    with pytest.raises(RegistryError, match="reserved contract id"):
+        dataframe_output("df", contract)

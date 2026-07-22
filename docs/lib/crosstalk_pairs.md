@@ -1,4 +1,12 @@
-## Crosstalk pairs pipeline step
+---
+doc_id: reader-crosstalk-pairs
+surface: library-reference
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Contract, computation, and output reference for Reader crosstalk-pair ranking.
+---
+
+# Crosstalk pairs
 
 ### Contents
 
@@ -7,7 +15,7 @@
 - [Mapping modes](#mapping-modes)
 - [Filters and scoring](#filters-and-scoring)
 - [Outputs](#outputs)
-- [Example](#example)
+- [Example config](#example-config)
 - [Pipeline run example (pairwise)](#pipeline-run-example-pairwise)
 - [Groups of 3 (triads) from passing pairs](#groups-of-3-triads-from-passing-pairs)
 - [Export to the experiment exports directory](#export-to-the-experiment-exports-directory)

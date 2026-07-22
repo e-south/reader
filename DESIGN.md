@@ -1,3 +1,11 @@
+---
+doc_id: reader-design
+surface: design-principles
+owner: reader-maintainers
+last_verified: 2026-07-10
+summary: Product and information-design rules for the Reader authoring, protocol, output, and agent surfaces.
+---
+
 # Design
 
 `reader` is designed for two audiences at once:
@@ -22,10 +30,10 @@ They should not need to think in compiler branches, plugin ids, or graph mutatio
 
 ## Public Surface Design
 
-The public surface is `reader/v7`.
+The public surface is `reader/v8`.
 
 ```yaml
-schema: reader/v7
+schema: reader/v8
 experiment:
   id: ...
 protocol:
@@ -149,7 +157,9 @@ Those freedoms look flexible at first and usually turn into ontology drift, high
 
 ## Current Design Debt
 
-The public surface is tighter than before, but the semantic compiler cut is still incomplete. Protocol controls, windows, metrics, and ranking are not yet one executable typed analysis program.
+The public surface is protocol-owned and compact. The semantic compiler remains
+incomplete: protocol controls, windows, metrics, and ranking are not one
+executable typed analysis program.
 
 That means the current design is directionally correct, but not finished. The next honest improvement is to make protocol semantics more executable, not to widen the YAML surface again.
 

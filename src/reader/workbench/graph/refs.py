@@ -66,24 +66,35 @@ def provenance_input_to_dict(binding: ProvenanceInput) -> dict[str, str]:
 def input_ref_from_dict(payload: dict[str, Any]) -> InputRef:
     if not isinstance(payload, dict):
         raise TypeError("input binding payload must be a mapping")
-    record = payload.get("record")
-    file_path = payload.get("file")
-    resource_id = payload.get("resource")
-    if isinstance(record, str) and record:
-        return RecordRef(record_id=record)
-    if isinstance(resource_id, str) and resource_id:
-        path = payload.get("path")
+    keys = set(payload)
+    if keys == {"record"}:
+        record = payload["record"]
+        if isinstance(record, str) and record:
+            return RecordRef(record_id=record)
+        raise ValueError("record binding must include a non-empty record id")
+    if keys == {"file"}:
+        file_path = payload["file"]
+        if isinstance(file_path, str) and file_path:
+            return FileRef(path=Path(file_path))
+        raise ValueError("file binding must include a non-empty path")
+    if keys == {"resource", "path"}:
+        resource_id = payload["resource"]
+        path = payload["path"]
+        if not isinstance(resource_id, str) or not resource_id:
+            raise ValueError("resource binding must include a non-empty resource id")
         if not isinstance(path, str) or not path:
-            raise ValueError(f"resource binding {resource_id!r} must include path")
+            raise ValueError(f"resource binding {resource_id!r} must include a non-empty path")
         return ResourceRef(resource_id=resource_id, path=Path(path))
-    if isinstance(file_path, str) and file_path:
-        return FileRef(path=Path(file_path))
-    raise ValueError("input binding payload must include record, file, or resource")
+    raise ValueError(
+        "input binding payload must contain exactly one reference shape: {'record'}, {'file'}, or {'resource', 'path'}"
+    )
 
 
 def output_ref_from_dict(payload: dict[str, Any]) -> OutputRef:
     if not isinstance(payload, dict):
         raise TypeError("output binding payload must be a mapping")
+    if set(payload) != {"record"}:
+        raise ValueError("output binding payload must contain only 'record'")
     record = payload.get("record")
     if not isinstance(record, str) or not record:
         raise ValueError("output binding payload must include record")

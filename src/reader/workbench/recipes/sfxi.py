@@ -48,7 +48,7 @@ SFXI_RECIPES: dict[str, dict[str, Any]] = {
                 with_={
                     "response": {"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
                     "design_by": ["design_id"],
-                    "logic_map_ref": "induction_logic",
+                    "state_map_ref": "induction_logic",
                 },
             )
         ],

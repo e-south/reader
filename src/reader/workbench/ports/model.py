@@ -20,6 +20,7 @@ class InputPortSpec:
     def __post_init__(self) -> None:
         _validate_port_name(self.name)
         if self.kind == "dataframe":
+            _validate_dataframe_contract(self.contract, where=f"Dataframe input port {self.name!r}", optional=True)
             return
         if self.contract is not None:
             raise RegistryError(f"Input port {self.name!r} of kind {self.kind!r} must not declare a dataframe contract")
@@ -42,8 +43,7 @@ class OutputPortSpec:
     def __post_init__(self) -> None:
         _validate_port_name(self.name)
         if self.kind == "dataframe":
-            if not isinstance(self.contract, str) or not self.contract:
-                raise RegistryError(f"Dataframe output port {self.name!r} must declare a non-empty contract id")
+            _validate_dataframe_contract(self.contract, where=f"Dataframe output port {self.name!r}", optional=False)
             return
         if self.contract is not None:
             raise RegistryError(
@@ -140,4 +140,14 @@ def _validate_port_name(name: str) -> None:
     if name.endswith("?"):
         raise RegistryError(f"Port name {name!r} must not encode optionality with a '?' suffix")
     if name == "files":
-        raise RegistryError("Port name 'files' is reserved by the removed legacy file-output convention")
+        raise RegistryError("Port name 'files' is reserved; use a typed file_path or file_bundle port")
+
+
+def _validate_dataframe_contract(contract: ContractId | None, *, where: str, optional: bool) -> None:
+    if contract is None and optional:
+        return
+    if not isinstance(contract, str) or not contract.strip():
+        requirement = "must be a non-empty contract id" if optional else "must declare a non-empty contract id"
+        raise RegistryError(f"{where} {requirement}")
+    if contract in {"none", "files"}:
+        raise RegistryError(f"{where} uses reserved contract id {contract!r}")

@@ -1,7 +1,8 @@
+from .load import load_reader_config_document
 from .model import (
     AnnotationCollectionSpec,
     AnnotationLabelSpec,
-    AnnotationLogicMapSpec,
+    AnnotationOrderedStateSpaceSpec,
     AnnotationOrderSpec,
     AnnotationSpec,
     ExperimentSpec,
@@ -20,7 +21,7 @@ from .model import (
 __all__ = [
     "AnnotationCollectionSpec",
     "AnnotationLabelSpec",
-    "AnnotationLogicMapSpec",
+    "AnnotationOrderedStateSpaceSpec",
     "AnnotationOrderSpec",
     "AnnotationSpec",
     "ExportOutputsSpec",
@@ -34,4 +35,5 @@ __all__ = [
     "ReaderSpec",
     "ResourceSpec",
     "ResourcesSpec",
+    "load_reader_config_document",
 ]

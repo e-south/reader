@@ -1,0 +1,404 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+import matplotlib.image as mpimg
+import pandas as pd
+import pytest
+
+from reader.domains.plate_reader.analysis.response_window import promoter_evidence_bundle as bundle_module
+from reader.domains.plate_reader.analysis.response_window.provenance import sha256_file
+from reader.domains.promoter import sequence_panel as sequence_panel_module
+from reader.response_window_review import (
+    PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION,
+    build_promoter_evidence_bundle,
+    verify_promoter_evidence_bundle,
+)
+from reader.tests.domains.plate_reader.analysis.response_window.test_bundle import _bundle_fixture
+from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_bindings import (
+    _configure_genbank,
+    _rewrite_binding_table,
+    _write_binding_fixture,
+)
+from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_figure import (
+    _FakeBaseRender,
+    _FakeGenBankBaseRender,
+)
+from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_overlay import (
+    _write_overlay,
+)
+
+
+def test_build_promoter_evidence_publishes_white_png_pdf_and_digest_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")
+    out_dir = tmp_path / "promoter-evidence"
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    bundle = build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        out_dir=out_dir,
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+    verified = verify_promoter_evidence_bundle(out_dir)
+
+    assert bundle.root == out_dir.resolve()
+    assert verified.manifest == bundle.manifest
+    assert bundle.png_path.is_file()
+    assert bundle.pdf_path.read_bytes().startswith(b"%PDF")
+    image = mpimg.imread(bundle.png_path)
+    assert image.shape[1] > image.shape[0]
+    assert image[0, 0, :3].tolist() == [1.0, 1.0, 1.0]
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == PROMOTER_EVIDENCE_BUNDLE_SCHEMA_VERSION
+    assert manifest["claim_status"] == "objective_neutral"
+    assert "downstream objective scoring" in manifest["non_claim_boundary"]
+    assert "RMF" not in manifest["non_claim_boundary"]
+    assert manifest["selection"] == {
+        "experiment_id": "experiment",
+        "design_id": "design",
+        "candidate_id": "candidate-spyp",
+        "reduction_id": "primary",
+    }
+    assert manifest["sources"]["response_window"]["schema_version"] == "reader.response_window.bundle.v5"
+    assert manifest["sources"]["response_window"]["study_id"] == "stress_ethanol_cipro_growth"
+    assert manifest["sources"]["candidate_bindings"]["schema_id"] == ("dnadesign.study.promoter_candidate_bindings.v1")
+    assert manifest["sources"]["candidate_bindings"]["study_id"] == "stress_ethanol_cipro_growth"
+    assert manifest["selected_binding"] == {
+        "reader_design_id": "design",
+        "candidate_id": "candidate-spyp",
+        "sequence_sha256": "sha256:" + hashlib.sha256(b"ACGTACGT").hexdigest(),
+        "sequence_authority_dataset_id": "source-dataset",
+        "sequence_authority_id": "source-row-1",
+        "sequence_authority_sha256": "sha256:" + "a" * 64,
+        "source_class": "measured_reference",
+        "design_family": "stress_promoter",
+        "binding_status": "resolved",
+        "binding_method": "exact_alias",
+        "densegen_plan": "plan-v1",
+        "densegen_run_id": "run-v1",
+        "densegen_sampling_library_hash": "library-v1",
+    }
+    assert set(manifest["artifacts"]) == {"promoter_evidence.pdf", "promoter_evidence.png"}
+    for artifact_id, record in manifest["artifacts"].items():
+        assert record["path"] == artifact_id
+        assert record["sha256"] == sha256_file(out_dir / artifact_id)
+
+
+def test_build_promoter_evidence_records_a_study_supplied_screen_only_overlay(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")
+    overlay_path = _write_overlay(tmp_path)
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    bundle = build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        objective_overlay_path=overlay_path,
+        out_dir=tmp_path / "screen-only-evidence",
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+
+    overlay = bundle.manifest["objective_overlay"]
+    assert bundle.manifest["claim_status"] == "screen_only"
+    assert overlay["objective_id"] == "response_magnitude_feasibility_v1"
+    assert overlay["objective_display_label"] == "RMF"
+    assert overlay["manifest_sha256"] == sha256_file(overlay_path)
+    assert set(overlay) == {
+        "schema_version",
+        "objective_id",
+        "objective_display_label",
+        "claim_status",
+        "experiment_id",
+        "reader_design_id",
+        "reduction_id",
+        "manifest_sha256",
+        "components",
+    }
+
+
+def test_promoter_evidence_preserves_any_issuing_study_identity(tmp_path: Path, monkeypatch) -> None:
+    response_root = _bundle_fixture(tmp_path, study_id="another_promoter_study")
+    binding_root = _write_binding_fixture(
+        tmp_path,
+        reader_design_id="design",
+        study_id="another_promoter_study",
+    )
+    out_dir = tmp_path / "other-study-evidence"
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        out_dir=out_dir,
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+
+    verified = verify_promoter_evidence_bundle(out_dir)
+    assert verified.manifest["sources"]["candidate_bindings"]["study_id"] == "another_promoter_study"
+
+
+def test_promoter_evidence_rejects_binding_from_another_study(tmp_path: Path, monkeypatch) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(
+        tmp_path,
+        reader_design_id="design",
+        study_id="another_promoter_study",
+    )
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+
+    with pytest.raises(ValueError, match="study identity"):
+        build_promoter_evidence_bundle(
+            response_bundle_root=response_root,
+            bindings_root=binding_root,
+            out_dir=tmp_path / "mismatched-study-evidence",
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+        )
+
+
+def test_promoter_evidence_does_not_replace_destination_created_while_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "promoter-evidence"
+
+    def build_staged_bundle(**kwargs: object) -> None:
+        staging = kwargs["staging"]
+        assert isinstance(staging, Path)
+        (staging / "staged.txt").write_text("staged output", encoding="utf-8")
+        destination.mkdir()
+        (destination / "owner.txt").write_text("concurrent output", encoding="utf-8")
+
+    monkeypatch.setattr(bundle_module, "_build_staged_bundle", build_staged_bundle)
+    monkeypatch.setattr(bundle_module, "verify_promoter_evidence_bundle", lambda _path: object())
+
+    with pytest.raises(FileExistsError, match="output already exists"):
+        bundle_module.build_promoter_evidence_bundle(
+            response_bundle=object(),  # type: ignore[arg-type]
+            bindings_root=tmp_path / "unused-bindings",
+            out_dir=destination,
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+        )
+
+    assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
+    assert list(tmp_path.glob(".promoter-evidence.staging-*")) == []
+    assert list(tmp_path.glob(".promoter-evidence.backup-*")) == []
+
+
+@pytest.mark.parametrize("destination_kind", ["file", "directory_symlink", "dangling_symlink"])
+def test_promoter_evidence_rejects_non_directory_or_symlink_destination_before_staging(
+    tmp_path: Path,
+    destination_kind: str,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    destination = tmp_path / "promoter-evidence"
+    if destination_kind == "file":
+        destination.write_text("keep this file", encoding="utf-8")
+    elif destination_kind == "directory_symlink":
+        target = tmp_path / "linked-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_text("keep this directory", encoding="utf-8")
+        destination.symlink_to(target, target_is_directory=True)
+    else:
+        destination.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="output must be a real directory path"):
+        build_promoter_evidence_bundle(
+            response_bundle_root=response_root,
+            bindings_root=tmp_path / "unused-bindings",
+            out_dir=destination,
+            experiment_id="experiment",
+            design_id="design",
+            reduction_id="primary",
+            overwrite=True,
+        )
+
+    if destination_kind == "file":
+        assert destination.read_text(encoding="utf-8") == "keep this file"
+    elif destination_kind == "directory_symlink":
+        assert destination.is_symlink()
+        assert (target / "sentinel.txt").read_text(encoding="utf-8") == "keep this directory"
+    else:
+        assert destination.is_symlink()
+        assert not destination.exists()
+    assert list(tmp_path.glob(".promoter-evidence.staging-*")) == []
+    assert list(tmp_path.glob(".promoter-evidence.backup-*")) == []
+
+
+def test_genbank_evidence_records_explicit_null_densegen_provenance(tmp_path: Path, monkeypatch) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")
+    frame = pd.read_parquet(binding_root / "bindings.parquet")
+    _configure_genbank(frame)
+    _rewrite_binding_table(binding_root, frame)
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeGenBankBaseRender)
+
+    bundle = build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        out_dir=tmp_path / "genbank-evidence",
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+
+    selected_binding = bundle.manifest["selected_binding"]
+    assert selected_binding["densegen_plan"] is None
+    assert selected_binding["densegen_run_id"] is None
+    assert selected_binding["densegen_sampling_library_hash"] is None
+    assert bundle.manifest["sources"]["baserender"]["adapter_kind"] == "usr_genbank_annotations_v1"
+
+
+def test_promoter_evidence_verifier_rejects_artifact_and_claim_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")
+    overlay_path = _write_overlay(tmp_path)
+    out_dir = tmp_path / "verified-evidence"
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+    bundle = build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        objective_overlay_path=overlay_path,
+        out_dir=out_dir,
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    manifest["objective_overlay"]["calibrated_score"] = 0.5
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="objective overlay fields must be exactly"):
+        verify_promoter_evidence_bundle(out_dir)
+
+    del manifest["objective_overlay"]["calibrated_score"]
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    bundle.png_path.write_bytes(bundle.png_path.read_bytes() + b"tamper")
+    with pytest.raises(ValueError, match="digest or size mismatch"):
+        verify_promoter_evidence_bundle(out_dir)
+
+
+@pytest.mark.parametrize(
+    ("drift", "message"),
+    [
+        ("pdf_signature", "PDF signature"),
+        ("negative_diagnostics", "BaseRender diagnostics"),
+        ("production_claim", "unsupported claim status"),
+        ("selected_extra", "selected-binding fields"),
+        ("selected_sequence_digest", "selected-binding provenance"),
+        ("selected_binding_method", "selected-binding provenance"),
+        ("selected_densegen_missing", "requires selected-binding"),
+        ("selected_adapter_mismatch", "null DenseGen"),
+        ("selected_candidate", "selection candidate"),
+        ("source_experiment", "selection experiment"),
+        ("source_reduction", "selection reduction"),
+        ("overlay_selection", "overlay selection"),
+        ("selection_candidate", "selection candidate"),
+        ("selection_design", "selection design"),
+        ("selection_experiment", "selection experiment"),
+        ("selection_reduction", "selection reduction"),
+        ("overlay_too_many", "between one and six"),
+        ("overlay_empty_objective", "identity or claim status"),
+        ("overlay_empty_display_label", "display label"),
+        ("overlay_multiline_display_label", "display label"),
+        ("overlay_overlong_display_label", "display label"),
+        ("overlay_empty_label", "component is malformed"),
+    ],
+)
+def test_promoter_evidence_verifier_rejects_semantic_manifest_drift(
+    tmp_path: Path,
+    monkeypatch,
+    drift: str,
+    message: str,
+) -> None:
+    response_root = _bundle_fixture(tmp_path)
+    binding_root = _write_binding_fixture(tmp_path, reader_design_id="design")
+    overlay_path = _write_overlay(tmp_path)
+    out_dir = tmp_path / f"evidence-{drift}"
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+    bundle = build_promoter_evidence_bundle(
+        response_bundle_root=response_root,
+        bindings_root=binding_root,
+        objective_overlay_path=overlay_path,
+        out_dir=out_dir,
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="primary",
+    )
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    if drift == "pdf_signature":
+        bundle.pdf_path.write_bytes(b"not-a-pdf")
+        manifest["artifacts"]["promoter_evidence.pdf"] = {
+            "path": "promoter_evidence.pdf",
+            "bytes": bundle.pdf_path.stat().st_size,
+            "sha256": sha256_file(bundle.pdf_path),
+        }
+    elif drift == "negative_diagnostics":
+        manifest["sources"]["baserender"]["image_width_px"] = -1
+    elif drift == "production_claim":
+        manifest["claim_status"] = "production"
+        manifest["objective_overlay"]["claim_status"] = "production"
+    elif drift == "selected_extra":
+        manifest["selected_binding"]["undeclared_sequence"] = "ACGTACGT"
+    elif drift == "selected_sequence_digest":
+        manifest["selected_binding"]["sequence_sha256"] = "not-a-digest"
+    elif drift == "selected_binding_method":
+        manifest["selected_binding"]["binding_method"] = "prefix_alias"
+    elif drift == "selected_densegen_missing":
+        manifest["selected_binding"]["densegen_plan"] = None
+    elif drift == "selected_adapter_mismatch":
+        manifest["sources"]["baserender"]["adapter_kind"] = "usr_genbank_annotations_v1"
+    elif drift == "selected_candidate":
+        manifest["selected_binding"]["candidate_id"] = "different-candidate"
+    elif drift == "source_experiment":
+        manifest["sources"]["response_window"]["experiment_id"] = "different-experiment"
+    elif drift == "source_reduction":
+        manifest["sources"]["response_window"]["reduction_id"] = "different-reduction"
+    elif drift == "overlay_selection":
+        manifest["objective_overlay"]["reader_design_id"] = "different-design"
+    elif drift == "selection_candidate":
+        manifest["selection"]["candidate_id"] = "different-candidate"
+    elif drift == "selection_design":
+        manifest["selection"]["design_id"] = "different-design"
+    elif drift == "selection_experiment":
+        manifest["selection"]["experiment_id"] = "different-experiment"
+    elif drift == "selection_reduction":
+        manifest["selection"]["reduction_id"] = "different-reduction"
+    elif drift == "overlay_too_many":
+        manifest["objective_overlay"]["components"] *= 7
+    elif drift == "overlay_empty_objective":
+        manifest["objective_overlay"]["objective_id"] = ""
+    elif drift == "overlay_empty_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = ""
+    elif drift == "overlay_multiline_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = "RMF\nscreen"
+    elif drift == "overlay_overlong_display_label":
+        manifest["objective_overlay"]["objective_display_label"] = "x" * 41
+    else:
+        manifest["objective_overlay"]["components"][0]["label"] = ""
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        verify_promoter_evidence_bundle(out_dir)

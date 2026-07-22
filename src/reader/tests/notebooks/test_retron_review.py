@@ -10,6 +10,7 @@ import yaml
 import reader.workbench.notebooks.retron_review as retron_review_mod
 from reader.contracts import builtin_contract_catalog
 from reader.domains.plate_reader.plots.common import annotate_points_smart
+from reader.errors import ContractError, RecordError
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.notebooks import _retron_review_notebook_ui as retron_review_notebook_ui
 from reader.workbench.notebooks.retron_review import (
@@ -28,9 +29,7 @@ from reader.workbench.notebooks.retron_review import (
     load_retron_review_bundle,
     load_retron_source_surface,
     render_retron_aggregate_plot,
-    render_retron_aggregate_plot_cached,
     render_retron_experiment_plot,
-    render_retron_experiment_plot_cached,
     retron_aggregate_plot_rows,
     retron_experiment_plot_rows,
     retron_figure_coverage_rows,
@@ -50,109 +49,141 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> Path:
     return path
 
 
+def _current_trace_row(*, value: float) -> dict[str, object]:
+    return {
+        "plate_id": "plate_a",
+        "sensor": "spyP",
+        "sponge": "CpxR",
+        "genotype_id": "spyP/CpxR",
+        "replicate_id": "A1",
+        "stress_condition": "3% EtOH",
+        "IPTG": "+IPTG",
+        "time": 1.5,
+        "time_from_stress": 0.5,
+        "metric": "D",
+        "value": value,
+        "matched_control_key": "plate_a::spyP::3% EtOH",
+        "summary_window_start_h": 0.5,
+        "summary_window_end_h": 0.5,
+        "summary_window_duration_h": 0.0,
+        "in_pre_window": False,
+        "in_primary_post_stress": True,
+        "pre_stress_read_count": 1.0,
+        "post_stress_read_count": 1.0,
+        "matched_group_sample_count": 1.0,
+        "stress_addition_gap_h": 1.5,
+    }
+
+
 def test_retron_review_bundle_loads_manifest_and_builds_cross_run_frames(tmp_path: Path) -> None:
     mono_summary = _write_csv(
         tmp_path / "exports" / "mono_summary.csv",
         [
-            {
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "metric": "S_AUC",
-                "value": 0.40,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "sensor": "spyP",
-                "sponge": "BaeR",
-                "metric": "S_AUC",
-                "value": 0.60,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "sensor": "sulAp",
-                "sponge": "LexA",
-                "metric": "S_AUC",
-                "value": 0.50,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "sensor": "soxSp",
-                "sponge": "SoxR",
-                "metric": "S_AUC",
-                "value": 0.30,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "sensor": "soxSp",
-                "sponge": "SoxS",
-                "metric": "S_AUC",
-                "value": 0.20,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
+            {"plate_id": "plate_a", **row}
+            for row in [
+                {
+                    "sensor": "spyP",
+                    "sponge": "CpxR",
+                    "metric": "S_AUC",
+                    "value": 0.40,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "mono",
+                },
+                {
+                    "sensor": "spyP",
+                    "sponge": "BaeR",
+                    "metric": "S_AUC",
+                    "value": 0.60,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "mono",
+                },
+                {
+                    "sensor": "sulAp",
+                    "sponge": "LexA",
+                    "metric": "S_AUC",
+                    "value": 0.50,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "mono",
+                },
+                {
+                    "sensor": "soxSp",
+                    "sponge": "SoxR",
+                    "metric": "S_AUC",
+                    "value": 0.30,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "mono",
+                },
+                {
+                    "sensor": "soxSp",
+                    "sponge": "SoxS",
+                    "metric": "S_AUC",
+                    "value": 0.20,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "mono",
+                },
+            ]
         ],
     )
-    mono_trace = _write_csv(tmp_path / "exports" / "mono_trace.csv", [{"metric": "D", "value": 0.1}])
+    mono_trace = _write_csv(tmp_path / "exports" / "mono_trace.csv", [_current_trace_row(value=0.1)])
     multi_summary = _write_csv(
         tmp_path / "exports" / "multi_summary.csv",
         [
-            {
-                "sensor": "spyP",
-                "sponge": "CpxR-LexA",
-                "metric": "S_AUC",
-                "value": 0.35,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "bi",
-            },
-            {
-                "sensor": "sulAp",
-                "sponge": "CpxR-LexA",
-                "metric": "S_AUC",
-                "value": 0.45,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "bi",
-            },
-            {
-                "sensor": "spyP",
-                "sponge": "BaeR-LexA-SoxR-SoxS",
-                "metric": "S_AUC",
-                "value": 0.55,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "quad",
-            },
-            {
-                "sensor": "sulAp",
-                "sponge": "BaeR-LexA-SoxR-SoxS",
-                "metric": "S_AUC",
-                "value": 0.52,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "quad",
-            },
-            {
-                "sensor": "soxSp",
-                "sponge": "BaeR-LexA-SoxR-SoxS",
-                "metric": "S_AUC",
-                "value": 0.48,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "quad",
-            },
+            {"plate_id": "plate_b", **row}
+            for row in [
+                {
+                    "sensor": "spyP",
+                    "sponge": "CpxR-LexA",
+                    "metric": "S_AUC",
+                    "value": 0.35,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "bi",
+                },
+                {
+                    "sensor": "sulAp",
+                    "sponge": "CpxR-LexA",
+                    "metric": "S_AUC",
+                    "value": 0.45,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "bi",
+                },
+                {
+                    "sensor": "spyP",
+                    "sponge": "BaeR-LexA-SoxR-SoxS",
+                    "metric": "S_AUC",
+                    "value": 0.55,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "quad",
+                },
+                {
+                    "sensor": "sulAp",
+                    "sponge": "BaeR-LexA-SoxR-SoxS",
+                    "metric": "S_AUC",
+                    "value": 0.52,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "quad",
+                },
+                {
+                    "sensor": "soxSp",
+                    "sponge": "BaeR-LexA-SoxR-SoxS",
+                    "metric": "S_AUC",
+                    "value": 0.48,
+                    "relevant_sensor_pair": True,
+                    "is_relevant_stress": True,
+                    "sponge_family_size": "quad",
+                },
+            ]
         ],
     )
-    multi_trace = _write_csv(tmp_path / "exports" / "multi_trace.csv", [{"metric": "D", "value": 0.2}])
+    multi_trace = _write_csv(tmp_path / "exports" / "multi_trace.csv", [_current_trace_row(value=0.2)])
     manifest_path = tmp_path / "review_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -231,11 +262,11 @@ def test_retron_notebook_table_preview_respects_byte_budget() -> None:
     assert len(preview.to_csv(index=False).encode("utf-8")) <= 150_000
 
 
-def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_for_aggregate_review(
+def test_retron_review_bundle_does_not_fabricate_unavailable_absolute_area_metrics_for_aggregate_review(
     tmp_path: Path,
 ) -> None:
-    legacy_summary = _write_csv(
-        tmp_path / "exports" / "legacy_summary.csv",
+    unsupported_summary = _write_csv(
+        tmp_path / "exports" / "unsupported_summary.csv",
         [
             {
                 "plate_id": "plate_a",
@@ -267,7 +298,7 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
             },
         ],
     )
-    legacy_trace = _write_csv(tmp_path / "exports" / "legacy_trace.csv", [{"metric": "D", "value": 0.1}])
+    unsupported_trace = _write_csv(tmp_path / "exports" / "unsupported_trace.csv", [_current_trace_row(value=0.1)])
     manifest_path = tmp_path / "review_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -276,10 +307,10 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
                 "sensor_target_map": {"spyP": ["CpxR"]},
                 "sources": [
                     {
-                        "label": "legacy",
-                        "experiment_id": "legacy_family",
-                        "summary": str(legacy_summary.relative_to(tmp_path)),
-                        "trace": str(legacy_trace.relative_to(tmp_path)),
+                        "label": "unsupported",
+                        "experiment_id": "unsupported_family",
+                        "summary": str(unsupported_summary.relative_to(tmp_path)),
+                        "trace": str(unsupported_trace.relative_to(tmp_path)),
                     }
                 ],
             },
@@ -315,111 +346,12 @@ def test_retron_review_bundle_does_not_fabricate_legacy_absolute_area_metrics_fo
         )
 
 
-def test_load_retron_source_semantic_datasets_upgrades_legacy_trace_contract(tmp_path: Path) -> None:
-    summary_path = _write_csv(
-        tmp_path / "exports" / "summary.csv",
-        [
-            {
-                "plate_id": "plate_a",
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "genotype_id": "spyP/CpxR",
-                "stress_condition": "3% EtOH",
-                "IPTG": pd.NA,
-                "metric": "D_abs_AUC",
-                "value": -0.12,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "plate_id": "plate_a",
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "genotype_id": "spyP/CpxR",
-                "stress_condition": "3% EtOH",
-                "IPTG": "+IPTG",
-                "metric": "R_pre",
-                "value": -3.7,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "plate_id": "plate_a",
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "genotype_id": "spyP/CpxR",
-                "stress_condition": "3% EtOH",
-                "IPTG": "-IPTG",
-                "metric": "R_pre",
-                "value": -3.9,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            },
-            {
-                "plate_id": "plate_a",
-                "sensor": "spyP",
-                "sponge": "tetO",
-                "genotype_id": "spyP/tetO",
-                "stress_condition": "3% EtOH",
-                "IPTG": "+IPTG",
-                "metric": "R_pre",
-                "value": -3.8,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": False,
-                "is_relevant_stress": True,
-                "sponge_family_size": "control",
-            },
-            {
-                "plate_id": "plate_a",
-                "sensor": "spyP",
-                "sponge": "tetO",
-                "genotype_id": "spyP/tetO",
-                "stress_condition": "3% EtOH",
-                "IPTG": "-IPTG",
-                "metric": "R_pre",
-                "value": -4.0,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": False,
-                "is_relevant_stress": True,
-                "sponge_family_size": "control",
-            },
-        ],
-    )
+def test_load_retron_source_semantic_datasets_rejects_incomplete_trace_contract(tmp_path: Path) -> None:
     trace_path = _write_csv(
         tmp_path / "exports" / "trace.csv",
         [
             {
                 "plate_id": "plate_a",
-                "acquisition_segment_id": "seg0",
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "genotype_id": "spyP/CpxR",
-                "replicate_id": "A1",
-                "stress_condition": "3% EtOH",
-                "IPTG": "-IPTG",
-                "time": 0.0,
-                "time_from_stress": -1.0,
-                "metric": "R",
-                "value": 0.2,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-                "matched_tetO_group": "plate_a::spyP::3% EtOH::-IPTG",
-                "in_pre_window": True,
-                "in_primary_post_stress": False,
-                "in_endpoint_window": False,
-                "configured_max_post_stress_hours": 4.0,
-            },
-            {
-                "plate_id": "plate_a",
-                "acquisition_segment_id": "seg1",
                 "sensor": "spyP",
                 "sponge": "CpxR",
                 "genotype_id": "spyP/CpxR",
@@ -428,60 +360,30 @@ def test_load_retron_source_semantic_datasets_upgrades_legacy_trace_contract(tmp
                 "IPTG": "+IPTG",
                 "time": 1.5,
                 "time_from_stress": 0.5,
-                "metric": "R",
+                "metric": "D",
                 "value": 0.4,
-                "expected_decoy_sign": -1,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-                "matched_tetO_group": "plate_a::spyP::3% EtOH::+IPTG",
                 "in_pre_window": False,
                 "in_primary_post_stress": True,
-                "in_endpoint_window": True,
-                "configured_max_post_stress_hours": 4.0,
-            },
+            }
         ],
     )
     source = RetronReviewSource(
-        label="legacy",
-        experiment_id="legacy_source",
+        label="incomplete",
+        experiment_id="incomplete_source",
         experiment_root=None,
         config_path=None,
-        summary_path=summary_path,
+        summary_path=tmp_path / "unused-summary.csv",
         trace_path=trace_path,
     )
 
-    datasets = retron_review_mod.load_retron_source_semantic_datasets(
-        source,
-        record_ids=("semantic_metrics/summary", "semantic_metrics/trace"),
-    )
-    summary = datasets["semantic_metrics/summary"]
-    trace = datasets["semantic_metrics/trace"]
-    preload_rows = summary[
-        (summary["sensor"] == "spyP") & (summary["sponge"] == "CpxR") & (summary["metric"] == "P_pre")
-    ]
-
-    assert len(preload_rows) == 1
-    assert float(preload_rows.iloc[0]["value"]) == pytest.approx(0.0)
-    assert "matched_control_key" in trace.columns
-    assert "summary_window_start_h" in trace.columns
-    assert "summary_window_end_h" in trace.columns
-    assert "summary_window_duration_h" in trace.columns
-    assert "pre_stress_read_count" in trace.columns
-    assert "post_stress_read_count" in trace.columns
-    assert "matched_group_sample_count" in trace.columns
-    assert "stress_addition_gap_h" in trace.columns
-    assert set(trace["matched_control_key"].astype(str)) == {"plate_a::spyP::3% EtOH"}
-    assert float(trace["summary_window_start_h"].dropna().iloc[0]) == pytest.approx(0.5)
-    assert float(trace["summary_window_end_h"].dropna().iloc[0]) == pytest.approx(0.5)
-    assert float(trace["summary_window_duration_h"].dropna().iloc[0]) == pytest.approx(0.0)
-    assert float(trace["pre_stress_read_count"].dropna().iloc[0]) == pytest.approx(1.0)
-    assert float(trace["post_stress_read_count"].dropna().iloc[0]) == pytest.approx(1.0)
-    assert float(trace["matched_group_sample_count"].dropna().iloc[0]) == pytest.approx(1.0)
-    assert float(trace["stress_addition_gap_h"].dropna().iloc[0]) == pytest.approx(1.5)
+    with pytest.raises(ContractError, match="missing required column 'matched_control_key'"):
+        retron_review_mod.load_retron_source_semantic_datasets(
+            source,
+            record_ids=("semantic_metrics/trace",),
+        )
 
 
-def test_retron_review_bundle_fails_fast_when_source_exports_are_missing(tmp_path: Path) -> None:
+def test_retron_review_bundle_fails_fast_when_source_semantic_tables_are_missing(tmp_path: Path) -> None:
     manifest_path = tmp_path / "review_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -501,7 +403,7 @@ def test_retron_review_bundle_fails_fast_when_source_exports_are_missing(tmp_pat
         encoding="utf-8",
     )
 
-    with pytest.raises(FileNotFoundError, match="source exports are missing"):
+    with pytest.raises(FileNotFoundError, match="source semantic tables are missing"):
         load_retron_review_bundle(manifest_path)
 
 
@@ -541,7 +443,31 @@ def test_retron_review_bundle_rejects_non_mapping_source_entry(tmp_path: Path) -
         load_retron_review_bundle(manifest_path)
 
 
-def test_retron_review_bundle_resolves_experiment_sources_relative_to_source_root(tmp_path: Path) -> None:
+def test_retron_review_bundle_rejects_mixed_record_and_explicit_file_source(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "review_manifest.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "relevant_stress_map": {"spyP": "3% EtOH"},
+                "sensor_target_map": {"spyP": ["CpxR"]},
+                "sources": [
+                    {
+                        "label": "mixed",
+                        "experiment": "../source_experiment",
+                        "summary": "./summary.csv",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must not declare explicit summary or trace paths"):
+        load_retron_review_bundle(manifest_path)
+
+
+def test_retron_review_bundle_prefers_verified_records_over_stale_experiment_exports(tmp_path: Path) -> None:
     aggregate_root = tmp_path / "20260319_retron_review"
     manifest_path = aggregate_root / "inputs" / "review_manifest.yaml"
     source_root = tmp_path / "20260313_mono_functional_sponges"
@@ -563,6 +489,66 @@ def test_retron_review_bundle_resolves_experiment_sources_relative_to_source_roo
         source_root / "outputs" / "exports" / "retron" / "semantic_trace.csv",
         [{"metric": "D", "value": 0.1}],
     )
+    store = RecordStore(source_root / "outputs", contracts=builtin_contract_catalog())
+    summary_record = store.persist_dataframe(
+        producer_id="semantic_metrics",
+        producer_plugin="transform/retron_sponge_metrics",
+        out_name="summary",
+        record_id="semantic_metrics/summary",
+        df=pd.DataFrame(
+            [
+                {
+                    "plate_id": "plate_a",
+                    "sensor": "spyP",
+                    "sponge": "CpxR",
+                    "genotype_id": "spyP/CpxR",
+                    "stress_condition": "3% EtOH",
+                    "IPTG": pd.NA,
+                    "metric": "S_AUC",
+                    "value": 0.90,
+                }
+            ]
+        ),
+        contract_id="plate_reader.sponge_summary.v1",
+        inputs=[],
+        config_digest="sha256:summary",
+    )
+    trace_record = store.persist_dataframe(
+        producer_id="semantic_metrics",
+        producer_plugin="transform/retron_sponge_metrics",
+        out_name="trace",
+        record_id="semantic_metrics/trace",
+        df=pd.DataFrame(
+            [
+                {
+                    "plate_id": "plate_a",
+                    "sensor": "spyP",
+                    "sponge": "CpxR",
+                    "genotype_id": "spyP/CpxR",
+                    "replicate_id": "A1",
+                    "stress_condition": "3% EtOH",
+                    "IPTG": "+IPTG",
+                    "time": 1.5,
+                    "time_from_stress": 0.5,
+                    "metric": "D",
+                    "value": 0.2,
+                    "matched_control_key": "plate_a::spyP::3% EtOH",
+                    "summary_window_start_h": 0.5,
+                    "summary_window_end_h": 0.5,
+                    "summary_window_duration_h": 0.0,
+                    "in_pre_window": False,
+                    "in_primary_post_stress": True,
+                    "pre_stress_read_count": 1.0,
+                    "post_stress_read_count": 1.0,
+                    "matched_group_sample_count": 1.0,
+                    "stress_addition_gap_h": 1.5,
+                }
+            ]
+        ),
+        contract_id="plate_reader.sponge_trace.v1",
+        inputs=[],
+        config_digest="sha256:trace",
+    )
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         yaml.safe_dump(
@@ -578,14 +564,14 @@ def test_retron_review_bundle_resolves_experiment_sources_relative_to_source_roo
 
     bundle = load_retron_review_bundle(manifest_path, source_root=aggregate_root)
 
-    assert (
-        bundle.sources[0].summary_path
-        == (source_root / "outputs" / "exports" / "retron" / "semantic_summary.csv").resolve()
-    )
-    assert (
-        bundle.sources[0].trace_path
-        == (source_root / "outputs" / "exports" / "retron" / "semantic_trace.csv").resolve()
-    )
+    assert bundle.sources[0].summary_path == summary_record.path.resolve()
+    assert bundle.sources[0].trace_path == trace_record.path.resolve()
+    assert bundle.summary_df["value"].tolist() == [0.90]
+    assert bundle.trace_df["value"].tolist() == [0.2]
+
+    trace_record.path.write_bytes(b"corrupt")
+    with pytest.raises(RecordError, match="content digest mismatch"):
+        load_retron_review_bundle(manifest_path, source_root=aggregate_root)
 
 
 def test_retron_source_selector_rows_only_expand_duplicate_labels() -> None:
@@ -820,14 +806,15 @@ def test_load_retron_source_surface_reads_scoped_plot_catalog_and_record_paths(t
     assert overview_rows[3]["Field"] == "Compiled plots"
 
 
-def test_retron_plot_rendered_files_accepts_legacy_raw_kinetics_prefix(tmp_path: Path) -> None:
+def test_retron_plot_rendered_files_uses_current_plot_id_prefix(tmp_path: Path) -> None:
     plots_dir = tmp_path / "plots"
     plots_dir.mkdir()
-    (plots_dir / "ts_spyP_tetO.pdf").write_text("legacy", encoding="utf-8")
+    (plots_dir / "raw_kinetics_spyP_tetO.pdf").write_text("current", encoding="utf-8")
+    (plots_dir / "ts_spyP_tetO.pdf").write_text("unrelated", encoding="utf-8")
 
-    matches = retron_plot_rendered_files(plots_dir, plot_id="raw_kinetics", plugin="plot/time_series")
+    matches = retron_plot_rendered_files(plots_dir, plot_id="raw_kinetics")
 
-    assert matches == ["ts_spyP_tetO.pdf"]
+    assert matches == ["raw_kinetics_spyP_tetO.pdf"]
 
 
 def test_retron_experiment_plot_rows_prioritize_matched_teto_summary() -> None:
@@ -1123,7 +1110,7 @@ def test_summary_plot_config_defaults_pareto_burden_to_construct_specific_metric
     assert config.burden_metric == "D_growth_AUC"
 
 
-def test_render_retron_source_plot_cached_loads_overflow_context_for_qc_views(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_retron_source_plot_loads_overflow_context_for_qc_views(monkeypatch: pytest.MonkeyPatch) -> None:
     source = RetronReviewSource(
         label="mono",
         experiment_id="exp_retron_source_surface",
@@ -1156,16 +1143,16 @@ def test_render_retron_source_plot_cached_loads_overflow_context_for_qc_views(mo
     monkeypatch.setattr(retron_review_mod, "load_retron_source_surface", lambda _: surface)
     monkeypatch.setattr(
         retron_review_mod,
-        "load_cached_parquet_frame",
-        lambda path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
+        "load_retron_source_record_frame",
+        lambda source, *, record_id, path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
     )
     monkeypatch.setattr(
         retron_review_mod,
-        "render_retron_experiment_plot_cached",
+        "render_retron_experiment_plot",
         lambda plot_spec, *, datasets: captured.update({"plot_spec": plot_spec, "datasets": datasets}) or "ok",
     )
 
-    result = retron_review_mod.render_retron_source_plot_cached(source, plot_id="raw_kinetics")
+    result = retron_review_mod.render_retron_source_plot(source, plot_id="raw_kinetics")
 
     assert result == "ok"
     assert captured["plot_spec"]["id"] == "raw_kinetics"
@@ -1173,7 +1160,7 @@ def test_render_retron_source_plot_cached_loads_overflow_context_for_qc_views(mo
     assert loaded_paths == ["/tmp/ratio.parquet", "/tmp/overflow.parquet"]
 
 
-def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_views(
+def test_render_retron_source_plot_prefers_semantic_records_for_retron_views(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = RetronReviewSource(
@@ -1222,16 +1209,16 @@ def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_vi
     )
     monkeypatch.setattr(
         retron_review_mod,
-        "load_cached_parquet_frame",
-        lambda path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
+        "load_retron_source_record_frame",
+        lambda source, *, record_id, path: loaded_paths.append(str(path)) or pd.DataFrame({"value": [1.0]}),
     )
     monkeypatch.setattr(
         retron_review_mod,
-        "render_retron_experiment_plot_cached",
+        "render_retron_experiment_plot",
         lambda plot_spec, *, datasets: captured.update({"plot_spec": plot_spec, "datasets": datasets}) or "ok",
     )
 
-    result = retron_review_mod.render_retron_source_plot_cached(
+    result = retron_review_mod.render_retron_source_plot(
         source,
         plot_id="control_anchored_decomposition",
     )
@@ -1242,7 +1229,7 @@ def test_render_retron_source_plot_cached_prefers_semantic_exports_for_retron_vi
     assert loaded_paths == []
 
 
-def test_render_retron_source_plot_cached_rejects_missing_dataframe_record(
+def test_render_retron_source_plot_rejects_missing_dataframe_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = RetronReviewSource(
@@ -1272,7 +1259,7 @@ def test_render_retron_source_plot_cached_rejects_missing_dataframe_record(
     monkeypatch.setattr(retron_review_mod, "load_retron_source_surface", lambda _: surface)
 
     with pytest.raises(ValueError, match="Missing dataframe record `ratio_yfp_od600/df`"):
-        retron_review_mod.render_retron_source_plot_cached(source, plot_id="raw_kinetics")
+        retron_review_mod.render_retron_source_plot(source, plot_id="raw_kinetics")
 
 
 def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_frame() -> None:
@@ -1297,6 +1284,7 @@ def test_render_retron_experiment_plot_surfaces_control_anchored_decomposition_f
                             "replicate_id": f"r{idx}",
                             "is_relevant_stress": True,
                             "relevant_sensor_pair": not control_flag,
+                            "in_pre_window": False,
                             "in_primary_post_stress": True,
                             "configured_max_post_stress_hours": 4.0,
                             "matched_control_key": "plate-1::sulAp::100 nM ciprofloxacin",
@@ -1688,45 +1676,6 @@ def test_render_retron_experiment_plot_prefers_overflow_surface_for_raw_cfp_rows
     assert cfp_rows["overflow"].tolist() == [False, True]
     assert result.source_record == "overflow/df for raw OD600/YFP/CFP; ratio_yfp_od600/df for support ratios"
     plt.close(result.figures[0].fig)
-
-
-def test_render_retron_experiment_plot_cached_reuses_same_result_for_same_inputs() -> None:
-    trace = pd.DataFrame(
-        [
-            {
-                "sensor": "spyP",
-                "sponge": "tetO",
-                "stress_condition": "H2O",
-                "time_from_stress": 0.0,
-                "metric": "C",
-                "value": 0.0,
-                "IPTG": "-IPTG",
-                "relevant_sensor_pair": True,
-            },
-            {
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "stress_condition": "H2O",
-                "time_from_stress": 1.0,
-                "metric": "C",
-                "value": -0.6,
-                "IPTG": "+IPTG",
-                "relevant_sensor_pair": True,
-            },
-        ]
-    )
-    plot_spec = {
-        "id": "matched_control_kinetics",
-        "plugin": "plot/retron_trace",
-        "reads": {"trace": {"record": "semantic_metrics/trace"}},
-        "with": {"metrics": ["C"], "filename": "matched_control_kinetics"},
-    }
-
-    first = render_retron_experiment_plot_cached(plot_spec, datasets={"semantic_metrics/trace": trace})
-    second = render_retron_experiment_plot_cached(plot_spec, datasets={"semantic_metrics/trace": trace})
-
-    assert second is first
-    plt.close(first.figures[0].fig)
 
 
 def test_render_retron_aggregate_plot_returns_specificity_matrix_bundle() -> None:
@@ -2496,45 +2445,6 @@ def test_render_retron_aggregate_expected_vs_observed_uses_shared_square_limits(
     expected_anchor = expected_legend.get_bbox_to_anchor().transformed(result.figure.transFigure.inverted())
     assert expected_anchor.x0 < 0.96
     plt.close(result.figure)
-
-
-def test_render_retron_aggregate_plot_cached_reuses_same_result_for_same_inputs() -> None:
-    summary = pd.DataFrame(
-        [
-            {
-                "sensor": "spyP",
-                "sponge": "CpxR",
-                "metric": "S_AUC",
-                "value": 0.40,
-                "relevant_sensor_pair": True,
-                "is_relevant_stress": True,
-                "sponge_family_size": "mono",
-            }
-        ]
-    )
-
-    first = render_retron_aggregate_plot_cached(
-        "specificity_matrix",
-        summary_df=summary,
-        sensor_target_map={"spyP": ("CpxR", "BaeR")},
-        score_metric="S_AUC",
-        architecture_x="irrelevant_motif_count",
-        expected_mode="expected_sum",
-        fingerprint_sponge=None,
-    )
-    second = render_retron_aggregate_plot_cached(
-        "specificity_matrix",
-        summary_df=summary,
-        sensor_target_map={"spyP": ("CpxR", "BaeR")},
-        score_metric="S_AUC",
-        architecture_x="irrelevant_motif_count",
-        expected_mode="expected_sum",
-        fingerprint_sponge=None,
-    )
-
-    assert second is first
-    assert first.figure is not None
-    plt.close(first.figure)
 
 
 def test_load_cached_parquet_frame_reuses_frame_when_file_is_unchanged(tmp_path: Path) -> None:

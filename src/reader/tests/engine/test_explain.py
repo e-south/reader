@@ -12,7 +12,7 @@ from pathlib import Path
 from rich.console import Console
 
 from reader.contracts import OutputContractSurface, builtin_contract_catalog
-from reader.protocols import ProtocolBinding
+from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.tests.support import base_reader_config, build_decl
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
@@ -61,6 +61,7 @@ def _workbench_decl(
 ) -> WorkbenchDecl:
     semantics = ExperimentSemantics(
         protocol=ProtocolBinding(id="workbench/generic"),
+        protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
         annotations=AnnotationSemantics(),
         resources=ResourceCatalog(),
         layout=OutputLayout(

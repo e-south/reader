@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     notebook.parent.mkdir(parents=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='reader-test'\n", encoding="utf-8")
     (repo_root / "experiments" / "2026" / "exp" / "config.yaml").write_text(
-        "schema: reader/v7\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
         encoding="utf-8",
     )
     notebook.write_text("import marimo\n", encoding="utf-8")
@@ -32,7 +33,7 @@ def test_plan_marimo_launch_uses_repo_local_runtime_dirs(tmp_path: Path) -> None
     assert plan.env["XDG_STATE_HOME"] == str(repo_root / ".cache" / "marimo" / "xdg-state")
     assert plan.env["XDG_CACHE_HOME"] == str(repo_root / ".cache" / "marimo" / "xdg-cache")
     assert plan.env["MPLCONFIGDIR"] == str(repo_root / ".cache" / "marimo" / "matplotlib")
-    assert plan.env["READER_MARIMO_RUNTIME_PATCH"] == "1"
+    assert "READER_MARIMO_RUNTIME_PATCH" not in plan.env
     assert str(repo_root) in plan.env["PYTHONPATH"]
     assert "--host" in plan.cmd
     assert "--port" in plan.cmd
@@ -40,9 +41,55 @@ def test_plan_marimo_launch_uses_repo_local_runtime_dirs(tmp_path: Path) -> None
     assert "--no-token" in plan.cmd
 
 
+def test_plan_marimo_launch_uses_explicit_repo_root_for_external_notebook(tmp_path: Path) -> None:
+    repo_root, _ = _make_repo(tmp_path)
+    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook.parent.mkdir()
+    notebook.write_text("import marimo\n", encoding="utf-8")
+
+    plan = launch.plan_marimo_launch(
+        mode="run",
+        target=notebook,
+        headless=True,
+        base_env={},
+        repo_root=repo_root,
+    )
+
+    assert plan.target == notebook.resolve()
+    assert plan.repo_root == repo_root.resolve()
+    assert plan.runtime_paths.root == repo_root / ".cache" / "marimo"
+    assert plan.env["PYTHONPATH"] == str(repo_root)
+
+
+def test_plan_marimo_launch_rejects_invalid_explicit_repo_root(tmp_path: Path) -> None:
+    repo_root, notebook = _make_repo(tmp_path)
+    invalid_root = repo_root / "not-a-project-root"
+
+    with pytest.raises(ConfigError, match="does not contain pyproject.toml"):
+        launch.plan_marimo_launch(
+            mode="run",
+            target=notebook,
+            headless=True,
+            base_env={},
+            repo_root=invalid_root,
+        )
+
+    assert not (repo_root / ".cache" / "marimo").exists()
+
+
+def test_plan_marimo_launch_missing_target_fails_before_creating_runtime_dirs(tmp_path: Path) -> None:
+    repo_root, notebook = _make_repo(tmp_path)
+    missing = notebook.with_name("missing.py")
+
+    with pytest.raises(FileNotFoundError):
+        launch.plan_marimo_launch(mode="run", target=missing, headless=True, base_env={})
+
+    assert not (repo_root / ".cache" / "marimo").exists()
+
+
 def test_plan_marimo_launch_reuses_live_session_for_same_notebook(monkeypatch, tmp_path: Path) -> None:
-    _, notebook = _make_repo(tmp_path)
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    repo_root, notebook = _make_repo(tmp_path)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     monkeypatch.setattr(launch, "_target_signature", lambda target: (11, 22))
     monkeypatch.setattr(launch, "_runtime_fingerprint", lambda repo_root: "fp-current")
     record = launch.MarimoSessionRecord(
@@ -58,7 +105,7 @@ def test_plan_marimo_launch_reuses_live_session_for_same_notebook(monkeypatch, t
         notebook_size_bytes=22,
         runtime_fingerprint="fp-current",
     )
-    runtime_paths.registry_path.write_text(json.dumps([launch.asdict(record)]), encoding="utf-8")
+    runtime_paths.registry_path.write_text(json.dumps([asdict(record)]), encoding="utf-8")
     monkeypatch.setattr(launch, "_pid_is_live", lambda pid: True)
     monkeypatch.setattr(launch, "_port_is_open", lambda host, port, timeout=0.15: True)
 
@@ -73,8 +120,8 @@ def test_plan_marimo_launch_restarts_stale_same_notebook_session_on_runtime_drif
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _, notebook = _make_repo(tmp_path)
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    repo_root, notebook = _make_repo(tmp_path)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     record = launch.MarimoSessionRecord(
         pid=2222,
         port=2718,
@@ -88,7 +135,7 @@ def test_plan_marimo_launch_restarts_stale_same_notebook_session_on_runtime_drif
         notebook_size_bytes=22,
         runtime_fingerprint="fp-stale",
     )
-    runtime_paths.registry_path.write_text(json.dumps([launch.asdict(record)]), encoding="utf-8")
+    runtime_paths.registry_path.write_text(json.dumps([asdict(record)]), encoding="utf-8")
     monkeypatch.setattr(launch, "_pid_is_live", lambda pid: True)
     monkeypatch.setattr(launch, "_target_signature", lambda target: (11, 22))
     monkeypatch.setattr(launch, "_runtime_fingerprint", lambda repo_root: "fp-current")
@@ -114,10 +161,10 @@ def test_plan_marimo_launch_restarts_stale_same_notebook_session_on_runtime_drif
 
 
 def test_plan_marimo_launch_prunes_same_experiment_sessions(monkeypatch, tmp_path: Path) -> None:
-    _, notebook = _make_repo(tmp_path)
+    repo_root, notebook = _make_repo(tmp_path)
     old_notebook = notebook.with_name("EDA_old.py")
     old_notebook.write_text("import marimo\n", encoding="utf-8")
-    runtime_paths = launch._runtime_paths_for_target(notebook)
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
     record = launch.MarimoSessionRecord(
         pid=2222,
         port=2718,
@@ -128,7 +175,7 @@ def test_plan_marimo_launch_prunes_same_experiment_sessions(monkeypatch, tmp_pat
         repo_root=str(notebook.parents[4].resolve()),
         launched_at=1.0,
     )
-    runtime_paths.registry_path.write_text(json.dumps([launch.asdict(record)]), encoding="utf-8")
+    runtime_paths.registry_path.write_text(json.dumps([asdict(record)]), encoding="utf-8")
     monkeypatch.setattr(launch, "_pid_is_live", lambda pid: True)
     monkeypatch.setattr(launch, "_port_is_open", lambda host, port, timeout=0.15: False)
     terminated: list[int] = []
@@ -157,3 +204,35 @@ def test_plan_marimo_launch_rejects_busy_explicit_port(monkeypatch, tmp_path: Pa
             preferred_port=9999,
             base_env={},
         )
+
+
+def test_register_external_notebook_session_with_explicit_repo_root(monkeypatch, tmp_path: Path) -> None:
+    repo_root, _ = _make_repo(tmp_path)
+    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook.parent.mkdir()
+    notebook.write_text("import marimo\n", encoding="utf-8")
+    runtime_paths = launch._runtime_paths_for_repo_root(repo_root)
+    monkeypatch.setattr(launch, "_pid_is_live", lambda pid: True)
+
+    launch.register_managed_session(
+        registry_path=runtime_paths.registry_path,
+        pid=1234,
+        port=2718,
+        host="127.0.0.1",
+        mode="edit",
+        target=notebook,
+        repo_root=repo_root,
+    )
+
+    records = launch._load_registry(runtime_paths.registry_path)
+    assert len(records) == 1
+    record = records[0]
+    assert record.pid == 1234
+    assert record.port == 2718
+    assert record.notebook == str(notebook.resolve())
+    assert record.experiment_root == str(notebook.parent.resolve())
+    assert record.repo_root == str(repo_root.resolve())
+
+    launch.unregister_managed_session(registry_path=runtime_paths.registry_path, pid=1234)
+
+    assert launch._load_registry(runtime_paths.registry_path) == []

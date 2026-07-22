@@ -1,3 +1,11 @@
+---
+doc_id: reader-common-routes
+surface: task-router
+owner: reader-maintainers
+last_verified: 2026-07-17
+summary: Short command routes for common Reader discovery, preflight, execution, output, and recovery tasks.
+---
+
 # Common tasks
 
 Use this page when you know what you want to do and need the shortest command path.
@@ -10,7 +18,12 @@ uv run reader ls --root experiments --details
 uv run reader ls --root experiments --details --readiness
 ```
 
-The first command lists discovered experiments. `--details` adds selected pipeline, plot, and export summaries. `--readiness` adds blocked, draft, runnable, and records-ready state.
+The first command lists discovered experiments. `--details` adds selected
+pipeline, plot, and export summaries. `--readiness` adds the current preflight
+state, including `config_error`, `template`, `draft`, `dependency_blocked`,
+`blocked`, `runnable`, `uncataloged_outputs_present`, and `records_ready`.
+`records_ready` requires at least one usable current record; the existence of an
+empty or invalid catalog is not sufficient.
 
 ## Inspect one experiment
 
@@ -31,7 +44,7 @@ uv run reader protocols <protocol-id> --example-config
 uv run reader init ./experiments/<new-experiment> --protocol <protocol-id>
 ```
 
-Use the protocol commands to see the public assay surface before you scaffold a new experiment.
+Use the protocol commands to see the public assay definition before you scaffold a new experiment.
 
 ## Validate before execution
 
@@ -72,5 +85,5 @@ Use JSON output when another tool needs stable machine-readable discovery, inspe
 - [Preflight, run, verify](./preflight_run_verify.md)
 - [Automation and JSON](./automation.md)
 - [CLI reference](../core/cli.md)
-- [Configuring `reader/v7`](../core/pipeline.md)
+- [Configuring `reader/v8`](../core/pipeline.md)
 - [End-to-end demo](./demo.md)

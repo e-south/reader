@@ -4,11 +4,13 @@ from copy import deepcopy
 from typing import Any
 
 from reader.errors import ConfigError
-from reader.protocols.model import (
-    CompiledProtocolPlan,
-    ProtocolSemanticExecution,
-    ProtocolSemanticNode,
-    ProtocolSemanticProgram,
+from reader.protocols.model import CompiledProtocolPlan
+from reader.protocols.semantic_coverage import (
+    _cytometry_semantic_program,
+    _logic_semantic_program,
+    _plate_reader_retron_sponge_semantic_program,
+    _plate_reader_semantic_program,
+    _plate_reader_single_reporter_semantic_program,
 )
 from reader.workbench.decl.model import (
     NotebookTemplateCallDecl,
@@ -38,7 +40,6 @@ def compile_generic_protocol(protocol: Any):
 def compile_plate_reader_dual_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -85,7 +86,6 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
@@ -107,7 +107,6 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
             "plate_reader/single_reporter_screen requires distinct reporter_channel and normalizer_channel."
         )
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -152,7 +151,6 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=(),
@@ -177,7 +175,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
     reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
     growth_channel = _analysis_channel(analysis, key="growth_channel", default="OD600")
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=False)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -276,7 +273,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
@@ -292,7 +288,6 @@ def compile_plate_reader_retron_sponge_screen(protocol: Any):
 
 def compile_logic_sfxi_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
     include_vec8 = _analysis_bool(analysis, key="include_vec8", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
@@ -310,26 +305,6 @@ def compile_logic_sfxi_screen(protocol: Any):
     )
     if include_fold_change:
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
-    selected_plot_ids = protocol.select_plot_outputs(
-        allowed={
-            "raw_kinetics",
-            "endpoint_by_condition",
-            "endpoint_by_design",
-            "intensity_overview",
-            "logic_symmetry",
-        },
-    )
-    requires_promoted_df = include_vec8 or "logic_symmetry" in selected_plot_ids
-    if requires_promoted_df:
-        pipeline.append(_sfxi_promote_step())
-    if include_vec8:
-        pipeline.append(_sfxi_vec8_step())
-
-    plots = [
-        _plate_reader_plot_output(protocol, output_id=deliverable_id, measurement="yfp_cfp")
-        for deliverable_id in selected_plot_ids
-    ]
-
     default_exports = (
         ("logic_summary_workbook",)
         if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8)
@@ -339,22 +314,47 @@ def compile_logic_sfxi_screen(protocol: Any):
         defaults=default_exports,
         allowed=LOGIC_EXPORT_OUTPUTS,
     )
+    selected_plot_ids = protocol.select_plot_outputs(
+        allowed={
+            "raw_kinetics",
+            "endpoint_by_condition",
+            "endpoint_by_design",
+            "intensity_overview",
+            "logic_symmetry",
+            "sfxi_setpoint_scatter",
+            "sfxi_triptych_sequence",
+            "sfxi_vec8_heatmap",
+        },
+    )
+    requires_vec8 = (
+        include_vec8
+        or bool({"sfxi_setpoint_scatter", "sfxi_triptych_sequence", "sfxi_vec8_heatmap"} & set(selected_plot_ids))
+        or "logic_summary_workbook" in selected_exports
+    )
+    requires_promoted_df = requires_vec8 or bool({"logic_symmetry", "sfxi_triptych_sequence"} & set(selected_plot_ids))
+    if requires_promoted_df:
+        pipeline.append(_sfxi_promote_step())
+    if requires_vec8:
+        pipeline.append(_sfxi_vec8_step(protocol))
+
+    plots = [
+        _plate_reader_plot_output(protocol, output_id=deliverable_id, measurement="yfp_cfp")
+        for deliverable_id in selected_plot_ids
+    ]
+
     exports = [_logic_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports]
 
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
         notebooks=(default_notebook_call(template),),
-        semantic_program=_logic_semantic_program(protocol, include_vec8=include_vec8),
+        semantic_program=_logic_semantic_program(protocol, include_vec8=requires_vec8),
     )
 
 
 def compile_cytometry_flow_panel(protocol: Any):
-    analysis = _analysis_options(protocol)
-    strict = _analysis_bool(analysis, key="strict", default=True)
     template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     try:
         selected_plots = protocol.select_plot_outputs(allowed=set())
@@ -369,7 +369,6 @@ def compile_cytometry_flow_panel(protocol: Any):
     if selected_exports:
         raise ConfigError("cytometry/flow_panel does not currently compile export artifacts.")
     return CompiledProtocolPlan(
-        runtime={"strict": strict},
         pipeline=(
             _step(
                 id="ingest_cytometer",
@@ -390,412 +389,6 @@ def compile_cytometry_flow_panel(protocol: Any):
         exports=(),
         notebooks=(default_notebook_call(template),),
         semantic_program=_cytometry_semantic_program(protocol),
-    )
-
-
-def _semantic_program(
-    protocol: Any,
-    *,
-    overrides: dict[str, ProtocolSemanticExecution],
-    active_profile: str | None = None,
-) -> ProtocolSemanticProgram:
-    descriptor_program = protocol.descriptor.semantic_program(active_profile=active_profile)
-    valid_ids = {
-        *(node.id for node in descriptor_program.controls),
-        *(node.id for node in descriptor_program.windows),
-        *(node.id for node in descriptor_program.metrics),
-    }
-    if descriptor_program.ranking is not None:
-        valid_ids.add(descriptor_program.ranking.id)
-    unknown_override_ids = sorted(set(overrides) - valid_ids)
-    if unknown_override_ids:
-        options = ", ".join(sorted(valid_ids)) or "—"
-        raise ConfigError(
-            f"Semantic execution overrides reference unknown ids {unknown_override_ids} for protocol {protocol.id!r}. "
-            f"Known semantic ids: {options}"
-        )
-
-    def _apply(nodes: tuple[ProtocolSemanticNode, ...]) -> tuple[ProtocolSemanticNode, ...]:
-        return tuple(
-            ProtocolSemanticNode(
-                id=node.id,
-                kind=node.kind,
-                summary=node.summary,
-                profiles=node.profiles,
-                stage=node.stage,
-                formula=node.formula,
-                depends_on=node.depends_on,
-                value_space=node.value_space,
-                unit=node.unit,
-                comparable_group=node.comparable_group,
-                anchor=node.anchor,
-                selector=node.selector,
-                params=node.params,
-                match_on=node.match_on,
-                control_selector=node.control_selector,
-                primary_metric=node.primary_metric,
-                direction=node.direction,
-                penalties=node.penalties,
-                supporting_metrics=node.supporting_metrics,
-                execution=overrides.get(node.id, node.execution),
-            )
-            for node in nodes
-        )
-
-    ranking = descriptor_program.ranking
-    if ranking is not None:
-        ranking = ProtocolSemanticNode(
-            id=ranking.id,
-            kind=ranking.kind,
-            summary=ranking.summary,
-            profiles=ranking.profiles,
-            stage=ranking.stage,
-            formula=ranking.formula,
-            depends_on=ranking.depends_on,
-            value_space=ranking.value_space,
-            unit=ranking.unit,
-            comparable_group=ranking.comparable_group,
-            anchor=ranking.anchor,
-            selector=ranking.selector,
-            params=ranking.params,
-            match_on=ranking.match_on,
-            control_selector=ranking.control_selector,
-            primary_metric=ranking.primary_metric,
-            direction=ranking.direction,
-            penalties=ranking.penalties,
-            supporting_metrics=ranking.supporting_metrics,
-            execution=overrides.get(ranking.id, ranking.execution),
-        )
-
-    return ProtocolSemanticProgram(
-        protocol=descriptor_program.protocol,
-        profiles=descriptor_program.profiles,
-        active_profile=descriptor_program.active_profile,
-        controls=_apply(descriptor_program.controls),
-        windows=_apply(descriptor_program.windows),
-        metrics=_apply(descriptor_program.metrics),
-        ranking=ranking,
-    )
-
-
-def _plate_reader_semantic_program(
-    protocol: Any,
-    *,
-    include_crosstalk_pairs: bool,
-    include_fold_change: bool,
-) -> ProtocolSemanticProgram:
-    active_profile = _dual_reporter_semantic_profile(
-        include_fold_change=include_fold_change,
-        include_crosstalk_pairs=include_crosstalk_pairs,
-    )
-    overrides: dict[str, ProtocolSemanticExecution] = {
-        "OD": ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("ingest",),
-            plugin_ids=("ingest/synergy_h1",),
-            record_ids=("ingest/df",),
-            note="Raw OD600 values are materialized on the ingest dataframe.",
-        ),
-    }
-    overrides.update(
-        {
-            "CFP": ProtocolSemanticExecution(
-                status="compiled",
-                step_ids=("ingest",),
-                plugin_ids=("ingest/synergy_h1",),
-                record_ids=("ingest/df",),
-                note="Raw CFP values are materialized on the ingest dataframe.",
-            ),
-            "YFP": ProtocolSemanticExecution(
-                status="compiled",
-                step_ids=("ingest",),
-                plugin_ids=("ingest/synergy_h1",),
-                record_ids=("ingest/df",),
-                note="Raw YFP values are materialized on the ingest dataframe.",
-            ),
-            "CFP_OD": ProtocolSemanticExecution(
-                status="compiled",
-                step_ids=("ratio_cfp_od600",),
-                plugin_ids=("transform/ratio",),
-                record_ids=("ratio_cfp_od600/df",),
-                note="The CFP/OD600 support channel is materialized as a ratio step output.",
-            ),
-            "YFP_OD": ProtocolSemanticExecution(
-                status="compiled",
-                step_ids=("ratio_yfp_od600",),
-                plugin_ids=("transform/ratio",),
-                record_ids=("ratio_yfp_od600/df",),
-                note="The YFP/OD600 support channel is materialized as a ratio step output.",
-            ),
-            "Ratio": ProtocolSemanticExecution(
-                status="compiled",
-                step_ids=("ratio_yfp_cfp",),
-                plugin_ids=("transform/ratio",),
-                record_ids=("ratio_yfp_cfp/df",),
-                note="The primary YFP/CFP ratio is materialized as a ratio step output.",
-            ),
-        }
-    )
-    if include_fold_change:
-        fold_change_step_id = "fold_change__yfp_over_cfp"
-        fold_change_record_id = "fold_change__yfp_over_cfp/table"
-        fold_change_note = "Nearest-time fold-change summaries are materialized from the primary ratio channel."
-        overrides.update(
-            {
-                "FC": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=(fold_change_step_id,),
-                    plugin_ids=("transform/fold_change",),
-                    record_ids=(fold_change_record_id,),
-                    note=fold_change_note,
-                ),
-                "log2FC": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=(fold_change_step_id,),
-                    plugin_ids=("transform/fold_change",),
-                    record_ids=(fold_change_record_id,),
-                    note=fold_change_note,
-                ),
-            }
-        )
-    if include_crosstalk_pairs:
-        overrides["ranking"] = ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("crosstalk_pairs",),
-            plugin_ids=("transform/crosstalk_pairs",),
-            record_ids=("crosstalk_pairs/table",),
-            config_paths=("protocol.analysis.crosstalk_pairs",),
-            note="When crosstalk pair analysis is enabled, pair selection is compiled from fold-change output.",
-        )
-    return _semantic_program(protocol, overrides=overrides, active_profile=active_profile)
-
-
-def _plate_reader_single_reporter_semantic_program(
-    protocol: Any,
-    *,
-    reporter_channel: str,
-    normalizer_channel: str,
-    include_fold_change: bool,
-) -> ProtocolSemanticProgram:
-    ratio_label = _single_reporter_ratio_label(
-        reporter_channel=reporter_channel,
-        normalizer_channel=normalizer_channel,
-    )
-    ratio_note = f"The primary {ratio_label} ratio is materialized as a ratio step output."
-    fold_change_note = f"Nearest-time fold-change summaries are materialized from the primary {ratio_label} channel."
-    overrides: dict[str, ProtocolSemanticExecution] = {
-        "Normalizer": ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("ingest",),
-            plugin_ids=("ingest/synergy_h1",),
-            record_ids=("ingest/df",),
-            note=f"Raw {normalizer_channel} values are materialized on the ingest dataframe.",
-        ),
-        "Reporter": ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("ingest",),
-            plugin_ids=("ingest/synergy_h1",),
-            record_ids=("ingest/df",),
-            note=f"Raw {reporter_channel} values are materialized on the ingest dataframe.",
-        ),
-        "Reporter_Normalizer": ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("ratio_reporter_normalizer",),
-            plugin_ids=("transform/ratio",),
-            record_ids=("ratio_reporter_normalizer/df",),
-            note=ratio_note,
-        ),
-    }
-    if include_fold_change:
-        overrides.update(
-            {
-                "FC": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("fold_change__single_reporter",),
-                    plugin_ids=("transform/fold_change",),
-                    record_ids=("fold_change__single_reporter/table",),
-                    note=fold_change_note,
-                ),
-                "log2FC": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("fold_change__single_reporter",),
-                    plugin_ids=("transform/fold_change",),
-                    record_ids=("fold_change__single_reporter/table",),
-                    note=fold_change_note,
-                ),
-            }
-        )
-    return _semantic_program(
-        protocol, overrides=overrides, active_profile=_single_reporter_semantic_profile(include_fold_change)
-    )
-
-
-def _plate_reader_retron_sponge_semantic_program(
-    protocol: Any,
-    *,
-    measurement: str,
-    reporter_channel: str,
-    growth_channel: str,
-) -> ProtocolSemanticProgram:
-    trace_binding = ProtocolSemanticExecution(
-        status="compiled",
-        step_ids=("semantic_metrics",),
-        plugin_ids=("transform/retron_sponge_metrics",),
-        record_ids=("semantic_metrics/trace",),
-        config_paths=("protocol.analysis.semantic_metrics",),
-        note="Matched-control sponge kinetics are materialized as a typed trace table.",
-    )
-    summary_binding = ProtocolSemanticExecution(
-        status="compiled",
-        step_ids=("semantic_metrics",),
-        plugin_ids=("transform/retron_sponge_metrics",),
-        record_ids=("semantic_metrics/summary",),
-        config_paths=("protocol.analysis.semantic_metrics",),
-        note="Matched-control sponge summaries are materialized as a typed summary table.",
-    )
-    overrides: dict[str, ProtocolSemanticExecution] = {
-        "matched_same_sensor_control": trace_binding,
-        "pre_stress_last_n": trace_binding,
-        "primary_post_stress": trace_binding,
-        "endpoint_last_n": trace_binding,
-        "OD": ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("ingest",),
-            plugin_ids=("ingest/synergy_h1",),
-            record_ids=("ingest/df",),
-            note=f"Raw {growth_channel} values are materialized on the ingest dataframe.",
-        ),
-        "R": trace_binding,
-        "R_pre": summary_binding,
-        "P_pre": summary_binding,
-        "B": trace_binding,
-        "C": trace_binding,
-        "C_AUC": summary_binding,
-        "C_END": summary_binding,
-        "mu": trace_binding,
-        "D": trace_binding,
-        "D_AUC": summary_binding,
-        "D_END": summary_binding,
-        "D_abs": trace_binding,
-        "D_abs_AUC": summary_binding,
-        "D_abs_END": summary_binding,
-        "D_growth": trace_binding,
-        "D_growth_AUC": summary_binding,
-        "D_growth_END": summary_binding,
-        "M": trace_binding,
-        "M_AUC": summary_binding,
-        "M_END": summary_binding,
-        "O": trace_binding,
-        "O_AUC": summary_binding,
-        "O_abs": trace_binding,
-        "O_abs_AUC": summary_binding,
-        "G_sensor": summary_binding,
-        "S_AUC": summary_binding,
-        "S_abs_AUC": summary_binding,
-        "L_pre": summary_binding,
-        "L_post_AUC": summary_binding,
-        "T_ratio_AUC": summary_binding,
-        "T_growth_AUC": summary_binding,
-        "T_finalOD": summary_binding,
-        "ranking": summary_binding,
-    }
-    if measurement == "yfp_cfp":
-        overrides.update(
-            {
-                "CFP": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note="Raw CFP values are materialized on the ingest dataframe.",
-                ),
-                "YFP": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note="Raw YFP values are materialized on the ingest dataframe.",
-                ),
-                "CFP_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_cfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_cfp_od600/df",),
-                    note="The CFP/OD600 support channel is materialized as a ratio step output.",
-                ),
-                "YFP_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_yfp_od600",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_yfp_od600/df",),
-                    note="The YFP/OD600 support channel is materialized as a ratio step output.",
-                ),
-            }
-        )
-    else:
-        overrides.update(
-            {
-                "Reporter": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ingest",),
-                    plugin_ids=("ingest/synergy_h1",),
-                    record_ids=("ingest/df",),
-                    note=f"Raw {reporter_channel} values are materialized on the ingest dataframe.",
-                ),
-                "Reporter_OD": ProtocolSemanticExecution(
-                    status="compiled",
-                    step_ids=("ratio_reporter_normalizer",),
-                    plugin_ids=("transform/ratio",),
-                    record_ids=("ratio_reporter_normalizer/df",),
-                    note=(
-                        "The "
-                        f"{reporter_channel}/{growth_channel} support channel is materialized as a ratio step output."
-                    ),
-                ),
-            }
-        )
-    return _semantic_program(protocol, overrides=overrides, active_profile=measurement)
-
-
-def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSemanticProgram:
-    overrides: dict[str, ProtocolSemanticExecution] = {}
-    if include_vec8:
-        vec8_binding = ProtocolSemanticExecution(
-            status="compiled",
-            step_ids=("sfxi_vec8",),
-            plugin_ids=("transform/sfxi",),
-            record_ids=("sfxi_vec8/vec8",),
-            config_paths=(
-                "protocol.inputs.response",
-                "protocol.inputs.reference",
-                "protocol.inputs.design_by",
-                "protocol.inputs.logic_map_ref",
-                "protocol.inputs.time_mode",
-                "protocol.inputs.target_time_h",
-                "protocol.inputs.time_tolerance_h",
-            ),
-            note="The SFXI vec8 transform materializes the protocol control rule, summary window, metric, and ranking surface.",
-        )
-        overrides.update(
-            {
-                "logic_corner_map": vec8_binding,
-                "summary_timepoint": vec8_binding,
-                "vec8": vec8_binding,
-                "ranking": vec8_binding,
-            }
-        )
-    return _semantic_program(protocol, overrides=overrides)
-
-
-def _cytometry_semantic_program(protocol: Any) -> ProtocolSemanticProgram:
-    return _semantic_program(
-        protocol,
-        overrides={
-            "ranking": ProtocolSemanticExecution(
-                status="descriptive_only",
-                note="Cytometry ranking remains domain-defined until a typed analysis program is introduced.",
-            )
-        },
     )
 
 
@@ -880,18 +473,6 @@ def _configured_fold_change_target(protocol: Any, *, expected: str) -> str:
             f"{expected!r}, not {target!r}"
         )
     return target
-
-
-def _dual_reporter_semantic_profile(*, include_fold_change: bool, include_crosstalk_pairs: bool) -> str:
-    if include_crosstalk_pairs:
-        return "yfp_cfp_crosstalk"
-    if include_fold_change:
-        return "yfp_cfp_fold_change"
-    return "yfp_cfp_raw"
-
-
-def _single_reporter_semantic_profile(include_fold_change: bool) -> str:
-    return "single_reporter_fold_change" if include_fold_change else "single_reporter_raw"
 
 
 def _cfg_bool(raw: dict[str, Any], *, key: str, default: bool) -> bool:
@@ -1136,13 +717,55 @@ def _sfxi_promote_step() -> PluginStepDecl:
     )
 
 
-def _sfxi_vec8_step() -> PluginStepDecl:
+def _sfxi_vec8_step(protocol: Any) -> PluginStepDecl:
     return _step(
         id="sfxi_vec8",
         plugin="transform/sfxi",
         reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
+        with_={"log2_offset_delta": _sfxi_objective_delta(protocol)},
         writes={"vec8": RecordOutputDecl(record_id="sfxi_vec8/vec8")},
     )
+
+
+def _sfxi_objective_delta(protocol: Any) -> float:
+    objective = _analysis_mapping(_analysis_options(protocol), key="sfxi_objective")
+    return float(objective.get("intensity_log2_offset_delta", 0.0))
+
+
+def _sfxi_setpoint_scatter_defaults(protocol: Any) -> dict[str, Any]:
+    objective = _analysis_mapping(_analysis_options(protocol), key="sfxi_objective")
+    scaling = _analysis_mapping(objective, key="scaling")
+    exponents = _analysis_mapping(objective, key="exponents")
+    return {
+        "setpoints": deepcopy(objective.get("setpoints", {"and": [0.0, 0.0, 0.0, 1.0]})),
+        "scaling_percentile": int(scaling.get("percentile", 95)),
+        "scaling_min_n": int(scaling.get("min_n", 5)),
+        "scaling_eps": float(scaling.get("eps", 1.0e-8)),
+        "logic_exponent_beta": float(exponents.get("logic_exponent_beta", 1.0)),
+        "intensity_exponent_gamma": float(exponents.get("intensity_exponent_gamma", 1.0)),
+        "intensity_log2_offset_delta": _sfxi_objective_delta(protocol),
+    }
+
+
+def _sfxi_triptych_sequence_defaults(protocol: Any) -> dict[str, Any]:
+    configured = deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_triptych_sequence"))
+    duplicated = sorted(
+        {"state_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(configured)
+    )
+    if duplicated:
+        raise ConfigError(
+            f"protocol.analysis.sfxi_triptych_sequence must not duplicate SFXI treatment identity; remove: {duplicated}"
+        )
+    sfxi_cfg = protocol.effective_plugin_config(plugin_id="transform/sfxi")
+    state_map_ref = sfxi_cfg.get("state_map_ref")
+    if not isinstance(state_map_ref, str) or not state_map_ref.strip():
+        raise ConfigError("logic/sfxi_screen requires protocol.inputs.state_map_ref to be a non-empty string.")
+    configured["state_map_ref"] = state_map_ref.strip()
+    return configured
+
+
+def _sfxi_vec8_heatmap_defaults(protocol: Any) -> dict[str, Any]:
+    return deepcopy(_analysis_mapping(_analysis_options(protocol), key="sfxi_vec8_heatmap"))
 
 
 def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str) -> PluginStepDecl:
@@ -1216,6 +839,13 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
+    if output_id == "sfxi_vec8_heatmap":
+        return _step(
+            id="sfxi_vec8_heatmap",
+            plugin="plot/sfxi_vec8_heatmap",
+            reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
+            with_=_deep_merge(_sfxi_vec8_heatmap_defaults(protocol), settings),
+        )
     if output_id == "ratio_overview":
         defaults = {
             "partition": {"by": "design_id_alias"},
@@ -1274,6 +904,39 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             plugin="plot/logic_symmetry",
             reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
             with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "sfxi_setpoint_scatter":
+        return _step(
+            id="sfxi_setpoint_scatter",
+            plugin="plot/sfxi_setpoint_scatter",
+            reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
+            with_=_deep_merge(_sfxi_setpoint_scatter_defaults(protocol), settings),
+        )
+    if output_id == "sfxi_triptych_sequence":
+        duplicated = sorted(
+            {"state_map_ref", "treatment_col", "treatment_column", "treatment_map", "treatments"} & set(settings)
+        )
+        if duplicated:
+            raise ConfigError(
+                "protocol.outputs.plots.views.sfxi_triptych_sequence must not duplicate SFXI treatment identity; "
+                f"remove: {duplicated}"
+            )
+        triptych_cfg = _deep_merge(_sfxi_triptych_sequence_defaults(protocol), settings)
+        candidate_bindings_resource = triptych_cfg.pop("candidate_bindings_resource", None)
+        if not isinstance(candidate_bindings_resource, str) or not candidate_bindings_resource.strip():
+            raise ConfigError(
+                "logic/sfxi_screen sfxi_triptych_sequence requires analysis.sfxi_triptych_sequence."
+                "candidate_bindings_resource."
+            )
+        return _step(
+            id="sfxi_triptych_sequence",
+            plugin="plot/sfxi_triptych_sequence",
+            reads={
+                "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
+                "assay": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
+                "candidate_bindings": ResourceInputDecl(resource_id=candidate_bindings_resource.strip()),
+            },
+            with_=triptych_cfg,
         )
     raise ConfigError(f"Unknown plate-reader plot output {output_id!r}")
 

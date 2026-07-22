@@ -349,6 +349,32 @@ def test_missing_anchor_raises():
         assert "missing anchor" in str(e).lower()
 
 
+def test_nonfinite_sample_intensity_raises():
+    pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])
+    pts_int = _mk([{"design_id": "X", "b00": np.nan, "b10": 1, "b01": 1, "b11": 1}])
+    per_corner = _mk([{"design_id": "REF", "corner": c, "y_mean": 1} for c in ("00", "10", "01", "11")])
+
+    try:
+        compute_vec8(
+            points_logic=pts_logic,
+            points_intensity=pts_int,
+            per_corner_intensity=per_corner,
+            design_by=["design_id"],
+            reference_design_id="REF",
+            reference_stat="mean",
+            eps_ratio=1e-12,
+            eps_range=1e-12,
+            eps_ref=1e-12,
+            eps_abs=0.0,
+            ref_add_alpha=0.0,
+            log2_offset_delta=0.0,
+        )
+        raise AssertionError("Expected ValueError for non-finite sample intensity")
+    except ValueError as e:
+        assert "non-finite intensity" in str(e).lower()
+        assert "corner 00" in str(e)
+
+
 def test_corner_order_respected_in_y_stars():
     # Different anchors per corner: 1,2,4,8 with fixed sample intensity=8
     pts_logic = _mk([{"design_id": "X", "b00": 1, "b10": 1, "b01": 1, "b11": 1}])

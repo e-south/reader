@@ -4,42 +4,84 @@ from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
-from reader.workbench.records import DataFrameArtifactRecord, record_to_dict
+from reader.errors import RegistryError
+from reader.workbench.records import DataFrameArtifactRecord, FileBundleRecord, record_to_dict
 
 from .common import format_relative_path
+
+
+def _file_paths_detail_text(paths: list[str]) -> str:
+    if not paths:
+        return "—"
+    if len(paths) == 1:
+        return paths[0]
+    parents = {str(Path(path).parent) for path in paths}
+    if len(parents) == 1:
+        return f"{len(paths)} files • {next(iter(parents))}"
+    return f"{len(paths)} files • {len(parents)} directories • first: {paths[0]}"
 
 
 def record_detail_text(record, *, base: Path) -> str:
     if isinstance(record, DataFrameArtifactRecord):
         return f"{record.contract_id} • {format_relative_path(record.path, base=base)}"
-    return ", ".join(format_relative_path(path, base=base) for path in record.files) or "—"
+    return _file_paths_detail_text([format_relative_path(path, base=base) for path in record.files])
 
 
-def record_payload(record, *, outputs_dir: Path, base: Path, revision_count: int | None = None) -> dict[str, object]:
+def record_payload_detail_text(record: dict[str, object]) -> str:
+    if record.get("kind") == "dataframe_artifact":
+        contract_id = str(record.get("contract_id") or "")
+        path = str(record.get("path") or "")
+        return " • ".join(value for value in (contract_id, path) if value) or "—"
+    files = record.get("files")
+    if not isinstance(files, list):
+        return "—"
+    return _file_paths_detail_text([str(path) for path in files if path])
+
+
+def record_payload(
+    record,
+    *,
+    outputs_dir: Path,
+    runtime=None,
+    revision_count: int | None = None,
+) -> dict[str, object]:
     payload = record_to_dict(record, outputs_dir=outputs_dir)
     payload["producer_label"] = f"{record.producer.kind}:{record.producer.id}"
-    payload["detail"] = record_detail_text(record, base=base)
+    if isinstance(record, FileBundleRecord) or runtime is not None:
+        payload["description"] = record_description(record, runtime=runtime)
     if revision_count is not None:
         payload["revision_count"] = revision_count
     return payload
+
+
+def record_description(record, *, runtime) -> str:
+    if isinstance(record, FileBundleRecord):
+        return record.description or "Description unavailable in this record."
+    plugin_id = record.producer.plugin
+    if not plugin_id:
+        return "Description unavailable because the record has no plugin id."
+    try:
+        return runtime.plugins.resolve_descriptor(plugin_id).summary
+    except RegistryError:
+        return f"Description unavailable because plugin {plugin_id!r} is not registered."
 
 
 def record_entries_payload(
     *,
     store,
     outputs_dir: Path,
-    base: Path,
+    runtime=None,
     include_history: bool = False,
 ) -> list[dict[str, object]]:
     latest_records = store.iter_latest_records()
     if not include_history:
-        return [record_payload(record, outputs_dir=outputs_dir, base=base) for record in latest_records]
+        return [record_payload(record, outputs_dir=outputs_dir, runtime=runtime) for record in latest_records]
     revision_counts = store.revision_counts(record.record_id for record in latest_records)
     return [
         record_payload(
             record,
             outputs_dir=outputs_dir,
-            base=base,
+            runtime=runtime,
             revision_count=revision_counts[record.record_id],
         )
         for record in latest_records
@@ -69,7 +111,7 @@ def record_catalog_payload(
     experiment: dict[str, object],
     store,
     outputs_dir: Path,
-    base: Path,
+    runtime=None,
     include_history: bool = False,
 ) -> dict[str, object]:
     latest_records = store.iter_latest_records()
@@ -88,7 +130,7 @@ def record_catalog_payload(
             record_payload(
                 record,
                 outputs_dir=outputs_dir,
-                base=base,
+                runtime=runtime,
                 revision_count=(revision_counts or {}).get(record.record_id),
             )
             for record in latest_records
