@@ -124,6 +124,9 @@ def promoter_evidence_figure(
     draw_handoff_family_axis(
         handoff_family_axis,
         width_ratio=_PHENOTYPE_FAMILY_GUTTER_RATIO,
+        response_ratio=str(channels["response_ratio"]),
+        magnitude_ratio=str(channels["magnitude_ratio"]),
+        reference_design_id=reference_id,
     )
     diagnostics = _draw_sequence_axis(sequence_axis, binding=binding)
     figure.suptitle(

@@ -186,6 +186,53 @@ def test_promoter_evidence_figure_connects_trajectories_handoff_and_sequence_wit
         plt.close(figure)
 
 
+def test_promoter_evidence_figure_uses_authored_channels_and_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sequence_panel_module, "require_baserender_api", lambda: _FakeBaseRender)
+    selected = _selected().copy()
+    selected["reference_design_id"] = "constitutive-anchor"
+    display = _display()
+    channels = display["channels"]
+    assert isinstance(channels, dict)
+    channels.update(
+        {
+            "response_ratio": "mCherry/mTagBFP2",
+            "magnitude_ratio": "mCherry/OD700",
+            "growth": "OD700",
+            "reference_design_id": "constitutive-anchor",
+        }
+    )
+
+    figure, _diagnostics = figure_module.promoter_evidence_figure(
+        experiment_id="experiment",
+        design_id="design",
+        reduction_id="event_logmean_6_12h_post",
+        selected=selected,
+        wells=_wells(reduction_id="event_logmean_6_12h_post").replace({"pDual-10": "constitutive-anchor"}),
+        traces=_traces().replace({"pDual-10": "constitutive-anchor"}),
+        events=pd.DataFrame([{"experiment_id": "experiment", "event_time_uncertainty_h": 0.2}]),
+        display=display,
+        binding=_binding(),
+    )
+
+    try:
+        _header, _growth, response, fluorescence, _handoff, handoff_families, _sequence = figure.axes
+        assert response.get_ylabel() == "log₂(mCherry / mTagBFP2)"
+        assert fluorescence.get_ylabel() == "log₂(mCherry / OD700)"
+        assert fluorescence.get_title() == "Fluorescence relative to\nconstitutive-anchor"
+        response_family = handoff_families.findobj(lambda artist: artist.get_gid() == "handoff-family-response-label")
+        fluorescence_family = handoff_families.findobj(
+            lambda artist: artist.get_gid() == "handoff-family-fluorescence-label"
+        )
+        assert [text.get_text() for text in response_family] == ["Response rᵢ\nlog₂(mCherry/mTagBFP2)"]
+        assert [text.get_text() for text in fluorescence_family] == [
+            "Signal bᵢ\nlog₂(mCherry/OD700)\nrelative to\nsame-state\nconstitutive-anchor"
+        ]
+    finally:
+        plt.close(figure)
+
+
 @pytest.mark.parametrize(
     ("objective_id", "objective_display_label"),
     [

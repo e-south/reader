@@ -7,11 +7,26 @@ import matplotlib.pyplot as plt
 from .plot_style import HANDOFF_FAMILY_LABEL_SIZE
 
 
-def draw_handoff_family_axis(axis: plt.Axes, *, width_ratio: float) -> None:
+def draw_handoff_family_axis(
+    axis: plt.Axes,
+    *,
+    width_ratio: float,
+    response_ratio: str,
+    magnitude_ratio: str,
+    reference_design_id: str,
+) -> None:
     """Explain the two phenotype families in a gutter beside the data panel."""
 
     if not 0.0 < width_ratio <= 1.0:
         raise ValueError("phenotype-family gutter width ratio must lie in (0, 1].")
+    labels = {
+        "response_ratio": response_ratio,
+        "magnitude_ratio": magnitude_ratio,
+        "reference_design_id": reference_design_id,
+    }
+    for name, value in labels.items():
+        if not value.strip():
+            raise ValueError(f"phenotype-family {name} must be a non-empty label.")
     axis.set_gid("promoter-evidence-response-window-phenotype-families")
     axis.set_xlim(0.0, 1.0)
     axis.set_ylim(-0.75, 8.75)
@@ -21,14 +36,14 @@ def draw_handoff_family_axis(axis: plt.Axes, *, width_ratio: float) -> None:
         axis,
         y_bottom=5.0,
         y_top=8.0,
-        text="Response rᵢ\nlog₂(YFP/CFP)",
+        text=f"Response rᵢ\nlog₂({response_ratio})",
         gid="handoff-family-response",
     )
     _draw_family_bracket(
         axis,
         y_bottom=0.0,
         y_top=3.0,
-        text=("Signal bᵢ\nlog₂(YFP/OD600)\nrelative to\nsame-state\npDual-10"),
+        text=(f"Signal bᵢ\nlog₂({magnitude_ratio})\nrelative to\nsame-state\n{reference_design_id}"),
         gid="handoff-family-fluorescence",
     )
 
