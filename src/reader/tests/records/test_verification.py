@@ -92,6 +92,27 @@ def test_verifier_rejects_latest_history_lineage_corruption(tmp_path: Path, corr
     assert "history" in report["issues"][0]["reason"]
 
 
+@pytest.mark.parametrize("corruption", ["invalid_utf8", "directory"])
+def test_verifier_reports_unreadable_catalogs_as_invalid(tmp_path: Path, corruption: str) -> None:
+    store, _record = _write_record(tmp_path)
+    if corruption == "invalid_utf8":
+        store.records_path.write_bytes(b"\xff")
+    else:
+        store.records_path.unlink()
+        store.records_path.mkdir()
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["issues"][0]["code"] == "catalog.invalid"
+    assert "records.json" in report["issues"][0]["reason"]
+
+
 def test_verifier_marks_records_from_another_reader_build_unverifiable(tmp_path: Path) -> None:
     store, _record = _write_record(tmp_path)
     catalog = json.loads(store.records_path.read_text(encoding="utf-8"))

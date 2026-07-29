@@ -105,7 +105,13 @@ class RecordStore:
         if not self.records_path.exists():
             raise RecordError("records.json is missing")
         try:
-            data = json.loads(self.records_path.read_text(encoding="utf-8"))
+            content = self.records_path.read_text(encoding="utf-8")
+        except UnicodeError as exc:
+            raise RecordError(f"records.json is not valid UTF-8: {exc}") from exc
+        except OSError as exc:
+            raise RecordError(f"Could not read records.json: {exc}") from exc
+        try:
+            data = json.loads(content)
         except json.JSONDecodeError as exc:
             raise RecordError(f"records.json is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):
