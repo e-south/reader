@@ -2,7 +2,7 @@
 doc_id: reader-architecture
 surface: architecture
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
 ---
 
@@ -73,6 +73,33 @@ alternate semantic owners.
 The repository test suite enforces the most important inverse boundary:
 `domains/` cannot import `api`, `maintenance`, `plugins`, `protocols`,
 `runtime`, or `workbench`.
+
+### Response-window capability map
+
+Response-window processing crosses several layers without giving any one
+layer all responsibilities:
+
+| Surface | Responsibility |
+| --- | --- |
+| `domains/plate_reader/analysis/response_window/` | Request contracts, source validation, reductions, aggregation, and uncertainty |
+| `domains/plate_reader/evidence/response_window/` | Bundle publication, preflight, provenance checks, and verification |
+| `domains/plate_reader/plots/response_window/` | Assay-specific review tables, figure planning, rendering, and display labels |
+| `runtime/response_window.py` | Resolve experiment declarations and records, then compose the domain service |
+| `api/response_window/` | Stable Python service and review facades |
+| `workbench/cli/response_window.py` and `workbench/notebooks/response_window.py` | Operator commands and notebook generation |
+
+This capability is not a runtime plugin: it coordinates several verified
+experiment records and publishes an aggregate experiment bundle. Its figure
+decisions are assay-specific, so they do not belong in the assay-neutral
+`reader.plotting` package.
+
+### Agent workflow surface
+
+Repository-specific agent workflows live under `.agents/skills/`, the Codex
+repository discovery root. They route agents to Reader docs and commands; they
+are not Python runtime plugins. An installable agent plugin or MCP server is
+appropriate only when a workflow must be distributed as a bundle or backed by
+live external tools, authentication, or controlled remote actions.
 
 ## Capability Flow
 
@@ -157,8 +184,6 @@ worth decomposing when a change reaches them:
   `src/reader/protocols/_builtins_plate_reader_variants.py`
 - `src/reader/protocols/compilers/plate_reader.py` remains the largest family
   compiler; `src/reader/protocols/compiler.py` is only its stable public facade
-- response-window rendering remains separate from its typed reductions and
-  verification contracts
 - notebook composition belongs under `src/reader/workbench/notebooks/`, while
   reusable calculations belong under `src/reader/domains/`
 

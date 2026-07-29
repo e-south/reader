@@ -2,7 +2,7 @@
 doc_id: reader-package-spec
 surface: architecture-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Detailed package map and implementation contracts beneath the top-level Reader architecture.
 ---
 
@@ -92,6 +92,11 @@ plugin wiring or internal graph structure.
   planner itself.
 - [`src/reader/domains/`](../../src/reader/domains/)
   owns domain math, parsing, ordering, and figure-planning logic.
+- [`src/reader/domains/plate_reader/analysis/response_window/`](../../src/reader/domains/plate_reader/analysis/response_window/)
+  owns response-window contracts and calculations; its `evidence/` package
+  owns publication and verification.
+- [`src/reader/domains/plate_reader/plots/response_window/`](../../src/reader/domains/plate_reader/plots/response_window/)
+  owns response-window-specific review tables and figures.
 - [`src/reader/plugins/`](../../src/reader/plugins/)
   owns thin execution adapters only.
 - [`src/reader/contracts/`](../../src/reader/contracts/)
@@ -104,6 +109,9 @@ plugin wiring or internal graph structure.
 - [`src/reader/api/`](../../src/reader/api/)
   owns the stable task-oriented Python surface. It delegates to the same
   declaration, engine, and verification paths as the CLI.
+- [`src/reader/api/response_window/`](../../src/reader/api/response_window/)
+  is the public Python surface for response-window preflight, build, verify,
+  and review operations.
 - [`src/reader/maintenance/`](../../src/reader/maintenance/)
   owns repository documentation and skill checks exposed through
   `reader maintain`; it is not part of experiment execution.

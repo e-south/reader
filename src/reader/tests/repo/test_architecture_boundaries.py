@@ -44,6 +44,22 @@ def test_runtime_plugin_namespace_is_a_packaged_boundary() -> None:
     assert marker.is_file(), "reader.plugins must be a regular package so wheel builds include built-in plugins"
 
 
+def test_repo_local_skills_use_the_codex_discovery_root() -> None:
+    skills_root = REPO_ROOT / ".agents" / "skills"
+
+    assert skills_root.is_dir(), "repository skills must be discoverable under .agents/skills"
+    assert not (REPO_ROOT / "skills").exists(), "do not maintain a parallel, undiscoverable skills root"
+
+
+def test_public_capability_modules_live_below_reader_api() -> None:
+    response_window_api = READER_ROOT / "api" / "response_window"
+
+    assert (response_window_api / "__init__.py").is_file()
+    assert (response_window_api / "review.py").is_file()
+    assert not (READER_ROOT / "response_window.py").exists()
+    assert not (READER_ROOT / "response_window_review.py").exists()
+
+
 def _imported_modules(node: ast.AST) -> tuple[str, ...]:
     if isinstance(node, ast.Import):
         return tuple(alias.name for alias in node.names)

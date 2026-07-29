@@ -62,9 +62,9 @@ out-of-range events, invalid reductions, insufficient coverage, digest drift,
 unsafe paths, incomplete displays, and incompatible schemas. It does not infer
 missing identity from experiment names.
 
-The Python facade is `reader.response_window`. Review-table helpers are
-available from `reader.response_window_review`; consumers do not need package
-internals.
+The Python service is `reader.api.response_window`. Review-table and figure
+helpers are available from `reader.api.response_window.review`; consumers do
+not need domain, runtime, or workbench internals.
 
 ## Related references
 
