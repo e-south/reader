@@ -124,6 +124,19 @@ class InvocationLedger:
             raise ConfigError(f"Invocation outputs directory must stay under the experiment root: {self.outputs_dir}")
         self.path = self.outputs_dir / "manifests" / "invocations.jsonl"
 
+    def reset(self) -> None:
+        """Remove prior events so the next append starts a new provenance epoch."""
+
+        manifests_dir = self._resolve_manifests_dir(create=False)
+        if manifests_dir is None:
+            return
+        if self.path.is_symlink():
+            raise ConfigError(f"Invocation ledger must not be a symlink: {self.path}")
+        try:
+            (manifests_dir / self.path.name).unlink(missing_ok=True)
+        except OSError as exc:
+            raise ExecutionError(f"Could not reset invocation ledger under outputs/manifests: {exc}") from exc
+
     def append_attempt(
         self,
         *,
@@ -205,20 +218,18 @@ class InvocationLedger:
         return {"type": type(failure).__name__, "reason": reason}
 
     def _append(self, event: dict[str, Any]) -> None:
-        manifests_dir = self.path.parent
-        manifests_dir.mkdir(parents=True, exist_ok=True)
-        resolved_parent = manifests_dir.resolve(strict=True)
-        if not resolved_parent.is_relative_to(self.experiment_root):
-            raise ConfigError(f"Invocation manifest directory must stay under the experiment root: {resolved_parent}")
+        manifests_dir = self._resolve_manifests_dir(create=True)
+        assert manifests_dir is not None
         if self.path.is_symlink():
             raise ConfigError(f"Invocation ledger must not be a symlink: {self.path}")
+        ledger_path = manifests_dir / self.path.name
 
         payload = (json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
         flags |= getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
-            descriptor = os.open(self.path, flags, 0o644)
+            descriptor = os.open(ledger_path, flags, 0o644)
         except OSError as exc:
             raise ExecutionError(f"Could not append invocation event under outputs/manifests: {exc}") from exc
         try:
@@ -245,6 +256,21 @@ class InvocationLedger:
             raise ExecutionError(f"Could not inspect invocation ledger under outputs/manifests: {exc}") from exc
         finally:
             os.close(descriptor)
+
+    def _resolve_manifests_dir(self, *, create: bool) -> Path | None:
+        manifests_dir = self.path.parent
+        if manifests_dir.is_symlink():
+            raise ConfigError(f"Invocation manifest directory must not be a symlink: {manifests_dir}")
+        if create:
+            manifests_dir.mkdir(parents=True, exist_ok=True)
+        elif not manifests_dir.exists():
+            return None
+        if manifests_dir.is_symlink():
+            raise ConfigError(f"Invocation manifest directory must not be a symlink: {manifests_dir}")
+        resolved_parent = manifests_dir.resolve(strict=True)
+        if not resolved_parent.is_relative_to(self.experiment_root):
+            raise ConfigError(f"Invocation manifest directory must stay under the experiment root: {resolved_parent}")
+        return resolved_parent
 
 
 def capture_revision_snapshot(store: Any) -> dict[str, dict[str, Any]]:

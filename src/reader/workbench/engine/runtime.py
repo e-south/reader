@@ -176,7 +176,9 @@ def run_spec(
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
     )
+    ledger = InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=out_dir)
     if reset_records:
+        ledger.reset()
         store.reset_catalog()
     ctx = build_run_context(
         decl=decl,
@@ -186,7 +188,6 @@ def run_spec(
         logger=logger,
         palette_book=resolve_palette_book(decl=decl, steps=all_steps, dry_run=False),
     )
-    ledger = InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=out_dir)
     steps_by_phase = {
         "pipeline": pipeline_steps,
         "plots": plot_steps,

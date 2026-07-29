@@ -33,7 +33,7 @@ from reader.workbench.engine.invocations import (
 from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 from reader.workbench.graph import FileRef, PluginStep, RecordRef, ResourceRef
 from reader.workbench.ports import dataframe_output
-from reader.workbench.records import RecordStore
+from reader.workbench.records import RecordStore, verify_record_store
 from reader.workbench.records.identity import BuildIdentity
 from reader.workbench.registry import Plugin, PluginConfig, Registry
 
@@ -232,6 +232,30 @@ def test_invocation_ledger_restores_previous_boundary_after_fsync_failure(
 def test_invocation_ledger_confines_outputs_to_experiment_root(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="must stay under the experiment root"):
         InvocationLedger(experiment_root=tmp_path / "experiment", outputs_dir=tmp_path / "outside")
+
+
+@pytest.mark.parametrize("target_scope", ["inside", "outside"])
+def test_invocation_ledger_reset_rejects_symlinked_manifest_parent(
+    tmp_path: Path,
+    target_scope: str,
+) -> None:
+    experiment = tmp_path / "experiment"
+    outputs = experiment / "outputs"
+    outputs.mkdir(parents=True)
+    target = experiment / "redirected-manifests" if target_scope == "inside" else tmp_path / "outside"
+    target.mkdir()
+    target_ledger = target / "invocations.jsonl"
+    target_ledger.write_text("redirected evidence\n", encoding="utf-8")
+    try:
+        (outputs / "manifests").symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    ledger = InvocationLedger(experiment_root=experiment, outputs_dir=outputs)
+
+    with pytest.raises(ConfigError, match="manifest directory must not be a symlink"):
+        ledger.reset()
+
+    assert target_ledger.read_text(encoding="utf-8") == "redirected evidence\n"
 
 
 def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
@@ -533,6 +557,54 @@ def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_p
     assert result.status == "succeeded"
     assert set(catalog["latest"]) == {"ingest/df"}
     assert catalog["latest"]["ingest/df"]["schema_version"] == 5
+
+
+def test_run_spec_reset_records_starts_a_new_invocation_epoch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    def _changed_run(self, ctx, inputs, cfg):
+        del self, ctx, inputs, cfg
+        return {"df": pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [2.0]})}
+
+    monkeypatch.setattr(_SyntheticIngest, "run", _changed_run)
+    result = run_spec(
+        decl,
+        reset_records=True,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    events = _events(tmp_path / "outputs" / "manifests" / "invocations.jsonl")
+    assert [event["event"] for event in events] == ["attempt", "result"]
+    assert {event["invocation_id"] for event in events} == {result.invocation_id}
+
+    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    record = store.latest_record("ingest/df")
+    assert record is not None
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest=record.config_digest,
+    )
+    assert report["status"] == "ok"
+    assert report["summary"]["invocations_checked"] == 1
+    assert report["summary"]["invocation_failures"] == 0
 
 
 def test_run_spec_rejects_symlinked_outputs_before_log_or_manifest_write(tmp_path: Path) -> None:

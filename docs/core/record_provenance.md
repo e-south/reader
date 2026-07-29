@@ -59,8 +59,10 @@ uv run reader run <config|dir|index> --reset-records
 ```
 
 `--reset-records` cannot be combined with `--dry-run`, `--from`, `--until`, or
-`--only`. It does not decode retired records or fabricate provenance by hashing
-files left by an older run; the complete rerun writes current evidence.
+`--only`. The reset clears both the generated record catalog and its invocation
+ledger so the complete rerun starts one coherent provenance epoch. It does not
+decode retired records or fabricate provenance by hashing files left by an
+older run; the complete rerun writes current evidence.
 
 Verification is scoped to records owned by the current compiled workbench.
 Records from removed pipeline, plot, or export surfaces do not make the current
