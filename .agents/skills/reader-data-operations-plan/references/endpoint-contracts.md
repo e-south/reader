@@ -11,9 +11,9 @@ Goal:
 
 Required evidence:
 
-- [Data Operations Plan](../../../docs/guides/data_operations_plan.md) remains
+- [Data Operations Plan](../../../../docs/guides/data_operations_plan.md) remains
   the primary DOP overview
-- [Operating model](../../../docs/guides/data_operations_plan/operating_model.md)
+- [Operating model](../../../../docs/guides/data_operations_plan/operating_model.md)
   owns DOP component boundaries
 - [External sources](./external-sources.md) records dated source rows for
   external DOP claims

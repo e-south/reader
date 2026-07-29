@@ -87,7 +87,7 @@ def test_checks_use_the_portable_default_test_lane() -> None:
 
 
 def test_reader_experiment_bootstrap_skill_routes_to_primary_guide() -> None:
-    skill_path = REPO_ROOT / "skills" / "reader-experiment-bootstrap" / "SKILL.md"
+    skill_path = REPO_ROOT / ".agents" / "skills" / "reader-experiment-bootstrap" / "SKILL.md"
     text = skill_path.read_text(encoding="utf-8")
     assert "docs/guides/experiment_bootstrap.md" in text
     assert "docs/guides/data_operations_plan.md" in text
@@ -121,11 +121,11 @@ def test_data_operations_plan_routes_to_machine_readable_registry() -> None:
 def test_data_operations_plan_routes_to_repo_skill() -> None:
     guide_path = REPO_ROOT / "docs" / "guides" / "data_operations_plan.md"
     text = guide_path.read_text(encoding="utf-8")
-    assert "../../skills/reader-data-operations-plan/SKILL.md" in text
+    assert "../../.agents/skills/reader-data-operations-plan/SKILL.md" in text
 
 
 def test_reader_data_operations_plan_skill_routes_to_owned_surfaces() -> None:
-    skill_path = REPO_ROOT / "skills" / "reader-data-operations-plan" / "SKILL.md"
+    skill_path = REPO_ROOT / ".agents" / "skills" / "reader-data-operations-plan" / "SKILL.md"
     text = skill_path.read_text(encoding="utf-8")
     assert "docs/guides/data_operations_plan.md" in text
     assert "docs/guides/data_operations_plan/operating_model.md" in text
@@ -135,7 +135,7 @@ def test_reader_data_operations_plan_skill_routes_to_owned_surfaces() -> None:
 
 
 def test_reader_data_operations_plan_skill_routes_away_from_adjacent_workflows() -> None:
-    skill_path = REPO_ROOT / "skills" / "reader-data-operations-plan" / "SKILL.md"
+    skill_path = REPO_ROOT / ".agents" / "skills" / "reader-data-operations-plan" / "SKILL.md"
     text = skill_path.read_text(encoding="utf-8")
     assert "Do not use for full experiment creation" in text
     assert "reader-experiment-bootstrap" in text
@@ -144,6 +144,6 @@ def test_reader_data_operations_plan_skill_routes_away_from_adjacent_workflows()
 
 
 def test_repo_skill_index_lists_data_operations_plan_skill() -> None:
-    skill_index_path = REPO_ROOT / "skills" / "README.md"
+    skill_index_path = REPO_ROOT / ".agents" / "skills" / "README.md"
     text = skill_index_path.read_text(encoding="utf-8")
     assert "./reader-data-operations-plan/SKILL.md" in text

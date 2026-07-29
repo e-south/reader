@@ -72,16 +72,16 @@ Clarification policy:
 
 1. Choose one mode: `classification`, `intake-support`, or `maintenance`.
 2. Start with
-   [docs/guides/data_operations_plan.md](../../docs/guides/data_operations_plan.md)
+   [docs/guides/data_operations_plan.md](../../../docs/guides/data_operations_plan.md)
    and load only the smallest referenced page needed for the decision.
-3. Use [Operating model](../../docs/guides/data_operations_plan/operating_model.md)
+3. Use [Operating model](../../../docs/guides/data_operations_plan/operating_model.md)
    when the task changes DOP ownership, repo routing, or maintenance policy.
 4. Use `uv run reader dop classes --format json` for data-class and
    protocol-candidate facts instead of parsing prose tables.
 5. Use `uv run reader dop ready-specs --format json` for ready-spec gates and
    evidence expectations.
 6. For experiment creation, route into
-   [Experiment bootstrap](../../docs/guides/experiment_bootstrap.md) after the
+   [Experiment bootstrap](../../../docs/guides/experiment_bootstrap.md) after the
    data class and metadata stop conditions are known.
 7. For DOP maintenance, use [Workflow reference](./references/workflow.md) and
    keep each fact in its owned surface.

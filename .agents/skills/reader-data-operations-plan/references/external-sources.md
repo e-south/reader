@@ -2,11 +2,11 @@
 
 This skill is grounded first in repository sources:
 
-- [Data Operations Plan](../../../docs/guides/data_operations_plan.md)
-- [Operating model](../../../docs/guides/data_operations_plan/operating_model.md)
-- [DOP registry](../../../src/reader/workbench/dop/)
-- [Experiment bootstrap](../../../docs/guides/experiment_bootstrap.md)
-- [Repo change gate](../../../docs/repo-change-gate.md)
+- [Data Operations Plan](../../../../docs/guides/data_operations_plan.md)
+- [Operating model](../../../../docs/guides/data_operations_plan/operating_model.md)
+- [DOP registry](../../../../src/reader/workbench/dop/)
+- [Experiment bootstrap](../../../../docs/guides/experiment_bootstrap.md)
+- [Repo change gate](../../../../docs/repo-change-gate.md)
 
 External source rows:
 

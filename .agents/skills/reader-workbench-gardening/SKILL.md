@@ -88,7 +88,7 @@ aligned with:
 ## Workflow
 
 1. Treat
-   [docs/guides/workbench_gardening.md](../../docs/guides/workbench_gardening.md)
+   [docs/guides/workbench_gardening.md](../../../docs/guides/workbench_gardening.md)
    as the primary workflow. This skill stays thin and routes to that guide.
 2. Use [Workflow reference](./references/workflow.md) to choose the mode and
    read order before making claims or edits.
@@ -97,7 +97,7 @@ aligned with:
    registry coverage, or DOP policy maintenance, route to
    `reader-data-operations-plan`. If branch state, publish flow, or CI topology
    becomes material, continue into
-   [docs/repo-maintenance.md](../../docs/repo-maintenance.md).
+   [docs/repo-maintenance.md](../../../docs/repo-maintenance.md).
 4. Use [Checklists](./references/checklists.md) to look for monolith pressure,
    assay lock-in, stale semantics, doc drift, harness drift, and directory
    boundary violations.
@@ -111,7 +111,7 @@ aligned with:
    introduces claims that rely on tooling, standards, or behavior outside this
    repository.
 9. If tracked docs or code changed, close through
-   [docs/repo-change-gate.md](../../docs/repo-change-gate.md).
+   [docs/repo-change-gate.md](../../../docs/repo-change-gate.md).
 
 ## Guardrails
 

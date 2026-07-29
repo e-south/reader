@@ -2,7 +2,7 @@
 doc_id: reader-data-operations-plan
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Entry point for classifying datasets and recording metadata, transfer, readiness, and verification decisions.
 ---
 
@@ -46,7 +46,7 @@ uv run reader dop ready-specs --format json
 ```
 
 Repo-local agent routing lives in
-[reader-data-operations-plan](../../skills/reader-data-operations-plan/SKILL.md).
+[reader-data-operations-plan](../../.agents/skills/reader-data-operations-plan/SKILL.md).
 Use that skill when the task is DOP classification, DOP registry/docs
 maintenance, or checking that experiment-intake guidance still matches this
 overlay.

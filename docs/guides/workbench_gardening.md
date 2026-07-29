@@ -2,7 +2,7 @@
 doc_id: reader-workbench-gardening
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Maintainer workflow for bounded reader architecture, documentation, CLI, and verification gardening.
 ---
 
@@ -167,8 +167,8 @@ Look for these failure modes:
   - removed behavior or hidden defaults are trying to return through shims or
     ambiguous docs
 
-Use the repo-local checklist at
-[skills/reader-workbench-gardening/references/checklists.md](../../skills/reader-workbench-gardening/references/checklists.md)
+Use the repo-local
+[workbench checklist](../../.agents/skills/reader-workbench-gardening/references/checklists.md)
 to keep this pass concrete.
 
 ### 4. Choose the smallest reversible slice

@@ -63,7 +63,7 @@ REQUIRED_LINKS = {
     },
     "docs/guides/data_operations_plan.md": {
         "../../src/reader/workbench/dop/",
-        "../../skills/reader-data-operations-plan/SKILL.md",
+        "../../.agents/skills/reader-data-operations-plan/SKILL.md",
         "./data_operations_plan/operating_model.md",
         "./data_operations_plan/data_classes.md",
         "./data_operations_plan/metadata_minimums.md",
@@ -71,10 +71,10 @@ REQUIRED_LINKS = {
         "./experiment_bootstrap.md",
         "./preflight_run_verify.md",
     },
-    "skills/reader-data-operations-plan/SKILL.md": {
-        "../../docs/guides/data_operations_plan.md",
-        "../../docs/guides/data_operations_plan/operating_model.md",
-        "../../docs/guides/experiment_bootstrap.md",
+    ".agents/skills/reader-data-operations-plan/SKILL.md": {
+        "../../../docs/guides/data_operations_plan.md",
+        "../../../docs/guides/data_operations_plan/operating_model.md",
+        "../../../docs/guides/experiment_bootstrap.md",
         "./references/endpoint-contracts.md",
         "./references/external-sources.md",
         "./references/test-matrix.md",
