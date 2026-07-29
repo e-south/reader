@@ -1,18 +1,63 @@
-<svg width="1280" height="260" viewBox="0 0 1280 260" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="readerGradient" x1="0" y1="0" x2="1280" y2="260" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0D3B66"/>
-      <stop offset="0.55" stop-color="#1D6F8C"/>
-      <stop offset="1" stop-color="#A44A3F"/>
-    </linearGradient>
-  </defs>
-  <rect width="1280" height="260" rx="28" fill="url(#readerGradient)"/>
-  <rect x="36" y="36" width="1208" height="188" rx="20" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.18"/>
-  <text x="84" y="120" fill="#F9F7F1" font-family="Menlo, Monaco, Consolas, monospace" font-size="58" font-weight="700">reader</text>
-  <text x="86" y="168" fill="#DCE9F2" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">
-    protocol-driven experimental workbench
-  </text>
-  <text x="86" y="202" fill="#DCE9F2" font-family="Menlo, Monaco, Consolas, monospace" font-size="20">
-    author in YAML • inspect in CLI • compile to deterministic runtime plans
-  </text>
+<svg width="1280" height="260" viewBox="0 0 1280 260" fill="none" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  <title>Reader experimental-data workbench</title>
+  <desc>A lo-fi pixel-art pipeline turning instrument data into validated records and plots.</desc>
+
+  <rect width="1280" height="260" fill="#0B1020"/>
+  <rect x="8" y="8" width="1264" height="244" fill="#11182B" stroke="#56657F" stroke-width="8"/>
+  <rect x="20" y="20" width="1240" height="28" fill="#1B2740"/>
+  <rect x="32" y="28" width="12" height="12" fill="#F06C75"/>
+  <rect x="52" y="28" width="12" height="12" fill="#E9C46A"/>
+  <rect x="72" y="28" width="12" height="12" fill="#63C29B"/>
+  <text x="104" y="41" fill="#8FA3BF" font-family="Menlo, Monaco, Consolas, monospace" font-size="14">reader://workbench</text>
+
+  <g fill="#172139">
+    <rect x="36" y="64" width="8" height="8"/><rect x="52" y="64" width="8" height="8"/><rect x="68" y="64" width="8" height="8"/>
+    <rect x="1160" y="216" width="8" height="8"/><rect x="1176" y="216" width="8" height="8"/><rect x="1192" y="216" width="8" height="8"/>
+    <rect x="1216" y="72" width="8" height="8"/><rect x="1232" y="72" width="8" height="8"/>
+  </g>
+
+  <text x="60" y="132" fill="#F2F5EA" font-family="Menlo, Monaco, Consolas, monospace" font-size="62" font-weight="700" letter-spacing="4">READER</text>
+  <rect x="62" y="148" width="380" height="4" fill="#63C29B"/>
+  <text x="62" y="180" fill="#B8C7D9" font-family="Menlo, Monaco, Consolas, monospace" font-size="19">EXPERIMENTAL DATA WORKBENCH</text>
+  <text x="62" y="211" fill="#8294AD" font-family="Menlo, Monaco, Consolas, monospace" font-size="15">INGEST  /  TRANSFORM  /  PLOT  /  TRACE</text>
+
+  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="13" text-anchor="middle">
+    <rect x="520" y="100" width="116" height="72" fill="#172139" stroke="#3C91A3" stroke-width="4"/>
+    <rect x="532" y="112" width="92" height="12" fill="#233653"/>
+    <rect x="532" y="132" width="56" height="8" fill="#3C91A3"/>
+    <rect x="532" y="148" width="76" height="8" fill="#56657F"/>
+    <text x="578" y="194" fill="#8FA3BF">RAW</text>
+
+    <path d="M648 132H688V120L712 136L688 152V140H648V132Z" fill="#E9C46A"/>
+
+    <rect x="724" y="100" width="116" height="72" fill="#172139" stroke="#63C29B" stroke-width="4"/>
+    <rect x="740" y="116" width="16" height="16" fill="#63C29B"/>
+    <rect x="764" y="116" width="16" height="16" fill="#3C91A3"/>
+    <rect x="788" y="116" width="16" height="16" fill="#E9C46A"/>
+    <rect x="740" y="140" width="64" height="12" fill="#56657F"/>
+    <text x="782" y="194" fill="#8FA3BF">RECORD</text>
+
+    <path d="M852 132H892V120L916 136L892 152V140H852V132Z" fill="#E9C46A"/>
+
+    <rect x="928" y="100" width="116" height="72" fill="#172139" stroke="#A78BFA" stroke-width="4"/>
+    <rect x="944" y="144" width="12" height="12" fill="#3C91A3"/>
+    <rect x="964" y="128" width="12" height="28" fill="#63C29B"/>
+    <rect x="984" y="116" width="12" height="40" fill="#E9C46A"/>
+    <rect x="1004" y="136" width="12" height="20" fill="#A78BFA"/>
+    <text x="986" y="194" fill="#8FA3BF">PLOT</text>
+  </g>
+
+  <g transform="translate(1090 82)">
+    <rect x="44" y="0" width="8" height="20" fill="#8FA3BF"/>
+    <rect x="36" y="0" width="24" height="8" fill="#E9C46A"/>
+    <rect x="12" y="20" width="72" height="64" fill="#263653" stroke="#8FA3BF" stroke-width="4"/>
+    <rect x="24" y="36" width="12" height="12" fill="#63C29B"/>
+    <rect x="60" y="36" width="12" height="12" fill="#63C29B"/>
+    <rect x="32" y="60" width="32" height="8" fill="#A78BFA"/>
+    <rect x="0" y="40" width="12" height="24" fill="#56657F"/>
+    <rect x="84" y="40" width="12" height="24" fill="#56657F"/>
+    <rect x="24" y="84" width="12" height="16" fill="#56657F"/>
+    <rect x="60" y="84" width="12" height="16" fill="#56657F"/>
+    <text x="48" y="122" fill="#8FA3BF" font-family="Menlo, Monaco, Consolas, monospace" font-size="12" text-anchor="middle">AGENT READY</text>
+  </g>
 </svg>
