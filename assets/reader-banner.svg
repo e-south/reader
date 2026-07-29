@@ -1,54 +1,64 @@
 <svg width="1280" height="260" viewBox="0 0 1280 260" fill="none" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
   <title>Reader experimental-data workbench</title>
-  <desc>A lo-fi pixel-art pipeline for ingesting, transforming, plotting, and tracing experimental data.</desc>
+  <desc>A minimal lo-fi pipeline for ingesting, transforming, plotting, and tracing experimental data.</desc>
 
-  <rect width="1280" height="260" fill="#0B1020"/>
-  <rect x="8" y="8" width="1264" height="244" fill="#11182B" stroke="#56657F" stroke-width="8"/>
-  <rect x="20" y="20" width="1240" height="28" fill="#1B2740"/>
-  <rect x="32" y="28" width="12" height="12" fill="#F06C75"/>
-  <rect x="52" y="28" width="12" height="12" fill="#E9C46A"/>
-  <rect x="72" y="28" width="12" height="12" fill="#63C29B"/>
-  <text x="104" y="41" fill="#8FA3BF" font-family="Menlo, Monaco, Consolas, monospace" font-size="14">reader://workbench</text>
+  <rect width="1280" height="260" fill="#F3EFE7"/>
+  <rect x="8" y="8" width="1264" height="244" stroke="#1E1D1A" stroke-width="4"/>
+  <rect x="8" y="8" width="20" height="20" fill="#D97757"/>
 
-  <text x="60" y="132" fill="#F2F5EA" font-family="Menlo, Monaco, Consolas, monospace" font-size="62" font-weight="700" letter-spacing="4">READER</text>
-  <rect x="62" y="148" width="380" height="4" fill="#63C29B"/>
-  <text x="62" y="180" fill="#B8C7D9" font-family="Menlo, Monaco, Consolas, monospace" font-size="19">EXPERIMENTAL DATA WORKBENCH</text>
-  <text x="62" y="211" fill="#8294AD" font-family="Menlo, Monaco, Consolas, monospace" font-size="15">INGEST  /  TRANSFORM  /  PLOT  /  TRACE</text>
+  <text x="52" y="53" fill="#6B6861" font-family="Menlo, Monaco, Consolas, monospace" font-size="13" letter-spacing="1.5">EXPERIMENTAL DATA / WORKBENCH</text>
+  <text x="48" y="137" fill="#1E1D1A" font-family="Menlo, Monaco, Consolas, monospace" font-size="68" font-weight="700" letter-spacing="2">READER</text>
+  <rect x="52" y="154" width="328" height="4" fill="#D97757"/>
+  <text x="52" y="190" fill="#46443F" font-family="Menlo, Monaco, Consolas, monospace" font-size="17">RAW SOURCES TO TRACEABLE OUTPUTS</text>
+  <text x="52" y="218" fill="#858178" font-family="Menlo, Monaco, Consolas, monospace" font-size="13">ONE EXPERIMENT / ONE UNIT OF WORK</text>
 
-  <g font-family="Menlo, Monaco, Consolas, monospace" font-size="13" text-anchor="middle">
-    <rect x="502" y="100" width="126" height="72" fill="#172139" stroke="#3C91A3" stroke-width="4"/>
-    <rect x="514" y="112" width="102" height="12" fill="#233653"/>
-    <rect x="514" y="132" width="62" height="8" fill="#3C91A3"/>
-    <rect x="514" y="148" width="82" height="8" fill="#56657F"/>
-    <text x="565" y="194" fill="#8FA3BF">RAW</text>
+  <g font-family="Menlo, Monaco, Consolas, monospace" text-anchor="middle">
+    <g transform="translate(500 72)">
+      <text x="62" y="0" fill="#858178" font-size="11">01</text>
+      <rect x="0" y="16" width="124" height="88" stroke="#1E1D1A" stroke-width="3"/>
+      <rect x="18" y="36" width="88" height="8" fill="#D6D0C4"/>
+      <rect x="18" y="52" width="54" height="8" fill="#1E1D1A"/>
+      <rect x="18" y="68" width="72" height="8" fill="#858178"/>
+      <text x="62" y="130" fill="#1E1D1A" font-size="12" font-weight="700">INGEST</text>
+    </g>
 
-    <path d="M638 132H650V120L670 136L650 152V140H638V132Z" fill="#E9C46A"/>
+    <path d="M632 126H648V120L660 132L648 144V138H632V126Z" fill="#D97757"/>
 
-    <rect x="674" y="100" width="126" height="72" fill="#172139" stroke="#63C29B" stroke-width="4"/>
-    <rect x="690" y="116" width="16" height="16" fill="#63C29B"/>
-    <rect x="714" y="116" width="16" height="16" fill="#3C91A3"/>
-    <rect x="738" y="116" width="16" height="16" fill="#E9C46A"/>
-    <rect x="690" y="140" width="80" height="12" fill="#56657F"/>
-    <text x="737" y="194" fill="#8FA3BF">RECORD</text>
+    <g transform="translate(668 72)">
+      <text x="62" y="0" fill="#858178" font-size="11">02</text>
+      <rect x="0" y="16" width="124" height="88" stroke="#1E1D1A" stroke-width="3"/>
+      <rect x="20" y="40" width="16" height="16" fill="#1E1D1A"/>
+      <rect x="44" y="40" width="16" height="16" fill="#D97757"/>
+      <rect x="68" y="40" width="16" height="16" fill="#1E1D1A"/>
+      <rect x="20" y="68" width="64" height="8" fill="#858178"/>
+      <text x="62" y="130" fill="#1E1D1A" font-size="12" font-weight="700">TRANSFORM</text>
+    </g>
 
-    <path d="M810 132H822V120L842 136L822 152V140H810V132Z" fill="#E9C46A"/>
+    <path d="M800 126H816V120L828 132L816 144V138H800V126Z" fill="#D97757"/>
 
-    <rect x="846" y="100" width="126" height="72" fill="#172139" stroke="#A78BFA" stroke-width="4"/>
-    <rect x="864" y="144" width="12" height="12" fill="#3C91A3"/>
-    <rect x="884" y="128" width="12" height="28" fill="#63C29B"/>
-    <rect x="904" y="116" width="12" height="40" fill="#E9C46A"/>
-    <rect x="924" y="136" width="12" height="20" fill="#A78BFA"/>
-    <text x="909" y="194" fill="#8FA3BF">PLOT</text>
+    <g transform="translate(836 72)">
+      <text x="62" y="0" fill="#858178" font-size="11">03</text>
+      <rect x="0" y="16" width="124" height="88" stroke="#1E1D1A" stroke-width="3"/>
+      <rect x="20" y="68" width="14" height="12" fill="#1E1D1A"/>
+      <rect x="44" y="52" width="14" height="28" fill="#1E1D1A"/>
+      <rect x="68" y="34" width="14" height="46" fill="#D97757"/>
+      <rect x="92" y="60" width="14" height="20" fill="#1E1D1A"/>
+      <text x="62" y="130" fill="#1E1D1A" font-size="12" font-weight="700">PLOT</text>
+    </g>
 
-    <path d="M982 132H994V120L1014 136L994 152V140H982V132Z" fill="#E9C46A"/>
+    <path d="M968 126H984V120L996 132L984 144V138H968V126Z" fill="#D97757"/>
 
-    <rect x="1018" y="100" width="126" height="72" fill="#172139" stroke="#E9C46A" stroke-width="4"/>
-    <rect x="1034" y="116" width="12" height="12" fill="#3C91A3"/>
-    <rect x="1058" y="116" width="70" height="8" fill="#56657F"/>
-    <rect x="1034" y="134" width="12" height="12" fill="#63C29B"/>
-    <rect x="1058" y="134" width="50" height="8" fill="#56657F"/>
-    <rect x="1034" y="152" width="12" height="8" fill="#A78BFA"/>
-    <rect x="1058" y="152" width="62" height="8" fill="#56657F"/>
-    <text x="1081" y="194" fill="#8FA3BF">TRACE</text>
+    <g transform="translate(1004 72)">
+      <text x="62" y="0" fill="#858178" font-size="11">04</text>
+      <rect x="0" y="16" width="124" height="88" stroke="#1E1D1A" stroke-width="3"/>
+      <rect x="18" y="36" width="10" height="10" fill="#D97757"/>
+      <rect x="38" y="37" width="68" height="7" fill="#1E1D1A"/>
+      <rect x="18" y="54" width="10" height="10" fill="#1E1D1A"/>
+      <rect x="38" y="55" width="50" height="7" fill="#858178"/>
+      <rect x="18" y="72" width="10" height="8" fill="#1E1D1A"/>
+      <rect x="38" y="73" width="60" height="7" fill="#858178"/>
+      <text x="62" y="130" fill="#1E1D1A" font-size="12" font-weight="700">TRACE</text>
+    </g>
   </g>
+
 </svg>
