@@ -49,6 +49,17 @@ def test_hidden_test_results_are_uploaded_or_fail_explicitly() -> None:
     assert upload["with"]["if-no-files-found"] == "error"
 
 
+def test_parallel_jobs_use_one_uv_cache_writer() -> None:
+    jobs = _workflow("checks.yaml")["jobs"]
+    setup_steps = {
+        job_name: next(step for step in jobs[job_name]["steps"] if "astral-sh/setup-uv@" in str(step.get("uses", "")))
+        for job_name in ("package", "tests")
+    }
+
+    assert setup_steps["package"]["with"]["save-cache"] is False
+    assert "save-cache" not in setup_steps["tests"]["with"]
+
+
 def test_release_oidc_is_limited_to_publish_job() -> None:
     jobs = _workflow("release.yaml")["jobs"]
 
