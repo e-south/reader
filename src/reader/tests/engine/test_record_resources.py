@@ -7,13 +7,14 @@ import pytest
 from rich.console import Console
 
 from reader.contracts import builtin_contract_catalog
-from reader.errors import ConfigError
+from reader.errors import ConfigError, RecordError
 from reader.protocols.builtins import builtin_protocol_catalog
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.decl import load_workbench_decl
 from reader.workbench.engine import run_spec
 from reader.workbench.experiments import ExperimentCatalog
-from reader.workbench.records import RecordStore, verify_record_store
+from reader.workbench.graph import ProvenanceInput, SourceRecordRef
+from reader.workbench.records import RecordStore, SourceRecordCollection, resolve_source_record, verify_record_store
 
 
 def _vec8(prefix: str, *, shift: float = 0.0) -> pd.DataFrame:
@@ -128,6 +129,61 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
     assert changed["status"] == "failed"
     issues = [issue for item in changed["records"] for issue in item["issues"]]
     assert any(issue["code"] == "input.source_record_revision_mismatch" for issue in issues)
+
+
+def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: Path) -> None:
+    source_config, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    source_ref = SourceRecordRef(
+        resource_id="first",
+        experiment_id="source-a",
+        record_id="vec8/df",
+        experiment_root=source_config.parent,
+        outputs_dir=source_store.root,
+    )
+    resolved = resolve_source_record(source_ref, contracts=builtin_contract_catalog())
+    collection = SourceRecordCollection((resolved,))
+
+    source_store.persist_dataframe(
+        producer_id="vec8",
+        producer_plugin="transform/sfxi",
+        out_name="vec8",
+        record_id="vec8/df",
+        df=_vec8("a", shift=0.5),
+        contract_id="sfxi.vec8.v3",
+        inputs=(),
+        config_digest="sha256:source-a-updated",
+    )
+
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_store = RecordStore(
+        aggregate_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=aggregate_root,
+    )
+    captured = aggregate_store.capture_inputs(
+        [ProvenanceInput(label="sources[first]", ref=source_ref)],
+        resolved_inputs={"sources": collection},
+    )
+
+    assert captured[0].record_revision_digest == resolved.revision_digest
+    with pytest.raises(RecordError, match="changed after input evidence was captured"):
+        aggregate_store.persist_dataframe(
+            producer_id="collect",
+            producer_plugin="transform/sfxi_vec8_collection",
+            out_name="vec8",
+            record_id="collect/vec8",
+            df=_vec8("aggregate"),
+            contract_id="sfxi.vec8.v3",
+            inputs=captured,
+            config_digest="sha256:aggregate-a",
+        )
+    assert aggregate_store.latest_dataframe("collect/vec8") is None
+
+
+def test_vec8_collection_contract_is_not_a_single_source_vec8() -> None:
+    contracts = builtin_contract_catalog()
+
+    assert not contracts.satisfies(actual="sfxi.vec8_collection.v1", expected="sfxi.vec8.v3")
 
 
 def test_missing_source_record_fails_before_aggregate_output_mutation(tmp_path: Path) -> None:

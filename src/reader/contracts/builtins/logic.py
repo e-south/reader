@@ -57,7 +57,6 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             *_sfxi_vec8_columns(),
         ],
         unique_keys=[["source_id", "design_id"]],
-        parents=("sfxi.vec8.v3",),
         domain="logic",
         kind="logic-summary-collection",
     ),
