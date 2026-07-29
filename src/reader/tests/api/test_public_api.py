@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 import reader as reader_package
@@ -84,6 +85,57 @@ def test_experiment_read_surfaces_return_typed_results(tmp_path: Path) -> None:
     assert verification.status == "failed"
     assert verification.issues[0]["code"] == "catalog.missing"
     assert not (config_path.parent / "outputs").exists()
+
+
+def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="example",
+            protocol_id="plate_reader/dual_reporter_screen",
+            protocol_analysis={"include_fold_change": False},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+            annotations={
+                "labels": {
+                    "design_id": {
+                        "source": "design_id",
+                        "output": "design_id_alias",
+                        "values": {},
+                    }
+                }
+            },
+        ),
+    )
+    experiment = open_experiment(config_path)
+    layout = experiment.declaration.experiment_semantics.layout
+    store = experiment.runtime.record_store(
+        layout.outputs_dir,
+        plots_subdir=layout.plots_subdir,
+        exports_subdir=layout.exports_subdir,
+        experiment_root=experiment.declaration.experiment.root,
+    )
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    for producer_id, record_id, config_digest in (
+        ("ingest", "ingest/df", experiment.declaration.config_digest),
+        ("retired", "retired/df", "sha256:retired-config"),
+    ):
+        store.persist_dataframe(
+            producer_id=producer_id,
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=frame,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+            producer_config_digest=f"sha256:{producer_id}",
+        )
+
+    result = verify(experiment)
+
+    assert result.status == "ok"
+    assert result.summary == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert [record["record_id"] for record in result.records] == ["ingest/df"]
 
 
 def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: Path, capsys) -> None:

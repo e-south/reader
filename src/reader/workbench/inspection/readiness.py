@@ -159,15 +159,19 @@ def experiment_readiness_payload(
     records_available = False
     record_catalog_error: str | None = None
     verification_report: dict[str, object] | None = None
+    verification_scope = workbench_record_verification_scope(workbench, runtime=runtime)
     if records_catalog:
         try:
-            records_available = bool(store.iter_latest_records())
+            current_records = tuple(
+                record for record in store.iter_latest_records() if verification_scope.includes(record)
+            )
+            records_available = bool(current_records)
             if records_available:
                 verification_report = verify_record_store(
                     store,
                     experiment_root=decl.experiment.root,
                     expected_config_digest=decl.config_digest,
-                    scope=workbench_record_verification_scope(workbench, runtime=runtime),
+                    scope=verification_scope,
                 )
         except RecordError as exc:
             record_catalog_error = str(exc)

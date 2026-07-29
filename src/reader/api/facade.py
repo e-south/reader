@@ -22,6 +22,7 @@ from reader.workbench.inspection.experiments import (
     experiment_inspect_payload,
 )
 from reader.workbench.inspection.results import record_catalog_payload
+from reader.workbench.inspection.runtime import workbench_record_verification_scope
 from reader.workbench.records import verify_record_store
 
 from .models import (
@@ -209,6 +210,7 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
 def verify(experiment: Experiment) -> VerificationResult:
     """Verify the current catalog without creating or changing experiment outputs."""
     decl = experiment.declaration
+    workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
     store = experiment.runtime.record_store(
         layout.outputs_dir,
@@ -221,6 +223,7 @@ def verify(experiment: Experiment) -> VerificationResult:
         store,
         experiment_root=decl.experiment.root,
         expected_config_digest=decl.config_digest,
+        scope=workbench_record_verification_scope(workbench, runtime=experiment.runtime),
     )
     return VerificationResult(
         experiment=experiment.identity,
