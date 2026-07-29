@@ -8,11 +8,11 @@ Use this reference when the top-level skill needs a reminder of the concrete
 Start with the Data Operations Plan overview and load only the reference needed
 for the current decision:
 
-- [Data classes](../../../docs/guides/data_operations_plan/data_classes.md)
+- [Data classes](../../../../docs/guides/data_operations_plan/data_classes.md)
   for the class/protocol decision.
-- [Metadata minimums](../../../docs/guides/data_operations_plan/metadata_minimums.md)
+- [Metadata minimums](../../../../docs/guides/data_operations_plan/metadata_minimums.md)
   when building or reviewing sample maps and config metadata.
-- [Transfer and verification](../../../docs/guides/data_operations_plan/transfer_and_verification.md)
+- [Transfer and verification](../../../../docs/guides/data_operations_plan/transfer_and_verification.md)
   when staging inputs and proving outputs.
 
 ```bash

@@ -1,7 +1,7 @@
 # Workflow reference
 
 Use this reference while following
-[docs/guides/workbench_gardening.md](../../../docs/guides/workbench_gardening.md).
+[docs/guides/workbench_gardening.md](../../../../docs/guides/workbench_gardening.md).
 
 ## Mode selection
 
@@ -19,19 +19,19 @@ Use this reference while following
     maintainers
 
 If the task expands into branch state, publish flow, or CI topology, continue
-into [docs/repo-maintenance.md](../../../docs/repo-maintenance.md).
+into [docs/repo-maintenance.md](../../../../docs/repo-maintenance.md).
 
 ## Read order
 
-1. [ARCHITECTURE.md](../../../ARCHITECTURE.md)
-2. [DESIGN.md](../../../DESIGN.md)
-3. [QUALITY.md](../../../QUALITY.md) when the task changes quality or review
+1. [ARCHITECTURE.md](../../../../ARCHITECTURE.md)
+2. [DESIGN.md](../../../../DESIGN.md)
+3. [QUALITY.md](../../../../QUALITY.md) when the task changes quality or review
    expectations
-4. [RELIABILITY.md](../../../RELIABILITY.md) when the task changes preflight,
+4. [RELIABILITY.md](../../../../RELIABILITY.md) when the task changes preflight,
    run, verify, or recovery behavior
-5. [docs/repo-maintenance.md](../../../docs/repo-maintenance.md) when the task
+5. [docs/repo-maintenance.md](../../../../docs/repo-maintenance.md) when the task
    crosses repo boundaries, CI, or publish surfaces
-6. [docs/repo-change-gate.md](../../../docs/repo-change-gate.md) before
+6. [docs/repo-change-gate.md](../../../../docs/repo-change-gate.md) before
    finalizing tracked changes
 
 ## Minimal audit loop

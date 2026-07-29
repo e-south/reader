@@ -21,16 +21,16 @@ workspace creation, finish the DOP decision and hand off to
 
 ## Read Order
 
-1. [Data Operations Plan](../../../docs/guides/data_operations_plan.md)
-2. [Operating model](../../../docs/guides/data_operations_plan/operating_model.md)
+1. [Data Operations Plan](../../../../docs/guides/data_operations_plan.md)
+2. [Operating model](../../../../docs/guides/data_operations_plan/operating_model.md)
    when the task changes ownership or maintenance policy
-3. [Data classes](../../../docs/guides/data_operations_plan/data_classes.md)
+3. [Data classes](../../../../docs/guides/data_operations_plan/data_classes.md)
    for class and protocol selection
-4. [Metadata minimums](../../../docs/guides/data_operations_plan/metadata_minimums.md)
+4. [Metadata minimums](../../../../docs/guides/data_operations_plan/metadata_minimums.md)
    for required capture and stop conditions
-5. [Transfer and verification](../../../docs/guides/data_operations_plan/transfer_and_verification.md)
+5. [Transfer and verification](../../../../docs/guides/data_operations_plan/transfer_and_verification.md)
    for staging and evidence checks
-6. [Experiment bootstrap](../../../docs/guides/experiment_bootstrap.md) only
+6. [Experiment bootstrap](../../../../docs/guides/experiment_bootstrap.md) only
    after the DOP decision is made
 
 ## Command Loop
@@ -62,7 +62,7 @@ prove DOP classification.
 | DOP data-class ids, protocol candidates, stop conditions, transfer rules, ready-spec gates | `src/reader/workbench/dop/` | Update registry and targeted tests first when automation consumes the fact. |
 | DOP overview and operator explanation | `docs/guides/data_operations_plan.md` and subpages | Keep pages short and link to the owned source instead of duplicating tables. |
 | Experiment creation procedure | `docs/guides/experiment_bootstrap.md` and `reader-experiment-bootstrap` | Start after DOP classification and metadata stop conditions are known. |
-| Agent routing | `skills/reader-data-operations-plan/` | Route to docs and CLI; do not become a long policy document. |
+| Agent routing | `.agents/skills/reader-data-operations-plan/` | Route to docs and CLI; do not become a long policy document. |
 | Executable assay semantics | `src/reader/protocols/` | Add or change protocols only when intake policy is not enough. |
 | Generated evidence | `outputs/manifests/records.json` | Verify outputs through records; do not use generated files as source inputs. |
 

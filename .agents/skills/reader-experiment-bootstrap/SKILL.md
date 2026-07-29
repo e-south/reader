@@ -57,15 +57,15 @@ Clarification policy:
 
 ## Workflow
 
-1. Start with the [Data Operations Plan](../../docs/guides/data_operations_plan.md)
+1. Start with the [Data Operations Plan](../../../docs/guides/data_operations_plan.md)
    overview before copying a template or authoring config.
-2. Load [Data classes](../../docs/guides/data_operations_plan/data_classes.md)
+2. Load [Data classes](../../../docs/guides/data_operations_plan/data_classes.md)
    only for the class/protocol decision, then load
-   [Metadata minimums](../../docs/guides/data_operations_plan/metadata_minimums.md)
+   [Metadata minimums](../../../docs/guides/data_operations_plan/metadata_minimums.md)
    or
-   [Transfer and verification](../../docs/guides/data_operations_plan/transfer_and_verification.md)
+   [Transfer and verification](../../../docs/guides/data_operations_plan/transfer_and_verification.md)
    only when that part of the intake is active.
-3. Treat [docs/guides/experiment_bootstrap.md](../../docs/guides/experiment_bootstrap.md)
+3. Treat [docs/guides/experiment_bootstrap.md](../../../docs/guides/experiment_bootstrap.md)
    as the primary workflow. This skill stays thin and routes to that guide.
 4. Use [Workflow reference](./references/workflow.md) only for the concrete
    command list while following the guide.

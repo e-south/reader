@@ -20,15 +20,15 @@ The unit of work is an **experiment directory**:
 - Source code: `src/reader/`
 - Tests: `src/reader/tests/`
 - Docs: `docs/`
-- Skills: `skills/` (repo-specific agent workflows)
+- Skills: `.agents/skills/` (Codex-discoverable repo workflows)
 - Experiments: `experiments/` (experiment directories)
 
 ### Agent map
 - Keep `AGENTS.md` short. Detailed workflow guidance belongs in `docs/`.
-- For Data Operations Plan classification, registry/docs alignment, or DOP maintenance, use `docs/guides/data_operations_plan.md` and `skills/reader-data-operations-plan/SKILL.md`.
-- For new experiment intake, metadata mapping, or Google Drive-backed workspace creation, use `docs/guides/experiment_bootstrap.md` and `skills/reader-experiment-bootstrap/SKILL.md`.
+- For Data Operations Plan classification, registry/docs alignment, or DOP maintenance, use `docs/guides/data_operations_plan.md` and `.agents/skills/reader-data-operations-plan/SKILL.md`.
+- For new experiment intake, metadata mapping, or Google Drive-backed workspace creation, use `docs/guides/experiment_bootstrap.md` and `.agents/skills/reader-experiment-bootstrap/SKILL.md`.
 - Treat `docs/guides/experiment_bootstrap.md` as the primary workflow and the repo-local skill as the router to it.
-- For workbench architecture, information-architecture gardening, or maintainer-facing surface hardening, use `docs/guides/workbench_gardening.md` and `skills/reader-workbench-gardening/SKILL.md`.
+- For workbench architecture, information-architecture gardening, or maintainer-facing surface hardening, use `docs/guides/workbench_gardening.md` and `.agents/skills/reader-workbench-gardening/SKILL.md`.
 - Repo `pytest` markers cover tracked fixtures. To audit local experiments, run `uv run reader audit experiments [--years <yyyy>]`.
 
 #### Generated vs hand-edited content

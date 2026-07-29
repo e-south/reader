@@ -2,7 +2,7 @@
 doc_id: reader-dop-operating-model
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Decision sequence, ownership boundaries, and stop conditions for a Reader Data Operations Plan.
 ---
 
@@ -33,7 +33,7 @@ document.
   ready-spec registry.
 - `docs/guides/data_operations_plan/` owns human-facing explanations,
   checklists, and examples.
-- `skills/reader-data-operations-plan/` owns agent routing for DOP
+- `.agents/skills/reader-data-operations-plan/` owns agent routing for DOP
   classification and maintenance.
 - `src/reader/protocols/` owns executable assay semantics.
 - `reader/v8` config owns authored experiment intent, not lab-wide policy.

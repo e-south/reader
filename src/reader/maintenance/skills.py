@@ -7,6 +7,7 @@ from .model import MaintenanceReport
 
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 SOURCE_ROW_RE = re.compile(r"^\| https?://[^|]+ \| \d{4}-\d{2}-\d{2} \| [^|]+ \|$", re.MULTILINE)
+SKILLS_RELATIVE_ROOT = Path(".agents") / "skills"
 
 
 def iter_skill_dirs(skills_dir: Path) -> list[Path]:
@@ -101,13 +102,13 @@ def check_skills(repo_root: Path) -> MaintenanceReport:
     """Check repo-local skill structure in a Reader source checkout."""
 
     repo_root = repo_root.resolve()
-    skills_dir = repo_root / "skills"
+    skills_dir = repo_root / SKILLS_RELATIVE_ROOT
     if not skills_dir.is_dir():
         return MaintenanceReport(
             check="skills",
             repo_root=repo_root,
             checked=0,
-            errors=("skills directory missing",),
+            errors=(f"{SKILLS_RELATIVE_ROOT.as_posix()} directory missing",),
         )
 
     errors: list[str] = []

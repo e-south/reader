@@ -12,9 +12,9 @@ and anchored to canonical docs.
 
 Required evidence:
 
-- [docs/guides/workbench_gardening.md](../../../docs/guides/workbench_gardening.md)
+- [docs/guides/workbench_gardening.md](../../../../docs/guides/workbench_gardening.md)
   remains the primary workflow
-- [skills/reader-workbench-gardening/SKILL.md](../SKILL.md) routes to the guide
+- [.agents/skills/reader-workbench-gardening/SKILL.md](../SKILL.md) routes to the guide
   instead of duplicating it
 - [references/external-sources.md](./external-sources.md) records official
   source rows when external claims shape the contract
@@ -43,7 +43,7 @@ Required evidence:
 
 - the skill routes new-experiment intake to `reader-experiment-bootstrap`
 - the skill routes publish, branch, or CI topology work to
-  [docs/repo-maintenance.md](../../../docs/repo-maintenance.md)
+  [docs/repo-maintenance.md](../../../../docs/repo-maintenance.md)
 - the skill keeps generated outputs out of scope
 - the guide points to `ARCHITECTURE.md`, `DESIGN.md`, `QUALITY.md`, and
   `RELIABILITY.md` as canonical invariants
