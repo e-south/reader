@@ -25,14 +25,14 @@ COMPILED_PLAN_FIXTURES = {
         "plots": (),
         "exports": (),
         "notebooks": ("notebook/cytometry",),
-        "sha256": "ac959669362453c4d69d38ae0c2f93c4590cb8c964f84b3f716127d49d70aea8",
+        "sha256": "ac959669362453c4d69d38ae0c2f93c4590cb8c964f84b3f716127d49d70aea8",  # pragma: allowlist secret
     },
     "workbench/generic": {
         "pipeline": (),
         "plots": (),
         "exports": (),
         "notebooks": ("notebook/basic",),
-        "sha256": "5cbd7074a19e743fcda5da3507e4d51e30e136095bc1e36b10159ad86db5d422",
+        "sha256": "5cbd7074a19e743fcda5da3507e4d51e30e136095bc1e36b10159ad86db5d422",  # pragma: allowlist secret
     },
     "logic/sfxi_screen": {
         "pipeline": (
@@ -51,7 +51,7 @@ COMPILED_PLAN_FIXTURES = {
         "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
         "exports": ("logic_summary_workbook",),
         "notebooks": ("notebook/sfxi_eda",),
-        "sha256": "0c8c8f3438890e4e472cf798a9da5856d88851b575b6ed27a80e7648fafd9c29",
+        "sha256": "0c8c8f3438890e4e472cf798a9da5856d88851b575b6ed27a80e7648fafd9c29",  # pragma: allowlist secret
     },
     "plate_reader/retron_sponge_screen": {
         "pipeline": (
@@ -77,7 +77,7 @@ COMPILED_PLAN_FIXTURES = {
         ),
         "exports": ("semantic_summary_table", "semantic_trace_table"),
         "notebooks": ("notebook/retron_sponge",),
-        "sha256": "805006c6127aed5b48add14b4960ad2a8a24c205e9670a489bae7bc258fb359e",
+        "sha256": "805006c6127aed5b48add14b4960ad2a8a24c205e9670a489bae7bc258fb359e",  # pragma: allowlist secret
     },
     "plate_reader/dual_reporter_screen": {
         "pipeline": (
@@ -94,7 +94,7 @@ COMPILED_PLAN_FIXTURES = {
         "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
         "exports": (),
         "notebooks": ("notebook/eda",),
-        "sha256": "fd646d990e7f257980a9d2731d2e91dea1afd55a673a515f9c62a8ccbace0230",
+        "sha256": "fd646d990e7f257980a9d2731d2e91dea1afd55a673a515f9c62a8ccbace0230",  # pragma: allowlist secret
     },
     "plate_reader/single_reporter_screen": {
         "pipeline": (
@@ -109,7 +109,7 @@ COMPILED_PLAN_FIXTURES = {
         "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
         "exports": (),
         "notebooks": ("notebook/eda",),
-        "sha256": "78bae77db7da345784169b527a5a9af35ab8d9e6d49e55e008e0dafc7f4839e6",
+        "sha256": "78bae77db7da345784169b527a5a9af35ab8d9e6d49e55e008e0dafc7f4839e6",  # pragma: allowlist secret
     },
 }
 

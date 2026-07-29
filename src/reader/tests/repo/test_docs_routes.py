@@ -50,12 +50,29 @@ def test_template_journal_is_a_neutral_authored_capsule() -> None:
 def test_docs_inventory_excludes_generated_experiment_outputs(tmp_path: Path, monkeypatch) -> None:
     source_doc = tmp_path / "docs" / "guide.md"
     generated_doc = tmp_path / "experiments" / "2026" / "example" / "outputs" / "report.md"
+    scratch_doc = tmp_path / ".tmp" / "package-audit" / "README.md"
     source_doc.parent.mkdir(parents=True)
     generated_doc.parent.mkdir(parents=True)
+    scratch_doc.parent.mkdir(parents=True)
     source_doc.write_text("# Guide\n", encoding="utf-8")
     generated_doc.write_text("# Generated report\n", encoding="utf-8")
+    scratch_doc.write_text("# Scratch copy\n", encoding="utf-8")
 
     assert check_docs.iter_markdown_files(tmp_path) == [source_doc]
+
+
+def test_canonical_public_repository_links_resolve_to_local_docs(tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    guide = tmp_path / "docs" / "guide.md"
+    guide.parent.mkdir(parents=True)
+    guide.write_text("# Guide\n", encoding="utf-8")
+    readme.write_text(
+        "[Guide](https://github.com/e-south/reader/blob/main/docs/guide.md)\n",
+        encoding="utf-8",
+    )
+
+    assert check_docs.linked_paths(readme, repo_root=tmp_path) == {guide.resolve()}
+    assert check_docs.check_internal_links([readme], tmp_path) == []
 
 
 def test_repository_python_checks_live_under_reader_source() -> None:

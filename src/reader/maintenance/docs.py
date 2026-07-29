@@ -11,6 +11,7 @@ from .model import MaintenanceReport
 
 SKIP_PARTS = {
     ".git",
+    ".tmp",
     ".venv",
     ".pytest_cache",
     ".ruff_cache",
@@ -18,6 +19,10 @@ SKIP_PARTS = {
     "build",
     "dist",
 }
+PUBLIC_REPOSITORY_PREFIXES = (
+    "https://github.com/e-south/reader/blob/main/",
+    "https://github.com/e-south/reader/tree/main/",
+)
 LINK_RE = re.compile(r"!?\[[^\]]+\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 HTML_ANCHOR_RE = re.compile(r"""<a\s+(?:[^>]*?\s)?(?:id|name)=["']([^"']+)["']""", re.IGNORECASE)
@@ -188,8 +193,14 @@ def check_doc_frontmatter(files: list[Path], repo_root: Path) -> list[str]:
     return errors
 
 
-def normalize_target(source: Path, raw_target: str) -> Path | None:
+def normalize_target(source: Path, raw_target: str, *, repo_root: Path | None = None) -> Path | None:
     target = raw_target.strip().split(" ", 1)[0]
+    for prefix in PUBLIC_REPOSITORY_PREFIXES:
+        if target.startswith(prefix):
+            if repo_root is None:
+                return None
+            relative_target = target.removeprefix(prefix).split("#", 1)[0]
+            return (repo_root / relative_target).resolve()
     if target.startswith(("http://", "https://", "mailto:", "#")):
         return None
     target = target.split("#", 1)[0]
@@ -244,10 +255,10 @@ def github_heading_slug(text: str) -> str:
     return re.sub(r"-+", "-", text).strip("-")
 
 
-def linked_paths(source: Path) -> set[Path]:
+def linked_paths(source: Path, *, repo_root: Path | None = None) -> set[Path]:
     linked: set[Path] = set()
     for raw_target in LINK_RE.findall(source.read_text()):
-        normalized = normalize_target(source, raw_target)
+        normalized = normalize_target(source, raw_target, repo_root=repo_root)
         if normalized is not None:
             linked.add(normalized)
     return linked
@@ -257,7 +268,7 @@ def check_internal_links(files: list[Path], repo_root: Path) -> list[str]:
     errors: list[str] = []
     for file in files:
         for raw_target in LINK_RE.findall(file.read_text()):
-            normalized = normalize_target(file, raw_target)
+            normalized = normalize_target(file, raw_target, repo_root=repo_root)
             if normalized is None:
                 continue
             rel_file = file.relative_to(repo_root)
@@ -293,7 +304,7 @@ def check_required_routes(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for rel_source, rel_targets in REQUIRED_LINKS.items():
         source = repo_root / rel_source
-        linked = linked_paths(source)
+        linked = linked_paths(source, repo_root=repo_root)
         for rel_target in sorted(rel_targets):
             expected = (source.parent / rel_target).resolve()
             if expected not in linked:

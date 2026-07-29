@@ -211,11 +211,11 @@ def test_invocation_failure_redacts_common_credentials_without_losing_diagnostic
         declared_inputs=[],
     )
     failure = RuntimeError(
-        "connection failed client_secret=hunter2 db_password='open sesame' "
+        "connection failed client_secret=hunter2 db_password='open sesame' "  # pragma: allowlist secret
         "service_token: abc123 Authorization: Basic dXNlcjpwYXNz "
         "secondary Authorization: Digest opaque-value "
-        "at postgresql://reader:p%40ss@db.internal:5432/assays "
-        "via https://api-user:api-pass@example.test/v1 "
+        "at postgresql://reader:p%40ss@db.internal:5432/assays "  # pragma: allowlist secret
+        "via https://api-user:api-pass@example.test/v1 "  # pragma: allowlist secret
         "callback=https://example.test/auth?refresh_token=query-secret&mode=read retry=3"
     )
 
@@ -256,8 +256,8 @@ def test_invocation_failure_redacts_provider_credentials_and_preserves_status(tm
         declared_inputs=[],
     )
     failure = RuntimeError(
-        'provider failure "OPENAI_API_KEY": "sk-live" '
-        "'AWS_SECRET_ACCESS_KEY'='aws-secret' X_AMZ_SIGNATURE : deadbeef "
+        'provider failure "OPENAI_API_KEY": "sk-live" '  # pragma: allowlist secret
+        "'AWS_SECRET_ACCESS_KEY'='aws-secret' X_AMZ_SIGNATURE : deadbeef "  # pragma: allowlist secret
         "API_KEY_VENDOR=vendor-key CLOUD_CREDENTIAL: cloud-credential "
         "SERVICE_AUTH_TOKEN='auth-token' signature mismatch stage=verify status=failed retry=3"
     )

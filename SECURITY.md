@@ -105,6 +105,24 @@ If you install or author a plugin, you are executing Python with the same trust 
 - Prefer preflight commands before mutation:
   `reader validate`, `reader explain`, `reader run --dry-run`.
 
+## Public Repository Data Boundary
+
+The public repository ships code, documentation, tests, and one synthetic
+experiment template. Real experiment configurations, sample maps, raw
+instrument files, generated outputs, and study-specific identifiers belong in
+the ignored local `experiments/` workbench and must not be committed.
+
+Treat configuration and metadata as potentially sensitive even when they do
+not contain measurements: construct names, treatment maps, dates, and plate
+layouts can disclose study intent. Prefer text fixtures for public examples.
+Before committing binary documents, remove author, organization, device, and
+path metadata as well as visible data.
+
+The ignore rules are a guardrail, not an authorization boundary: `git add -f`
+can bypass them. Repository tests therefore verify that tracked experiment
+content remains confined to the synthetic template and that public package
+metadata does not expose a personal email address.
+
 ## Security Review Checklist
 
 Use this checklist for security-sensitive changes.

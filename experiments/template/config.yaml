@@ -1,7 +1,7 @@
 schema: reader/v8
 experiment:
   id: template
-  title: biosensor_panel_M9_glu
+  title: synthetic_logic_panel
   lifecycle: template
 protocol:
   id: logic/sfxi_screen
@@ -78,7 +78,7 @@ protocol:
 resources:
   sample_map:
     kind: file
-    path: ./inputs/metadata.xlsx
+    path: ./inputs/metadata.csv
 annotations:
   collections:
     group_ab:
