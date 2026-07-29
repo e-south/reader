@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-READER_ROOT = Path(__file__).resolve().parents[3]
+READER_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DOMAIN_ROOT = READER_ROOT / "domains"
 FORBIDDEN_DOMAIN_DEPENDENCIES = (
@@ -36,6 +36,12 @@ def test_repository_has_no_parallel_work_product_roots() -> None:
         "Reader work products belong to experiments/<year>/<experiment>/outputs; "
         f"local scratch belongs in .tmp. Stray repository roots: {stray}"
     )
+
+
+def test_runtime_plugin_namespace_is_a_packaged_boundary() -> None:
+    marker = READER_ROOT / "plugins" / "__init__.py"
+
+    assert marker.is_file(), "reader.plugins must be a regular package so wheel builds include built-in plugins"
 
 
 def _imported_modules(node: ast.AST) -> tuple[str, ...]:

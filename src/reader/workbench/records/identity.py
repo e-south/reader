@@ -10,6 +10,10 @@ from typing import Any
 
 from reader.errors import RecordError
 
+_PACKAGED_SOURCE_SUFFIXES = frozenset({".py", ".pyi"})
+_PACKAGED_DATA_GLOBS = ("workbench/templates/builtins/*.marimo.py.txt",)
+_PACKAGED_DATA_NAMES = frozenset({"py.typed"})
+
 
 def digest_json(payload: Any) -> str:
     raw = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str).encode()
@@ -43,6 +47,33 @@ class BuildIdentity:
         )
 
 
+def _packaged_runtime_files(package_root: Path) -> tuple[Path, ...]:
+    files: set[Path] = set()
+    for path in package_root.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(package_root)
+        if relative.parts[0] == "tests":
+            continue
+        if path.suffix in _PACKAGED_SOURCE_SUFFIXES or path.name in _PACKAGED_DATA_NAMES:
+            files.add(path)
+    for pattern in _PACKAGED_DATA_GLOBS:
+        files.update(path for path in package_root.glob(pattern) if path.is_file())
+    return tuple(sorted(files, key=lambda item: item.relative_to(package_root).as_posix()))
+
+
+def _source_digest(package_root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in _packaged_runtime_files(package_root):
+        relative = path.relative_to(package_root).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        data = path.read_bytes()
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return "sha256:" + digest.hexdigest()
+
+
 @cache
 def current_build_identity() -> BuildIdentity:
     try:
@@ -51,17 +82,4 @@ def current_build_identity() -> BuildIdentity:
         reader_version = "0+uninstalled"
 
     package_root = Path(__file__).resolve().parents[2]
-    digest = hashlib.sha256()
-    source_files = (
-        path
-        for path in package_root.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}
-    )
-    for path in sorted(source_files, key=lambda item: str(item.relative_to(package_root))):
-        relative = path.relative_to(package_root).as_posix().encode("utf-8")
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        data = path.read_bytes()
-        digest.update(len(data).to_bytes(8, "big"))
-        digest.update(data)
-    return BuildIdentity(reader_version=reader_version, source_digest="sha256:" + digest.hexdigest())
+    return BuildIdentity(reader_version=reader_version, source_digest=_source_digest(package_root))

@@ -12,7 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 def test_root_readme_is_a_human_first_landing_page() -> None:
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert text.startswith("# reader\n")
+    assert text.startswith("![Reader:")
+    assert not text.startswith("# reader\n")
     assert "uv run reader demo" in text
     assert "docs/guides/getting_started.md" in text
     assert "docs/guides/common_routes.md" in text
