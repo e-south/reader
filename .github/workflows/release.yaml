@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -24,10 +27,16 @@ jobs:
         run: |
           project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "${GITHUB_REF_NAME}" = "v${project_version}"
+      - name: Verify release commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
       - name: Verify lockfile
         run: uv lock --check
       - name: Build distributions
         run: uv build --no-sources
+      - name: Verify distribution metadata
+        run: uvx --from twine==7.0.0 twine check dist/*
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -41,7 +50,9 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: pypi
+    environment:
+      name: pypi
+      url: https://pypi.org/p/reader-workbench
     permissions:
       id-token: write
     steps:

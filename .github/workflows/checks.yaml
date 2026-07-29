@@ -36,7 +36,7 @@ jobs:
       - name: Audit operational dependencies
         run: |
           mkdir -p .artifacts
-          uv export --locked --no-dev --group notebooks --no-emit-project \
+          uv export --locked --no-dev --extra notebooks --no-emit-project \
             --format requirements-txt \
             --output-file .artifacts/operational-requirements.txt
           uv run --locked pip-audit \
@@ -71,7 +71,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install locked dependencies
-        run: uv sync --locked --group dev --group notebooks
+        run: uv sync --locked --group dev --extra notebooks
       - name: Run tests
         run: |
           mkdir -p .artifacts
@@ -100,19 +100,20 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Download test results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: test-results
           path: .artifacts
       - name: Upload coverage
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           use_oidc: true
           files: .artifacts/coverage.xml
           flags: default
           name: default-suite
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   checks:
     name: Checks

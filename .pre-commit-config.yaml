@@ -56,19 +56,7 @@ repos:
               docs/_build/|
               (.+/)?__marimo__/|
               (.+/)?\\.ipynb_checkpoints/|
-              (.+/)?outputs/|
-              (.+/)?raw/|
-              (.+/)?raw_data/|
-              (.+/)?batch_results/|
-              (.+/)?results/|
-              archived/|
-              scratch/|
-              _scratch/|
               \.tmp/|
-              prototypes/|
-              datasets/|
-              batches/|
-              .*\\.zip$|
               .*\\.DS_Store$
             )
         exclude: >-
@@ -88,19 +76,7 @@ repos:
             docs/_build/|
             (.+/)?__marimo__/|
             (.+/)?\\.ipynb_checkpoints/|
-            (.+/)?outputs/|
-            (.+/)?raw/|
-            (.+/)?raw_data/|
-            (.+/)?batch_results/|
-            (.+/)?results/|
-            archived/|
-            scratch/|
-            _scratch/|
             \.tmp/|
-            prototypes/|
-            datasets/|
-            batches/|
-            .*\\.zip$|
             .*\\.DS_Store$
           )
 
