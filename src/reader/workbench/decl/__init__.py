@@ -13,6 +13,7 @@ _EXPORTS = {
         "PipelineDecl",
         "PluginStepDecl",
         "RecipeSourceDecl",
+        "RecordCollectionInputDecl",
         "RecordInputDecl",
         "RecordOutputDecl",
         "ResourceInputDecl",

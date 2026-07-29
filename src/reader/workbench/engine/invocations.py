@@ -10,7 +10,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from reader.errors import ConfigError, ExecutionError
-from reader.workbench.graph import FileRef, RecordRef, ResourceRef
+from reader.workbench.graph import FileRef, RecordCollectionRef, RecordRef, ResourceRef
 from reader.workbench.records import record_revision_digest
 from reader.workbench.records.identity import BuildIdentity
 
@@ -321,8 +321,15 @@ def _normalize_declared_inputs(value: list[dict[str, Any]]) -> list[dict[str, An
         if not isinstance(step_id, str) or not step_id or not isinstance(port, str) or not port:
             raise ExecutionError("Invocation declared input step_id and port must be non-empty strings")
         ref = item["ref"]
-        if not isinstance(ref, dict) or set(ref) not in ({"record"}, {"file"}, {"resource", "path"}):
-            raise ExecutionError("Invocation declared input ref must be a record, file, or resource reference")
+        if not isinstance(ref, dict) or set(ref) not in (
+            {"record"},
+            {"file"},
+            {"resource", "path"},
+            {"record_collection"},
+        ):
+            raise ExecutionError(
+                "Invocation declared input ref must be a record, record collection, file, or resource reference"
+            )
         if any(not isinstance(part, str) or not part for part in ref.values()):
             raise ExecutionError("Invocation declared input reference values must be non-empty strings")
         normalized.append({"phase": phase, "step_id": step_id, "port": port, "ref": dict(ref)})
@@ -337,6 +344,8 @@ def _declared_ref_payload(ref: Any, *, experiment_root: Path) -> dict[str, str]:
             "resource": ref.resource_id,
             "path": _render_declared_path(ref.path, experiment_root=experiment_root),
         }
+    if isinstance(ref, RecordCollectionRef):
+        return {"record_collection": ",".join(item.resource_id for item in ref.records)}
     if isinstance(ref, FileRef):
         return {"file": _render_declared_path(ref.path, experiment_root=experiment_root)}
     raise ExecutionError(f"Invocation declared input has unsupported reference type: {type(ref).__name__}")

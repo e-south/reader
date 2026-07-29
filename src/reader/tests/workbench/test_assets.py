@@ -73,7 +73,7 @@ def test_select_default_notebook_template_uses_protocol_policy() -> None:
     )
     assert (
         select_default_notebook_template(protocol=protocols.bind(ProtocolBinding(id="workbench/generic"))).template
-        == "notebook/basic"
+        == "notebook/eda"
     )
 
 
@@ -100,6 +100,8 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "ingest/synergy_h1",
         "plot/distributions",
         "plot/logic_symmetry",
+        "plot/response_window_summary",
+        "plot/sfxi_vec8_collection",
         "plot/sfxi_vec8_heatmap",
         "plot/snapshot_barplot",
         "plot/snapshot_heatmap",
@@ -113,9 +115,11 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "transform/outlier_filter",
         "transform/overflow_handling",
         "transform/ratio",
+        "transform/response_window",
         "transform/sample_map",
         "transform/sample_metadata",
         "transform/sfxi",
+        "transform/sfxi_vec8_collection",
         "validator/to_tidy_plus_map",
     }
 

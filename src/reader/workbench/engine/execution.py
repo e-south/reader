@@ -10,7 +10,14 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 
 from reader.errors import ExecutionError, ReaderError
 from reader.workbench.context import RunContext
-from reader.workbench.graph import FileRef, ProvenanceInput, RecordRef, ResourceRef
+from reader.workbench.graph import (
+    FileRef,
+    ProvenanceInput,
+    RecordCollectionRef,
+    RecordRef,
+    ResourceRef,
+    SourceRecordRef,
+)
 from reader.workbench.records import PathDescription, RecordInputEvidence, RecordStore
 
 from ._shared import digest_cfg
@@ -32,6 +39,16 @@ def _runtime_provenance_inputs(*, step: Any, inputs: dict[str, Any]) -> list[Pro
     for label in sorted(inputs):
         ref = declared_reads.get(label)
         value = inputs[label]
+        if isinstance(ref, RecordCollectionRef):
+            provenance.extend(
+                ProvenanceInput(
+                    label=f"{label}[{item.resource_id}]",
+                    ref=item,
+                    discovery_policy="source_record",
+                )
+                for item in ref.records
+            )
+            continue
         if isinstance(value, tuple) and value and all(isinstance(item, Path) for item in value):
             for index, path in enumerate(value):
                 item_ref = ref if ref is not None and len(value) == 1 else FileRef(path=path)
@@ -58,6 +75,8 @@ def _runtime_provenance_inputs(*, step: Any, inputs: dict[str, Any]) -> list[Pro
             discovery_policy = "plugin_discovery"
         elif isinstance(ref, RecordRef):
             discovery_policy = "record"
+        elif isinstance(ref, SourceRecordRef):
+            discovery_policy = "source_record"
         elif isinstance(ref, ResourceRef):
             discovery_policy = "declared_resource"
         else:

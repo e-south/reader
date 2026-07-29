@@ -4,15 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
-import yaml
-
-from .display import ResponseWindowDisplaySpec
-
-REQUEST_SCHEMA_VERSION = "reader.response_window.request.v3"
 
 ReductionMethod = Literal["geometric_time_mean", "integrated_linear_mean"]
 ResponseBasis = Literal["post_window", "post_minus_pre"]
@@ -61,30 +55,53 @@ def _finite(value: object, *, context: str) -> float:
 
 
 @dataclass(frozen=True)
-class ResponseSourceSpec:
-    response_record_id: str
-    magnitude_record_id: str
-    trajectory_record_id: str
+class ResponseWindowSourceSpec:
     response_channel: str
     magnitude_channel: str
     growth_channel: str
     reference_design_id: str
-    state_map_ref: str
+    state_column: str
+    state_values: Mapping[str, str]
+    state_values_case_sensitive: bool = True
 
     @classmethod
-    def from_mapping(cls, value: object) -> ResponseSourceSpec:
+    def from_mapping(cls, value: object) -> ResponseWindowSourceSpec:
         fields = {
-            "response_record_id",
-            "magnitude_record_id",
-            "trajectory_record_id",
             "response_channel",
             "magnitude_channel",
             "growth_channel",
             "reference_design_id",
-            "state_map_ref",
+            "state_column",
+            "state_values",
         }
-        payload = _exact_fields(value, context="source", required=fields)
-        return cls(**{field: _nonempty(payload[field], context=f"source.{field}") for field in sorted(fields)})
+        payload = _exact_fields(
+            value,
+            context="source",
+            required=fields,
+            optional={"state_values_case_sensitive"},
+        )
+        state_values = _mapping(payload["state_values"], context="source.state_values")
+        expected_states = {"00", "10", "01", "11"}
+        if set(state_values) != expected_states:
+            raise ValueError("source.state_values must define exactly 00, 10, 01, and 11.")
+        normalized_values = {
+            state: _nonempty(state_values[state], context=f"source.state_values.{state}")
+            for state in sorted(expected_states)
+        }
+        if len(set(normalized_values.values())) != 4:
+            raise ValueError("source.state_values must map to four distinct source values.")
+        case_sensitive = payload.get("state_values_case_sensitive", True)
+        if not isinstance(case_sensitive, bool):
+            raise ValueError("source.state_values_case_sensitive must be true or false.")
+        return cls(
+            response_channel=_nonempty(payload["response_channel"], context="source.response_channel"),
+            magnitude_channel=_nonempty(payload["magnitude_channel"], context="source.magnitude_channel"),
+            growth_channel=_nonempty(payload["growth_channel"], context="source.growth_channel"),
+            reference_design_id=_nonempty(payload["reference_design_id"], context="source.reference_design_id"),
+            state_column=_nonempty(payload["state_column"], context="source.state_column"),
+            state_values=normalized_values,
+            state_values_case_sensitive=case_sensitive,
+        )
 
 
 @dataclass(frozen=True)
@@ -236,14 +253,8 @@ class QualitySpec:
 
 
 @dataclass(frozen=True)
-class ResponseWindowRequest:
-    schema_version: str
-    study_id: str
-    request_id: str
-    experiment_ids: tuple[str, ...]
-    state_order: tuple[str, str, str, str]
-    display: ResponseWindowDisplaySpec
-    source: ResponseSourceSpec
+class ResponseWindowAnalysisSpec:
+    source: ResponseWindowSourceSpec
     event: EventSpec
     reductions: tuple[ReductionSpec, ...]
     aggregation: AggregationSpec
@@ -254,41 +265,15 @@ class ResponseWindowRequest:
         return next(spec for spec in self.reductions if spec.role == "primary")
 
     @classmethod
-    def from_mapping(cls, value: object) -> ResponseWindowRequest:
+    def from_mapping(cls, value: object) -> ResponseWindowAnalysisSpec:
         fields = {
-            "schema_version",
-            "study_id",
-            "request_id",
-            "experiment_ids",
-            "state_order",
-            "display",
             "source",
             "event",
             "reductions",
             "aggregation",
             "quality",
         }
-        payload = _exact_fields(value, context="request", required=fields)
-        schema = _nonempty(payload["schema_version"], context="schema_version")
-        if schema != REQUEST_SCHEMA_VERSION:
-            raise ValueError(f"schema_version must be {REQUEST_SCHEMA_VERSION!r}.")
-        raw_experiments = payload["experiment_ids"]
-        if isinstance(raw_experiments, (str, bytes)) or not isinstance(raw_experiments, Sequence):
-            raise ValueError("experiment_ids must be a non-empty sequence of strings.")
-        experiment_ids = tuple(_nonempty(item, context="experiment_ids[]") for item in raw_experiments)
-        if not experiment_ids or len(experiment_ids) != len(set(experiment_ids)):
-            raise ValueError("experiment_ids must be non-empty and unique.")
-        if any(
-            Path(experiment_id).name != experiment_id or experiment_id in {".", ".."}
-            for experiment_id in experiment_ids
-        ):
-            raise ValueError("experiment_ids must each be one safe path segment.")
-        raw_state_order = payload["state_order"]
-        if isinstance(raw_state_order, (str, bytes)) or not isinstance(raw_state_order, Sequence):
-            raise ValueError("state_order must be the explicit four-state sequence [00, 10, 01, 11].")
-        state_order = tuple(str(item) for item in raw_state_order)
-        if state_order != ("00", "10", "01", "11"):
-            raise ValueError("state_order must be exactly [00, 10, 01, 11].")
+        payload = _exact_fields(value, context="analysis", required=fields)
         raw_reductions = payload["reductions"]
         if isinstance(raw_reductions, (str, bytes)) or not isinstance(raw_reductions, Sequence):
             raise ValueError("reductions must be a non-empty sequence.")
@@ -297,19 +282,9 @@ class ResponseWindowRequest:
         if not reductions or len(ids) != len(set(ids)):
             raise ValueError("reduction ids must be non-empty and unique.")
         if sum(spec.role == "primary" for spec in reductions) != 1:
-            raise ValueError("request must declare exactly one primary reduction.")
-        source = ResponseSourceSpec.from_mapping(payload["source"])
-        display = ResponseWindowDisplaySpec.from_mapping(payload["display"])
-        if display.reference_anchor.design_id != source.reference_design_id:
-            raise ValueError("display reference anchor must match source.reference_design_id.")
+            raise ValueError("analysis must declare exactly one primary reduction.")
         return cls(
-            schema_version=schema,
-            study_id=_nonempty(payload["study_id"], context="study_id"),
-            request_id=_nonempty(payload["request_id"], context="request_id"),
-            experiment_ids=experiment_ids,
-            state_order=state_order,
-            display=display,
-            source=source,
+            source=ResponseWindowSourceSpec.from_mapping(payload["source"]),
             event=EventSpec.from_mapping(payload["event"]),
             reductions=reductions,
             aggregation=AggregationSpec.from_mapping(payload["aggregation"]),
@@ -317,21 +292,11 @@ class ResponseWindowRequest:
         )
 
 
-def load_response_window_request(path: Path) -> ResponseWindowRequest:
-    request_path = Path(path).expanduser().resolve()
-    if not request_path.is_file():
-        raise FileNotFoundError(f"response-window request not found: {request_path}")
-    payload = yaml.safe_load(request_path.read_text(encoding="utf-8"))
-    return ResponseWindowRequest.from_mapping(payload)
-
-
 __all__ = [
-    "REQUEST_SCHEMA_VERSION",
     "AggregationSpec",
     "EventSpec",
     "QualitySpec",
     "ReductionSpec",
-    "ResponseSourceSpec",
-    "ResponseWindowRequest",
-    "load_response_window_request",
+    "ResponseWindowAnalysisSpec",
+    "ResponseWindowSourceSpec",
 ]

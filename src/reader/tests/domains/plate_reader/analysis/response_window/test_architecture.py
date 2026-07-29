@@ -4,7 +4,6 @@ from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[5] / "domains" / "plate_reader"
 ANALYSIS_PACKAGE = DOMAIN_ROOT / "analysis" / "response_window"
-EVIDENCE_PACKAGE = DOMAIN_ROOT / "evidence" / "response_window"
 PLOT_PACKAGE = DOMAIN_ROOT / "plots" / "response_window"
 
 
@@ -18,17 +17,6 @@ def test_response_window_modules_stay_bounded() -> None:
         ANALYSIS_PACKAGE / "reduction.py": 260,
         ANALYSIS_PACKAGE / "sources.py": 340,
         ANALYSIS_PACKAGE / "uncertainty.py": 130,
-        EVIDENCE_PACKAGE / "bundle.py": 260,
-        EVIDENCE_PACKAGE / "preflight.py": 150,
-        EVIDENCE_PACKAGE / "publication.py": 180,
-        EVIDENCE_PACKAGE / "verification.py": 240,
-        EVIDENCE_PACKAGE / "verification_invariants.py": 200,
-        EVIDENCE_PACKAGE / "verification_manifest_contract.py": 100,
-        EVIDENCE_PACKAGE / "verification_request.py": 80,
-        EVIDENCE_PACKAGE / "verification_request_payload.py": 180,
-        EVIDENCE_PACKAGE / "verification_source_catalog.py": 80,
-        EVIDENCE_PACKAGE / "verification_trace_support.py": 220,
-        EVIDENCE_PACKAGE / "verification_value_provenance.py": 130,
         PLOT_PACKAGE / "censor_display.py": 60,
         PLOT_PACKAGE / "plot_style.py": 80,
         PLOT_PACKAGE / "reporting.py": 200,
@@ -71,7 +59,7 @@ def test_response_window_roles_have_distinct_packages() -> None:
         "sources.py",
         "uncertainty.py",
     }
-    assert (EVIDENCE_PACKAGE / "__init__.py").is_file()
+    assert not (DOMAIN_ROOT / "evidence").exists()
     assert (PLOT_PACKAGE / "__init__.py").is_file()
 
 
@@ -87,7 +75,7 @@ def test_response_window_dependencies_point_outward_from_core() -> None:
 def test_response_window_domain_has_no_sfxi_or_workbench_imports() -> None:
     source = "\n".join(
         path.read_text(encoding="utf-8")
-        for package in (ANALYSIS_PACKAGE, EVIDENCE_PACKAGE, PLOT_PACKAGE)
+        for package in (ANALYSIS_PACKAGE, PLOT_PACKAGE)
         for path in package.rglob("*.py")
     )
     assert "reader.domains.logic.sfxi" not in source
@@ -97,7 +85,7 @@ def test_response_window_domain_has_no_sfxi_or_workbench_imports() -> None:
 def test_response_window_never_calls_reference_relative_fluorescence_brightness() -> None:
     source = "\n".join(
         path.read_text(encoding="utf-8")
-        for package in (ANALYSIS_PACKAGE, EVIDENCE_PACKAGE, PLOT_PACKAGE)
+        for package in (ANALYSIS_PACKAGE, PLOT_PACKAGE)
         for path in package.rglob("*.py")
     )
 

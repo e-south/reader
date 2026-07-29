@@ -27,8 +27,10 @@ _PRIVACY_SENTINEL_PATHS = {
 
 
 def _tracked_paths() -> tuple[Path, ...]:
+    """Return tracked and non-ignored candidate paths in the public tree."""
+
     result = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,

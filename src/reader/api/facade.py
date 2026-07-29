@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -23,13 +24,17 @@ from reader.workbench.inspection.experiments import (
 )
 from reader.workbench.inspection.results import record_catalog_payload
 from reader.workbench.inspection.runtime import workbench_record_verification_scope
+from reader.workbench.notebooks import write_experiment_notebook
+from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records import verify_record_store
+from reader.workbench.templates import require_notebook_template_for_protocol
 
 from .models import (
     Experiment,
     ExperimentEvidence,
     ExperimentIdentity,
     InspectionResult,
+    NotebookResult,
     PlanResult,
     PluginCatalogResult,
     PluginDescriptorResult,
@@ -126,6 +131,67 @@ def plan(experiment: Experiment) -> PlanResult:
         plan=deepcopy(implementation["plan"]),
         compiled=deepcopy(implementation["compiled"]),
         semantics=deepcopy(payload["semantics"]),
+    )
+
+
+def notebook(
+    experiment: Experiment,
+    *,
+    name: str | None = None,
+    template: str | None = None,
+    overwrite: bool = False,
+    allow_record_scan: bool = False,
+) -> NotebookResult:
+    """Generate one protocol-compatible notebook inside the experiment outputs."""
+
+    decl = experiment.declaration
+    workbench = resolve_workbench(decl)
+    bound_protocol = experiment.runtime.bind_protocol(decl.experiment_semantics.protocol)
+    configured = workbench.notebooks[0].template if workbench.notebooks else None
+    selected_template = bound_protocol.resolve_notebook_template(
+        explicit_template=template,
+        configured_template=configured,
+    )
+    descriptor = require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
+    target_name = name or f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
+    candidate = Path(target_name)
+    if (
+        not target_name
+        or target_name != target_name.strip()
+        or candidate.is_absolute()
+        or len(candidate.parts) != 1
+        or candidate.suffix != ".py"
+    ):
+        raise ConfigError("Notebook name must be one non-empty .py filename")
+    layout = decl.experiment_semantics.layout
+    notebooks_root = (
+        layout.outputs_dir
+        if layout.notebooks_subdir in {"", ".", "./"}
+        else layout.outputs_dir / layout.notebooks_subdir
+    )
+    try:
+        notebooks_root = resolve_confined_sink_root(
+            notebooks_root,
+            root=decl.experiment.root,
+            label="notebooks",
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    plot_specs = [step.to_dict() for step in workbench.plots] if descriptor.capabilities.inject_plot_specs else None
+    path, created = write_experiment_notebook(
+        notebooks_root / target_name,
+        experiment_root=decl.experiment.root,
+        notebooks_root=notebooks_root,
+        template=selected_template,
+        overwrite=overwrite,
+        plot_specs=plot_specs,
+        allow_record_scan=allow_record_scan,
+    )
+    return NotebookResult(
+        experiment=experiment.identity,
+        path=str(path),
+        template=selected_template,
+        created=created,
     )
 
 

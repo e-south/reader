@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .contracts import ReductionSpec, ResponseWindowRequest
+from .contracts import ReductionSpec, ResponseWindowAnalysisSpec
 from .provenance import stable_seed
 from .reduction import combine_bound_kinds, invert_bound_kind
 from .sources import STATE_ORDER, ExperimentSource
@@ -18,7 +18,7 @@ def build_design_records(
     lower: pd.DataFrame,
     upper: pd.DataFrame,
     source: ExperimentSource,
-    request: ResponseWindowRequest,
+    request: ResponseWindowAnalysisSpec,
     reduction: ReductionSpec,
 ) -> pd.DataFrame:
     """Aggregate one reduction and its event-bound sensitivity records."""
@@ -96,7 +96,7 @@ def build_design_records(
     return pd.DataFrame.from_records(records)
 
 
-def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowRequest) -> pd.DataFrame:
+def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
     stat = request.aggregation.replicate_stat
     aggregate = np.median if stat == "median" else np.mean
     anchor_id = request.source.reference_design_id

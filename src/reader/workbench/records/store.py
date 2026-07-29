@@ -13,7 +13,7 @@ import pandas as pd
 
 from reader.contracts import ContractCatalog, ContractId
 from reader.errors import RecordError
-from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef
+from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef, SourceRecordRef
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records.model import (
@@ -223,6 +223,19 @@ class RecordStore:
                     )
                 )
                 continue
+            if isinstance(item.ref, SourceRecordRef):
+                from .sources import resolve_source_record  # noqa: PLC0415
+
+                upstream = resolve_source_record(item.ref, contracts=self.contracts)
+                evidence.append(
+                    RecordInputEvidence(
+                        label=item.label,
+                        ref=item.ref,
+                        discovery_policy="source_record",
+                        record_revision_digest=upstream.revision_digest,
+                    )
+                )
+                continue
             if isinstance(item.ref, ResourceRef):
                 default_policy = "declared_resource"
             elif isinstance(item.ref, FileRef):
@@ -261,6 +274,22 @@ class RecordStore:
                 current_revision = record_revision_digest(current, outputs_dir=self.root)
                 if current_revision != item.record_revision_digest:
                     raise RecordError(f"Input record {item.ref.record_id!r} changed after input evidence was captured.")
+                continue
+            if isinstance(item.ref, SourceRecordRef):
+                from .sources import resolve_source_record  # noqa: PLC0415
+
+                try:
+                    current = resolve_source_record(item.ref, contracts=self.contracts)
+                except RecordError as exc:
+                    raise RecordError(
+                        f"Source record {item.ref.experiment_id}:{item.ref.record_id} changed after input "
+                        f"evidence was captured: {exc}"
+                    ) from exc
+                if current.revision_digest != item.record_revision_digest:
+                    raise RecordError(
+                        f"Source record {item.ref.experiment_id}:{item.ref.record_id} changed after input "
+                        "evidence was captured."
+                    )
                 continue
             try:
                 current_artifact = capture_artifact_evidence(item.ref.path, root=self.experiment_root)

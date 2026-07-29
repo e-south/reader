@@ -7,7 +7,7 @@ from typing import Literal
 from reader.contracts import ContractId, OutputContractSurface
 from reader.errors import RegistryError
 
-type PortKind = Literal["dataframe", "file_path", "file_set", "file_bundle"]
+type PortKind = Literal["dataframe", "record_collection", "file_path", "file_set", "file_bundle"]
 
 
 @dataclass(frozen=True)
@@ -19,8 +19,9 @@ class InputPortSpec:
 
     def __post_init__(self) -> None:
         _validate_port_name(self.name)
-        if self.kind == "dataframe":
-            _validate_dataframe_contract(self.contract, where=f"Dataframe input port {self.name!r}", optional=True)
+        if self.kind in {"dataframe", "record_collection"}:
+            label = "Dataframe" if self.kind == "dataframe" else "Record collection"
+            _validate_dataframe_contract(self.contract, where=f"{label} input port {self.name!r}", optional=True)
             return
         if self.contract is not None:
             raise RegistryError(f"Input port {self.name!r} of kind {self.kind!r} must not declare a dataframe contract")
@@ -28,6 +29,8 @@ class InputPortSpec:
     def render(self) -> str:
         if self.kind == "dataframe":
             return self.contract or "dataframe"
+        if self.kind == "record_collection":
+            return f"record collection ({self.contract or 'any dataframe contract'})"
         if self.kind == "file_path":
             return "file"
         if self.kind == "file_set":
@@ -77,6 +80,10 @@ class OutputPortSpec:
 
 def dataframe_input(name: str, contract: ContractId | None = None, *, optional: bool = False) -> InputPortSpec:
     return InputPortSpec(name=name, kind="dataframe", contract=contract, optional=optional)
+
+
+def record_collection_input(name: str, contract: ContractId | None = None, *, optional: bool = False) -> InputPortSpec:
+    return InputPortSpec(name=name, kind="record_collection", contract=contract, optional=optional)
 
 
 def file_path_input(name: str, *, optional: bool = False) -> InputPortSpec:

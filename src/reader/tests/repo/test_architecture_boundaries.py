@@ -51,13 +51,11 @@ def test_repo_local_skills_use_the_codex_discovery_root() -> None:
     assert not (REPO_ROOT / "skills").exists(), "do not maintain a parallel, undiscoverable skills root"
 
 
-def test_public_capability_modules_live_below_reader_api() -> None:
-    response_window_api = READER_ROOT / "api" / "response_window"
-
-    assert (response_window_api / "__init__.py").is_file()
-    assert (response_window_api / "review.py").is_file()
-    assert not (READER_ROOT / "response_window.py").exists()
-    assert not (READER_ROOT / "response_window_review.py").exists()
+def test_domain_capabilities_do_not_create_parallel_public_lifecycles() -> None:
+    assert not (READER_ROOT / "api" / "response_window").exists()
+    assert not (READER_ROOT / "runtime" / "response_window.py").exists()
+    assert not (READER_ROOT / "workbench" / "cli" / "response_window.py").exists()
+    assert not (READER_ROOT / "runtime" / "sfxi_vec8_aggregate.py").exists()
 
 
 def _imported_modules(node: ast.AST) -> tuple[str, ...]:

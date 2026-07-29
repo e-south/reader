@@ -291,8 +291,8 @@ def test_sfxi_notebook_surfaces_deliverables_with_progressive_disclosure() -> No
     template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
     assert "collect_notebook_deliverables" in template
-    assert "render_notebook_deliverables_panel" in template
-    assert "render_notebook_deliverables_panel(mo, deliverables)" in template
+    assert "build_notebook_deliverable_selector" in template
+    assert "render_notebook_deliverable_viewport" in template
     assert "render_notebook_overview_panel" in template
     assert "include_heading=False" in template
     assert "data_ready" not in template
@@ -379,7 +379,7 @@ def test_notebook_template_default_selection_uses_protocol_policy() -> None:
     )
     assert (
         select_default_notebook_template(protocol=catalog.bind(ProtocolBinding(id="workbench/generic"))).template
-        == "notebook/basic"
+        == "notebook/eda"
     )
 
 

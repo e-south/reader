@@ -16,9 +16,10 @@ def _():
     from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.notebooks.components import (
         build_design_treatment_summary_rows,
+        build_notebook_deliverable_selector,
         build_notebook_overview,
         collect_notebook_deliverables,
-        render_notebook_deliverables_panel,
+        render_notebook_deliverable_viewport,
         render_notebook_overview_panel,
     )
     from reader.workbench.records import discover_dataframe_records
@@ -30,9 +31,10 @@ def _():
         pl,
         load_notebook_workbench_context,
         build_design_treatment_summary_rows,
+        build_notebook_deliverable_selector,
         build_notebook_overview,
         collect_notebook_deliverables,
-        render_notebook_deliverables_panel,
+        render_notebook_deliverable_viewport,
         render_notebook_overview_panel,
         discover_dataframe_records,
     )
@@ -199,8 +201,18 @@ def _(df, df_error, mo, pl, selected_label):
     return eda_table_panel
 
 @app.cell(hide_code=True)
-def _(deliverables, mo, render_notebook_deliverables_panel):
-    deliverables_panel = render_notebook_deliverables_panel(mo, deliverables)
+def _(build_notebook_deliverable_selector, deliverables, mo):
+    deliverable_selector = build_notebook_deliverable_selector(mo, deliverables)
+    return deliverable_selector
+
+@app.cell(hide_code=True)
+def _(deliverable_selector, deliverables, mo, outputs_dir, render_notebook_deliverable_viewport):
+    deliverables_panel = render_notebook_deliverable_viewport(
+        mo,
+        deliverables,
+        deliverable_selector,
+        outputs_dir=outputs_dir,
+    )
     return deliverables_panel
 
 @app.cell(hide_code=True)

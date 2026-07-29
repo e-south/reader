@@ -10,7 +10,7 @@ from reader.contracts import ContractCatalog
 from reader.errors import ContractError, ExecutionError
 from reader.workbench.graph import OutputRef
 from reader.workbench.ports import InputPortSpec, OutputPortSpec
-from reader.workbench.records import PathDescription
+from reader.workbench.records import PathDescription, SourceRecordCollection
 from reader.workbench.registry import Plugin
 
 
@@ -196,6 +196,29 @@ def _assert_input_port_value(
         else:
             msg = f"[{where}] input '{name}' must be contract {port.contract} but got {actual_contract}"
         raise ExecutionError(msg)
+    if port.kind == "record_collection":
+        if not isinstance(value, SourceRecordCollection):
+            raise ExecutionError(
+                f"[{where}] input '{name}' expects a source record collection but got {type(value).__name__}"
+            )
+        for item in value:
+            actual_contract = getattr(item.record, "contract_id", None)
+            if actual_contract is None:
+                raise ExecutionError(
+                    f"[{where}] input '{name}' source {item.ref.resource_id!r} is not a dataframe artifact"
+                )
+            if port.contract is None:
+                continue
+            try:
+                compatible = contracts.satisfies(actual=actual_contract, expected=port.contract)
+            except ContractError as err:
+                raise ExecutionError(str(err)) from err
+            if not compatible:
+                raise ExecutionError(
+                    f"[{where}] input '{name}' source {item.ref.resource_id!r} must satisfy "
+                    f"contract {port.contract!r} but got {actual_contract!r}"
+                )
+        return
     if port.kind == "file_path":
         if isinstance(value, Path):
             return

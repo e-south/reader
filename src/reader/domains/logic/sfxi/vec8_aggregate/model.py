@@ -50,33 +50,6 @@ class SFXIVec8Aggregate:
 
 
 @dataclass(frozen=True)
-class SFXIVec8AggregateArtifacts:
-    heatmap_path: Path
-    tidy_path: Path
-    manifest_path: Path
-    aggregate: SFXIVec8Aggregate
-
-    @property
-    def summary(self) -> dict[str, int]:
-        return self.aggregate.summary
-
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "schema": "reader.sfxi_vec8_aggregate.v1",
-            "summary": self.summary,
-            "artifacts": {
-                "heatmap": str(self.heatmap_path),
-                "tidy": str(self.tidy_path),
-                "manifest": str(self.manifest_path),
-            },
-            "channels": list(VEC8_CHANNELS),
-            "intensity_log2_offset_deltas": list(self.aggregate.intensity_log2_offset_deltas),
-            "mixed_intensity_log2_offset_delta": len(self.aggregate.intensity_log2_offset_deltas) > 1,
-            "sources": [source.to_payload() for source in self.aggregate.sources],
-        }
-
-
-@dataclass(frozen=True)
 class LoadedSFXIVec8Source:
     source_id: str
     source_path: Path

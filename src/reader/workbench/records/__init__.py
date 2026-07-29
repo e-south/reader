@@ -13,6 +13,7 @@ from .model import (
     record_revision_digest,
     record_to_dict,
 )
+from .sources import ResolvedSourceRecord, SourceRecordCollection, resolve_source_record
 from .store import RecordStore
 from .verification import RecordVerificationScope, verify_record_store
 
@@ -26,6 +27,8 @@ __all__ = [
     "RecordInputEvidence",
     "RecordRecipeSource",
     "RecordStore",
+    "ResolvedSourceRecord",
+    "SourceRecordCollection",
     "RecordVerificationScope",
     "WorkbenchRecord",
     "capture_artifact_evidence",
@@ -34,6 +37,7 @@ __all__ = [
     "discover_dataframe_records",
     "record_from_dict",
     "record_revision_digest",
+    "resolve_source_record",
     "record_paths",
     "record_to_dict",
     "verify_record_store",

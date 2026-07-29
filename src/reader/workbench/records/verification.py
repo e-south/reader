@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from reader.errors import RecordError
-from reader.workbench.graph import RecordRef
+from reader.workbench.graph import RecordRef, SourceRecordRef
 from reader.workbench.records.model import (
     DataFrameArtifactRecord,
     FileBundleRecord,
@@ -224,6 +224,34 @@ def verify_record_store(
                             field=f"inputs.{item.label}",
                             reason=f"Upstream record {item.ref.record_id!r} no longer matches the consumed revision.",
                             remediation="Rerun this producer against the current upstream record.",
+                        )
+                    )
+                continue
+            if isinstance(item.ref, SourceRecordRef):
+                from reader.workbench.records.sources import resolve_source_record  # noqa: PLC0415
+
+                try:
+                    upstream = resolve_source_record(item.ref, contracts=store.contracts)
+                except RecordError as exc:
+                    issues.append(
+                        _issue(
+                            code="input.source_record_missing",
+                            field=f"inputs.{item.label}",
+                            reason=str(exc),
+                            remediation="Restore or reproduce the source experiment record, then rerun this producer.",
+                        )
+                    )
+                    continue
+                if upstream.revision_digest != item.record_revision_digest:
+                    issues.append(
+                        _issue(
+                            code="input.source_record_revision_mismatch",
+                            field=f"inputs.{item.label}",
+                            reason=(
+                                f"Source record {item.ref.experiment_id}:{item.ref.record_id} no longer "
+                                "matches the consumed revision."
+                            ),
+                            remediation="Rerun this producer against the current source record revisions.",
                         )
                     )
                 continue

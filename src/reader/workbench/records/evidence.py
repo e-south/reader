@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from reader.errors import RecordError
-from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef
+from reader.workbench.experiments import ExperimentCatalog
+from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef, SourceRecordRef
 
 from .identity import is_sha256_digest
 
@@ -16,6 +17,7 @@ _DISCOVERY_POLICIES = frozenset(
         "declared_resource",
         "plugin_discovery",
         "record",
+        "source_record",
     }
 )
 
@@ -82,10 +84,18 @@ class RecordInputEvidence:
             if not is_sha256_digest(self.record_revision_digest):
                 raise RecordError("record references must include a sha256 record_revision_digest")
             return
+        if isinstance(self.ref, SourceRecordRef):
+            if self.discovery_policy != "source_record":
+                raise RecordError("source record references must use discovery_policy 'source_record'")
+            if self.artifact is not None:
+                raise RecordError("source record references must not include artifact evidence")
+            if not is_sha256_digest(self.record_revision_digest):
+                raise RecordError("source record references must include a sha256 record_revision_digest")
+            return
         if not isinstance(self.ref, (FileRef, ResourceRef)):
             raise RecordError("record input evidence contains an unsupported reference")
-        if self.discovery_policy == "record":
-            raise RecordError("file and resource inputs must not use discovery_policy 'record'")
+        if self.discovery_policy in {"record", "source_record"}:
+            raise RecordError("file and resource inputs must not use record discovery policies")
         if self.artifact is None:
             raise RecordError("file and resource inputs must include artifact evidence")
         if self.record_revision_digest is not None:
@@ -100,6 +110,15 @@ class RecordInputEvidence:
             return {
                 **base,
                 "kind": "record",
+                "record": self.ref.record_id,
+                "record_revision_digest": self.record_revision_digest,
+            }
+        if isinstance(self.ref, SourceRecordRef):
+            return {
+                **base,
+                "kind": "source_record",
+                "resource": self.ref.resource_id,
+                "experiment": self.ref.experiment_id,
                 "record": self.ref.record_id,
                 "record_revision_digest": self.record_revision_digest,
             }
@@ -133,6 +152,39 @@ class RecordInputEvidence:
             return cls(
                 label=label,
                 ref=RecordRef(record_id=record_id),
+                discovery_policy=discovery_policy,
+                record_revision_digest=payload.get("record_revision_digest"),
+            )
+        if kind == "source_record":
+            expected = {
+                "label",
+                "kind",
+                "resource",
+                "experiment",
+                "record",
+                "discovery_policy",
+                "record_revision_digest",
+            }
+            if set(payload) != expected:
+                raise RecordError("source record input evidence has unknown or missing fields")
+            resource_id = payload.get("resource")
+            experiment_id = payload.get("experiment")
+            record_id = payload.get("record")
+            if any(not isinstance(value, str) or not value for value in (resource_id, experiment_id, record_id)):
+                raise RecordError("source record input evidence requires resource, experiment, and record identities")
+            try:
+                location = ExperimentCatalog.from_experiment_root(experiment_root).resolve(experiment_id)
+            except Exception as exc:
+                raise RecordError(f"Could not resolve source experiment {experiment_id!r}: {exc}") from exc
+            return cls(
+                label=label,
+                ref=SourceRecordRef(
+                    resource_id=resource_id,
+                    experiment_id=location.id,
+                    record_id=record_id,
+                    experiment_root=location.root,
+                    outputs_dir=location.outputs_dir,
+                ),
                 discovery_policy=discovery_policy,
                 record_revision_digest=payload.get("record_revision_digest"),
             )

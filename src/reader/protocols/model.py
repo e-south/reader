@@ -1187,6 +1187,18 @@ class BoundProtocol:
     def allows_notebook_template(self, template: str) -> bool:
         return template in self.allowed_notebook_templates
 
+    def effective_inputs(self) -> dict[str, Any]:
+        return self._effective_authoring_surface(section="inputs")
+
+    def effective_analysis(self) -> dict[str, Any]:
+        return self._effective_authoring_surface(section="analysis")
+
+    def _effective_authoring_surface(self, *, section: Literal["inputs", "analysis"]) -> dict[str, Any]:
+        fields = self.descriptor.input_fields if section == "inputs" else self.descriptor.analysis_fields
+        authored = self.inputs if section == "inputs" else self.analysis
+        defaults = {field.key: deepcopy(field.default) for field in fields if field.has_default}
+        return _deep_merge(defaults, authored)
+
     def semantic_program(
         self,
         *,

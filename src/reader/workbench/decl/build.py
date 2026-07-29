@@ -4,7 +4,14 @@ from pathlib import Path
 
 from reader.errors import ConfigError
 from reader.protocols.model import ProtocolBinding, ProtocolCatalog
-from reader.workbench.config import ProtocolBindingSpec, ReaderSpec, ResourceSpec, reader_spec_digest
+from reader.workbench.config import (
+    FileResourceSpec,
+    ProtocolBindingSpec,
+    ReaderSpec,
+    RecordResourceSpec,
+    ResourceSpec,
+    reader_spec_digest,
+)
 from reader.workbench.experiment import (
     AnnotationCollections,
     AnnotationCollectionSpec,
@@ -15,12 +22,14 @@ from reader.workbench.experiment import (
     AnnotationSemantics,
     ExperimentEvidence,
     ExperimentSemantics,
+    FileResourceEntry,
     OrderedStateSpaces,
     OrderedStateSpaceSpec,
     OutputLayout,
+    RecordResourceEntry,
     ResourceCatalog,
-    ResourceEntry,
 )
+from reader.workbench.experiments import ExperimentCatalog
 from reader.workbench.paths import resolve_path_within_root
 
 from .model import ExperimentDecl, NotebookDecl, PipelineDecl, SurfaceDecl, WorkbenchDecl
@@ -146,15 +155,30 @@ def _validate_output_subdir(raw: str, *, key: str) -> str:
 
 
 def _bind_resources(resources: dict[str, ResourceSpec], *, root: Path) -> ResourceCatalog:
-    bound: dict[str, ResourceEntry] = {}
+    bound: dict[str, FileResourceEntry | RecordResourceEntry] = {}
+    experiment_catalog: ExperimentCatalog | None = None
     for resource_id, resource in resources.items():
-        try:
-            path = resolve_path_within_root(resource.path, root=root)
-        except ValueError as err:
-            raise ConfigError(
-                f"resources.{resource_id}.path must stay under the experiment root after resolving symlinks."
-            ) from err
-        bound[resource_id] = ResourceEntry(kind=resource.kind, path=path)
+        if isinstance(resource, FileResourceSpec):
+            try:
+                path = resolve_path_within_root(resource.path, root=root)
+            except ValueError as err:
+                raise ConfigError(
+                    f"resources.{resource_id}.path must stay under the experiment root after resolving symlinks."
+                ) from err
+            bound[resource_id] = FileResourceEntry(kind="file", path=path)
+            continue
+        if isinstance(resource, RecordResourceSpec):
+            experiment_catalog = experiment_catalog or ExperimentCatalog.from_experiment_root(root)
+            location = experiment_catalog.resolve(resource.experiment)
+            bound[resource_id] = RecordResourceEntry(
+                kind="record",
+                experiment_id=location.id,
+                record_id=resource.record,
+                experiment_root=location.root,
+                outputs_dir=location.outputs_dir,
+            )
+            continue
+        raise ConfigError(f"resources.{resource_id} has unsupported kind {resource.kind!r}")
     return ResourceCatalog(by_id=bound)
 
 

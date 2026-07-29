@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .aggregation import build_design_records
-from .contracts import ReductionSpec, ResponseWindowRequest
+from .contracts import ReductionSpec, ResponseWindowAnalysisSpec
 from .reduction import combine_bound_kinds, invert_bound_kind, summarize_trace
 from .sources import ExperimentSource
 from .uncertainty import bootstrap_draw_records
@@ -14,7 +14,7 @@ from .uncertainty import bootstrap_draw_records
 def materialize_experiment(
     source: ExperimentSource,
     *,
-    request: ResponseWindowRequest,
+    request: ResponseWindowAnalysisSpec,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Build midpoint well/design records plus event-bound sensitivity."""
 
@@ -88,7 +88,7 @@ def materialize_experiment(
 def _reduce_wells(
     source: ExperimentSource,
     *,
-    request: ResponseWindowRequest,
+    request: ResponseWindowAnalysisSpec,
     reduction: ReductionSpec,
     event_estimate_h: float,
 ) -> pd.DataFrame:
@@ -132,7 +132,7 @@ def _reduce_wells(
 def _summaries_by_trace(
     frame: pd.DataFrame,
     *,
-    request: ResponseWindowRequest,
+    request: ResponseWindowAnalysisSpec,
     reduction: ReductionSpec,
     event_estimate_h: float,
     signal_kind: str,
@@ -211,7 +211,7 @@ def _summaries_by_trace(
     return result
 
 
-def _trace_record(source: ExperimentSource, *, request: ResponseWindowRequest) -> pd.DataFrame:
+def _trace_record(source: ExperimentSource, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for signal_kind, frame in (
         ("response", source.response),

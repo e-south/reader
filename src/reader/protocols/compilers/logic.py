@@ -5,7 +5,12 @@ from typing import Any
 from reader.errors import ConfigError
 from reader.protocols.model import CompiledProtocolPlan
 from reader.protocols.semantic_coverage import _logic_semantic_program
-from reader.workbench.decl.model import PluginStepDecl, RecordInputDecl, RecordOutputDecl
+from reader.workbench.decl.model import (
+    PluginStepDecl,
+    RecordCollectionInputDecl,
+    RecordInputDecl,
+    RecordOutputDecl,
+)
 
 from .common import (
     _analysis_bool,
@@ -23,6 +28,49 @@ from .plate_reader import (
 )
 
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
+
+
+def compile_logic_sfxi_vec8_collection(protocol: Any):
+    resource_ids = tuple(protocol.effective_inputs().get("record_resources", ()))
+    pipeline = (
+        _step(
+            id="collect_vec8",
+            plugin="transform/sfxi_vec8_collection",
+            reads={"sources": RecordCollectionInputDecl(resource_ids=resource_ids)},
+            writes={"vec8": RecordOutputDecl(record_id="collect_vec8/vec8")},
+        ),
+    )
+    selected_plots = protocol.select_plot_outputs(allowed={"vec8_collection_heatmap"})
+    plots = tuple(
+        _step(
+            id="vec8_collection_heatmap",
+            plugin="plot/sfxi_vec8_collection",
+            reads={"vec8": RecordInputDecl(record_id="collect_vec8/vec8")},
+            with_=protocol.plot_view_config(figure_id="vec8_collection_heatmap"),
+        )
+        for _ in selected_plots
+    )
+    selected_exports = protocol.select_export_outputs(defaults=("vec8_table",), allowed={"vec8_table"})
+    exports = tuple(
+        _step(
+            id="vec8_table",
+            plugin="export/csv",
+            reads={"df": RecordInputDecl(record_id="collect_vec8/vec8")},
+            with_=_deep_merge(
+                {"path": "sfxi_vec8_collection.csv"},
+                protocol.export_artifact_config(artifact_id="vec8_table"),
+            ),
+        )
+        for _ in selected_exports
+    )
+    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
+    return CompiledProtocolPlan(
+        pipeline=pipeline,
+        plots=plots,
+        exports=exports,
+        notebooks=(default_notebook_call(template),),
+        semantic_program=protocol.descriptor.semantic_program(),
+    )
 
 
 def compile_logic_sfxi_screen(protocol: Any):

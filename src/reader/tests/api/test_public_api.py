@@ -9,6 +9,7 @@ import pytest
 import reader as reader_package
 from reader.api import (
     InspectionResult,
+    NotebookResult,
     PlanResult,
     PluginCatalogResult,
     PluginDescriptorResult,
@@ -19,6 +20,7 @@ from reader.api import (
     VerificationResult,
     describe_plugin,
     inspect,
+    notebook,
     open_experiment,
     plan,
     plots,
@@ -178,6 +180,22 @@ def test_run_dry_run_returns_plan_without_writing_outputs(tmp_path: Path) -> Non
     assert result.ledger_path is None
     assert result.produced_record_revisions == ()
     assert not (config_path.parent / "outputs").exists()
+
+
+def test_notebook_api_generates_protocol_owned_progressive_workbench(tmp_path: Path) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    result = notebook(experiment, name="review.py")
+
+    assert isinstance(result, NotebookResult)
+    assert result.created is True
+    assert result.template == "notebook/eda"
+    assert Path(result.path) == config_path.parent / "outputs" / "notebooks" / "review.py"
+    body = Path(result.path).read_text(encoding="utf-8")
+    assert "build_notebook_deliverable_selector" in body
+    assert "render_notebook_deliverable_viewport" in body
+    assert result.to_dict()["path"] == result.path
 
 
 @pytest.mark.parametrize("selector", ["from_step", "until_step", "only"])

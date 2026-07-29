@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from reader.plugins.plot.distributions import DistributionsPlot
 from reader.plugins.plot.logic_symmetry import LogicSymmetryPlot
+from reader.plugins.plot.response_window_summary import ResponseWindowSummaryPlot
+from reader.plugins.plot.sfxi_vec8_collection import SFXIVec8CollectionHeatmapPlot
 from reader.plugins.plot.sfxi_vec8_heatmap import SFXIVec8HeatmapPlot
 from reader.plugins.plot.snapshot_barplot import SnapshotBarplot
 from reader.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
@@ -12,6 +14,16 @@ from reader.workbench.ontology import PluginSemantics
 from ..types import AssetDescriptor, build_plugin_asset
 
 BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
+    build_plugin_asset(
+        plugin_id="plot/response_window_summary",
+        semantics=PluginSemantics(
+            domain="plate_reader",
+            family="event_relative_summary",
+            summary="Render primary event-relative components across source records.",
+            tags=("event", "window", "aggregate", "summary"),
+        ),
+        plugin_cls=ResponseWindowSummaryPlot,
+    ),
     build_plugin_asset(
         plugin_id="plot/logic_symmetry",
         semantics=PluginSemantics(
@@ -31,6 +43,16 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
             tags=("logic", "sfxi", "vec8", "heatmap"),
         ),
         plugin_cls=SFXIVec8HeatmapPlot,
+    ),
+    build_plugin_asset(
+        plugin_id="plot/sfxi_vec8_collection",
+        semantics=PluginSemantics(
+            domain="logic",
+            family="sfxi_vec8_heatmap",
+            summary="Render an SFXI vec8 heatmap over a provenance-bound record collection.",
+            tags=("logic", "sfxi", "aggregate", "heatmap"),
+        ),
+        plugin_cls=SFXIVec8CollectionHeatmapPlot,
     ),
     build_plugin_asset(
         plugin_id="plot/ts_and_snap",

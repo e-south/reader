@@ -1,4 +1,4 @@
-"""Exact public contracts for plate-reader response-window bundles."""
+"""Dataframe contracts for plate-reader response-window records."""
 
 from __future__ import annotations
 
