@@ -92,6 +92,8 @@ jobs:
         with:
           name: default-test-artifacts
           path: .artifacts/
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
