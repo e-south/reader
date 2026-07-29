@@ -12,13 +12,17 @@ Reader uses `uv` for installation and command execution. Start with the guided
 command tour, then discover a protocol or inspect an existing experiment. None
 of these steps changes a real experiment.
 
-## Install the environment
+## Install a checkout
 
 ```bash
 uv sync --locked
 ```
 
 This creates or updates `.venv` with Reader and its runtime dependencies.
+Use `uv sync --locked --extra notebooks` when you also want the Marimo
+workbench. The package metadata exposes the same dependency set as the
+`notebooks` extra; the distribution name is `reader-workbench`, while the
+command and import package remain `reader`.
 
 ## Run the guided demo
 
@@ -55,9 +59,9 @@ the metadata and protocol choices before adding instrument files to `inputs/`.
 ## Inspect one experiment before execution
 
 ```bash
-uv run reader inspect experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
-uv run reader validate experiments/2025/20250614_sensor_panel_M9_glu/config.yaml --no-files
-uv run reader explain experiments/2025/20250614_sensor_panel_M9_glu/config.yaml
+uv run reader inspect experiments/template/config.yaml
+uv run reader validate experiments/template/config.yaml --no-files
+uv run reader explain experiments/template/config.yaml
 ```
 
 Use `inspect` for the bound experiment summary, `validate` for preflight checks, and `explain` for the compiled runtime plan.

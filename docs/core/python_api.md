@@ -14,15 +14,16 @@ need to assemble runtime, declaration, graph, engine, and record objects.
 
 ```python
 from reader import open_experiment
-from reader.api import inspect, notebook, plan, plots, records, run, validate, verify
+from reader.api import inspect, notebook, plan, plots, read_dataframe, records, run, validate, verify
 
-experiment = open_experiment("experiments/2026/my_experiment")
+experiment = open_experiment("experiments/my_experiment")
 
 preflight = validate(experiment)
 inspection = inspect(experiment)
 execution_plan = plan(experiment)
 plot_catalog = plots(experiment)
 record_catalog = records(experiment)
+tidy = read_dataframe(experiment, "ingest/df")
 verification = verify(experiment)
 execution = run(experiment)
 notebook_result = notebook(experiment)
@@ -30,11 +31,13 @@ notebook_result = notebook(experiment)
 
 Each operation returns a typed result with `to_dict()` for serialization. An
 `Experiment` loads and compiles its config once and can be reused across calls.
+Its stable public state is `config_path` and `identity`; parsed config, compiled
+declarations, runtime composition, and record stores remain API internals.
 
 ## Experiment operations
 
-- `open_experiment(path)` accepts a `config.yaml` path or its experiment
-  directory.
+- `open_experiment(path)` accepts a `config.yaml`, its experiment directory, or
+  an existing generated file nested beneath that experiment.
 - `inspect(experiment)` returns authoring, assay semantics, and current
   implementation state.
 - `validate(experiment, check_files=True)` runs preflight checks.
@@ -42,9 +45,14 @@ Each operation returns a typed result with `to_dict()` for serialization. An
 - `plots(experiment, only=(), exclude=())` returns selected plot contracts.
 - `records(experiment, include_history=False)` reads the record catalog without
   creating one when it is absent.
+- `read_dataframe(experiment, record_id)` loads the latest dataframe revision,
+  verifies its content digest, and returns a defensive dataframe copy together
+  with its contract, content digest, revision number, and revision digest. Its
+  `to_dict()` projection contains only JSON-ready identity and dataframe-shape
+  metadata; dataframe values remain available through `.dataframe` in Python.
 - `verify(experiment)` checks current schema-v5 source, config, Reader-build,
-  exact-upstream-revision, and generated-artifact evidence without changing
-  outputs.
+  exact-upstream-revision, generated-artifact, and invocation-lifecycle
+  evidence without changing outputs.
 - `run(experiment)` executes pipeline steps through the same engine path as the
   CLI and returns the invocation id, selected steps, exact produced record
   revisions, and invocation-ledger path.
@@ -59,6 +67,47 @@ invocation or ledger path. `from_step`, `until_step`, and `only` provide the
 same pipeline slicing semantics as the corresponding CLI options. Plot and
 export mutation remain behind `reader plot` and `reader export` while their
 typed public results are defined.
+
+## Notebook components and artifact publication
+
+Generated notebooks import reusable controls from `reader.api.notebooks` and
+load data only through `records()` and `read_dataframe()`. Record selection,
+digest verification, and dataframe-contract validation therefore use the same
+public path as non-notebook integrations. `load_notebook_context()` also
+projects compiled pipeline-step metadata and configured ordered state spaces;
+`resolve_effective_step_config()` returns one selected step's protocol-bound
+plugin configuration. Those projections are domain-neutral, so assay templates
+select and adapt the steps they understand.
+
+When an interactive notebook produces files worth retaining, publish them as
+one experiment-owned bundle:
+
+```python
+from reader.api import ArtifactSpec, publish_artifact_bundle
+
+result = publish_artifact_bundle(
+    experiment,
+    record_id="notebook:review",
+    producer_id="review",
+    template="notebook/eda",
+    upstream_records={"table": "analysis/summary"},
+    producer_config={"view": "overview"},
+    description="Reviewed summary and figure.",
+    artifacts=(
+        ArtifactSpec(
+            relative_path="summary.pdf",
+            description="Reviewed summary figure.",
+            writer=lambda path: figure.savefig(path),
+        ),
+    ),
+)
+```
+
+Publication is confined to the experiment's configured exports directory. It
+captures exact upstream revisions, writes an immutable file-bundle revision,
+registers the bundle in `records.json`, and records the operation in the normal
+invocation ledger. Invalid paths, missing inputs, or writer failures stop before
+catalog publication.
 
 ## Plugin discovery
 

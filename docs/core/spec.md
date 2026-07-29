@@ -98,7 +98,7 @@ plugin wiring or internal graph structure.
 - [`src/reader/domains/plate_reader/analysis/response_window/`](../../src/reader/domains/plate_reader/analysis/response_window/)
   owns response-window contracts and calculations.
 - [`src/reader/domains/plate_reader/plots/response_window/`](../../src/reader/domains/plate_reader/plots/response_window/)
-  owns response-window-specific review tables and figures.
+  owns response-window figure planning and rendering.
 - [`src/reader/plugins/`](../../src/reader/plugins/)
   owns thin execution adapters only.
 - [`src/reader/workbench/records/sources.py`](../../src/reader/workbench/records/sources.py)
@@ -179,7 +179,7 @@ line count alone is not a reason to split a module.
 This repo uses `uv`.
 
 ```bash
-uv sync --locked --group dev --group notebooks
+uv sync --locked --group dev --extra notebooks
 uv run pytest -q
 uv run ruff check .
 uv run ruff format . --check

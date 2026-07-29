@@ -69,6 +69,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
 ## Library notes
 
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
+- [Logic-symmetry space](./lib/logic_symmetry.md): generic four-state geometry,
+  records, configuration, and plot semantics.
 - [Plate-reader metric outputs](./lib/plate_reader/metric_outputs.md): shared
   plate-reader records and protocol-owned SFXI and response-window analyses.
 - [SFXI vec8 in Reader](./lib/sfxi_vec8_in_reader.md): measured vec8

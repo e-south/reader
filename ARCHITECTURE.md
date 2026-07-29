@@ -74,6 +74,28 @@ The repository test suite enforces the most important inverse boundary:
 `domains/` cannot import `api`, `maintenance`, `plugins`, `protocols`,
 `runtime`, or `workbench`.
 
+### Where reusable calculations belong
+
+A calculation belongs in Reader when its inputs are declared measurement
+records, its parameters describe acquisition or reduction mechanics, and its
+output remains meaningful without knowing a study id, candidate identity, or
+selection preference. The pure operation belongs under `domains/`; a thin
+transform plugin binds typed ports; a protocol decides when that transform is
+part of an assay plan.
+
+A calculation remains downstream when it binds assay rows to study entities,
+chooses a scientific target or control for a particular question, embeds
+acceptance thresholds or ranking preferences, or composes evidence into a
+study narrative. A named study endpoint does not become a Reader primitive
+merely because its equation could be implemented as a dataframe transform.
+If several studies later need the same measurement reduction, extract the
+preference-free reduction into Reader and keep each study's identity,
+calibration, scoring, and interpretation with that study.
+
+Cross-repository bridge skills only route between these owners. They may name
+public contracts and verification commands, but must not contain equations,
+treatment ontologies, candidate mappings, or executable study logic.
+
 ### Aggregate capability map
 
 Cross-experiment analyses use the same lifecycle as source experiments. Core
@@ -85,7 +107,7 @@ meaning of a particular collection:
 | `workbench/experiments.py` | Resolve experiment identities below the canonical `experiments/` owner without assuming a year or directory name |
 | `workbench/records/sources.py` | Resolve exact source-record revisions for typed record-collection ports |
 | `domains/plate_reader/analysis/response_window/` | Response-window source validation, reductions, aggregation, and uncertainty |
-| `domains/plate_reader/plots/response_window/` | Assay-specific review tables, figure planning, rendering, and display labels |
+| `domains/plate_reader/plots/response_window/` | Response-window summary selection, validation, labeling, and rendering |
 | `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
 | `protocols/` | Compile the declared collection, plots, exports, and notebook into the normal workbench plan |
 
@@ -159,6 +181,20 @@ The CLI mirrors this lifecycle on purpose. Discovery and preflight are first-cla
 
 These registries are meant to reduce cognitive load, not increase it. Experiment authors should normally interact with protocols and semantic outputs. Maintainers use plugin registries when extending or debugging the workbench kernel.
 
+Built-in plugins are registered explicitly by category; coordinated external
+integrations may contribute descriptors through the `reader.plugins` entry
+point. Registration validates category, identity, typed ports, and contract
+surfaces before execution. A plugin becomes an experiment feature only when a
+protocol compiler gives it a semantic role—registry presence alone never
+creates a second authoring or execution surface.
+
+Data-producing work belongs in pipeline transforms. Plot and export plugins
+consume persisted records and may emit file bundles, but cannot smuggle new
+dataframe records into a presentation phase. The generic notebook surface is
+likewise record-driven: any cataloged dataframe or file bundle can be
+discovered through the public record API, while specialized components remain
+optional views over those same records rather than separate lifecycles.
+
 ## Architectural Invariants
 
 These are the invariants the codebase should preserve.
@@ -167,6 +203,8 @@ These are the invariants the codebase should preserve.
 - `workbench/config/` parses wire format; it does not become the internal authored model or runtime graph.
 - Protocols own assay semantics and user-facing output vocabulary.
 - Plugins are mechanics. They should be thin adapters around domain logic.
+- Pipeline transforms own dataframe outputs; plot and export plugins own file
+  bundles only.
 - Domain packages own math, parsing, ordering, and figure-planning logic.
 - Domain packages accept explicit data and parameters; runtime adapters resolve
   configs, catalogs, and generated records before calling them.
@@ -208,6 +246,8 @@ Use these rules when adding new behavior.
 - Add shared logic under `domains/` when the computation or parsing is domain-owned.
 - Add new semantic outputs as protocol figures or artifacts, not as raw plugin ids in user config.
 - Prefer composition over near-identical plugin variants.
+- Keep the canonical notebook record-driven so a newly registered contract or
+  deliverable is inspectable before any specialized notebook view exists.
 
 ## Related Docs
 

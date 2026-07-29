@@ -46,7 +46,7 @@ This project uses `uv`:
 
 #### Setup (dev + notebooks)
 ```bash
-uv sync --locked --group dev --group notebooks
+uv sync --locked --group dev --extra notebooks
 ```
 
 ## Commands

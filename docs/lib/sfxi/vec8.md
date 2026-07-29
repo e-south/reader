@@ -173,8 +173,7 @@ Reader rejects, rather than infers around:
 - incomplete corner sets when completeness is required
 - a missing, ambiguous, or incomplete reference design
 
-Keys outside `sfxi.vec8.v3`, including `reference.genotype`,
-`reference.scope`, and `on_missing_time`, are rejected.
+Unknown transform and nested response/reference settings are rejected.
 
 ## Source map
 
@@ -183,7 +182,7 @@ Keys outside `sfxi.vec8.v3`, including `reference.genotype`,
 - [math.py](../../../src/reader/domains/logic/sfxi/math.py): vec8 calculation
 - [reference.py](../../../src/reader/domains/logic/sfxi/reference.py): reference
   identity and anchors
-- [run.py](../../../src/reader/domains/logic/sfxi/run.py): orchestration and
+- [builder.py](../../../src/reader/domains/logic/sfxi/builder.py): orchestration and
   output assembly
 - [logic.py](../../../src/reader/contracts/builtins/logic.py): dataframe
   contract

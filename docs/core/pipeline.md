@@ -23,7 +23,7 @@ in domain terms, not plugin or graph terms.
 schema: reader/v8
 
 experiment:
-  id: 20250614_sensor_panel_M9_glu
+  id: example_plate_reader
 
 evidence:
   data_class: plate_reader_screen
@@ -134,14 +134,14 @@ resolve it and enforce their own state requirements.
 ```yaml
 annotations:
   ordered_state_spaces:
-    stress_states:
+    four_state_conditions:
       column: treatment
       state_order: ["00", "10", "01", "11"]
       values:
-        "00": no stress
-        "10": ethanol
-        "01": ciprofloxacin
-        "11": ethanol plus ciprofloxacin
+        "00": baseline
+        "10": condition A
+        "01": condition B
+        "11": conditions A and B
       case_sensitive: true
 ```
 
@@ -181,9 +181,8 @@ Users do not select plugins directly. They choose:
 - optional export `include` / `exclude`
 - optional per-artifact `artifacts` config
 
-Unknown keys in the public config fail fast. `reader/v8` no longer silently
-drops misspelled protocol keys, unknown plot/export output blocks, or malformed
-annotation collections.
+Unknown keys in the public config fail fast, including misspelled protocol
+keys, unknown plot or export blocks, and malformed annotation collections.
 
 ## Plate-reader example
 
@@ -231,9 +230,6 @@ protocol:
   inputs:
     ingest:
       mode: mixed
-    response:
-      logic_channel: YFP/CFP
-      intensity_channel: YFP/OD600
     reference:
       design_id: REF
       stat: mean

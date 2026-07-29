@@ -18,7 +18,7 @@ binds together:
   selection policy;
 - the exact upstream record revision consumed by downstream steps; and
 - the exact experiment and record revision consumed through each cross-experiment
-  record resource; and
+  record resource;
 - each generated file’s output-relative path, byte size, and SHA-256.
 
 Plot and export plugins still update their configured current files under
@@ -42,6 +42,11 @@ config or Reader build differs from the current environment. A digest,
 missing-file, exact-upstream-revision, or invalid-schema failure is `blocked`.
 
 `reader records` is a catalog view. It does not replace `reader verify`.
+Verification also audits `outputs/manifests/invocations.jsonl`: every invocation
+must contain one attempt and at most one terminal result. An attempt without a
+terminal result is reported as `invocation.finalization_unconfirmed`; Reader
+keeps any committed records intact because their catalog and artifact evidence
+remain the authoritative publication boundary.
 
 ## Invalid catalog recovery
 

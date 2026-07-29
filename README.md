@@ -1,7 +1,6 @@
-![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/main/assets/reader-banner.svg)
+# ![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/main/assets/reader-banner.svg)
 
 [![Checks](https://github.com/e-south/reader/actions/workflows/checks.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/checks.yaml)
-[![Coverage](https://codecov.io/gh/e-south/reader/graph/badge.svg)](https://codecov.io/gh/e-south/reader)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/downloads/release/python-3120/)
 [![MIT license](https://img.shields.io/badge/license-MIT-3D8068.svg)](https://github.com/e-south/reader/blob/main/LICENSE)
 
@@ -13,22 +12,38 @@ contract in `config.yaml`, and generated artifacts in `outputs/`.
 The distribution is named `reader-workbench`; its import package and command
 remain `reader`.
 
-## Try it
+## Install
+
+Install the `reader-workbench` distribution as a command-line tool:
 
 ```bash
-uv sync --locked
-uv run reader demo
+uv tool install reader-workbench
+```
+
+Or install it into an active Python environment:
+
+```bash
+python -m pip install reader-workbench
+```
+
+The installed command is `reader`:
+
+```bash
+reader demo
+reader protocols
+reader init ./experiments/my_experiment --protocol plate_reader/single_reporter_screen
 ```
 
 The demo prints a guided command tour. It does not execute a pipeline or write
-files. To see the assay types Reader can scaffold:
+files. Every generated starter can be inspected and validated before data is
+added.
+
+## Contribute from a checkout
 
 ```bash
-uv run reader protocols
-uv run reader init ./experiments/2026/20260728_my_experiment --protocol plate_reader/single_reporter_screen
+uv sync --locked --group dev --extra notebooks
+uv run reader demo
 ```
-
-Every generated starter can be inspected and validated before data is added.
 
 ## Learn more
 
