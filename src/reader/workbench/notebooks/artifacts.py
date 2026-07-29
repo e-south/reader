@@ -111,7 +111,7 @@ def publish_notebook_artifact_bundle(
                 for path, spec in zip(final_paths, artifact_specs, strict=True)
             ),
         )
-    except Exception:
+    except BaseException:
         if promoted_dir is not None:
             shutil.rmtree(promoted_dir, ignore_errors=True)
         raise

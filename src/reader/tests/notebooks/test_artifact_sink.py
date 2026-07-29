@@ -291,6 +291,25 @@ def test_publish_notebook_bundle_catalog_failure_rolls_back_committed_files(
     assert not staging.exists() or list(staging.iterdir()) == []
 
 
+def test_publish_notebook_bundle_catalog_interrupt_rolls_back_promoted_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _context(tmp_path)
+    _upstream_record(context)
+
+    def _interrupt_catalog(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(RecordStore, "append_notebook_file_bundle", _interrupt_catalog)
+
+    with pytest.raises(KeyboardInterrupt):
+        _publish(context, artifacts=(_artifact("cytometry_eda.pdf", "pdf"),))
+
+    assert not (context.outputs_dir / "exports" / "cytometry_eda").exists()
+    staging = context.outputs_dir / ".staging"
+    assert not staging.exists() or list(staging.iterdir()) == []
+
+
 def test_publish_notebook_bundle_collision_never_deletes_winning_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
