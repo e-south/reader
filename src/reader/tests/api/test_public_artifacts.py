@@ -225,6 +225,50 @@ def test_publish_artifact_bundle_rejects_symlinked_staging_parent_before_writers
     _assert_failed_ledger(fixture, failure_type="RecordError")
 
 
+def test_publish_artifact_bundle_rechecks_exports_confinement_after_writers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _upstream_record(fixture)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original_replace = Path.replace
+    escaped_promotions: list[Path] = []
+
+    def _track_replace(source: Path, target: Path) -> Path:
+        if source.parent == fixture.outputs_dir / ".staging":
+            resolved_target = target.resolve(strict=False)
+            if not resolved_target.is_relative_to(fixture.outputs_dir.resolve(strict=True)):
+                escaped_promotions.append(resolved_target)
+        return original_replace(source, target)
+
+    def _replace_exports_with_symlink(path: Path) -> None:
+        path.write_text("pdf", encoding="utf-8")
+        fixture.store.exports_dir.rmdir()
+        fixture.store.exports_dir.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(Path, "replace", _track_replace)
+
+    with pytest.raises(RecordError, match="exports.*within|symlink"):
+        _publish(
+            fixture,
+            artifacts=(
+                ArtifactSpec(
+                    "cytometry_eda.pdf",
+                    "Plot artifact.",
+                    _replace_exports_with_symlink,
+                ),
+            ),
+        )
+
+    assert escaped_promotions == []
+    assert list(outside.iterdir()) == []
+    assert fixture.store.latest_record("notebook:cytometry_eda") is None
+    _assert_clean_staging(fixture)
+    _assert_failed_ledger(fixture, failure_type="RecordError")
+
+
 def test_publish_artifact_bundle_rejects_symlink_escape_and_cleans_staging(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     _upstream_record(fixture)

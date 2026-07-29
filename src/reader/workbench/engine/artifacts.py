@@ -10,7 +10,7 @@ from typing import Any
 
 from reader.errors import InvocationFinalizationError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecordRef
-from reader.workbench.paths import resolve_path_within_root
+from reader.workbench.paths import resolve_confined_sink_root, resolve_path_within_root
 from reader.workbench.records import (
     BuildIdentity,
     FileBundleRecord,
@@ -139,8 +139,26 @@ def publish_artifact_bundle(
             staged_paths.append(staged_path)
         _validate_written_artifacts(staged_paths, staging_dir=staging_dir)
 
-        store.exports_dir.mkdir(parents=True, exist_ok=True)
-        final_dir = _next_revision_dir(store.exports_dir / normalized_producer_id)
+        try:
+            exports_dir = resolve_confined_sink_root(
+                store.exports_dir,
+                root=store.root,
+                label="Artifact exports",
+            )
+            exports_dir.mkdir(parents=True, exist_ok=True)
+            exports_dir = resolve_confined_sink_root(
+                exports_dir,
+                root=store.root,
+                label="Artifact exports",
+            )
+            final_dir = _next_revision_dir(exports_dir / normalized_producer_id)
+            final_dir = resolve_confined_sink_root(
+                final_dir,
+                root=store.root,
+                label="Artifact destination",
+            )
+        except ValueError as exc:
+            raise RecordError(str(exc)) from exc
         staging_dir.replace(final_dir)
         staging_dir = None
         promoted_dir = final_dir
