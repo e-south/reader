@@ -58,7 +58,7 @@ def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) ->
     assert "Experiment coverage" in source
     assert "Bundle provenance" in source
     assert "lazy=True" in source
-    assert "from reader.response_window_review import" in source
+    assert "from reader.api.response_window.review import" in source
     assert "Connect growth and fluorescence after" in source
     assert "Response state `r_i`" not in source
     assert "Genotype" not in source

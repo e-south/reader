@@ -36,8 +36,8 @@ def _():
         experiment_display_title_from_config,
         experiment_selector_options,
     )
-    from reader.response_window import verify_response_window_bundle
-    from reader.response_window_review import (
+    from reader.api.response_window import verify_response_window_bundle
+    from reader.api.response_window.review import (
         VIEW_LABELS,
         common_cross_experiment_reductions,
         cross_experiment_design_rows,

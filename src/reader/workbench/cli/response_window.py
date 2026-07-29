@@ -18,7 +18,7 @@ from .notebooks import _launch_marimo
 from .shared import app, console, emit_json, emit_json_error, normalize_output_format, table
 
 if TYPE_CHECKING:
-    from reader.response_window import ResponseWindowBundle, ResponseWindowPreflight
+    from reader.api.response_window import ResponseWindowBundle, ResponseWindowPreflight
 
 response_window_app = typer.Typer(
     add_completion=False,
@@ -28,15 +28,15 @@ response_window_app = typer.Typer(
 
 
 def preflight_response_window_request(**kwargs):
-    return import_module("reader.response_window").preflight_response_window_request(**kwargs)
+    return import_module("reader.api.response_window").preflight_response_window_request(**kwargs)
 
 
 def build_response_window_bundle(**kwargs):
-    return import_module("reader.response_window").build_response_window_bundle(**kwargs)
+    return import_module("reader.api.response_window").build_response_window_bundle(**kwargs)
 
 
 def verify_response_window_bundle(path: Path):
-    return import_module("reader.response_window").verify_response_window_bundle(path)
+    return import_module("reader.api.response_window").verify_response_window_bundle(path)
 
 
 @response_window_app.command(

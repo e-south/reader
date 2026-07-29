@@ -2,7 +2,7 @@
 doc_id: reader-python-api
 surface: api-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Stable task-oriented Python entrypoints for inspecting, verifying, and running Reader experiments without composing workbench internals.
 ---
 
@@ -69,8 +69,24 @@ ports, dataframe contracts, and promoted contract surfaces. Protocols remain
 the public experiment-authoring layer; plugin discovery is for integrations
 and maintainer tooling.
 
+## Response-window operations
+
+```python
+from reader.api.response_window import (
+    build_response_window_bundle,
+    preflight_response_window_request,
+    verify_response_window_bundle,
+)
+from reader.api.response_window.review import load_review_tables, render_review_figure
+```
+
+The service facade composes Reader runtime state with the plate-reader domain
+contracts. Review helpers expose verified tables and assay-specific figures
+without making callers import domain or workbench implementation modules.
+
 ## Boundary
 
-Import public operations from `reader.api` or use `open_experiment` from the
-package root. Modules under `reader.workbench` are implementation details and
-may change as the execution engine is decomposed.
+Import public operations from `reader.api`, use `reader.api.response_window`
+for the response-window capability, or use `open_experiment` from the package
+root. Modules under `reader.domains`, `reader.runtime`, and `reader.workbench`
+are implementation details.

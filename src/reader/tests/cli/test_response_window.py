@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from reader.response_window import (
+from reader.api.response_window import (
     ExperimentPreflight,
     ResponseWindowBundle,
     ResponseWindowPreflight,
