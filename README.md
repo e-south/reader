@@ -11,12 +11,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f855a.svg)](LICENSE)
 [![Schema: reader/v8](https://img.shields.io/badge/schema-reader%2Fv8-1d6f8c.svg)](docs/core/pipeline.md)
 
-Reader turns instrument files and experiment metadata into validated,
-traceable analysis outputs. Each experiment keeps source files in `inputs/`,
-its small `reader/v8` configuration in `config.yaml`, and generated records,
-plots, exports, and notebooks in `outputs/`.
-Cross-experiment aggregates follow the same contract: the aggregate is an
-experiment, not a second top-level output namespace.
+Reader ingests instrument files and experiment metadata, applies declared
+transformations, and writes validated records, plots, exports, and notebooks.
+Every unit of work—including a cross-experiment aggregate—lives under
+`experiments/<year>/<experiment>/`, with source material in `inputs/`, a
+`reader/v8` contract in `config.yaml`, and generated artifacts in `outputs/`.
 
 ## Try it
 
