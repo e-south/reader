@@ -13,7 +13,7 @@ keywords = ["data-analysis", "data-pipelines", "scientific-computing", "workbenc
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -35,6 +35,13 @@ dependencies = [
   "pillow>=12.3.0",
   "polars>=1.36.1",
   "flowio>=1.4.0",
+]
+
+[project.optional-dependencies]
+notebooks = [
+  "altair>=6.0.0",
+  "duckdb>=1.4.3",
+  "marimo>=0.23.0,<0.24",
 ]
 
 [project.scripts]
@@ -65,12 +72,6 @@ dev = [
   "twine>=7,<8",
   "ruff>=0.4",
   "pre-commit>=3.7",
-]
-
-notebooks = [
-  "altair>=6.0.0",
-  "duckdb>=1.4.3",
-  "marimo>=0.23.0,<0.24",
 ]
 
 [tool.uv]
