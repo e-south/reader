@@ -197,6 +197,25 @@ class RecordStore:
         """Bind immutable evidence to the exact inputs resolved for one computation."""
 
         resolved_by_label = dict(resolved_inputs or {})
+        from .sources import ResolvedSourceRecord, SourceRecordCollection  # noqa: PLC0415
+
+        resolved_sources: dict[SourceRecordRef, ResolvedSourceRecord] = {}
+        for value in resolved_by_label.values():
+            if isinstance(value, ResolvedSourceRecord):
+                candidates = (value,)
+            elif isinstance(value, SourceRecordCollection):
+                candidates = value.records
+            else:
+                continue
+            for candidate in candidates:
+                previous = resolved_sources.get(candidate.ref)
+                if previous is not None and previous.revision_digest != candidate.revision_digest:
+                    raise RecordError(
+                        f"Resolved source record {candidate.ref.experiment_id}:{candidate.ref.record_id} "
+                        "has conflicting revisions"
+                    )
+                resolved_sources[candidate.ref] = candidate
+
         evidence: list[RecordInputEvidence] = []
         for item in inputs:
             if isinstance(item.ref, RecordRef):
@@ -226,7 +245,19 @@ class RecordStore:
             if isinstance(item.ref, SourceRecordRef):
                 from .sources import resolve_source_record  # noqa: PLC0415
 
-                upstream = resolve_source_record(item.ref, contracts=self.contracts)
+                upstream = resolved_by_label.get(item.label)
+                if upstream is None:
+                    upstream = resolved_sources.get(item.ref)
+                if upstream is None:
+                    upstream = resolve_source_record(item.ref, contracts=self.contracts)
+                if not isinstance(upstream, ResolvedSourceRecord):
+                    raise RecordError(f"Resolved input {item.label!r} must be a Reader source record")
+                if upstream.ref != item.ref:
+                    raise RecordError(
+                        f"Resolved input {item.label!r} is source record "
+                        f"{upstream.ref.experiment_id}:{upstream.ref.record_id}, expected "
+                        f"{item.ref.experiment_id}:{item.ref.record_id}"
+                    )
                 evidence.append(
                     RecordInputEvidence(
                         label=item.label,
