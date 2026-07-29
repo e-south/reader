@@ -1,4 +1,4 @@
-![Reader: organize assay inputs, validate before running, and trace every output](assets/reader-banner.svg)
+![Reader: experimental-data workbench from ingest through trace](assets/reader-banner.svg)
 
 [![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
 [![Integration](https://github.com/e-south/reader/actions/workflows/integration.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/integration.yaml)
