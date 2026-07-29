@@ -146,6 +146,7 @@ def test_repo_cli_inventory_details_matches_experiment_discovery() -> None:
     payload = cli_success_data(result.output)
     expected_configs = discover_experiment_configs(experiments_root)
     expected_decls = {str(path.resolve()): load_decl(path) for path in expected_configs}
+    expected_statuses = Counter("ok" for _ in expected_configs)
     expected_protocols = Counter(decl.experiment_semantics.protocol.id for decl in expected_decls.values())
     expected_lifecycles = Counter(decl.experiment.lifecycle for decl in expected_decls.values())
     by_config = {item["config"]: item for item in payload["experiments"]}
@@ -160,7 +161,7 @@ def test_repo_cli_inventory_details_matches_experiment_discovery() -> None:
         "status": None,
     }
     assert payload["summary"]["experiments"] == len(expected_configs)
-    assert payload["summary"]["by_status"] == {"ok": len(expected_configs)}
+    assert payload["summary"]["by_status"] == dict(sorted(expected_statuses.items()))
     assert payload["summary"]["by_protocol"] == dict(sorted(expected_protocols.items()))
     assert payload["summary"]["by_lifecycle"] == dict(sorted(expected_lifecycles.items()))
     assert set(by_config) == set(expected_decls)
