@@ -69,8 +69,10 @@ Reader keeps continuous verification and publication distinct:
 
 - `Checks` in [.github/workflows/checks.yaml](../.github/workflows/checks.yaml)
   runs on pull requests and main pushes. Package verification and the portable
-  test suite run in parallel; coverage upload remains separately permissioned.
-  The final `Checks` job is the only required branch-protection context.
+  test suite run in parallel; the dependency audit covers both runtime and
+  notebook execution surfaces, and coverage upload remains separately
+  permissioned. The final `Checks` job is the only required branch-protection
+  context.
 - `Release` in [.github/workflows/release.yaml](../.github/workflows/release.yaml)
   runs only for a published GitHub release. An unprivileged job builds the
   distributions, then a `pypi` environment job publishes them through OIDC.

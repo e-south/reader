@@ -33,14 +33,14 @@ jobs:
         run: uv sync --locked --group dev
       - name: Verify lockfile
         run: uv lock --check
-      - name: Audit runtime dependencies
+      - name: Audit operational dependencies
         run: |
           mkdir -p .artifacts
-          uv export --locked --no-dev --no-emit-project \
+          uv export --locked --no-dev --group notebooks --no-emit-project \
             --format requirements-txt \
-            --output-file .artifacts/runtime-requirements.txt
+            --output-file .artifacts/operational-requirements.txt
           uv run --locked pip-audit \
-            --requirement .artifacts/runtime-requirements.txt \
+            --requirement .artifacts/operational-requirements.txt \
             --no-deps \
             --disable-pip
       - name: Verify documentation
