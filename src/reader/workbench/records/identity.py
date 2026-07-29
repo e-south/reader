@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.metadata
 import json
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
 
+from reader._version import package_version
 from reader.errors import RecordError
 
 _PACKAGED_SOURCE_SUFFIXES = frozenset({".py", ".pyi"})
@@ -83,10 +83,5 @@ def _source_digest(package_root: Path) -> str:
 
 @cache
 def current_build_identity() -> BuildIdentity:
-    try:
-        reader_version = importlib.metadata.version("reader")
-    except importlib.metadata.PackageNotFoundError:
-        reader_version = "0+uninstalled"
-
     package_root = Path(__file__).resolve().parents[2]
-    return BuildIdentity(reader_version=reader_version, source_digest=_source_digest(package_root))
+    return BuildIdentity(reader_version=package_version(), source_digest=_source_digest(package_root))

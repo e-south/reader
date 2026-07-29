@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/builtins/__init__.py
-
-Explicit built-in dataframe contract catalog.
---------------------------------------------------------------------------------
-"""
+"""Explicit built-in dataframe contract catalog."""
 
 from __future__ import annotations
 

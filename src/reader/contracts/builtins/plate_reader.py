@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/builtins/plate_reader.py
-
-Plate-reader specific dataframe contracts layered on top of generic tidy data.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader specific dataframe contracts layered on top of generic tidy data."""
 
 from __future__ import annotations
 
@@ -48,62 +41,5 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         unique_keys=[],
         domain="plate_reader",
         kind="summary-table",
-    ),
-    DataFrameContract(
-        id="plate_reader.sponge_trace.v1",
-        description="Matched-control sponge-screen trace table with derived kinetics and window membership.",
-        columns=[
-            ColumnRule("plate_id", "string"),
-            ColumnRule("sensor", "string"),
-            ColumnRule("sponge", "string"),
-            ColumnRule("genotype_id", "string"),
-            ColumnRule("replicate_id", "string", allow_nan=True),
-            ColumnRule("stress_condition", "string", required=False, allow_nan=True),
-            ColumnRule("IPTG", "string", required=False, allow_nan=True),
-            ColumnRule("time", "float", required=True, allow_nan=False, nonnegative=True),
-            ColumnRule("time_from_stress", "float", required=True, allow_nan=False),
-            ColumnRule("metric", "string"),
-            ColumnRule("value", "float", required=True, allow_nan=True),
-            ColumnRule("expected_decoy_sign", "int", required=False, allow_nan=True),
-            ColumnRule("is_relevant_stress", "bool", required=False, allow_nan=True),
-            ColumnRule("relevant_sensor_pair", "bool", required=False, allow_nan=True),
-            ColumnRule("sponge_family_size", "string", required=False, allow_nan=True),
-            ColumnRule("matched_tetO_group", "string", required=False, allow_nan=True),
-            ColumnRule("matched_control_key", "string", allow_nan=True),
-            ColumnRule("summary_window_start_h", "float", allow_nan=True),
-            ColumnRule("summary_window_end_h", "float", allow_nan=True),
-            ColumnRule("summary_window_duration_h", "float", allow_nan=True),
-            ColumnRule("in_pre_window", "bool", allow_nan=True),
-            ColumnRule("in_primary_post_stress", "bool", allow_nan=True),
-            ColumnRule("in_endpoint_window", "bool", required=False, allow_nan=True),
-            ColumnRule("pre_stress_read_count", "float", allow_nan=True),
-            ColumnRule("post_stress_read_count", "float", allow_nan=True),
-            ColumnRule("matched_group_sample_count", "float", allow_nan=True),
-            ColumnRule("stress_addition_gap_h", "float", allow_nan=True),
-        ],
-        unique_keys=[],
-        domain="plate_reader",
-        kind="analysis-trace-table",
-    ),
-    DataFrameContract(
-        id="plate_reader.sponge_summary.v1",
-        description="Matched-control sponge-screen summary table with AUC, endpoint, burden, and leakiness metrics.",
-        columns=[
-            ColumnRule("plate_id", "string"),
-            ColumnRule("sensor", "string"),
-            ColumnRule("sponge", "string", required=False, allow_nan=True),
-            ColumnRule("genotype_id", "string", required=False, allow_nan=True),
-            ColumnRule("stress_condition", "string", required=False, allow_nan=True),
-            ColumnRule("IPTG", "string", required=False, allow_nan=True),
-            ColumnRule("metric", "string"),
-            ColumnRule("value", "float", required=True, allow_nan=True),
-            ColumnRule("expected_decoy_sign", "int", required=False, allow_nan=True),
-            ColumnRule("is_relevant_stress", "bool", required=False, allow_nan=True),
-            ColumnRule("relevant_sensor_pair", "bool", required=False, allow_nan=True),
-            ColumnRule("sponge_family_size", "string", required=False, allow_nan=True),
-        ],
-        unique_keys=[],
-        domain="plate_reader",
-        kind="analysis-summary-table",
     ),
 )

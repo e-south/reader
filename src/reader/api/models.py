@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+import pandas as pd
 
 from reader.runtime import ReaderRuntime
 from reader.workbench.config import ReaderSpec
@@ -54,13 +56,13 @@ class Experiment:
     """A loaded, protocol-bound experiment handle for public API operations."""
 
     config_path: Path
-    spec: ReaderSpec
-    declaration: WorkbenchDecl
-    runtime: ReaderRuntime
+    _spec: ReaderSpec = field(repr=False)
+    _declaration: WorkbenchDecl = field(repr=False)
+    _runtime: ReaderRuntime = field(repr=False)
 
     @property
     def identity(self) -> ExperimentIdentity:
-        decl = self.declaration
+        decl = self._declaration
         semantic_evidence = decl.experiment_semantics.evidence
         return ExperimentIdentity(
             id=decl.experiment.id,
@@ -159,6 +161,34 @@ class RecordRevision(ApiResult):
 
 
 @dataclass(frozen=True)
+class DataFrameRecordResult(ApiResult):
+    """One content-digest-verified, contract-validated dataframe record."""
+
+    experiment: ExperimentIdentity
+    record: RecordRevision
+    contract_id: str
+    content_digest: str
+    dataframe: pd.DataFrame = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "dataframe", self.dataframe.copy(deep=True))
+
+    def to_dict(self) -> dict[str, object]:
+        """Project JSON-ready metadata without serializing dataframe values."""
+
+        return {
+            "experiment": self.experiment.to_dict(),
+            "record": self.record.to_dict(),
+            "contract_id": self.contract_id,
+            "content_digest": self.content_digest,
+            "dataframe": {
+                "rows": int(self.dataframe.shape[0]),
+                "columns": [str(column) for column in self.dataframe.columns],
+            },
+        }
+
+
+@dataclass(frozen=True)
 class RunResult(ApiResult):
     experiment: ExperimentIdentity
     invocation_id: str | None
@@ -207,6 +237,7 @@ class PluginDescriptorResult(ApiResult):
 
 __all__ = [
     "ApiResult",
+    "DataFrameRecordResult",
     "Experiment",
     "ExperimentEvidence",
     "ExperimentIdentity",

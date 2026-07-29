@@ -389,8 +389,10 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
     assert "promote_to_tidy_plus_map" in [step.id for step in workbench.pipeline]
+    assert "logic_symmetry_summary" in [step.id for step in workbench.pipeline]
     assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
     assert [step.id for step in workbench.plots] == ["logic_symmetry"]
+    assert workbench.plots[0].reads["table"].record_id == "logic_symmetry/table"
     assert workbench.exports == ()
 
 

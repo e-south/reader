@@ -95,6 +95,21 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
     record = aggregate_store.latest_dataframe("collect_vec8/vec8")
     assert record is not None
     assert record.contract_id == "sfxi.vec8_collection.v1"
+    collection_frame = record.load_dataframe()
+    assert collection_frame[
+        ["source_resource_id", "source_experiment_id", "source_record_id"]
+    ].drop_duplicates().to_dict(orient="records") == [
+        {
+            "source_resource_id": "first",
+            "source_experiment_id": "source-a",
+            "source_record_id": "vec8/df",
+        },
+        {
+            "source_resource_id": "second",
+            "source_experiment_id": "source-b",
+            "source_record_id": "vec8/df",
+        },
+    ]
     assert [(item.ref.experiment_id, item.ref.record_id) for item in record.inputs] == [
         ("source-a", "vec8/df"),
         ("source-b", "vec8/df"),
@@ -180,6 +195,126 @@ def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: P
     assert aggregate_store.latest_dataframe("collect/vec8") is None
 
 
+def test_capture_rejects_corrupt_exact_source_revision_without_output_mutation(tmp_path: Path) -> None:
+    source_config, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    source_ref = SourceRecordRef(
+        resource_id="first",
+        experiment_id="source-a",
+        record_id="vec8/df",
+        experiment_root=source_config.parent,
+        outputs_dir=source_store.root,
+    )
+    resolved = resolve_source_record(source_ref, contracts=builtin_contract_catalog())
+    assert resolved.record.path.is_file()
+    resolved.record.path.write_bytes(b"corrupt parquet")
+
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_store = RecordStore(
+        aggregate_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=aggregate_root,
+        create=False,
+    )
+
+    with pytest.raises(RecordError, match="content digest mismatch"):
+        aggregate_store.capture_inputs(
+            [ProvenanceInput(label="sources[first]", ref=source_ref)],
+            resolved_inputs={"sources": SourceRecordCollection((resolved,))},
+        )
+
+    assert not aggregate_root.exists()
+
+
+def test_persistence_rechecks_source_artifact_before_output_mutation(tmp_path: Path) -> None:
+    source_config, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    source_ref = SourceRecordRef(
+        resource_id="first",
+        experiment_id="source-a",
+        record_id="vec8/df",
+        experiment_root=source_config.parent,
+        outputs_dir=source_store.root,
+    )
+    resolved = resolve_source_record(source_ref, contracts=builtin_contract_catalog())
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_store = RecordStore(
+        aggregate_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=aggregate_root,
+        create=False,
+    )
+    captured = aggregate_store.capture_inputs(
+        [ProvenanceInput(label="sources[first]", ref=source_ref)],
+        resolved_inputs={"sources": SourceRecordCollection((resolved,))},
+    )
+    resolved.record.path.write_bytes(b"corrupt parquet")
+
+    with pytest.raises(RecordError, match="changed after input evidence was captured"):
+        aggregate_store.persist_dataframe(
+            producer_id="collect",
+            producer_plugin="transform/sfxi_vec8_collection",
+            out_name="vec8",
+            record_id="collect/vec8",
+            df=_vec8("aggregate"),
+            contract_id="sfxi.vec8.v3",
+            inputs=captured,
+            config_digest="sha256:aggregate-a",
+        )
+
+    assert not aggregate_root.exists()
+
+
+def test_corrupt_source_artifact_fails_run_before_aggregate_output_mutation(tmp_path: Path) -> None:
+    _, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    _source(tmp_path, experiment_id="source-b", prefix="b")
+    config = _aggregate_config(tmp_path)
+    source_store.read_dataframe("vec8/df").path.write_bytes(b"corrupt parquet")
+    decl = load_workbench_decl(config, protocols=builtin_protocol_catalog())
+
+    with pytest.raises(ConfigError, match="content digest mismatch"):
+        run_spec(decl, verbose=False, console=Console(file=None, quiet=True))
+
+    assert not (config.parent / "outputs").exists()
+
+
+def test_verify_rejects_corrupt_source_artifact_without_catalog_advancement(tmp_path: Path) -> None:
+    source_config, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    _source(tmp_path, experiment_id="source-b", prefix="b")
+    config = _aggregate_config(tmp_path)
+    decl = load_workbench_decl(config, protocols=builtin_protocol_catalog())
+    run_spec(decl, verbose=False, console=Console(file=None, quiet=True))
+    aggregate_store = RecordStore(
+        config.parent / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=config.parent,
+        create=False,
+    )
+    source_ref = SourceRecordRef(
+        resource_id="first",
+        experiment_id="source-a",
+        record_id="vec8/df",
+        experiment_root=source_config.parent,
+        outputs_dir=source_store.root,
+    )
+    revision_before_corruption = resolve_source_record(
+        source_ref,
+        contracts=builtin_contract_catalog(),
+    ).revision_digest
+    source_store.read_dataframe("vec8/df").path.write_bytes(b"corrupt parquet")
+
+    verification = verify_record_store(
+        aggregate_store,
+        experiment_root=config.parent,
+        expected_config_digest=decl.config_digest,
+    )
+
+    assert verification["status"] == "failed"
+    issues = [issue for item in verification["records"] for issue in item["issues"]]
+    assert any(issue["code"] == "input.source_record_artifact_invalid" for issue in issues)
+    assert resolve_source_record(source_ref, contracts=builtin_contract_catalog()).revision_digest == (
+        revision_before_corruption
+    )
+
+
 def test_vec8_collection_contract_is_not_a_single_source_vec8() -> None:
     contracts = builtin_contract_catalog()
 
@@ -207,6 +342,52 @@ def test_missing_source_record_fails_before_aggregate_output_mutation(tmp_path: 
         run_spec(decl, verbose=False, console=Console(file=None, quiet=True))
 
     assert not (aggregate_root / "outputs").exists()
+
+
+def test_self_source_output_collision_fails_before_record_or_ledger_mutation(tmp_path: Path) -> None:
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_root.mkdir(parents=True)
+    config = write_config(
+        aggregate_root,
+        base_reader_config(
+            experiment_id="aggregate-a",
+            protocol_id="logic/sfxi_vec8_collection",
+            protocol_inputs={"record_resources": ["self"]},
+            resources={
+                "self": {
+                    "kind": "record",
+                    "experiment": "aggregate-a",
+                    "record": "collect_vec8/vec8",
+                }
+            },
+        ),
+    )
+    store = RecordStore(
+        aggregate_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=aggregate_root,
+    )
+    store.persist_dataframe(
+        producer_id="seed",
+        producer_plugin="transform/sfxi",
+        out_name="vec8",
+        record_id="collect_vec8/vec8",
+        df=_vec8("seed"),
+        contract_id="sfxi.vec8.v3",
+        inputs=(),
+        config_digest="sha256:seed",
+    )
+    catalog_before = store.records_path.read_bytes()
+    revision_counts_before = store.revision_counts()
+    invocation_path = aggregate_root / "outputs" / "manifests" / "invocations.jsonl"
+    decl = load_workbench_decl(config, protocols=builtin_protocol_catalog())
+
+    with pytest.raises(ConfigError, match="same experiment.*planned output"):
+        run_spec(decl, verbose=False, console=Console(file=None, quiet=True))
+
+    assert store.records_path.read_bytes() == catalog_before
+    assert store.revision_counts() == revision_counts_before
+    assert not invocation_path.exists()
 
 
 def test_experiment_catalog_uses_config_identity_and_ignores_generated_configs(tmp_path: Path) -> None:

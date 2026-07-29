@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from reader.errors import ConfigError, ExecutionError
+from reader.errors import ConfigError, InvocationFinalizationError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.commands import reader_command
@@ -30,7 +30,12 @@ from .invocations import (
 )
 from .planning import build_next_steps, explain
 from .setup import build_run_context, configure_logger, normalize_log_level, resolve_palette_book, slice_pipeline_steps
-from .validation import _source_record_preflight_issues, validation_summary
+from .validation import (
+    _assert_no_source_record_output_collisions,
+    _planned_output_record_ids,
+    _source_record_preflight_issues,
+    validation_summary,
+)
 
 
 def run_spec(
@@ -139,6 +144,17 @@ def run_spec(
         )
 
     if registry is not None:
+        planned_record_ids = _planned_output_record_ids(
+            pipeline_items=pipeline_steps,
+            plot_items=plot_steps,
+            export_items=export_steps,
+            registry=registry,
+        )
+        _assert_no_source_record_output_collisions(
+            items=pipeline_steps,
+            planned_record_ids=planned_record_ids,
+            experiment_root=decl.experiment.root,
+        )
         _, source_record_issues = _source_record_preflight_issues(
             items=pipeline_steps,
             registry=registry,
@@ -240,43 +256,9 @@ def run_spec(
                 registry=registry,
             )
 
-        if show_next_steps:
-            next_steps = build_next_steps(decl, job_label=job_label, runtime=runtime)
-            table = Table(show_header=True, header_style="bold", box=box.ROUNDED, expand=False)
-            table.add_column("Command", style="accent")
-            table.add_column("What it does")
-            for command, description in next_steps:
-                table.add_row(command, description)
-            console.print(
-                Panel(
-                    table,
-                    border_style="green",
-                    box=box.ROUNDED,
-                    title=f"Records generated in [path]{out_dir}[/path]",
-                    title_align="left",
-                )
-            )
-        else:
-            console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
         revision_payloads = produced_record_revisions(
             before=before_revisions,
             after=capture_revision_snapshot(store),
-        )
-        ledger.append_result(
-            attempt,
-            exit_status=0,
-            produced_record_revisions=revision_payloads,
-        )
-        return ExecutionResult(
-            invocation_id=attempt.invocation_id,
-            operation=operation,
-            status="succeeded",
-            dry_run=False,
-            selected_steps=selected_steps,
-            produced_record_revisions=tuple(
-                ProducedRecordRevision.from_payload(revision) for revision in revision_payloads
-            ),
-            ledger_path=ledger.path,
         )
     except BaseException as failure:
         try:
@@ -294,10 +276,54 @@ def run_spec(
                 failure=failure,
             )
         except BaseException as ledger_failure:
-            raise ExecutionError(
-                f"Execution failed and Reader could not persist its invocation result: {ledger_failure}"
-            ) from failure
+            failure.add_note(
+                f"Reader also could not persist the failed invocation result ({type(ledger_failure).__name__})."
+            )
         raise
+
+    try:
+        ledger.append_result(
+            attempt,
+            exit_status=0,
+            produced_record_revisions=revision_payloads,
+        )
+    except BaseException as failure:
+        raise InvocationFinalizationError(
+            "Execution records were committed, but Reader could not confirm the invocation result. "
+            "Keep the committed evidence and run reader verify before handoff.",
+            invocation_id=attempt.invocation_id,
+            produced_record_revisions=tuple(dict(item) for item in revision_payloads),
+        ) from failure
+
+    if show_next_steps:
+        next_steps = build_next_steps(decl, job_label=job_label, runtime=runtime)
+        table = Table(show_header=True, header_style="bold", box=box.ROUNDED, expand=False)
+        table.add_column("Command", style="accent")
+        table.add_column("What it does")
+        for command, description in next_steps:
+            table.add_row(command, description)
+        console.print(
+            Panel(
+                table,
+                border_style="green",
+                box=box.ROUNDED,
+                title=f"Records generated in [path]{out_dir}[/path]",
+                title_align="left",
+            )
+        )
+    else:
+        console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
+    return ExecutionResult(
+        invocation_id=attempt.invocation_id,
+        operation=operation,
+        status="succeeded",
+        dry_run=False,
+        selected_steps=selected_steps,
+        produced_record_revisions=tuple(
+            ProducedRecordRevision.from_payload(revision) for revision in revision_payloads
+        ),
+        ledger_path=ledger.path,
+    )
 
 
 def run_job(

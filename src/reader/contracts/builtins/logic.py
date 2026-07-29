@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/builtins/logic.py
-
-Logic-domain dataframe contracts.
---------------------------------------------------------------------------------
-"""
+"""Logic-domain dataframe contracts."""
 
 from __future__ import annotations
 
@@ -48,15 +41,17 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
     ),
     DataFrameContract(
         id="sfxi.vec8_collection.v1",
-        description="Cross-experiment SFXI vec8 collection with explicit source identity.",
+        description="Cross-experiment SFXI vec8 collection with explicit resource and record identity.",
         columns=[
             ColumnRule("source_index", "int", nonnegative=True),
-            ColumnRule("source_id", "string"),
+            ColumnRule("source_resource_id", "string"),
+            ColumnRule("source_experiment_id", "string"),
+            ColumnRule("source_record_id", "string"),
             ColumnRule("source_row_index", "int", nonnegative=True),
             ColumnRule("row_label", "string"),
             *_sfxi_vec8_columns(),
         ],
-        unique_keys=[["source_id", "design_id"]],
+        unique_keys=[["source_experiment_id", "source_record_id", "design_id"]],
         domain="logic",
         kind="logic-summary-collection",
     ),
@@ -108,8 +103,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
     ),
     DataFrameContract(
         id="logic_symmetry.v1",
-        description="Logic-symmetry per design (and batch, when present) summary (points + metrics + encodings).",
+        description="Logic-symmetry per design and batch summary with four-state metrics and coordinates.",
         columns=[
+            ColumnRule("design_id", "string", required=False, allow_nan=True),
             ColumnRule("genotype", "string", required=False, allow_nan=True),
             ColumnRule("strain", "string", required=False, allow_nan=True),
             ColumnRule("design", "string", required=False, allow_nan=True),
@@ -138,10 +134,6 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("A", "float"),
             ColumnRule("baseline_corner", "string"),
             ColumnRule("baseline_value", "float"),
-            ColumnRule("size_value", "float", required=False, allow_nan=True),
-            ColumnRule("hue_value", "string", required=False, allow_nan=True),
-            ColumnRule("alpha_value", "float", required=False, allow_nan=True),
-            ColumnRule("shape_value", "string", required=False, allow_nan=True),
         ],
         unique_keys=[],
         domain="logic",

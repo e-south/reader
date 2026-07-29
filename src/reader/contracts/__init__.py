@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/__init__.py
-
-Explicit dataframe-contract kernel and built-in contract catalog.
---------------------------------------------------------------------------------
-"""
+"""Explicit dataframe-contract kernel and built-in contract catalog."""
 
 from .builtins import BUILTIN_CONTRACTS, builtin_contract_catalog
 from .catalog import ContractCatalog, OutputContractSurface

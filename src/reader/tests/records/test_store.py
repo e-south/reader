@@ -1,16 +1,10 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_record_store.py
-
-Tests for the unified workbench record catalog.
---------------------------------------------------------------------------------
-"""
+"""Tests for the unified workbench record catalog."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pandas as pd
 import pytest
@@ -21,7 +15,6 @@ from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
 from reader.workbench.records import (
     PathDescription,
     RecordStore,
-    discover_dataframe_records,
 )
 
 
@@ -80,6 +73,23 @@ def test_record_store_creates_normal_confined_sink_roots(tmp_path: Path) -> None
 
     assert store.root == outputs
     assert all(path.is_dir() for path in (store.artifacts_dir, store.manifests_dir, store.plots_dir, store.exports_dir))
+
+
+def test_record_store_normalizes_macos_var_alias_consistently() -> None:
+    with TemporaryDirectory() as temporary_directory:
+        experiment = Path(temporary_directory) / "experiment"
+        if experiment.absolute() == experiment.resolve(strict=False):
+            pytest.skip("temporary directory does not use a filesystem alias")
+        experiment.mkdir()
+
+        store = RecordStore(
+            experiment / "outputs",
+            contracts=builtin_contract_catalog(),
+            experiment_root=experiment,
+        )
+
+        assert store.root.is_dir()
+        assert store.root.resolve(strict=True).is_relative_to(experiment.resolve(strict=True))
 
 
 def test_records_catalog_missing_keys_raises(tmp_path) -> None:
@@ -256,6 +266,41 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     assert store.revision_counts(["ingest/df", "plot:qc_plot"]) == {"ingest/df": 1, "plot:qc_plot": 1}
     assert record.producer.source_recipe is not None
     assert record.producer.source_recipe.recipe == "plate_reader/sample_map"
+
+
+def test_file_bundle_rejects_dataframe_record_id_without_mutating_catalog(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    dataframe_record = store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="shared/record",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:dataframe",
+    )
+    export_path = outputs / "exports" / "summary.csv"
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    export_path.write_text("value\n1\n", encoding="utf-8")
+    catalog_before = store.records_path.read_bytes()
+
+    with pytest.raises(RecordError, match="already used by a dataframe record"):
+        store.append_file_bundle(
+            producer_kind="export",
+            producer_id="summary",
+            producer_plugin="export/csv",
+            record_id="shared/record",
+            inputs=[],
+            config_digest="sha256:bundle",
+            files=[export_path],
+            description="Summary export.",
+        )
+
+    assert store.records_path.read_bytes() == catalog_before
+    assert store.read_record("shared/record") == dataframe_record
+    assert store.record_history("shared/record") == (dataframe_record,)
 
 
 @pytest.mark.parametrize("description", ["   ", None])
@@ -742,32 +787,3 @@ def test_revision_counts_rejects_malformed_latest_history_lineage(tmp_path, corr
 
     with pytest.raises(RecordError, match="history"):
         store.revision_counts(["ingest/df"])
-
-
-def test_discover_dataframe_records_is_catalog_only_by_default(tmp_path) -> None:
-    outputs = tmp_path / "outputs"
-    data_dir = outputs / "artifacts" / "ratio.transform_ratio"
-    data_dir.mkdir(parents=True)
-    df = pd.DataFrame({"value": [1.0]})
-    df.to_parquet(data_dir / "df.parquet", index=False)
-
-    info, labels, note, warning = discover_dataframe_records(outputs)
-    assert info == {}
-    assert labels == []
-    assert "records.json" in note
-    assert warning == ""
-
-
-def test_discover_dataframe_records_can_fall_back_to_scan(tmp_path) -> None:
-    outputs = tmp_path / "outputs"
-    data_dir = outputs / "artifacts" / "ratio.transform_ratio"
-    data_dir.mkdir(parents=True)
-    df = pd.DataFrame({"value": [1.0]})
-    df.to_parquet(data_dir / "df.parquet", index=False)
-
-    info, labels, note, warning = discover_dataframe_records(outputs, allow_scan=True)
-    assert labels
-    assert note == ""
-    assert "scanning outputs/artifacts" in warning
-    first = info[labels[0]]
-    assert first["path"].name == "df.parquet"

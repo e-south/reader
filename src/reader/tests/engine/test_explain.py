@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_engine_explain.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from pathlib import Path
 
 from rich.console import Console

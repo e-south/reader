@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.theme import Theme
 
-from reader.errors import ConfigError
+from reader.errors import ConfigError, ContractError, RecordError
 from reader.protocols import ProtocolBinding
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.config import ReaderSpec
@@ -26,10 +26,11 @@ from reader.workbench.inspection.results import record_catalog_payload
 from reader.workbench.inspection.runtime import workbench_record_verification_scope
 from reader.workbench.notebooks import write_experiment_notebook
 from reader.workbench.paths import resolve_confined_sink_root
-from reader.workbench.records import verify_record_store
+from reader.workbench.records import DataFrameArtifactRecord, record_revision_digest, verify_record_store
 from reader.workbench.templates import require_notebook_template_for_protocol
 
 from .models import (
+    DataFrameRecordResult,
     Experiment,
     ExperimentEvidence,
     ExperimentIdentity,
@@ -68,6 +69,11 @@ def open_experiment(path: str | Path, *, runtime: ReaderRuntime | None = None) -
     config_path = Path(path).expanduser().resolve()
     if config_path.is_dir():
         config_path = config_path / "config.yaml"
+    elif config_path.is_file() and config_path.name != "config.yaml":
+        config_path = next(
+            (base / "config.yaml" for base in config_path.parents if (base / "config.yaml").is_file()),
+            config_path,
+        )
     if not config_path.exists() or not config_path.is_file():
         raise ConfigError(f"Experiment config not found: {config_path}")
     active_runtime = runtime or builtin_runtime()
@@ -75,18 +81,18 @@ def open_experiment(path: str | Path, *, runtime: ReaderRuntime | None = None) -
     declaration = build_workbench_decl(spec, source_path=config_path, protocols=active_runtime.protocols)
     return Experiment(
         config_path=config_path,
-        spec=spec,
-        declaration=declaration,
-        runtime=active_runtime,
+        _spec=spec,
+        _declaration=declaration,
+        _runtime=active_runtime,
     )
 
 
 def inspect(experiment: Experiment) -> InspectionResult:
     payload = experiment_inspect_payload(
         job_path=experiment.config_path,
-        spec=experiment.spec,
-        decl=experiment.declaration,
-        runtime=experiment.runtime,
+        spec=experiment._spec,
+        decl=experiment._declaration,
+        runtime=experiment._runtime,
     )
     return InspectionResult(
         experiment=_identity(payload["experiment"]),
@@ -98,10 +104,10 @@ def inspect(experiment: Experiment) -> InspectionResult:
 
 def validate(experiment: Experiment, *, check_files: bool = True) -> ValidationResult:
     summary = validation_summary(
-        experiment.declaration,
+        experiment._declaration,
         check_files=check_files,
-        exp_root=experiment.declaration.experiment.root,
-        runtime=experiment.runtime,
+        exp_root=experiment._declaration.experiment.root,
+        runtime=experiment._runtime,
     )
     summary_copy = deepcopy(summary)
     status = str(summary_copy.pop("status"))
@@ -121,9 +127,9 @@ def validate(experiment: Experiment, *, check_files: bool = True) -> ValidationR
 def plan(experiment: Experiment) -> PlanResult:
     payload = experiment_explain_payload(
         job_path=experiment.config_path,
-        spec=experiment.spec,
-        decl=experiment.declaration,
-        runtime=experiment.runtime,
+        spec=experiment._spec,
+        decl=experiment._declaration,
+        runtime=experiment._runtime,
     )
     implementation = payload["implementation"]
     return PlanResult(
@@ -140,13 +146,12 @@ def notebook(
     name: str | None = None,
     template: str | None = None,
     overwrite: bool = False,
-    allow_record_scan: bool = False,
 ) -> NotebookResult:
     """Generate one protocol-compatible notebook inside the experiment outputs."""
 
-    decl = experiment.declaration
+    decl = experiment._declaration
     workbench = resolve_workbench(decl)
-    bound_protocol = experiment.runtime.bind_protocol(decl.experiment_semantics.protocol)
+    bound_protocol = experiment._runtime.bind_protocol(decl.experiment_semantics.protocol)
     configured = workbench.notebooks[0].template if workbench.notebooks else None
     selected_template = bound_protocol.resolve_notebook_template(
         explicit_template=template,
@@ -185,7 +190,6 @@ def notebook(
         template=selected_template,
         overwrite=overwrite,
         plot_specs=plot_specs,
-        allow_record_scan=allow_record_scan,
     )
     return NotebookResult(
         experiment=experiment.identity,
@@ -203,18 +207,18 @@ def plots(
 ) -> SurfaceCatalogResult:
     only_ids = list(only)
     exclude_ids = list(exclude)
-    workbench = resolve_workbench(experiment.declaration)
+    workbench = resolve_workbench(experiment._declaration)
     selected = select_workbench_specs(
         list(workbench.plots),
         only=only_ids,
         exclude=exclude_ids,
         kind_label="plot",
     )
-    bound_protocol = experiment.runtime.bind_protocol(experiment.declaration.experiment_semantics.protocol)
+    bound_protocol = experiment._runtime.bind_protocol(experiment._declaration.experiment_semantics.protocol)
     payload = workbench_surface_specs_payload(
         job_path=experiment.config_path,
-        decl=experiment.declaration,
-        runtime=experiment.runtime,
+        decl=experiment._declaration,
+        runtime=experiment._runtime,
         bound_protocol=bound_protocol,
         selected=selected,
         kind="plot",
@@ -232,10 +236,10 @@ def plots(
 
 
 def records(experiment: Experiment, *, include_history: bool = False) -> RecordCatalogResult:
-    decl = experiment.declaration
+    decl = experiment._declaration
     layout = decl.experiment_semantics.layout
     outputs_dir = layout.outputs_dir
-    store = experiment.runtime.record_store(
+    store = experiment._runtime.record_store(
         outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
@@ -260,7 +264,7 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
         experiment=experiment_identity_payload(job_path=experiment.config_path, decl=decl),
         store=store,
         outputs_dir=outputs_dir,
-        runtime=experiment.runtime,
+        runtime=experiment._runtime,
         include_history=include_history,
     )
     return RecordCatalogResult(
@@ -273,12 +277,62 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
     )
 
 
+def read_dataframe(experiment: Experiment, record_id: str) -> DataFrameRecordResult:
+    """Load and content-digest/contract-validate the latest dataframe revision."""
+
+    if not isinstance(record_id, str) or not record_id.strip():
+        raise RecordError("record_id must be a non-empty string")
+    if record_id != record_id.strip():
+        raise RecordError("record_id must not contain leading or trailing whitespace")
+
+    decl = experiment._declaration
+    layout = decl.experiment_semantics.layout
+    store = experiment._runtime.record_store(
+        layout.outputs_dir,
+        plots_subdir=layout.plots_subdir,
+        exports_subdir=layout.exports_subdir,
+        experiment_root=decl.experiment.root,
+        create=False,
+    )
+    if not store.catalog_exists():
+        raise RecordError(f"Record catalog is missing for experiment {decl.experiment.id!r}: {store.records_path}")
+
+    history = store.record_history(record_id)
+    if not history:
+        raise RecordError(f"Dataframe record {record_id!r} is missing; produce it in an earlier step.")
+    record = history[-1]
+    if not isinstance(record, DataFrameArtifactRecord):
+        raise RecordError(f"Record {record_id!r} exists but is not a dataframe artifact")
+    dataframe = record.load_dataframe()
+    try:
+        store.contracts.validate(
+            dataframe,
+            contract_id=record.contract_id,
+            where=f"public-api:{record.record_id}",
+        )
+    except ContractError as exc:
+        raise RecordError(
+            f"Dataframe record {record.record_id!r} violates recorded contract {record.contract_id!r}: {exc}"
+        ) from exc
+    return DataFrameRecordResult(
+        experiment=experiment.identity,
+        record=RecordRevision(
+            record_id=record.record_id,
+            revision=len(history),
+            revision_digest=record_revision_digest(record, outputs_dir=store.root),
+        ),
+        contract_id=record.contract_id,
+        content_digest=record.content_digest,
+        dataframe=dataframe,
+    )
+
+
 def verify(experiment: Experiment) -> VerificationResult:
     """Verify the current catalog without creating or changing experiment outputs."""
-    decl = experiment.declaration
+    decl = experiment._declaration
     workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
-    store = experiment.runtime.record_store(
+    store = experiment._runtime.record_store(
         layout.outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
@@ -289,7 +343,7 @@ def verify(experiment: Experiment) -> VerificationResult:
         store,
         experiment_root=decl.experiment.root,
         expected_config_digest=decl.config_digest,
-        scope=workbench_record_verification_scope(workbench, runtime=experiment.runtime),
+        scope=workbench_record_verification_scope(workbench, runtime=experiment._runtime),
     )
     return VerificationResult(
         experiment=experiment.identity,
@@ -317,12 +371,12 @@ def run(
     if only is not None and (from_step is not None or until_step is not None):
         raise ConfigError("only cannot be combined with from_step or until_step")
     normalize_log_level(log_level)
-    if not dry_run and experiment.declaration.experiment.lifecycle != "active":
-        lifecycle = experiment.declaration.experiment.lifecycle
+    if not dry_run and experiment._declaration.experiment.lifecycle != "active":
+        lifecycle = experiment._declaration.experiment.lifecycle
         raise ConfigError(f"Experiment lifecycle {lifecycle!r} is not runnable")
 
     execution = run_spec(
-        experiment.declaration,
+        experiment._declaration,
         resume_from=only if only is not None else from_step,
         until=only if only is not None else until_step,
         dry_run=dry_run,
@@ -333,7 +387,7 @@ def run(
         include_plots=False,
         include_exports=False,
         show_next_steps=False,
-        runtime=experiment.runtime,
+        runtime=experiment._runtime,
     )
     return RunResult(
         experiment=experiment.identity,

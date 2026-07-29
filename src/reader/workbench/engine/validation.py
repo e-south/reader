@@ -306,10 +306,52 @@ def _source_record_preflight_issues(
                         expected=expected_contract,
                     ):
                         raise ConfigError(f"contract {record.contract_id!r} does not satisfy {expected_contract!r}")
-                    record.verify_content_digest()
+                    resolved.verify_artifact_integrity()
                 except (OSError, ReaderError) as exc:
                     issues.append(f"pipeline:{step.id} • {label} → {source_label}: {exc}")
     return declared, issues
+
+
+def _planned_output_record_ids(
+    *,
+    pipeline_items: list[Any],
+    plot_items: list[Any],
+    export_items: list[Any],
+    registry: Any,
+) -> set[str]:
+    planned = {f"plot:{step.id}" for step in plot_items}
+    planned.update(f"export:{step.id}" for step in export_items)
+    for step in pipeline_items:
+        plugin_cls = registry.resolve(step.plugin)
+        planned.update(
+            ref.record_id
+            for ref in _resolve_output_labels(
+                step_id=step.id,
+                output_ports=plugin_cls.output_ports(),
+                writes=(step.writes or {}),
+            ).values()
+        )
+    return planned
+
+
+def _assert_no_source_record_output_collisions(
+    *,
+    items: list[Any],
+    planned_record_ids: set[str],
+    experiment_root: Path,
+) -> None:
+    for step in items:
+        for label, ref in (step.reads or {}).items():
+            if not isinstance(ref, RecordCollectionRef):
+                continue
+            for source_ref in ref.records:
+                if source_ref.experiment_root == experiment_root and source_ref.record_id in planned_record_ids:
+                    source_label = f"{source_ref.experiment_id}:{source_ref.record_id}"
+                    raise ConfigError(
+                        f"pipeline {step.id}: reads '{label}' source record {source_label!r} targets the same "
+                        f"experiment and collides with planned output {source_ref.record_id!r}. Choose a source "
+                        "owned by another experiment or a distinct output record id."
+                    )
 
 
 def validation_summary(
@@ -341,6 +383,18 @@ def validation_summary(
         experiment=experiment_semantics,
         protocol=bound_protocol,
     )
+    if registry is not None:
+        planned_record_ids = _planned_output_record_ids(
+            pipeline_items=pipeline_steps,
+            plot_items=plot_specs,
+            export_items=export_specs,
+            registry=registry,
+        )
+        _assert_no_source_record_output_collisions(
+            items=pipeline_steps,
+            planned_record_ids=planned_record_ids,
+            experiment_root=decl.experiment.root,
+        )
     if plot_specs:
         if registry is None:
             raise ConfigError("plot validation requires plugin-backed workbench specs")

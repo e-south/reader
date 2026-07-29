@@ -4,17 +4,25 @@ from pathlib import Path
 
 import pandas as pd
 
-from reader.api import open_experiment
+from reader.runtime import builtin_runtime
 from reader.tests.support import base_reader_config, write_config
+from reader.workbench.config import ReaderSpec
+from reader.workbench.decl import build_workbench_decl
 from reader.workbench.inspection.readiness import experiment_readiness_payload
+
+
+def _runtime_and_declaration(config_path: Path):
+    runtime = builtin_runtime()
+    spec = ReaderSpec.load(config_path)
+    declaration = build_workbench_decl(spec, source_path=config_path, protocols=runtime.protocols)
+    return runtime, declaration
 
 
 def test_readiness_does_not_count_records_retired_from_the_current_workbench(tmp_path: Path) -> None:
     config_path = write_config(tmp_path / "config.yaml", base_reader_config(experiment_id="example"))
-    experiment = open_experiment(config_path)
-    decl = experiment.declaration
+    runtime, decl = _runtime_and_declaration(config_path)
     layout = decl.experiment_semantics.layout
-    store = experiment.runtime.record_store(
+    store = runtime.record_store(
         layout.outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
@@ -35,7 +43,7 @@ def test_readiness_does_not_count_records_retired_from_the_current_workbench(tmp
     readiness = experiment_readiness_payload(
         job_path=config_path,
         decl=decl,
-        runtime=experiment.runtime,
+        runtime=runtime,
         check_files=False,
     )
 
@@ -63,9 +71,8 @@ def test_readiness_does_not_advertise_surfaces_with_missing_record_dependencies(
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
     config_path = write_config(tmp_path / "config.yaml", config)
-    experiment = open_experiment(config_path)
-    decl = experiment.declaration
-    store = experiment.runtime.record_store(
+    runtime, decl = _runtime_and_declaration(config_path)
+    store = runtime.record_store(
         decl.experiment_semantics.layout.outputs_dir,
         plots_subdir=decl.experiment_semantics.layout.plots_subdir,
         exports_subdir=decl.experiment_semantics.layout.exports_subdir,
@@ -86,7 +93,7 @@ def test_readiness_does_not_advertise_surfaces_with_missing_record_dependencies(
     readiness = experiment_readiness_payload(
         job_path=config_path,
         decl=decl,
-        runtime=experiment.runtime,
+        runtime=runtime,
         check_files=False,
     )
 

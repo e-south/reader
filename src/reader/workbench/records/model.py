@@ -138,14 +138,42 @@ class DataFrameArtifactRecord(WorkbenchRecord):
         raise RecordError(f"Record {self.record_id} is not a parquet dataframe: {self.path}")
 
     def verify_content_digest(self) -> None:
-        if not self.path.exists():
-            raise RecordError(f"Record {self.record_id} dataframe artifact is missing: {self.path}")
-        actual = sha256_file(self.path)
-        if actual != self.content_digest:
-            raise RecordError(
-                f"Record {self.record_id} content digest mismatch for {self.path}: "
-                f"expected {self.content_digest}, got {actual}"
-            )
+        _verify_artifact_file(
+            self.path,
+            record_id=self.record_id,
+            expected_size=self.size_bytes or 0,
+            expected_digest=self.content_digest,
+        )
+
+
+def _verify_artifact_file(
+    path: Path,
+    *,
+    record_id: str,
+    expected_size: int,
+    expected_digest: str,
+) -> None:
+    try:
+        if not path.exists():
+            raise RecordError(f"Record {record_id} artifact is missing: {path}")
+        if not path.is_file():
+            raise RecordError(f"Record {record_id} artifact is not a regular file: {path}")
+        actual_size = path.stat().st_size
+    except OSError as exc:
+        raise RecordError(f"Record {record_id} artifact could not be read: {path}: {exc}") from exc
+    if actual_size != expected_size:
+        raise RecordError(
+            f"Record {record_id} content digest mismatch for {path}: "
+            f"artifact size changed from {expected_size} to {actual_size} bytes"
+        )
+    try:
+        actual_digest = sha256_file(path)
+    except OSError as exc:
+        raise RecordError(f"Record {record_id} artifact could not be read: {path}: {exc}") from exc
+    if actual_digest != expected_digest:
+        raise RecordError(
+            f"Record {record_id} content digest mismatch for {path}: expected {expected_digest}, got {actual_digest}"
+        )
 
 
 def sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -297,6 +325,47 @@ def _path_within_outputs(path: Path, *, outputs_dir: Path) -> tuple[Path, Path]:
     if relative == Path("."):
         raise RecordError("record paths must identify files below the outputs directory")
     return resolved, relative
+
+
+def verify_record_artifact_integrity(
+    record: DataFrameArtifactRecord | FileBundleRecord,
+    *,
+    outputs_dir: Path,
+) -> None:
+    """Verify every confined artifact bound to one exact record revision."""
+
+    if isinstance(record, DataFrameArtifactRecord):
+        resolved, _relative = _path_within_outputs(record.path, outputs_dir=outputs_dir)
+        _verify_artifact_file(
+            resolved,
+            record_id=record.record_id,
+            expected_size=record.size_bytes or 0,
+            expected_digest=record.content_digest,
+        )
+        return
+
+    evidence_by_path = {item.relative_path: item for item in record.file_evidence}
+    files_by_path: dict[Path, Path] = {}
+    for path in record.files:
+        resolved, relative = _path_within_outputs(path, outputs_dir=outputs_dir)
+        files_by_path[relative] = resolved
+    if set(files_by_path) != set(evidence_by_path):
+        missing_evidence = sorted(set(files_by_path) - set(evidence_by_path), key=str)
+        orphan_evidence = sorted(set(evidence_by_path) - set(files_by_path), key=str)
+        details: list[str] = []
+        if missing_evidence:
+            details.append("missing evidence for " + ", ".join(map(str, missing_evidence)))
+        if orphan_evidence:
+            details.append("orphan evidence for " + ", ".join(map(str, orphan_evidence)))
+        raise RecordError(f"Record {record.record_id} artifact evidence paths do not match: {'; '.join(details)}")
+    for relative, path in files_by_path.items():
+        evidence = evidence_by_path[relative]
+        _verify_artifact_file(
+            path,
+            record_id=record.record_id,
+            expected_size=evidence.size_bytes,
+            expected_digest=evidence.content_digest,
+        )
 
 
 def _decode_path(raw: Any, *, outputs_dir: Path) -> Path:

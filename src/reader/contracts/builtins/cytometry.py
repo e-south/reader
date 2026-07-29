@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/builtins/cytometry.py
-
-Cytometry-domain dataframe contracts.
---------------------------------------------------------------------------------
-"""
+"""Cytometry-domain dataframe contracts."""
 
 from __future__ import annotations
 
