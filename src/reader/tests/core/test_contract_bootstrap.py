@@ -1,5 +1,7 @@
 """Regression coverage for the explicit built-in contract catalog."""
 
+from dataclasses import replace
+
 import pandas as pd
 import pytest
 
@@ -99,6 +101,28 @@ def test_contract_catalog_rejects_incompatible_parent_column_rules(
 
     with pytest.raises(ContractError, match=message):
         ContractCatalog.from_contracts((parent, child))
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "required",
+        "allow_nan",
+        "monotone_non_decreasing",
+        "nonnegative",
+        "allow_extra_columns",
+    ],
+)
+def test_contract_catalog_rejects_non_boolean_flags(field: str) -> None:
+    contract = _contract("invalid-boolean.v1", columns=[ColumnRule("value", "float")])
+    if field == "allow_extra_columns":
+        contract = replace(contract, allow_extra_columns="false")  # type: ignore[arg-type]
+    else:
+        rule = replace(contract.columns[0], **{field: "false"})
+        contract = replace(contract, columns=(rule,))
+
+    with pytest.raises(ContractError, match=rf"{field}.*bool"):
+        ContractCatalog.from_contracts((contract,))
 
 
 def test_contract_catalog_rejects_child_that_drops_parent_unique_key() -> None:
