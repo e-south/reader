@@ -1,4 +1,4 @@
-"""Numerical reduction primitives for event-relative ratio trajectories."""
+"""Numerical reduction primitives for event-relative signal trajectories."""
 
 from __future__ import annotations
 
@@ -44,14 +44,14 @@ def summarize_trace(
     instrument_overflow: np.ndarray | None = None,
     bound_kinds: np.ndarray | None = None,
 ) -> TraceSummary:
-    """Reduce one ratio trace without extrapolation or value clipping."""
+    """Reduce one signal trace without extrapolation or value clipping."""
 
     x = np.asarray(times, dtype=float)
     y = np.asarray(values, dtype=float)
     if x.ndim != 1 or y.ndim != 1 or x.size != y.size or x.size < 2:
         raise ValueError(f"{trace_id} must contain aligned one-dimensional time and value arrays.")
     if not np.isfinite(x).all() or not np.isfinite(y).all():
-        raise ValueError(f"{trace_id} contains non-finite time or ratio values.")
+        raise ValueError(f"{trace_id} contains non-finite time or signal values.")
     if not np.isfinite(window_start_h) or not np.isfinite(window_end_h) or window_end_h <= window_start_h:
         raise ValueError("trace reduction requires finite window_start_h < window_end_h.")
     if positive_floor <= 0.0 or max_interior_gap_h <= 0.0:
@@ -68,7 +68,10 @@ def summarize_trace(
     )
     y = y[order]
     if np.any(y <= positive_floor):
-        raise ValueError(f"{trace_id} contains ratio values at or below the positive floor {positive_floor:g}.")
+        raise ValueError(
+            f"{trace_id} contains values at or below the positive floor {positive_floor:g}; "
+            "log-space reduction requires strictly positive values."
+        )
 
     support = (x >= window_start_h) & (x <= window_end_h)
     support_indexes = np.flatnonzero(support)

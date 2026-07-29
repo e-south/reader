@@ -1,25 +1,15 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/common.py
-
-Shared plotting helpers for plate-reader renderers.
---------------------------------------------------------------------------------
-"""
+"""Shared plotting helpers for plate-reader renderers."""
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from reader.plotting.sinks import PlotFigure
-from reader.plotting.utils import save_figure
 
 from ._data import alias_column, require_columns, warn_if_empty
 
@@ -54,20 +44,15 @@ def colors_for(n: int, palette_book: PaletteBook | None) -> list[str]:
     return cycle[:n]
 
 
-def emit_plot_figure(
+def plot_figure(
     *,
     fig: Any,
     filename: str,
-    output_dir: Path | None,
     fig_kwargs: Mapping[str, Any] | None,
-) -> list[PlotFigure]:
+) -> PlotFigure:
     ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
     dpi = (fig_kwargs or {}).get("dpi", None)
-    if output_dir is None:
-        return [PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi)]
-    save_figure(fig, Path(output_dir), filename, ext=ext, dpi=dpi)
-    plt.close(fig)
-    return []
+    return PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi)
 
 
 def bootstrap_mean_interval(
@@ -275,7 +260,7 @@ __all__ = [
     "best_subplot_grid",
     "bootstrap_mean_interval",
     "colors_for",
-    "emit_plot_figure",
+    "plot_figure",
     "pretty_name",
     "require_columns",
     "shared_numeric_limits",

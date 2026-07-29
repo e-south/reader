@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_notebook_templates.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 import ast
 import importlib.util
 import subprocess
@@ -126,6 +117,14 @@ def test_notebook_templates_parse() -> None:
             raise AssertionError(f"{name} template has invalid syntax: {exc}") from exc
 
 
+def test_notebook_templates_name_the_notebooks_optional_extra() -> None:
+    for descriptor in builtin_notebook_template_catalog().all():
+        template = descriptor.load_body()
+        assert "notebooks group" not in template
+        if "Polars is required for notebook tables." in template:
+            assert "Install the `notebooks` extra." in template
+
+
 def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_path: Path) -> None:
     run_marimo_check = importlib.util.find_spec("marimo") is not None
     rendered_paths: list[Path] = []
@@ -140,12 +139,10 @@ def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_pa
             template=descriptor.template,
             overwrite=True,
             plot_specs=[],
-            allow_record_scan=False,
         )
         content = rendered_path.read_text(encoding="utf-8")
 
         assert changed is True
-        assert "__ALLOW_RECORD_SCAN__" not in content
         assert "__PLOT_SPECS__" not in content
         if not run_marimo_check:
             continue
@@ -255,13 +252,17 @@ def test_notebook_writer_writes_normal_target_with_owned_context(tmp_path: Path)
     assert target.is_file()
 
 
-def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:
-    template = resolve_notebook_template_descriptor("notebook/basic").load_body()
-    assert "pl.read_parquet" in template
-    assert "pd.read_parquet" not in template
-    assert "Polars is required to read parquet" in template
-    assert "discover_dataframe_records" in template
-    assert "allow_scan=__ALLOW_RECORD_SCAN__" in template
+def test_notebook_templates_use_only_the_verified_public_record_surface() -> None:
+    for descriptor in builtin_notebook_template_catalog().all():
+        template = descriptor.load_body()
+        assert "from reader.api import" in template
+        assert "records(experiment)" in template
+        assert "read_dataframe(experiment," in template
+        assert "reader.workbench.records" not in template
+        assert "discover_dataframe_records" not in template
+        assert "read_parquet" not in template
+        assert "scan_event_table" not in template
+        assert "__ALLOW_RECORD_SCAN__" not in template
 
 
 def test_triptych_notebook_templates_keep_compact_reactive_controls() -> None:
@@ -283,8 +284,14 @@ def test_triptych_notebook_templates_keep_compact_reactive_controls() -> None:
 def test_sfxi_notebook_uses_protocol_bound_transform_config() -> None:
     template = resolve_notebook_template_descriptor("notebook/sfxi_eda").load_body()
 
-    assert "bind_protocol(decl.experiment_semantics.protocol)" in template
-    assert "effective_plugin_config(" in template
+    assert "notebook_context.pipeline_steps" in template
+    assert '"sfxi" in _step.tags' in template
+    assert "resolve_effective_step_config(experiment, _step.step_id)" in template
+    assert "bind_sfxi_treatment_semantics" in template
+    assert "notebook_context.ordered_state_spaces" in template
+    assert "reader.api.notebooks" in template
+    assert "resolve_sfxi_review_config" not in template
+    assert "effective_plugin_config(" not in template
 
 
 def test_sfxi_notebook_surfaces_deliverables_with_progressive_disclosure() -> None:

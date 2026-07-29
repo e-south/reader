@@ -1,8 +1,1 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/__init__.py
-
-Domain-owned protocol and data semantics.
---------------------------------------------------------------------------------
-"""
+"""Domain-owned protocol and data semantics."""

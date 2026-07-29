@@ -11,43 +11,60 @@ def _():
 
     import marimo as mo
     import polars as pl
+    from reader.api import (
+        ArtifactSpec,
+        publish_artifact_bundle,
+        read_dataframe,
+        records,
+    )
+    from reader.api.notebooks import (
+        build_dataframe_record_catalog,
+        load_notebook_context,
+        select_default_dataframe_record,
+    )
     from reader.domains.cytometry import analysis as cytometry_analysis
-    from reader.workbench.notebooks import NotebookArtifactSpec, publish_notebook_artifact_bundle
-    from reader.workbench.notebooks.context import load_notebook_workbench_context
-    from reader.workbench.records import discover_dataframe_records
     return (
         Path,
-        NotebookArtifactSpec,
+        ArtifactSpec,
+        build_dataframe_record_catalog,
         cytometry_analysis,
-        discover_dataframe_records,
         json,
-        load_notebook_workbench_context,
+        load_notebook_context,
         mo,
-        publish_notebook_artifact_bundle,
+        pl,
+        publish_artifact_bundle,
+        read_dataframe,
+        records,
+        select_default_dataframe_record,
     )
 
 
 @app.cell(hide_code=True)
-def _(Path, load_notebook_workbench_context):
-    notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
-    decl = notebook_context.decl
+def _(Path, load_notebook_context):
+    notebook_context = load_notebook_context(Path(__file__).resolve())
+    experiment = notebook_context.experiment
     exp_dir = notebook_context.experiment_root
     outputs_dir = notebook_context.outputs_dir
     exp_meta = {
-        "id": decl.experiment.id,
-        "title": decl.experiment.title or "",
+        "id": experiment.identity.id,
+        "title": experiment.identity.title or "",
     }
-    pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
-    return decl, exp_dir, exp_meta, notebook_context, outputs_dir, pipeline_step_ids
+    pipeline_step_ids = list(notebook_context.pipeline_step_ids)
+    return exp_dir, exp_meta, experiment, outputs_dir, pipeline_step_ids
 
 
 @app.cell(hide_code=True)
-def _(discover_dataframe_records, outputs_dir):
-    record_info, record_labels, record_note, record_warning = discover_dataframe_records(
-        outputs_dir,
-        allow_scan=__ALLOW_RECORD_SCAN__,
-    )
-    return record_info, record_labels, record_note, record_warning
+def _(build_dataframe_record_catalog, experiment, records):
+    try:
+        _record_catalog = records(experiment)
+        record_info, record_labels, record_note = build_dataframe_record_catalog(
+            _record_catalog.entries,
+            catalog_exists=_record_catalog.catalog_exists,
+        )
+    except Exception as exc:
+        record_info, record_labels = {}, []
+        record_note = f"Could not read the canonical record catalog: {exc}"
+    return record_info, record_labels, record_note
 
 
 @app.cell(hide_code=True)
@@ -57,37 +74,18 @@ def _(
     record_info,
     record_labels,
     record_note,
-    record_warning,
+    select_default_dataframe_record,
 ):
-    if record_warning:
-        mo.md(record_warning)
     if not record_labels:
         note = record_note or "No datasets found. Run `uv run reader run` first."
         mo.md(note)
         record_dropdown = None
     else:
-        _default_label = None
-        if pipeline_step_ids:
-            for _step_id in reversed(pipeline_step_ids):
-                _matches = [
-                    label for label, info in record_info.items() if info.get("step_id") == _step_id
-                ]
-                if _matches:
-                    _default_label = sorted(_matches)[0]
-                    break
-        if _default_label is None:
-            _latest_label = None
-            _latest_mtime = None
-            for _label in record_labels:
-                _path = record_info[_label]["path"]
-                try:
-                    _mtime = _path.stat().st_mtime
-                except Exception:
-                    continue
-                if _latest_mtime is None or _mtime > _latest_mtime:
-                    _latest_mtime = _mtime
-                    _latest_label = _label
-            _default_label = _latest_label or record_labels[0]
+        _default_label = select_default_dataframe_record(
+            record_info,
+            record_labels,
+            pipeline_step_ids=pipeline_step_ids,
+        )
         mo.md(
             f"This run has {len(record_labels)} dataframe record(s). Select one to explore:"
         )
@@ -104,29 +102,24 @@ def _(
 def _(record_dropdown, record_info):
     if record_dropdown is None:
         selected_label = None
-        record_path = None
         selected_record_id = None
     else:
         selected_label = record_dropdown.value
-        record_path = record_info.get(selected_label, {}).get("path")
         selected_record_id = record_info.get(selected_label, {}).get("record_id")
-    return record_path, selected_label, selected_record_id
+    return selected_label, selected_record_id
 
 
 @app.cell(hide_code=True)
-def _(cytometry_analysis, record_path):
+def _(experiment, pl, read_dataframe, selected_record_id):
     df = None
     df_error = None
-    _pl_error = None
 
-    if record_path is not None:
+    if selected_record_id is not None:
         try:
-            df = cytometry_analysis.scan_event_table(record_path)
+            _record = read_dataframe(experiment, selected_record_id)
+            df = pl.from_pandas(_record.dataframe).lazy()
         except Exception as exc:
-            _pl_error = str(exc)
-        if df is None and df_error is None:
-            _suffix = _pl_error or "unknown error"
-            df_error = f"Failed to read parquet with polars ({_suffix})."
+            df_error = str(exc)
     return df, df_error
 
 
@@ -1408,15 +1401,15 @@ def _(mo):
 
 @app.cell
 def _(
-    NotebookArtifactSpec,
+    ArtifactSpec,
     cyto_export_button,
     cyto_gate_config,
     cyto_marker_fig,
     cyto_stats_sample,
     json,
     mo,
-    notebook_context,
-    publish_notebook_artifact_bundle,
+    experiment,
+    publish_artifact_bundle,
     selected_record_id,
 ):
     if cyto_marker_fig is None:
@@ -1437,8 +1430,8 @@ def _(
         def _write_gates(_gate_target):
             _gate_target.write_text(json.dumps(cyto_gate_config, indent=2), encoding="utf-8")
 
-        _record = publish_notebook_artifact_bundle(
-            notebook_context,
+        _result = publish_artifact_bundle(
+            experiment,
             record_id="notebook:cytometry_eda",
             producer_id="cytometry_eda",
             template="notebook/cytometry",
@@ -1446,25 +1439,25 @@ def _(
             producer_config=cyto_gate_config,
             description="Interactive cytometry plot, statistics, and gate definition.",
             artifacts=(
-                NotebookArtifactSpec(
+                ArtifactSpec(
                     relative_path="cytometry_eda.pdf",
                     description="Interactive cytometry fluorescence and gating plot.",
                     writer=_write_plot,
                 ),
-                NotebookArtifactSpec(
+                ArtifactSpec(
                     relative_path="cytometry_stats.csv",
                     description="Per-sample statistics from the selected cytometry event record.",
                     writer=_write_stats,
                 ),
-                NotebookArtifactSpec(
+                ArtifactSpec(
                     relative_path="cytometry_gates.json",
                     description="Gate and threshold configuration used for the cytometry analysis.",
                     writer=_write_gates,
                 ),
             ),
         )
-        _paths = "; ".join(f"`{path}`" for path in _record.files)
-        _export_message = f"Published `{_record.record_id}` with {_paths}."
+        _paths = "; ".join(f"`{path}`" for path in _result.paths)
+        _export_message = f"Published `{_result.record.record_id}` with {_paths}."
     if _export_message is not None:
         _ = mo.md(_export_message)
     return

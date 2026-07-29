@@ -1,9 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/sfxi/math.py
-
-SFXI math: build vec8 from logic/intensity per-corner points.
+"""SFXI math: build vec8 from logic/intensity per-corner points.
 
 Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per design.
 
@@ -18,11 +13,7 @@ Compute the vec8 = [v00,v10,v01,v11, y00*,y10*,y01*,y11*] per design.
     y_linear_i = (b_i + eps_abs) / max(anchor_i + ref_add_alpha, eps_ref)
     y*_i       = log2( max(y_linear_i + log2_offset_delta, eps_ratio) )
 
-Anchors are computed from the INTENSITY per-corner table for the reference design_id.
-
-Author(s): Eric J. South (updated)
---------------------------------------------------------------------------------
-"""
+Anchors are computed from the INTENSITY per-corner table for the reference design_id."""
 
 from __future__ import annotations
 

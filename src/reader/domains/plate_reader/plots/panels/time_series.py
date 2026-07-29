@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/panels/time_series.py
-
-Shared time-series drawing primitives.
---------------------------------------------------------------------------------
-"""
+"""Shared time-series drawing primitives."""
 
 from __future__ import annotations
 

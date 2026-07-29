@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/snapshot_heatmap.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from importlib import import_module
@@ -69,11 +60,21 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
         fc_in: pd.DataFrame | None = inputs.get("fc")
         plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs = _load_snapshot_heatmap_impl()
 
-        prepared = prepare_snapshot_heatmap_inputs(ctx=ctx, df_in=df_in, fc_in=fc_in, cfg=cfg)
+        prepared = prepare_snapshot_heatmap_inputs(
+            df_in=df_in,
+            fc_in=fc_in,
+            channel=cfg.channel,
+            time=cfg.time,
+            time_tolerance=cfg.time_tolerance,
+            value_transform=cfg.value_transform,
+            fig=cfg.fig,
+            filename=cfg.filename,
+            logger=ctx.logger,
+        )
         channel = str(cfg.channel)
-        df = prepared["df"]
-        filename = prepared["filename"]
-        fig_kwargs = prepared["fig_kwargs"]
+        df = prepared.frame
+        filename = prepared.filename
+        fig_kwargs = prepared.fig_kwargs
         resolved_order_x = ctx.experiment.annotations.resolve_order_arg(
             order=cfg.order_x,
             order_ref=cfg.order_x_ref,
@@ -88,8 +89,6 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
         )
         return plot_snapshot_heatmap(
             df=df,
-            blanks=df.iloc[0:0] if isinstance(df, pd.DataFrame) else pd.DataFrame(columns=["time", "channel", "value"]),
-            output_dir=None,
             channel=channel,
             time=cfg.time,
             x=cfg.x,
@@ -101,4 +100,5 @@ class SnapshotHeatmapPlot(FigurePlotPlugin):
             vmax=cfg.vmax,
             fig_kwargs=fig_kwargs,
             filename=filename,
+            logger=ctx.logger,
         )

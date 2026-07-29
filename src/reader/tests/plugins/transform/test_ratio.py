@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_ratio_plugin.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from types import SimpleNamespace
 
 import pandas as pd
@@ -57,7 +48,7 @@ def test_ratio_does_not_promote_provenance_less_rows_to_exact():
             "channel": ["OD600", "CFP", "YFP", "OD600", "CFP", "YFP"],
             "value": [0.20, 8000.0, 1200.0, 0.25, 9000.0, 1500.0],
             "overflow": [False] * 6,
-            "design_id_alias": ["spyP/CpxR"] * 6,
+            "design_id_alias": ["design_a/design_b"] * 6,
             "treatment_alias": ["-IPTG/-stress"] * 6,
         }
     )

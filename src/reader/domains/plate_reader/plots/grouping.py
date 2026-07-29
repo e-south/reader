@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/grouping.py
-
-Plate-reader plot grouping helpers.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader plot grouping helpers."""
 
 from __future__ import annotations
 

@@ -10,24 +10,25 @@ from .shared import app, table
 @app.command(help="Show a quick guided walkthrough.")
 def demo():
     steps = [
-        ("1", "Find experiments", "uv run reader ls --details --readiness"),
-        ("2", "Show experiment details", "uv run reader inspect ./experiments/<experiment>/config.yaml"),
-        ("3", "List protocols", "uv run reader protocols"),
+        ("1", "Find experiments", "reader ls --details --readiness"),
+        ("2", "Show experiment details", "reader inspect ./experiments/<experiment>/config.yaml"),
+        ("3", "List protocols", "reader protocols"),
         (
             "4",
             "Scaffold a new experiment",
-            "uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>",
+            "reader init ./experiments/my_experiment --protocol <protocol-id>",
         ),
-        ("5", "Starter YAML for a protocol", "uv run reader protocols <protocol-id> --example-config"),
-        ("6", "Show pipeline chain", "uv run reader steps ./experiments/<experiment>/config.yaml"),
-        ("7", "Explain plan", "uv run reader explain ./experiments/<experiment>/config.yaml"),
-        ("8", "Validate config + inputs", "uv run reader validate ./experiments/<experiment>/config.yaml"),
-        ("9", "Run pipeline (records)", "uv run reader run ./experiments/<experiment>/config.yaml"),
-        ("10", "See records", "uv run reader records ./experiments/<experiment>/config.yaml"),
-        ("11", "List plot specs", "uv run reader plot ./experiments/<experiment>/config.yaml --list"),
-        ("12", "Save plots", "uv run reader plot ./experiments/<experiment>/config.yaml"),
-        ("13", "Run exports", "uv run reader export ./experiments/<experiment>/config.yaml"),
-        ("14", "Notebook (marimo)", "uv run reader notebook ./experiments/<experiment>/config.yaml"),
+        ("5", "Starter YAML for a protocol", "reader protocols <protocol-id> --example-config"),
+        ("6", "Show pipeline chain", "reader steps ./experiments/<experiment>/config.yaml"),
+        ("7", "Explain plan", "reader explain ./experiments/<experiment>/config.yaml"),
+        ("8", "Validate config + inputs", "reader validate ./experiments/<experiment>/config.yaml"),
+        ("9", "Run pipeline (records)", "reader run ./experiments/<experiment>/config.yaml"),
+        ("10", "See records", "reader records ./experiments/<experiment>/config.yaml"),
+        ("11", "List plot specs", "reader plot ./experiments/<experiment>/config.yaml --list"),
+        ("12", "Save plots", "reader plot ./experiments/<experiment>/config.yaml"),
+        ("13", "Run exports", "reader export ./experiments/<experiment>/config.yaml"),
+        ("14", "Notebook (Marimo)", "reader notebook ./experiments/<experiment>/config.yaml"),
+        ("15", "Verify records and provenance", "reader verify ./experiments/<experiment>/config.yaml"),
     ]
     listing = table("Reader Demo")
     listing.add_column("#", justify="right", style="muted")

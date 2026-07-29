@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/crosstalk_pairs.py
-
-Crosstalk pairing transform over fold_change.v1 tables.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Crosstalk pairing transform over fold_change.v1 tables."""
 
 from __future__ import annotations
 

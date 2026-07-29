@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/analysis/timepoints.py
-
-Plate-reader timepoint selection and nearest-snapshot helpers.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader timepoint selection and nearest-snapshot helpers."""
 
 from __future__ import annotations
 

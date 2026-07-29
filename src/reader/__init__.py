@@ -8,10 +8,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from reader.api import Experiment, open_experiment
 
-__all__ = ["Experiment", "open_experiment"]
+__all__ = ["Experiment", "__version__", "open_experiment"]
 
 
 def __getattr__(name: str) -> Any:
+    if name == "__version__":
+        from reader._version import package_version  # noqa: PLC0415
+
+        return package_version()
     if name not in __all__:
         raise AttributeError(f"module 'reader' has no attribute {name!r}")
     api = import_module("reader.api")

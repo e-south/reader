@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import pandas as pd
 
@@ -20,7 +19,10 @@ def require_vec8_columns(frame: pd.DataFrame) -> None:
 
 def require_normalized_frame(frame: pd.DataFrame) -> None:
     require_vec8_columns(frame)
-    missing = [column for column in ("source_id", "row_label") if column not in frame.columns]
+    source_columns = {"source_resource_id", "source_experiment_id"} & set(frame.columns)
+    missing = ([] if source_columns else ["source_resource_id or source_experiment_id"]) + (
+        [] if "row_label" in frame.columns else ["row_label"]
+    )
     if missing:
         raise SFXIError(f"SFXI vec8 aggregate requires normalized columns: {', '.join(missing)}.")
     if frame.empty:
@@ -31,7 +33,7 @@ def finite_numeric_column(
     series: pd.Series,
     *,
     column: str,
-    source: Path,
+    source: str,
     allow_nan: bool = False,
 ) -> pd.Series:
     values = pd.to_numeric(series, errors="coerce")

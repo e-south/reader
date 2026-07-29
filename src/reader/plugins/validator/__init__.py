@@ -1,10 +1,1 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/validator/__init__.py
-
-Built-in validators
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Built-in validators."""

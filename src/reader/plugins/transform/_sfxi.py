@@ -3,17 +3,22 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from reader.domains.logic.sfxi.run import SFXIBuildResult, build_vec8_from_tidy
-from reader.domains.logic.sfxi.treatment_semantics import resolve_sfxi_treatment_semantics
+from reader.domains.logic.sfxi.builder import SFXIBuildResult, build_vec8_from_tidy
+from reader.domains.logic.sfxi.treatment_semantics import bind_sfxi_treatment_semantics
 
 
 def build_sfxi_plugin_result(*, ctx, df: pd.DataFrame, cfg) -> SFXIBuildResult:
-    semantics = resolve_sfxi_treatment_semantics(
-        ctx=ctx,
-        state_map_ref=cfg.state_map_ref,
+    if ctx.experiment is None:
+        raise ValueError("sfxi requires experiment semantics in the run context")
+    state_space = ctx.experiment.annotations.resolve_ordered_state_space(ref=cfg.state_map_ref)
+    semantics = bind_sfxi_treatment_semantics(
+        state_ids=state_space.state_ids,
+        source_column=state_space.column,
+        source_values=state_space.source_values,
+        case_sensitive=state_space.case_sensitive,
         treatment_column=cfg.treatment_column,
     )
-    run_cfg = semantics.inject(cfg.model_dump())
+    run_cfg = semantics.inject(cfg.model_dump(exclude={"state_map_ref"}))
     return build_vec8_from_tidy(df.copy(), run_cfg)
 
 
@@ -33,6 +38,18 @@ def log_sfxi_plugin_result(*, ctx, result: SFXIBuildResult) -> None:
         flats = int(vec8["flat_logic"].sum()) if "flat_logic" in vec8.columns else 0
         r_stats = vec8["r_logic"].describe() if "r_logic" in vec8.columns else None
         ref_info = result.log.get("reference", {})
+
+        if flats:
+            fraction = float(result.log.get("flat_logic_fraction", 0.0))
+            samples = [str(value) for value in result.log.get("flat_logic_sample_design_ids", ())]
+            sample_note = f" Sample design_ids: {', '.join(samples)}." if samples else ""
+            ctx.logger.warning(
+                "sfxi: flat logic detected for %d/%d designs (%.1f%%).%s",
+                flats,
+                len(vec8),
+                fraction * 100.0,
+                sample_note,
+            )
 
         ctx.logger.info(
             "sfxi • inputs: [accent]logic[/accent]=%s → v00..v11  |  [accent]intensity[/accent]=%s → y*00..y*11",

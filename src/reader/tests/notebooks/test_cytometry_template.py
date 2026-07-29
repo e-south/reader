@@ -6,7 +6,9 @@ from reader.workbench.templates import resolve_notebook_template_descriptor
 def test_cytometry_template_keeps_event_analysis_in_polars_until_plot_payloads() -> None:
     template = resolve_notebook_template_descriptor("notebook/cytometry").load_body()
 
-    assert "cytometry_analysis.scan_event_table" in template
+    assert "read_dataframe(experiment, selected_record_id)" in template
+    assert "pl.from_pandas(_record.dataframe).lazy()" in template
+    assert "cytometry_analysis.scan_event_table" not in template
     assert "cytometry_analysis.prepare_event_table" in template
     assert template.count("cytometry_analysis.distinct_string_values_by_column") == 1
     assert "cytometry_analysis.distinct_string_values(df" not in template
@@ -27,8 +29,10 @@ def test_cytometry_template_exports_polars_statistics_through_public_api() -> No
 def test_cytometry_template_publishes_one_confined_manifest_backed_bundle() -> None:
     template = resolve_notebook_template_descriptor("notebook/cytometry").load_body()
 
-    assert "publish_notebook_artifact_bundle" in template
-    assert template.count("NotebookArtifactSpec(") == 3
+    assert "publish_artifact_bundle" in template
+    assert "publish_notebook_artifact_bundle" not in template
+    assert "from reader.workbench.notebooks import" not in template
+    assert template.count("ArtifactSpec(") == 3
     assert 'upstream_records={"events": selected_record_id}' in template
     assert 'relative_path="cytometry_eda.pdf"' in template
     assert 'relative_path="cytometry_stats.csv"' in template

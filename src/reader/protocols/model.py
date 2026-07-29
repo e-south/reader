@@ -5,9 +5,9 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from reader.domains.semantics import PluginDomain, validate_plugin_domain
 from reader.errors import ConfigError
 from reader.workbench.decl.model import NotebookTemplateCallDecl, PluginStepDecl
+from reader.workbench.ontology import PluginDomain, validate_plugin_domain
 
 MetricStage = Literal["raw", "support", "derived", "comparison", "summary", "ranking", "qc", "burden", "leakiness"]
 FigureKind = Literal["qc", "kinetics", "summary", "ranking", "architecture"]

@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/logic_symmetry/__init__.py
+from .main import render_logic_symmetry, summarize_logic_symmetry
 
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
-from .main import plot_logic_symmetry
-
-__all__ = ["plot_logic_symmetry"]
+__all__ = ["render_logic_symmetry", "summarize_logic_symmetry"]

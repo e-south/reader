@@ -1,81 +1,56 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/logic_symmetry.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-import pandas as pd
 from pydantic import Field
 
-from reader.domains.logic.sfxi.treatment_semantics import resolve_sfxi_treatment_semantics
 from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin
 from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig
 
 
-class LogicSymCfg(PluginConfig):
-    response_channel: str
-    design_by: list[str] = Field(default_factory=lambda: ["design_id"])
-    batch_col: str = "batch"
-    treatment_column: str | None = None
-    state_map_ref: str
-    aggregation: dict[str, Any] = Field(default_factory=dict)
+class LogicSymmetryPlotCfg(PluginConfig):
+    title: str = "Logic symmetry"
+    uncertainty: Literal["none", "errorbars", "halo"] = "halo"
     encodings: dict[str, Any] = Field(default_factory=dict)
     ideals_overlay: dict[str, Any] = Field(default_factory=dict)
     visuals: dict[str, Any] = Field(default_factory=dict)
-    output: dict[str, Any] = Field(default_factory=dict)
-    prep: dict[str, Any] | None = None
-    fig: dict[str, Any] = Field(default_factory=dict)
-    filename: str | None = None
+    filename: str = "logic_symmetry"
+    format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["pdf"], min_length=1)
+    dpi: int = Field(300, gt=0)
+    figsize: tuple[float, float] = (7, 6)
 
 
 class LogicSymmetryPlot(FigurePlotPlugin):
-    ConfigModel = LogicSymCfg
+    """Render a persisted logic-symmetry table without owning its computation."""
+
+    ConfigModel = LogicSymmetryPlotCfg
 
     @classmethod
     def input_ports(cls):
-        return {"df": dataframe_input("df", "plate_reader.annotated.v1")}
+        return {"table": dataframe_input("table", "logic_symmetry.v1")}
 
-    def render(self, ctx, inputs, cfg: LogicSymCfg) -> list[PlotFigure]:
-        if ctx.experiment is None:
-            raise ValueError("logic_symmetry requires experiment semantics in the run context")
-        df: pd.DataFrame = inputs["df"]
-        from reader.domains.logic.logic_symmetry import plot_logic_symmetry  # noqa: PLC0415
+    def render(self, ctx, inputs, cfg: LogicSymmetryPlotCfg) -> list[PlotFigure]:
+        from reader.domains.logic.logic_symmetry import render_logic_symmetry  # noqa: PLC0415
 
-        state_semantics = resolve_sfxi_treatment_semantics(
-            ctx=ctx,
-            state_map_ref=cfg.state_map_ref,
-            treatment_column=cfg.treatment_column,
-        )
-        result = plot_logic_symmetry(
-            df=df,
-            blanks=df.iloc[0:0],
-            output_dir=None,
-            response_channel=cfg.response_channel,
-            design_by=cfg.design_by,
-            batch_col=cfg.batch_col,
-            treatment_column=state_semantics.treatment_column,
-            treatment_map=dict(state_semantics.corners),
-            treatment_case_sensitive=state_semantics.case_sensitive,
-            aggregation=cfg.aggregation,
+        figure = render_logic_symmetry(
+            inputs["table"],
+            title=cfg.title,
+            uncertainty=cfg.uncertainty,
             encodings=cfg.encodings,
             ideals_overlay=cfg.ideals_overlay,
             visuals=cfg.visuals,
-            output=cfg.output,
-            prep=cfg.prep,
-            fig_kwargs=cfg.fig,
-            filename=cfg.filename,
-            palette_book=ctx.palette_book,
+            figsize=cfg.figsize,
+            dpi=cfg.dpi,
         )
-        formats = [str(x).lower() for x in (cfg.output or {}).get("format", ["pdf"])]
-        dpi = (cfg.output or {}).get("dpi", 300)
-        base = cfg.filename or "logic_symmetry"
-        return [PlotFigure(fig=result.fig, filename=base, ext=ext, dpi=dpi) for ext in formats]
+        return [
+            PlotFigure(
+                fig=figure,
+                filename=cfg.filename,
+                ext=extension,
+                dpi=cfg.dpi,
+                description="Logic and asymmetry geometry over the configured four-state summary.",
+            )
+            for extension in cfg.format
+        ]

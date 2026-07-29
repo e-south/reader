@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -13,7 +12,8 @@ from reader.workbench.notebooks.components.deliverables import (
     collect_notebook_deliverables,
     render_notebook_deliverable_viewport,
 )
-from reader.workbench.records import PathDescription
+from reader.workbench.notebooks.components.records import build_dataframe_record_catalog
+from reader.workbench.records import PathDescription, record_to_dict
 
 
 class _FakeUi:
@@ -115,7 +115,12 @@ def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_note
         path_descriptions=(PathDescription(path=notebook_pdf, description="Interactive cytometry EDA plot."),),
     )
 
-    deliverables = collect_notebook_deliverables(outputs, notebooks_dir=notebooks)
+    entries = tuple(record_to_dict(record, outputs_dir=outputs) for record in store.iter_latest_records())
+    deliverables = collect_notebook_deliverables(
+        entries,
+        outputs_dir=outputs,
+        notebooks_dir=notebooks,
+    )
 
     assert {"Deliverable": "Dataframe records", "Count": 1} in deliverables.summary_rows
     assert {"Deliverable": "Plot files", "Count": 2} in deliverables.summary_rows
@@ -135,34 +140,94 @@ def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_note
     assert deliverables.notebook_rows[0]["Path"] == "notebooks/EDA_20260708.py"
 
 
-def test_collect_notebook_deliverables_reports_retired_record_schema_as_invalid(tmp_path: Path) -> None:
-    outputs = tmp_path / "outputs"
-    runtime = builtin_runtime()
-    store = runtime.record_store(outputs)
-    payload = {
-        "schema_version": 3,
-        "record_id": "plot:missing_descriptions",
-        "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "missing_descriptions", "plugin": "plot/time_series"},
-        "created_at": "2026-07-10T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:missing-descriptions",
-        "files": ["plots/missing_descriptions.png"],
-        "description": "Bundle-level description only.",
-    }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:missing_descriptions": payload},
-        "history": {"plot:missing_descriptions": [payload]},
-    }
-    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+def test_collect_notebook_deliverables_handles_empty_public_catalog(tmp_path: Path) -> None:
+    deliverables = collect_notebook_deliverables((), outputs_dir=tmp_path / "outputs")
 
-    deliverables = collect_notebook_deliverables(outputs)
-
+    assert deliverables.record_rows == ()
     assert deliverables.plot_rows == ()
-    assert len(deliverables.issue_rows) == 1
-    assert deliverables.issue_rows[0]["Surface"] == "records"
-    assert "schema_version must be 5" in deliverables.issue_rows[0]["Issue"]
+    assert deliverables.export_rows == ()
+    assert deliverables.issue_rows == ()
+    assert deliverables.artifact_rows == ()
+
+
+def test_generic_notebook_components_surface_new_dataframe_contracts_and_pipeline_file_bundles(
+    tmp_path: Path,
+) -> None:
+    outputs = tmp_path / "outputs"
+    dataframe_path = outputs / "artifacts" / "novel" / "measurements.parquet"
+    bundle_path = outputs / "artifacts" / "novel" / "readme.txt"
+    dataframe_path.parent.mkdir(parents=True)
+    dataframe_path.write_bytes(b"cataloged dataframe placeholder")
+    bundle_path.write_text("domain-neutral artifact", encoding="utf-8")
+    entries = (
+        {
+            "kind": "dataframe_artifact",
+            "record_id": "novel/measurements",
+            "contract_id": "novel.measurements.v1",
+            "created_at": "2026-07-29T12:00:00Z",
+            "producer": {"kind": "pipeline", "id": "novel", "plugin": "transform/novel"},
+            "path": "artifacts/novel/measurements.parquet",
+        },
+        {
+            "kind": "file_bundle",
+            "record_id": "novel/supporting_files",
+            "producer": {"kind": "pipeline", "id": "novel", "plugin": "transform/novel"},
+            "description": "Supporting files for the novel contract.",
+            "files": ["artifacts/novel/readme.txt"],
+        },
+    )
+
+    record_info, record_labels, note = build_dataframe_record_catalog(entries, catalog_exists=True)
+    deliverables = collect_notebook_deliverables(entries, outputs_dir=outputs)
+
+    assert record_labels == ["novel/measurements"]
+    assert record_info["novel/measurements"]["plugin_key"] == "transform/novel"
+    assert note == ""
+    assert deliverables.record_rows[0]["Contract"] == "novel.measurements.v1"
+    assert deliverables.artifact_rows == (
+        {
+            "Kind": "file_bundle",
+            "Record ID": "novel/supporting_files",
+            "Producer": "pipeline:novel",
+            "Plugin": "transform/novel",
+            "Description": "Supporting files for the novel contract.",
+            "File": "readme.txt",
+            "Path": "artifacts/novel/readme.txt",
+            "Exists": "yes",
+        },
+    )
+
+    loaded_record_ids: list[str] = []
+    mo = _FakeMarimo()
+    selector = build_notebook_deliverable_selector(mo, deliverables)
+    assert "Data · novel/measurements" in selector.options
+    assert "Artifact · novel/supporting_files" in selector.options
+    dataframe_selector = type("Selector", (), {"value": "record:0"})()
+    dataframe_viewport = render_notebook_deliverable_viewport(
+        mo,
+        deliverables,
+        dataframe_selector,
+        outputs_dir=outputs,
+        dataframe_loader=lambda record_id: (
+            loaded_record_ids.append(record_id) or pd.DataFrame({"measurement": [1.0]})
+        ),
+    )
+    artifact_selector = type("Selector", (), {"value": "artifact:0"})()
+    artifact_viewport = render_notebook_deliverable_viewport(
+        mo,
+        deliverables,
+        artifact_selector,
+        outputs_dir=outputs,
+        dataframe_loader=lambda _record_id: None,
+    )
+
+    assert loaded_record_ids == ["novel/measurements"]
+    assert any(item.get("kind") == "table" for item in dataframe_viewport["items"] if isinstance(item, dict))
+    assert any(
+        item.get("kind") == "markdown" and "readme.txt" in item.get("text", "")
+        for item in artifact_viewport["items"]
+        if isinstance(item, dict)
+    )
 
 
 def test_deliverable_workbench_uses_one_selector_one_viewport_and_lazy_details(tmp_path: Path) -> None:
@@ -188,7 +253,13 @@ def test_deliverable_workbench_uses_one_selector_one_viewport_and_lazy_details(t
     )
 
     selector = build_notebook_deliverable_selector(mo, deliverables)
-    viewport = render_notebook_deliverable_viewport(mo, deliverables, selector, outputs_dir=tmp_path)
+    viewport = render_notebook_deliverable_viewport(
+        mo,
+        deliverables,
+        selector,
+        outputs_dir=tmp_path,
+        dataframe_loader=lambda _record_id: None,
+    )
 
     assert selector.label == "Deliverable"
     assert viewport["kind"] == "vstack"

@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/__init__.py
-
-Plate-reader plotting primitives and figure builders.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader plotting primitives and figure builders."""
 
 from .distributions import plot_distributions
 from .snapshot_barplot import plot_snapshot_barplot

@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/plots/test_render_path.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -30,7 +21,7 @@ from reader.protocols import (
 )
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics, resolve_workbench
-from reader.workbench.assets import AssetCatalog, build_plugin_asset
+from reader.workbench.assets import build_plugin_asset
 from reader.workbench.decl.model import (
     ExperimentDecl,
     NotebookDecl,
@@ -275,7 +266,6 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
         contracts=builtin_contract_catalog(),
         protocols=protocols,
         plugins=reg,
-        assets=AssetCatalog([]),
     )
 
     plot_specs = resolve_workbench(decl).plots

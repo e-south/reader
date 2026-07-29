@@ -1,20 +1,10 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/snapshot_heatmap/__init__.py
-
-Snapshot heatmap with tidy aggregation and square cells.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Snapshot heatmap with tidy aggregation and square cells."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 import matplotlib.colors as mcolors
@@ -28,10 +18,15 @@ from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import new_fig_ax, use_style
 
 from ...analysis.timepoints import choose_nearest_time
-from ..common import alias_column, emit_plot_figure, pretty_name, warn_if_empty
-from .inputs import prepare_snapshot_heatmap_inputs as prepare_snapshot_heatmap_inputs
+from ..common import alias_column, plot_figure, pretty_name, warn_if_empty
+from .inputs import (
+    SnapshotHeatmapInputs as SnapshotHeatmapInputs,
+)
+from .inputs import (
+    prepare_snapshot_heatmap_inputs as prepare_snapshot_heatmap_inputs,
+)
 
-__all__ = ["plot_snapshot_heatmap", "prepare_snapshot_heatmap_inputs"]
+__all__ = ["SnapshotHeatmapInputs", "plot_snapshot_heatmap", "prepare_snapshot_heatmap_inputs"]
 
 
 def _ensure(df: pd.DataFrame, cols: list[str]) -> None:
@@ -79,8 +74,6 @@ def _resolve_cmap(spec: Any) -> Colormap | None:
 def plot_snapshot_heatmap(
     *,
     df: pd.DataFrame,
-    blanks: pd.DataFrame,
-    output_dir: Path | None,
     channel: str,
     time: float,
     x: str = "treatment",
@@ -92,8 +85,8 @@ def plot_snapshot_heatmap(
     vmax: float | None = None,
     fig_kwargs: dict[str, Any],
     filename: str | None,
+    logger: logging.Logger | None = None,
 ) -> list[PlotFigure]:
-    del blanks
     x_col = alias_column(df, x)
     y_col = alias_column(df, y)
     _ensure(df, ["time", "channel", "value", x_col, y_col])
@@ -117,7 +110,7 @@ def plot_snapshot_heatmap(
         target_time=float(time),
         tol=(None if tol is None else float(tol)),
         where="snapshot_heatmap",
-        logger=logging.getLogger("reader"),
+        logger=logger,
     )
 
     snap_pl = work_pl.filter(
@@ -135,39 +128,6 @@ def plot_snapshot_heatmap(
     pivot = pivot_pl.to_pandas(use_pyarrow_extension_array=False)
     if y_col in pivot.columns:
         pivot = pivot.set_index(y_col)
-
-    if order_x is None and pretty_name(str(x_col)) == "treatment":
-        cols = list(map(str, pivot.columns))
-        lower = [column.lower() for column in cols]
-        has_hint = any(
-            ("pms" in column)
-            or ("etoh" in column)
-            or ("ethanol" in column)
-            or ("ciprofloxacin" in column)
-            or ("cipro" in column)
-            or (column.strip() == "negative")
-            for column in lower
-        )
-        if has_hint:
-
-            def _rank(column: str) -> tuple[int, str]:
-                value = column.lower()
-                if "pms" in value:
-                    return (0, value)
-                if "etoh" in value or "ethanol" in value:
-                    return (1, value)
-                if "ciprofloxacin" in value or "cipro" in value:
-                    return (2, value)
-                if value.strip() == "negative" or "negative" in value:
-                    return (4, value)
-                return (3, value)
-
-            ordered = sorted(cols, key=_rank)
-            pivot = pivot[ordered]
-            logging.getLogger("reader").info(
-                "[dim]snapshot_heatmap[/dim] • treatment order applied: PMS → EtOH → ciprofloxacin → negative "
-                "(override with plots.<spec_id>.with.order_x in config.yaml)"
-            )
 
     pivot = _apply_explicit_axis_order(pivot, axis="x", labels=order_x)
     pivot = _apply_explicit_axis_order(pivot, axis="y", labels=order_y)
@@ -242,4 +202,4 @@ def plot_snapshot_heatmap(
         )
         fp_id = _short_id(fp_payload)
         stub = f"{base}__gy{n_geno}-{geno_id}__fp{fp_id}"
-        return emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs)
+        return [plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs)]

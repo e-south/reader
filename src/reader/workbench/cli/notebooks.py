@@ -31,7 +31,7 @@ from .shared import (
 
 
 def render_marimo_help(target: Path, *, mode: str, has_fcs: bool) -> None:
-    sync_cmd = "uv sync --locked --group notebooks"
+    sync_cmd = "uv sync --locked --extra notebooks"
     marimo_cmd = f"{shared.sys.executable} -m marimo {mode} {target}"
     uvx_cmd = f"uvx marimo {mode} --sandbox {target}"
     shared.console.print(
@@ -160,7 +160,6 @@ def _scaffold_notebook(
     mode: str,
     plot_only: list[str] | None,
     plot_exclude: list[str] | None,
-    scan_records: bool,
     headless: bool,
     port: int | None,
 ) -> None:
@@ -267,7 +266,6 @@ def _scaffold_notebook(
             template=selected_template,
             overwrite=overwrite,
             plot_specs=plot_specs_payload,
-            allow_record_scan=scan_records,
         )
         if created:
             if existed and overwrite:
@@ -322,11 +320,6 @@ def notebook(
         "--refresh",
         help="Regenerate the notebook even if it exists (same as --overwrite).",
     ),
-    scan_records: bool = typer.Option(
-        False,
-        "--scan-records",
-        help="Allow notebook templates to scan outputs/artifacts when records.json is missing.",
-    ),
     headless: bool = typer.Option(
         False,
         "--headless",
@@ -351,7 +344,6 @@ def notebook(
         overwrite=overwrite,
         new=new,
         refresh=refresh,
-        scan_records=scan_records,
         headless=headless,
         port=port,
         mode=mode,

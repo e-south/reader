@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/ingest/flow_cytometer.py
-
-Flow cytometer ingest for .fcs files (snapshot data).
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Flow cytometer ingest for .fcs files (snapshot data)."""
 
 from __future__ import annotations
 

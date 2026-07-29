@@ -13,21 +13,21 @@ protocol:
         "CFP:433,475": CFP
         "YFP:500,530": YFP
       auto_pick: single
-    response:
-      logic_channel: YFP/CFP
-      intensity_channel: YFP/OD600
     reference:
       design_id: REF
       stat: mean
     design_by:
     - design_id
-    state_map_ref: induction_logic
+    state_map_ref: logic_states
     target_time_h: 10
     time_mode: nearest
     time_tolerance_h: 0.5
   analysis:
     include_fold_change: false
     include_export: false
+    logic_symmetry:
+      batch_col: batch
+      replicate_stat: mean
     preprocessing:
       blank:
         method: subtract
@@ -52,24 +52,16 @@ protocol:
             rc:
               savefig_dpi: 300
         logic_symmetry:
-          response_channel: YFP/CFP
-          design_by:
-          - design_id
-          batch_col: batch
-          aggregation:
-            replicate_stat: mean
-            uncertainty: halo
+          uncertainty: halo
           encodings:
             size_by: log_r
             alpha_by: batch
-          output:
-            format:
-            - pdf
-            dpi: 300
-            figsize:
-            - 7
-            - 6
-          state_map_ref: induction_logic
+          format:
+          - pdf
+          dpi: 300
+          figsize:
+          - 7
+          - 6
       include:
       - raw_kinetics
       - logic_symmetry
@@ -90,15 +82,15 @@ annotations:
         Group B:
         - g3
   orders:
-    induction_stress_2x2:
+    binary_input_states:
       column: treatment
       values:
-      - -IPTG/-stress
-      - +IPTG/-stress
-      - -IPTG/+stress
-      - +IPTG/+stress
+      - -input-a/-input-b
+      - +input-a/-input-b
+      - -input-a/+input-b
+      - +input-a/+input-b
   ordered_state_spaces:
-    induction_logic:
+    logic_states:
       column: treatment
       state_order:
       - '00'
@@ -106,8 +98,8 @@ annotations:
       - '01'
       - '11'
       values:
-        '00': -IPTG/-stress
-        '10': +IPTG/-stress
-        '01': -IPTG/+stress
-        '11': +IPTG/+stress
+        '00': -input-a/-input-b
+        '10': +input-a/-input-b
+        '01': -input-a/+input-b
+        '11': +input-a/+input-b
       case_sensitive: true

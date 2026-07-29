@@ -11,10 +11,6 @@ def _():
     import marimo as mo
 
     try:
-        import polars as pl
-    except Exception:
-        pl = None
-    try:
         import pandas as pd
     except Exception:
         pd = None
@@ -28,17 +24,21 @@ def _():
         alt = None
         altair_err = exc
 
-    from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.api import read_dataframe, records
     from reader.domains.plate_reader.analysis.timepoints import (
         infer_acquisition_transition_time_h,
     )
-    from reader.workbench.notebooks.dual_reporter_triptych import (
+    from reader.domains.plate_reader.plots.dual_reporter_triptych import (
         build_dual_reporter_triptych_chart,
         build_triptych_data,
         choose_time,
         summarize_design_context,
     )
-    from reader.workbench.records import discover_dataframe_records
+    from reader.api.notebooks import (
+        build_dataframe_record_catalog,
+        load_notebook_context,
+        select_default_dataframe_record,
+    )
 
     return (
         Path,
@@ -47,43 +47,49 @@ def _():
         build_dual_reporter_triptych_chart,
         build_triptych_data,
         choose_time,
-        discover_dataframe_records,
+        build_dataframe_record_catalog,
         infer_acquisition_transition_time_h,
-        load_notebook_workbench_context,
+        load_notebook_context,
         mo,
         pd,
-        pl,
+        read_dataframe,
+        records,
+        select_default_dataframe_record,
         summarize_design_context,
     )
 
 
 @app.cell(hide_code=True)
-def _(Path, load_notebook_workbench_context):
-    notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
-    decl = notebook_context.decl
+def _(Path, load_notebook_context):
+    notebook_context = load_notebook_context(Path(__file__).resolve())
+    experiment = notebook_context.experiment
     exp_dir = notebook_context.experiment_root
     outputs_dir = notebook_context.outputs_dir
     exp_meta = {
-        "id": decl.experiment.id,
-        "title": decl.experiment.title or "",
+        "id": experiment.identity.id,
+        "title": experiment.identity.title or "",
     }
-    pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
-    return decl, exp_dir, exp_meta, outputs_dir, pipeline_step_ids
+    pipeline_step_ids = list(notebook_context.pipeline_step_ids)
+    protocol_inputs = dict(notebook_context.protocol_inputs)
+    return exp_dir, exp_meta, experiment, outputs_dir, pipeline_step_ids, protocol_inputs
 
 
 @app.cell(hide_code=True)
-def _(discover_dataframe_records, outputs_dir):
-    record_info, record_labels, record_note, record_warning = discover_dataframe_records(
-        outputs_dir,
-        allow_scan=__ALLOW_RECORD_SCAN__,
-    )
-    return record_info, record_labels, record_note, record_warning
+def _(build_dataframe_record_catalog, experiment, records):
+    try:
+        _record_catalog = records(experiment)
+        record_info, record_labels, record_note = build_dataframe_record_catalog(
+            _record_catalog.entries,
+            catalog_exists=_record_catalog.catalog_exists,
+        )
+    except Exception as exc:
+        record_info, record_labels = {}, []
+        record_note = f"Could not read the canonical record catalog: {exc}"
+    return record_info, record_labels, record_note
 
 
 @app.cell(hide_code=True)
-def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_warning):
-    if record_warning:
-        mo.md(record_warning)
+def _(mo, pipeline_step_ids, record_info, record_labels, record_note, select_default_dataframe_record):
     if not record_labels:
         note = record_note or "No datasets found. Run `uv run reader run` first."
         mo.md(note)
@@ -96,19 +102,12 @@ def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_war
             "overflow/df",
             "labels/df",
         )
-        _default_label = None
-        for _record_id in _preferred_records:
-            _matches = [label for label, info in record_info.items() if info.get("record_id") == _record_id]
-            if _matches:
-                _default_label = sorted(_matches)[0]
-                break
-        if _default_label is None and pipeline_step_ids:
-            for _step_id in reversed(pipeline_step_ids):
-                _matches = [label for label, info in record_info.items() if info.get("step_id") == _step_id]
-                if _matches:
-                    _default_label = sorted(_matches)[0]
-                    break
-        _default_label = _default_label or record_labels[0]
+        _default_label = select_default_dataframe_record(
+            record_info,
+            record_labels,
+            pipeline_step_ids=pipeline_step_ids,
+            preferred_record_ids=_preferred_records,
+        )
         mo.md(f"This run has {len(record_labels)} dataframe record(s). Select one to explore:")
         record_dropdown = mo.ui.dropdown(
             options=record_labels,
@@ -123,29 +122,23 @@ def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_war
 def _(record_dropdown, record_info):
     if record_dropdown is None:
         selected_label = None
-        record_path = None
+        selected_record_id = None
     else:
         selected_label = record_dropdown.value
-        record_path = record_info.get(selected_label, {}).get("path")
-    return record_path, selected_label
+        selected_record_id = record_info.get(selected_label, {}).get("record_id")
+    return selected_label, selected_record_id
 
 
 @app.cell(hide_code=True)
-def _(pl, record_path):
+def _(experiment, read_dataframe, selected_record_id):
     df = None
     df_error = None
-    _pl_error = None
-    if record_path is not None:
-        if pl is None:
-            df_error = "Polars is required to read parquet. Install the notebooks group."
-        else:
-            try:
-                df = pl.read_parquet(record_path)
-            except Exception as exc:
-                _pl_error = str(exc)
-        if df is None and df_error is None:
-            _suffix = _pl_error or "unknown error"
-            df_error = f"Failed to read parquet with polars ({_suffix})."
+    if selected_record_id is not None:
+        try:
+            _record = read_dataframe(experiment, selected_record_id)
+            df = _record.dataframe
+        except Exception as exc:
+            df_error = str(exc)
     return df, df_error
 
 
@@ -160,13 +153,10 @@ def _(df, df_error, mo, selected_label):
 
 
 @app.cell(hide_code=True)
-def _(df, data_ready, mo, pd, pl):
+def _(df, data_ready, mo, pd):
     if pd is None:
         mo.stop(True, mo.md("Pandas is required for the triptych notebook."))
-    if pl is not None and df.__class__.__module__.startswith("polars"):
-        tidy_pd = df.to_pandas()
-    else:
-        tidy_pd = df
+    tidy_pd = df
     return tidy_pd
 
 
@@ -201,7 +191,7 @@ def _(mo, tidy_pd):
 
 
 @app.cell(hide_code=True)
-def _(decl, pd, tidy_pd, time_col):
+def _(pd, protocol_inputs, tidy_pd, time_col):
     time_values = sorted(
         float(value) for value in pd.to_numeric(tidy_pd[time_col], errors="coerce").dropna().unique().tolist()
     )
@@ -210,7 +200,6 @@ def _(decl, pd, tidy_pd, time_col):
     time_step = min([b - a for a, b in zip(time_values[:-1], time_values[1:]) if b > a] or [0.25])
 
     default_time = time_max
-    protocol_inputs = getattr(decl.experiment_semantics.protocol, "inputs", {}) or {}
     if isinstance(protocol_inputs, dict):
         fold_change = protocol_inputs.get("fold_change", {}) or {}
         report_times = fold_change.get("report_times") if isinstance(fold_change, dict) else None

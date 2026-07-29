@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/core/test_plot_style.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 import pytest
 
 from reader.plotting.style import PaletteBook

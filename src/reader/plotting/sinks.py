@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plotting/sinks.py
-
-Plot sinks for saving rendered figures.
---------------------------------------------------------------------------------
-"""
+"""Plot sinks for saving rendered figures."""
 
 from __future__ import annotations
 

@@ -45,7 +45,6 @@ _EXPORTS = {
         "RecordRecipeSource",
         "RecordStore",
         "WorkbenchRecord",
-        "discover_dataframe_records",
         "record_from_dict",
         "record_paths",
         "record_to_dict",

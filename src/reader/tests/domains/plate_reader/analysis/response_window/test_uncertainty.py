@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowAnalysisSpec
-from reader.domains.plate_reader.analysis.response_window.provenance import stable_seed
+from reader.domains.plate_reader.analysis.response_window.seeds import stable_seed
 from reader.domains.plate_reader.analysis.response_window.sources import STATE_ORDER
 from reader.domains.plate_reader.analysis.response_window.uncertainty import (
     bootstrap_draw_records,
@@ -16,7 +16,7 @@ from reader.tests.domains.plate_reader.analysis.response_window.test_response_wi
 
 def test_joint_bootstrap_preserves_paired_well_covariance() -> None:
     values = np.asarray([1.0, 2.0, 5.0])
-    response, relative_fluorescence = joint_state_bootstrap_draws(
+    response, anchored_magnitude = joint_state_bootstrap_draws(
         values,
         values,
         np.zeros(3),
@@ -25,10 +25,10 @@ def test_joint_bootstrap_preserves_paired_well_covariance() -> None:
         rng=np.random.default_rng(17),
     )
 
-    np.testing.assert_array_equal(response, relative_fluorescence)
+    np.testing.assert_array_equal(response, anchored_magnitude)
 
 
-def test_reference_bootstrap_draws_keep_anchored_fluorescence_at_zero() -> None:
+def test_reference_bootstrap_draws_keep_anchored_magnitude_at_zero() -> None:
     request = ResponseWindowAnalysisSpec.from_mapping(_payload())
     records = []
     for state_index, state in enumerate(STATE_ORDER):
@@ -47,9 +47,9 @@ def test_reference_bootstrap_draws_keep_anchored_fluorescence_at_zero() -> None:
 
     draws = bootstrap_draw_records(pd.DataFrame.from_records(records), request=request)
 
-    fluorescence_columns = [f"b{state}" for state in STATE_ORDER]
+    magnitude_columns = [f"b{state}" for state in STATE_ORDER]
     np.testing.assert_array_equal(
-        draws[fluorescence_columns].to_numpy(dtype=float),
+        draws[magnitude_columns].to_numpy(dtype=float),
         np.zeros((request.aggregation.bootstrap_samples, len(STATE_ORDER))),
     )
 

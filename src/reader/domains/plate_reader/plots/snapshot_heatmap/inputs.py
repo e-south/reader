@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from reader.domains.plate_reader.analysis.timepoints import choose_nearest_time
+
+
+@dataclass(frozen=True)
+class SnapshotHeatmapInputs:
+    """Prepared dataframe and rendering values for a snapshot heatmap."""
+
+    frame: pd.DataFrame
+    filename: str | None
+    fig_kwargs: dict[str, Any]
 
 
 def auto_cbar_label(channel: str, value_transform: str | None) -> str:
@@ -34,15 +46,20 @@ def _transform_positive_values(values: pd.Series, *, transform: str) -> pd.Serie
 
 def prepare_snapshot_heatmap_inputs(
     *,
-    ctx,
     df_in: pd.DataFrame | None,
     fc_in: pd.DataFrame | None,
-    cfg: Any,
-) -> dict[str, Any]:
-    channel = str(cfg.channel)
+    channel: str,
+    time: float,
+    time_tolerance: float,
+    value_transform: str | None,
+    fig: Mapping[str, Any] | None,
+    filename: str | None,
+    logger: logging.Logger | None = None,
+) -> SnapshotHeatmapInputs:
+    channel = str(channel)
     wants_fc = channel.startswith("FC_") or channel.startswith("log2FC_")
-    fig_kwargs = dict(cfg.fig or {})
-    fig_kwargs.setdefault("time_tolerance", cfg.time_tolerance)
+    fig_kwargs = dict(fig or {})
+    fig_kwargs.setdefault("time_tolerance", time_tolerance)
 
     if wants_fc:
         if fc_in is None:
@@ -55,29 +72,32 @@ def prepare_snapshot_heatmap_inputs(
             raise ValueError(f"snapshot_heatmap: no fold_change rows found for target={target!r}")
         chosen_time = choose_nearest_time(
             table["time"],
-            target_time=float(cfg.time),
-            tol=float(cfg.time_tolerance),
+            target_time=float(time),
+            tol=float(time_tolerance),
             where="snapshot_heatmap",
-            logger=ctx.logger,
+            logger=logger,
         )
         subset = table[pd.to_numeric(table["time"], errors="coerce") == chosen_time].copy()
         subset = subset.rename(columns={use_col: "value"})
         subset["channel"] = channel
         keep = ["time", "channel", "value", "treatment", "design_id", "design_id_alias"]
         df = subset[[column for column in keep if column in subset.columns]].copy()
-        filename = cfg.filename or f"snapshot_heatmap__{channel}__t{chosen_time:g}h"
+        resolved_filename = filename or f"snapshot_heatmap__{channel}__t{chosen_time:g}h"
         fig_kwargs.setdefault("cbar_label", auto_cbar_label(channel, None))
-        return {"df": df, "filename": filename, "fig_kwargs": fig_kwargs}
+        return SnapshotHeatmapInputs(frame=df, filename=resolved_filename, fig_kwargs=fig_kwargs)
 
     if df_in is None:
         raise ValueError("snapshot_heatmap: tidy df is required when channel is not FC_/log2FC_-prefixed")
 
     df = df_in.copy()
-    if cfg.value_transform and str(cfg.value_transform).lower() in {"log2", "log10"}:
+    if value_transform and str(value_transform).lower() in {"log2", "log10"}:
         mask = df["channel"].astype(str) == channel
         df.loc[mask, "value"] = _transform_positive_values(
             df.loc[mask, "value"],
-            transform=str(cfg.value_transform).lower(),
+            transform=str(value_transform).lower(),
         )
-    fig_kwargs.setdefault("cbar_label", auto_cbar_label(channel, cfg.value_transform))
-    return {"df": df, "filename": cfg.filename, "fig_kwargs": fig_kwargs}
+    fig_kwargs.setdefault("cbar_label", auto_cbar_label(channel, value_transform))
+    return SnapshotHeatmapInputs(frame=df, filename=filename, fig_kwargs=fig_kwargs)
+
+
+__all__ = ["SnapshotHeatmapInputs", "auto_cbar_label", "prepare_snapshot_heatmap_inputs"]

@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/cytometry/io/fcs.py
-
-FCS parsing for cytometry experiments.
---------------------------------------------------------------------------------
-"""
+"""FCS parsing for cytometry experiments."""
 
 from __future__ import annotations
 

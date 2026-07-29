@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib.resources import files
 
-from reader.domains.semantics import PluginDomain, validate_plugin_domain
 from reader.errors import ConfigError
 from reader.workbench.assets.types import AssetCapabilities, AssetDescriptor
+from reader.workbench.ontology import PluginDomain, validate_plugin_domain
 
 
 @dataclass(frozen=True)

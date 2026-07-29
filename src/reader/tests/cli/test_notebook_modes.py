@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/cli/test_notebook_modes.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 import sys
@@ -229,7 +220,7 @@ def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> Non
     result = runner.invoke(app, ["notebook", str(cfg_path)])
     assert result.exit_code == 1
     assert "Could not launch marimo automatically." in result.output
-    assert "uv sync --locked --group notebooks" in result.output
+    assert "uv sync --locked --extra notebooks" in result.output
 
 
 def test_launch_marimo_uses_active_interpreter(monkeypatch, tmp_path: Path) -> None:

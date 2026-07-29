@@ -12,6 +12,21 @@ _EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@([A-Z0-9.-]+\.[A-Z]{2,})\b", re.I
 _ALLOWED_EMAIL_DOMAINS = {"example.com", "users.noreply.github.com"}
 _FORBIDDEN_LOCAL_PATH_PARTS = ("/" + "Users/", "\\" + "Users\\", "Drop" + "box/")
 _FORBIDDEN_PUBLIC_BINARY_SUFFIXES = {".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx"}
+_FORBIDDEN_PUBLIC_ARCHIVE_SUFFIXES = {".7z", ".gz", ".tar", ".tgz", ".zip"}
+_FORBIDDEN_WORK_PRODUCT_DIRECTORIES = {
+    ".tmp",
+    "_scratch",
+    "archived",
+    "batch_results",
+    "batches",
+    "datasets",
+    "outputs",
+    "prototypes",
+    "raw",
+    "raw_data",
+    "results",
+    "scratch",
+}
 _FORBIDDEN_STUDY_TERMS = (
     "retr" + "on",
     "s" + "pop",
@@ -19,6 +34,12 @@ _FORBIDDEN_STUDY_TERMS = (
     "dna" + "design",
     "ln" + "rna",
     "pro" + "moter",
+    "pdu" + "al",
+    "spy" + "p",
+    "sul" + "ap",
+    "se" + "cg",
+    "m9_" + "glu",
+    "m9-" + "glu",
 )
 _PRIVACY_SENTINEL_PATHS = {
     Path("src/reader/tests/engine/test_invocations.py"),
@@ -35,7 +56,8 @@ def _tracked_paths() -> tuple[Path, ...]:
         check=True,
         capture_output=True,
     )
-    return tuple(Path(item.decode()) for item in result.stdout.split(b"\0") if item)
+    candidates = (Path(item.decode()) for item in result.stdout.split(b"\0") if item)
+    return tuple(path for path in candidates if (REPO_ROOT / path).exists() or (REPO_ROOT / path).is_symlink())
 
 
 def test_tracked_experiments_are_confined_to_the_synthetic_template() -> None:
@@ -47,12 +69,25 @@ def test_tracked_experiments_are_confined_to_the_synthetic_template() -> None:
 
 
 def test_tracked_tree_excludes_private_work_products_and_office_documents() -> None:
-    forbidden_directories = {"outputs", "raw", "raw_data"}
     findings = [
         str(path)
         for path in _tracked_paths()
-        if forbidden_directories.intersection(path.parts) or path.suffix.lower() in _FORBIDDEN_PUBLIC_BINARY_SUFFIXES
+        if _FORBIDDEN_WORK_PRODUCT_DIRECTORIES.intersection(path.parts)
+        or path.suffix.lower() in _FORBIDDEN_PUBLIC_BINARY_SUFFIXES
+        or path.suffix.lower() in _FORBIDDEN_PUBLIC_ARCHIVE_SUFFIXES
     ]
+
+    assert findings == []
+
+
+def test_python_sources_do_not_repeat_project_or_author_banners() -> None:
+    findings: list[str] = []
+    for relative_path in _tracked_paths():
+        if relative_path.suffix != ".py":
+            continue
+        content = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        if "<reader " + "project>" in content or "Author" + "(s):" in content:
+            findings.append(str(relative_path))
 
     assert findings == []
 

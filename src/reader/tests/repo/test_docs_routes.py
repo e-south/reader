@@ -12,13 +12,25 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 def test_root_readme_is_a_human_first_landing_page() -> None:
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert text.startswith("![Reader")
+    assert text.startswith("# ![Reader")
     assert not text.startswith("# reader\n")
+    assert "uv tool install reader-workbench" in text
+    assert "python -m pip install reader-workbench" in text
+    assert "\nreader demo\n" in text
+    assert "\nreader protocols\n" in text
     assert "uv run reader demo" in text
     assert "docs/guides/getting_started.md" in text
     assert "docs/guides/common_routes.md" in text
     assert "docs/README.md" in text
     assert "doc_id:" not in text
+
+
+def test_response_window_docs_route_through_public_records_api() -> None:
+    text = (REPO_ROOT / "docs" / "lib" / "plate_reader" / "response_window.md").read_text(encoding="utf-8")
+
+    assert "reader.api.records()" in text
+    assert "reader.api.read_dataframe()" in text
+    assert "RecordStore" not in text
 
 
 def test_reader_demo_is_a_no_write_command_tour(tmp_path: Path, monkeypatch) -> None:

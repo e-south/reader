@@ -1,17 +1,7 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/snapshot_barplot/__init__.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -22,7 +12,7 @@ from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
 
 from ...ordering import order_levels
-from ..common import alias_column, best_subplot_grid, colors_for, emit_plot_figure, require_columns, warn_if_empty
+from ..common import alias_column, best_subplot_grid, colors_for, plot_figure, require_columns, warn_if_empty
 from ..grouping import GroupMatch
 from ..panels import draw_snapshot_panel, select_snapshot_rows, summarize_snapshot_values
 from .planning import build_figure_groups, compute_shared_ylim, resolve_panel_configuration
@@ -64,7 +54,6 @@ def _figure_stub(
 def plot_snapshot_barplot(
     *,
     df: pd.DataFrame,
-    output_dir: Path | None,
     x: str,
     y: list[str] | str,
     hue: str | None,
@@ -322,5 +311,5 @@ def plot_snapshot_barplot(
                     selected_channel=str(selected_channel) if selected_channel is not None else None,
                     multiple_files=len(fig_groups) * len(channels_for_files) > 1,
                 )
-                figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+                figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
     return figures

@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/ingest/discovery_policy.py
-
-Raw-file autodiscovery policy for ingest plugins.
---------------------------------------------------------------------------------
-"""
+"""Raw-file autodiscovery policy for ingest plugins."""
 
 from __future__ import annotations
 

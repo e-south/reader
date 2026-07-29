@@ -13,6 +13,7 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
+from reader._version import package_version
 from reader.errors import ReaderError
 
 from .automation import (
@@ -43,18 +44,21 @@ app = typer.Typer(
         "reader — experimental workbench.\n\n"
         "Discover assays and experiments, inspect workflow plans, validate YAML, "
         "run pipelines, and produce plots, exports, or notebooks. "
-        "Start with 'uv run reader demo', 'uv run reader ls', or 'uv run reader protocols'."
+        "Start with 'reader demo', 'reader ls', or 'reader protocols'."
     ),
 )
 console = Console(theme=THEME)
 rich_tracebacks(show_locals=False)
 
-JOB_INDEX_SCOPE_NOTE = "from the default 'uv run reader ls' inventory, resolved against the nearest experiments/ root from the current working directory"
+JOB_INDEX_SCOPE_NOTE = "resolved against the nearest experiments/ root from the current working directory"
 JOB_ARG_HELP = (
-    f"Path to config.yaml • experiment directory • or numeric index from 'uv run reader ls' {JOB_INDEX_SCOPE_NOTE}."
+    f"Path to config.yaml • experiment directory • or numeric index from the default 'reader ls' inventory, "
+    f"{JOB_INDEX_SCOPE_NOTE}."
 )
 JOB_ARG_HELP_WITH_DEFAULT = f"{JOB_ARG_HELP[:-1]} (defaults to nearest ./config.yaml)"
-JOB_ARG_HELP_SHORT = f"Experiment config path, directory, or index from 'uv run reader ls' {JOB_INDEX_SCOPE_NOTE}."
+JOB_ARG_HELP_SHORT = (
+    f"Experiment config path, directory, or index from the default 'reader ls' inventory, {JOB_INDEX_SCOPE_NOTE}."
+)
 
 PLOT_ONLY_OPTION = typer.Option(None, "--only", help="Run only the specified plot id (repeatable).")
 PLOT_EXCLUDE_OPTION = typer.Option(None, "--exclude", help="Exclude the specified plot id (repeatable).")
@@ -102,8 +106,14 @@ NOTEBOOK_PLOT_EXCLUDE_OPTION = typer.Option(
 
 
 @app.callback(invoke_without_command=True)
-def _main(ctx: typer.Context) -> None:
+def _main(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", is_eager=True, help="Show the installed Reader version."),
+) -> None:
     """Show help when no command is provided."""
+    if version:
+        typer.echo(package_version())
+        raise typer.Exit()
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
         raise typer.Exit()

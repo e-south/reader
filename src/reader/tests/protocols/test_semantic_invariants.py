@@ -165,6 +165,37 @@ def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
     assert protocol.descriptor.ranking is None
 
 
+def test_logic_sfxi_screen_exposes_a_concrete_dual_reporter_adapter() -> None:
+    catalog = builtin_protocol_catalog()
+    protocol = catalog.bind(ProtocolBinding(id="logic/sfxi_screen"))
+    transform_config = protocol.effective_plugin_config(plugin_id="transform/sfxi")
+
+    assert "response" not in {field.key for field in protocol.descriptor.input_fields}
+    assert transform_config["response"] == {
+        "logic_channel": "YFP/CFP",
+        "intensity_channel": "YFP/OD600",
+    }
+    with pytest.raises(ConfigError, match=r"unknown keys \['response'\]"):
+        catalog.bind(
+            ProtocolBinding(
+                id="logic/sfxi_screen",
+                inputs={"response": {"logic_channel": "A/B", "intensity_channel": "A/C"}},
+            )
+        )
+
+
+def test_logic_sfxi_screen_rejects_fold_change_target_outside_its_compiled_adapter() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            inputs={"fold_change": {"target": "A/B"}},
+        )
+    )
+
+    with pytest.raises(ConfigError, match="must match the compiled assay ratio 'YFP/CFP'"):
+        protocol.compile()
+
+
 def test_protocol_semantic_execution_rejects_unknown_status() -> None:
     with pytest.raises(ValueError, match="must be 'compiled' or 'descriptive_only'"):
         ProtocolSemanticExecution(status="typo")

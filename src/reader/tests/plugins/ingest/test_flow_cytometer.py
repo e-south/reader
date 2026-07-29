@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/plugins/ingest/test_flow_cytometer.py
-
-Integration coverage for flow-cytometer ingest.
---------------------------------------------------------------------------------
-"""
+"""Integration coverage for flow-cytometer ingest."""
 
 from __future__ import annotations
 

@@ -5,7 +5,6 @@ from functools import cache
 from reader.contracts import builtin_contract_catalog
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.protocols.builtins import builtin_protocol_catalog
-from reader.workbench.assets import build_workbench_asset_catalog
 from reader.workbench.registry import load_plugin_catalog
 
 from .model import ReaderRuntime
@@ -17,5 +16,4 @@ def builtin_runtime() -> ReaderRuntime:
     contracts = builtin_contract_catalog()
     protocols = builtin_protocol_catalog()
     plugins = load_plugin_catalog(contracts=contracts)
-    assets = build_workbench_asset_catalog(plugin_registry=plugins)
-    return ReaderRuntime(contracts=contracts, protocols=protocols, plugins=plugins, assets=assets)
+    return ReaderRuntime(contracts=contracts, protocols=protocols, plugins=plugins)

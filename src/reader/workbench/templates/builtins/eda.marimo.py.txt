@@ -3,234 +3,121 @@ import marimo
 __generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
+
 @app.cell(hide_code=True)
 def _():
     from pathlib import Path
-    import json
 
     import marimo as mo
-    try:
-        import polars as pl
-    except Exception:
-        pl = None
-    from reader.workbench.notebooks.context import load_notebook_workbench_context
-    from reader.workbench.notebooks.components import (
-        build_design_treatment_summary_rows,
+    from reader.api import read_dataframe, records
+    from reader.api.notebooks import (
         build_notebook_deliverable_selector,
         build_notebook_overview,
         collect_notebook_deliverables,
+        load_notebook_context,
         render_notebook_deliverable_viewport,
         render_notebook_overview_panel,
     )
-    from reader.workbench.records import discover_dataframe_records
 
     return (
         Path,
-        json,
         mo,
-        pl,
-        load_notebook_workbench_context,
-        build_design_treatment_summary_rows,
+        read_dataframe,
+        records,
         build_notebook_deliverable_selector,
         build_notebook_overview,
         collect_notebook_deliverables,
+        load_notebook_context,
         render_notebook_deliverable_viewport,
         render_notebook_overview_panel,
-        discover_dataframe_records,
     )
 
+
 @app.cell(hide_code=True)
-def _(Path, build_notebook_overview, load_notebook_workbench_context):
-    notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
-    decl = notebook_context.decl
-    exp_dir = notebook_context.experiment_root
+def _(Path, build_notebook_overview, load_notebook_context):
+    notebook_context = load_notebook_context(Path(__file__).resolve())
+    experiment = notebook_context.experiment
     outputs_dir = notebook_context.outputs_dir
-    exp_meta = {
-        "id": decl.experiment.id,
-        "title": decl.experiment.title or "",
-    }
-    notebooks_cfg = decl.experiment_semantics.layout.notebooks_subdir
-    notebooks_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
-    pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
+    notebooks_dir = notebook_context.notebooks_dir
     notebook_overview = build_notebook_overview(
-        experiment_id=exp_meta["id"],
-        experiment_title=exp_meta["title"],
-        protocol_id=decl.experiment_semantics.protocol.id,
-        experiment_root=exp_dir,
+        experiment_id=experiment.identity.id,
+        experiment_title=experiment.identity.title or "",
+        protocol_id=experiment.identity.protocol,
+        experiment_root=notebook_context.experiment_root,
         outputs_dir=outputs_dir,
         notebooks_dir=notebooks_dir,
-        pipeline_step_ids=pipeline_step_ids,
+        pipeline_step_ids=notebook_context.pipeline_step_ids,
     )
-    return (
-        decl,
-        notebook_overview,
-        outputs_dir,
-        notebooks_dir,
-        pipeline_step_ids,
+    return experiment, notebook_overview, outputs_dir, notebooks_dir
+
+
+@app.cell(hide_code=True)
+def _(experiment, records):
+    _record_catalog = records(experiment)
+    record_entries = _record_catalog.entries
+    return (record_entries,)
+
+
+@app.cell(hide_code=True)
+def _(collect_notebook_deliverables, notebooks_dir, outputs_dir, record_entries):
+    deliverables = collect_notebook_deliverables(
+        record_entries,
+        outputs_dir=outputs_dir,
+        notebooks_dir=notebooks_dir,
     )
+    return (deliverables,)
+
 
 @app.cell(hide_code=True)
-def _(collect_notebook_deliverables, notebooks_dir, outputs_dir):
-    deliverables = collect_notebook_deliverables(outputs_dir, notebooks_dir=notebooks_dir)
-    return deliverables
+def _(mo, notebook_overview, render_notebook_overview_panel):
+    eda_overview_panel = render_notebook_overview_panel(mo, notebook_overview)
+    return (eda_overview_panel,)
 
-@app.cell(hide_code=True)
-def _(discover_dataframe_records, outputs_dir):
-    record_info, record_labels, record_note, record_warning = discover_dataframe_records(
-        outputs_dir,
-        allow_scan=__ALLOW_RECORD_SCAN__,
-    )
-    return record_info, record_labels, record_note, record_warning
-
-@app.cell(hide_code=True)
-def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_warning):
-    if record_warning:
-        mo.md(record_warning)
-    if not record_labels:
-        note = record_note or "No datasets found. Run `uv run reader run` first."
-        mo.md(note)
-        record_dropdown = None
-    else:
-        _default_label = None
-        if pipeline_step_ids:
-            for _step_id in reversed(pipeline_step_ids):
-                _matches = [
-                    label for label, info in record_info.items() if info.get("step_id") == _step_id
-                ]
-                if _matches:
-                    _default_label = sorted(_matches)[0]
-                    break
-        if _default_label is None:
-            _latest_label = None
-            _latest_mtime = None
-            for _label in record_labels:
-                _path = record_info[_label]["path"]
-                try:
-                    _mtime = _path.stat().st_mtime
-                except Exception:
-                    continue
-                if _latest_mtime is None or _mtime > _latest_mtime:
-                    _latest_mtime = _mtime
-                    _latest_label = _label
-            _default_label = _latest_label or record_labels[0]
-        mo.md(
-            f"This run has {len(record_labels)} dataframe record(s). Select one to explore:"
-        )
-        record_dropdown = mo.ui.dropdown(
-            options=record_labels,
-            value=_default_label,
-            label="Dataset (dataframe record)",
-            full_width=True,
-        )
-    return record_dropdown
-
-@app.cell(hide_code=True)
-def _(record_dropdown, record_info):
-    if record_dropdown is None:
-        selected_label = None
-        record_path = None
-    else:
-        selected_label = record_dropdown.value
-        record_path = record_info.get(selected_label, {}).get("path")
-    return selected_label, record_path
-
-@app.cell(hide_code=True)
-def _(pl, record_path):
-    df = None
-    df_error = None
-    _pl_error = None
-
-    if record_path is not None:
-        if pl is None:
-            df_error = "Polars is required to read parquet. Install the notebooks group."
-        else:
-            try:
-                df = pl.read_parquet(record_path)
-            except Exception as exc:
-                _pl_error = str(exc)
-        if df is None and df_error is None:
-            _suffix = _pl_error or "unknown error"
-            df_error = f"Failed to read parquet with polars ({_suffix})."
-    return df, df_error
-
-@app.cell(hide_code=True)
-def _(build_design_treatment_summary_rows, df):
-    design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
-    return design_treatment_rows, design_treatment_note
-
-@app.cell(hide_code=True)
-def _(design_treatment_note, design_treatment_rows, mo, notebook_overview, render_notebook_overview_panel):
-    eda_overview_panel = render_notebook_overview_panel(
-        mo,
-        notebook_overview,
-        design_treatment_rows=design_treatment_rows,
-        design_treatment_note=design_treatment_note,
-    )
-    return eda_overview_panel
-
-@app.cell(hide_code=True)
-def _(df_error, mo, record_dropdown, record_note):
-    _elements = [mo.md("## Dataset selection")]
-    if record_dropdown is None:
-        _elements.append(mo.md(record_note or "No datasets found."))
-    else:
-        _elements.append(record_dropdown)
-        if df_error:
-            _elements.append(mo.md(f"**Load error:** `{df_error}`"))
-    eda_dataset_panel = mo.vstack(_elements)
-    return eda_dataset_panel
-
-@app.cell(hide_code=True)
-def _(df, df_error, mo, pl, selected_label):
-    _columns = list(df.columns) if hasattr(df, "columns") else []
-    _elements = [mo.md("## Dataset table explorer")]
-    if df_error:
-        _elements.append(mo.md(f"Failed to load `{selected_label}`: {df_error}"))
-    elif df is None:
-        _elements.append(mo.md("Select a dataset to explore."))
-    elif len(_columns) > 40:
-        _display_cols = _columns[:40]
-        df_table = df
-        if pl is not None and df.__class__.__module__.startswith("polars"):
-            df_table = df.select(_display_cols)
-        _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
-        _elements.append(mo.ui.table(df_table, page_size=10))
-    else:
-        _elements.append(mo.ui.table(df, page_size=10))
-    eda_table_panel = mo.vstack(_elements)
-    return eda_table_panel
 
 @app.cell(hide_code=True)
 def _(build_notebook_deliverable_selector, deliverables, mo):
     deliverable_selector = build_notebook_deliverable_selector(mo, deliverables)
-    return deliverable_selector
+    return (deliverable_selector,)
+
 
 @app.cell(hide_code=True)
-def _(deliverable_selector, deliverables, mo, outputs_dir, render_notebook_deliverable_viewport):
+def _(
+    deliverable_selector,
+    deliverables,
+    experiment,
+    mo,
+    outputs_dir,
+    read_dataframe,
+    render_notebook_deliverable_viewport,
+):
+    def _load_dataframe(_record_id):
+        return read_dataframe(experiment, _record_id).dataframe
+
     deliverables_panel = render_notebook_deliverable_viewport(
         mo,
         deliverables,
         deliverable_selector,
         outputs_dir=outputs_dir,
+        dataframe_loader=_load_dataframe,
     )
-    return deliverables_panel
+    return (deliverables_panel,)
+
 
 @app.cell(hide_code=True)
-def _(deliverables_panel, eda_dataset_panel, eda_overview_panel, eda_table_panel, mo):
-    eda_base_panel = mo.vstack(
+def _(deliverables_panel, eda_overview_panel, mo):
+    eda_panel = mo.vstack(
         [
             eda_overview_panel,
             deliverables_panel,
-            eda_dataset_panel,
-            eda_table_panel,
         ]
     )
-    return eda_base_panel
+    return (eda_panel,)
 
 
 @app.cell(hide_code=True)
-def _(eda_base_panel):
-    eda_base_panel
+def _(eda_panel):
+    eda_panel
+
 
 if __name__ == "__main__":
     app.run()

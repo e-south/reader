@@ -13,7 +13,7 @@ def _config(*, state_order: list[str], values: dict[str, str], case_sensitive: b
         experiment_id="exp_states",
         annotations={
             "ordered_state_spaces": {
-                "stress_states": {
+                "four_state_conditions": {
                     "column": "treatment",
                     "state_order": state_order,
                     "values": values,
@@ -30,26 +30,26 @@ def test_ordered_state_space_resolves_declared_order_and_exact_values(tmp_path: 
         _config(
             state_order=["00", "10", "01", "11"],
             values={
-                "00": "No stress",
-                "10": "Ethanol",
-                "01": "Ciprofloxacin",
-                "11": "Ethanol + Ciprofloxacin",
+                "00": "Baseline",
+                "10": "Condition A",
+                "01": "Condition B",
+                "11": "Conditions A and B",
             },
             case_sensitive=False,
         ),
     )
 
     spec, declaration = load_models(path)
-    wire = spec.annotations.ordered_state_spaces["stress_states"]
-    resolved = declaration.experiment_semantics.annotations.resolve_ordered_state_space(ref="stress_states")
+    wire = spec.annotations.ordered_state_spaces["four_state_conditions"]
+    resolved = declaration.experiment_semantics.annotations.resolve_ordered_state_space(ref="four_state_conditions")
 
     assert wire.state_order == ["00", "10", "01", "11"]
     assert resolved.state_ids == ("00", "10", "01", "11")
     assert resolved.source_values == {
-        "00": "No stress",
-        "10": "Ethanol",
-        "01": "Ciprofloxacin",
-        "11": "Ethanol + Ciprofloxacin",
+        "00": "Baseline",
+        "10": "Condition A",
+        "01": "Condition B",
+        "11": "Conditions A and B",
     }
     assert resolved.column == "treatment"
     assert resolved.case_sensitive is False
@@ -68,10 +68,10 @@ def test_ordered_state_space_rejects_duplicate_state_ids(tmp_path: Path) -> None
         load_models(path)
 
 
-@pytest.mark.parametrize("space_id", ["", " stress_states ", 7])
+@pytest.mark.parametrize("space_id", ["", " four_state_conditions ", 7])
 def test_ordered_state_space_rejects_nonexact_space_ids(tmp_path: Path, space_id: object) -> None:
     data = _config(state_order=["off"], values={"off": "none"})
-    space = data["annotations"]["ordered_state_spaces"].pop("stress_states")
+    space = data["annotations"]["ordered_state_spaces"].pop("four_state_conditions")
     data["annotations"]["ordered_state_spaces"] = {space_id: space}
     path = write_config(tmp_path, data)
 
@@ -81,7 +81,7 @@ def test_ordered_state_space_rejects_nonexact_space_ids(tmp_path: Path, space_id
 
 def test_ordered_state_space_rejects_space_ids_that_collide_when_stringified(tmp_path: Path) -> None:
     data = _config(state_order=["off"], values={"off": "none"})
-    space = data["annotations"]["ordered_state_spaces"].pop("stress_states")
+    space = data["annotations"]["ordered_state_spaces"].pop("four_state_conditions")
     data["annotations"]["ordered_state_spaces"] = {
         7: space,
         "7": space,
@@ -94,7 +94,7 @@ def test_ordered_state_space_rejects_space_ids_that_collide_when_stringified(tmp
 
 def test_ordered_state_space_rejects_nonstring_value_keys(tmp_path: Path) -> None:
     data = _config(state_order=["0"], values={"0": "none"})
-    data["annotations"]["ordered_state_spaces"]["stress_states"]["values"] = {0: "none"}
+    data["annotations"]["ordered_state_spaces"]["four_state_conditions"]["values"] = {0: "none"}
     path = write_config(tmp_path, data)
 
     with pytest.raises(ConfigError, match="values keys must be strings"):
@@ -103,7 +103,7 @@ def test_ordered_state_space_rejects_nonstring_value_keys(tmp_path: Path) -> Non
 
 def test_ordered_state_space_rejects_value_keys_that_collide_when_stringified(tmp_path: Path) -> None:
     data = _config(state_order=["0"], values={"0": "none"})
-    data["annotations"]["ordered_state_spaces"]["stress_states"]["values"] = {
+    data["annotations"]["ordered_state_spaces"]["four_state_conditions"]["values"] = {
         0: "first",
         "0": "second",
     }
@@ -151,7 +151,7 @@ def test_ordered_state_space_allows_case_distinct_source_values_when_case_sensit
     )
 
     _, declaration = load_models(path)
-    resolved = declaration.experiment_semantics.annotations.resolve_ordered_state_space(ref="stress_states")
+    resolved = declaration.experiment_semantics.annotations.resolve_ordered_state_space(ref="four_state_conditions")
 
     assert resolved.source_values == {"lower": "untreated", "title": "Untreated"}
 

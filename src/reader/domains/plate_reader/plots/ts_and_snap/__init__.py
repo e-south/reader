@@ -1,19 +1,9 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/ts_and_snap/__init__.py
-
-Two-panel figure: (left) time series, (right) snapshot barplot,
-driven by the same group selection.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Two-panel figure: (left) time series, (right) snapshot barplot,
+driven by the same group selection."""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -22,7 +12,7 @@ from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import DEFAULT_RC as _RC
 from reader.plotting.style import PaletteBook, use_style
 
-from ..common import colors_for, emit_plot_figure
+from ..common import colors_for, plot_figure
 from ..grouping import GroupMatch
 from ..panels import (
     draw_snapshot_panel,
@@ -63,7 +53,6 @@ _FIG_STYLE_KEYS = {
 def plot_ts_and_snap(
     *,
     df: pd.DataFrame,
-    output_dir: Path | None,
     # grouping
     group_on: str | None,
     pool_sets: list[dict[str, list[str]]] | None,
@@ -374,7 +363,7 @@ def plot_ts_and_snap(
             if title:
                 fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 1.04)))
             stub = filename or f"ts_snap__{ch_snap}__paired_row"
-            figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
     else:
         for group in group_frames:
             hue_levels = resolve_level_order(
@@ -405,7 +394,7 @@ def plot_ts_and_snap(
                 else:
                     base = f"ts_snap__{ch_snap}"
                     stub = f"{base}{group_tag}" if group_tag else f"{base}__{group.label}"
-                figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+                figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
     if snap_fallbacks:
         log = logging.getLogger("reader")
         sample = []

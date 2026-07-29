@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 DOMAIN_ROOT = Path(__file__).resolve().parents[5] / "domains" / "plate_reader"
@@ -11,32 +12,12 @@ def test_response_window_modules_stay_bounded() -> None:
     limits = {
         ANALYSIS_PACKAGE / "aggregation.py": 220,
         ANALYSIS_PACKAGE / "contracts.py": 360,
-        ANALYSIS_PACKAGE / "display.py": 190,
         ANALYSIS_PACKAGE / "materialize.py": 280,
-        ANALYSIS_PACKAGE / "provenance.py": 60,
         ANALYSIS_PACKAGE / "reduction.py": 260,
+        ANALYSIS_PACKAGE / "seeds.py": 40,
         ANALYSIS_PACKAGE / "sources.py": 340,
         ANALYSIS_PACKAGE / "uncertainty.py": 130,
-        PLOT_PACKAGE / "censor_display.py": 60,
-        PLOT_PACKAGE / "plot_style.py": 80,
-        PLOT_PACKAGE / "reporting.py": 200,
-        PLOT_PACKAGE / "reporting_plots.py": 280,
-        PLOT_PACKAGE / "reporting_quality_plots.py": 180,
-        PLOT_PACKAGE / "review.py": 240,
-        PLOT_PACKAGE / "review_collection.py": 220,
-        PLOT_PACKAGE / "review_cross_experiment.py": 170,
-        PLOT_PACKAGE / "review_cross_experiment_contract.py": 120,
-        PLOT_PACKAGE / "review_cross_experiment_summaries.py": 180,
-        PLOT_PACKAGE / "review_cross_experiment_trajectories.py": 180,
-        PLOT_PACKAGE / "review_endpoint_plots.py": 260,
-        PLOT_PACKAGE / "review_experiment_labels.py": 70,
-        PLOT_PACKAGE / "review_reduction_options.py": 100,
-        PLOT_PACKAGE / "review_replicates.py": 220,
-        PLOT_PACKAGE / "review_time_series.py": 180,
-        PLOT_PACKAGE / "review_time_series_components.py": 180,
-        PLOT_PACKAGE / "review_time_series_handoff.py": 220,
-        PLOT_PACKAGE / "review_views.py": 160,
-        PLOT_PACKAGE / "visual_labels.py": 150,
+        PLOT_PACKAGE / "summary.py": 150,
     }
     observed = {path: len(path.read_text(encoding="utf-8").splitlines()) for path in limits}
     violations = {
@@ -52,15 +33,18 @@ def test_response_window_roles_have_distinct_packages() -> None:
         "__init__.py",
         "aggregation.py",
         "contracts.py",
-        "display.py",
         "materialize.py",
-        "provenance.py",
         "reduction.py",
+        "seeds.py",
         "sources.py",
         "uncertainty.py",
     }
     assert not (DOMAIN_ROOT / "evidence").exists()
-    assert (PLOT_PACKAGE / "__init__.py").is_file()
+    assert {path.name for path in PLOT_PACKAGE.glob("*.py")} == {
+        "__init__.py",
+        "summary.py",
+    }
+    assert not (DOMAIN_ROOT.parent / "review.py").exists()
 
 
 def test_response_window_dependencies_point_outward_from_core() -> None:
@@ -91,3 +75,13 @@ def test_response_window_never_calls_reference_relative_fluorescence_brightness(
 
     assert "BRIGHTNESS" not in source
     assert "brightness" not in source.lower()
+    assert "anchored_fluorescence" not in source
+
+
+def test_response_window_public_analysis_uses_signal_value_vocabulary() -> None:
+    source = "\n".join(
+        (ANALYSIS_PACKAGE / name).read_text(encoding="utf-8") for name in ("contracts.py", "reduction.py", "sources.py")
+    ).lower()
+
+    assert re.search(r"\bfluorescence\b", source) is None
+    assert re.search(r"\bratio\b", source) is None

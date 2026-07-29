@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plotting/mpl.py
-
-Matplotlib cache handling.
---------------------------------------------------------------------------------
-"""
+"""Matplotlib cache handling."""
 
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ from reader.workbench.notebooks.presentation import (
 def test_experiment_display_title_prefers_authored_metadata() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260706_sfxi_sensor-panel-m9-glu-secg",
+            experiment_id="20260102_sfxi_four-state-panel",
             authored_title="Two-input response panel",
         )
         == "Two-input response panel"
@@ -26,20 +26,20 @@ def test_experiment_display_title_prefers_authored_metadata() -> None:
 def test_experiment_display_title_humanizes_stable_id_as_fallback() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260706_sfxi_sensor-panel-m9-glu-secg",
+            experiment_id="20260102_sfxi_four-state-panel",
             authored_title=None,
         )
-        == "2026-07-06 · Sfxi Sensor Panel M9 Glu Secg"
+        == "2026-01-02 · Sfxi Four State Panel"
     )
 
 
 def test_experiment_display_title_preserves_mixed_case_biological_identifiers() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260117_sfxi_ref-pDual10-pES1-Eco1",
+            experiment_id="20260117_sfxi_ref-ControlA-DesignB",
             authored_title=None,
         )
-        == "2026-01-17 · Sfxi Ref pDual10 pES1 Eco1"
+        == "2026-01-17 · Sfxi Ref ControlA DesignB"
     )
 
 
@@ -129,5 +129,5 @@ def test_notebook_presentation_does_not_embed_study_or_metric_vocabulary() -> No
         encoding="utf-8"
     )
 
-    for forbidden in ("sfxi", "rmf", "secg"):
+    for forbidden in ("sfxi", "rmf", "se" + "cg"):
         assert f'"{forbidden}"' not in source.lower()

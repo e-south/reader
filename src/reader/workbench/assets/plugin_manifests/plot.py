@@ -29,7 +29,7 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
         semantics=PluginSemantics(
             domain="logic",
             family="geometry_plot",
-            summary="Render logic symmetry plots from annotated plate-reader summaries.",
+            summary="Render logic symmetry geometry from a persisted summary record.",
             tags=("logic", "geometry"),
         ),
         plugin_cls=LogicSymmetryPlot,

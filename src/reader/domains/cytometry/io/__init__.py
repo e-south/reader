@@ -1,10 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/cytometry/io/__init__.py
-
-Raw cytometry file parsers.
---------------------------------------------------------------------------------
-"""
+"""Raw cytometry file parsers."""
 
 __all__: list[str] = []

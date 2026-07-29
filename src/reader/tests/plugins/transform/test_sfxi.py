@@ -8,7 +8,8 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
-from reader.domains.logic.sfxi.run import build_vec8_from_tidy
+from reader.domains.logic.sfxi.builder import build_vec8_from_tidy
+from reader.domains.logic.sfxi.config import load_sfxi_config
 from reader.plugins.transform.sfxi import SFXICfg, SFXITransform
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.workbench.experiment import (
@@ -87,7 +88,7 @@ def test_sfxi_plugin_matches_build_vec8_from_tidy():
     df = _input_df()
 
     state_space = ctx.experiment.annotations.resolve_ordered_state_space(ref=cfg.state_map_ref)
-    run_cfg = cfg.model_dump()
+    run_cfg = cfg.model_dump(exclude={"state_map_ref"})
     run_cfg["treatment_map"] = dict(state_space.source_values)
     run_cfg["treatment_case_sensitive"] = state_space.case_sensitive
     expected = build_vec8_from_tidy(df.copy(), run_cfg).vec8.reset_index(drop=True)
@@ -106,3 +107,64 @@ def test_sfxi_transform_rejects_noncanonical_ordered_state_space() -> None:
 
     with pytest.raises(ValueError, match="SFXI state space must declare exactly 00, 10, 01, 11 in that order"):
         SFXITransform().run(_ctx(state_order=("00", "01", "10", "11")), {"df": _input_df()}, cfg)
+
+
+def test_sfxi_plugin_logs_flat_logic_warning_on_canonical_path(caplog: pytest.LogCaptureFixture) -> None:
+    cfg = SFXICfg(
+        response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
+        state_map_ref="screen",
+        reference={"design_id": "REF", "stat": "mean"},
+        target_time_h=12.0,
+    )
+    frame = _input_df()
+    flat_candidate = (frame["design_id"] == "G1") & (frame["channel"] == "YFP/CFP")
+    frame.loc[flat_candidate, "value"] = 5.0
+
+    with caplog.at_level(logging.WARNING, logger="reader.tests.sfxi"):
+        result = SFXITransform().run(_ctx(), {"df": frame}, cfg)
+
+    assert result["vec8"]["flat_logic"].tolist() == [True]
+    assert "flat logic detected for 1/1 designs" in caplog.text
+
+
+def test_sfxi_domain_config_uses_protocol_time_tolerance_default() -> None:
+    cfg = load_sfxi_config(
+        {
+            "response": {"logic_channel": "logic", "intensity_channel": "intensity"},
+            "treatment_map": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+            "reference": {"design_id": "reference"},
+        }
+    )
+
+    assert cfg.time_tolerance_h == 0.5
+
+
+def test_sfxi_domain_config_rejects_unknown_top_level_setting() -> None:
+    with pytest.raises(ValueError, match="Unsupported SFXI settings: unexpected"):
+        load_sfxi_config(
+            {
+                "response": {"logic_channel": "logic", "intensity_channel": "intensity"},
+                "treatment_map": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+                "reference": {"design_id": "reference"},
+                "unexpected": "value",
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("section", "unknown_key"),
+    [
+        ("response", "unexpected"),
+        ("reference", "unexpected"),
+    ],
+)
+def test_sfxi_domain_config_rejects_unknown_nested_settings(section: str, unknown_key: str) -> None:
+    config = {
+        "response": {"logic_channel": "logic", "intensity_channel": "intensity"},
+        "treatment_map": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+        "reference": {"design_id": "reference"},
+    }
+    config[section][unknown_key] = "value"
+
+    with pytest.raises(ValueError, match=rf"sfxi\.{section} has unsupported setting"):
+        load_sfxi_config(config)

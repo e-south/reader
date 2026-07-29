@@ -1,29 +1,18 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/sfxi/run.py
-
-Program entry for SFXI: tidy_data → vec8
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Pure SFXI builder: tidy data to vec8."""
 
 from __future__ import annotations
 
-import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .api import SFXIConfig, load_sfxi_config
+from .config import SFXIConfig, load_sfxi_config
 from .math import compute_vec8
 from .reference import compute_reference_table, resolve_reference_design_id
 from .selection import CornerizeResult, cornerize_and_aggregate
-from .writer import write_outputs
 
 
 def _assert_same_times(time_a: float | None, time_b: float | None) -> None:
@@ -146,14 +135,12 @@ class SFXIBuildResult:
     ref_design_id: str | None
 
 
-def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResult:
+def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Mapping[str, Any]) -> SFXIBuildResult:
     """
     Shared SFXI builder for pipeline + notebooks.
     Returns vec8 + log payload + selection diagnostics without writing to disk.
     """
     cfg = load_sfxi_config(xform_cfg)
-    if cfg.reference.design_id is None:
-        raise ValueError("sfxi.reference.design_id must be provided to anchor intensity.")
 
     # 1) Cornerize + aggregate (LOGIC channel)
     sel_logic = cornerize_and_aggregate(
@@ -251,7 +238,7 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
             flat_samples = vec8_out.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
 
     log_payload: dict[str, Any] = {
-        "name": cfg.name,
+        "operation": "sfxi_vec8",
         "design_by": cfg.design_by,
         "time_column": cfg.time_column,
         "channels": {
@@ -329,43 +316,4 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Any) -> SFXIBuildResu
         sel_logic=sel_logic,
         sel_int=sel_int,
         ref_design_id=ref_raw,
-    )
-
-
-def run_sfxi(tidy_df: pd.DataFrame, xform_cfg: Any, out_dir: Path | str) -> None:
-    """
-    Called by reader.main. Consumes the in-memory tidy table and the YAML XForm
-    block (or XForm object), writes vec8 + log to disk inside out_dir/sfxi/.
-    """
-    result = build_vec8_from_tidy(tidy_df, xform_cfg)
-
-    # Emit soft warnings (once, from logic selection)
-    if result.sel_logic.time_warning:
-        warnings.warn(f"SFXI: {result.sel_logic.time_warning}", stacklevel=2)
-
-    # Emit flat-logic warning (aggregate, per run)
-    if "flat_logic" in result.vec8.columns and len(result.vec8) > 0:
-        flat_mask = result.vec8["flat_logic"].astype(bool)
-        flat_count = int(flat_mask.sum())
-        if flat_count > 0:
-            label_col = result.cfg.design_by[0] if result.cfg.design_by else None
-            sample = []
-            if label_col and label_col in result.vec8.columns:
-                sample = result.vec8.loc[flat_mask, label_col].astype(str).dropna().drop_duplicates().head(5).tolist()
-            frac = float(flat_count) / float(len(result.vec8)) if len(result.vec8) else 0.0
-            sample_note = f" Sample design_ids: {', '.join(sample)}." if sample else ""
-            warnings.warn(
-                f"SFXI: flat logic detected for {flat_count}/{len(result.vec8)} designs ({frac:.1%}).{sample_note}",
-                stacklevel=2,
-            )
-
-    # Write
-    cfg = result.cfg
-    write_outputs(
-        vec8=result.vec8,
-        log=result.log,
-        out_dir=out_dir,
-        subdir=cfg.output_subdir,
-        vec8_filename=(f"{cfg.filename_prefix}_{cfg.vec8_filename}" if cfg.filename_prefix else cfg.vec8_filename),
-        log_filename=(f"{cfg.filename_prefix}_{cfg.log_filename}" if cfg.filename_prefix else cfg.log_filename),
     )
