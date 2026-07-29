@@ -2,7 +2,7 @@
 doc_id: reader-dop-operating-model
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Decision sequence, ownership boundaries, and stop conditions for a Reader Data Operations Plan.
 ---
 
@@ -77,8 +77,8 @@ Update the DOP overlay when:
 For DOP docs or skill changes:
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 git diff --check
 ```
 

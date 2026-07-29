@@ -45,7 +45,9 @@ jobs:
 
       - name: Capture experiment readiness inventory
         if: always()
-        run: uv run reader ls --root experiments --details --readiness --format json > .artifacts/readiness.json
+        run: |
+          uv run reader ls --root experiments --details --readiness --limit 100 --format json > .artifacts/readiness.json
+          uv run python -c "import json, pathlib; payload=json.loads(pathlib.Path('.artifacts/readiness.json').read_text()); assert not payload['meta']['truncated'], 'readiness inventory exceeded the explicit 100-experiment CI bound'"
 
       - name: Upload integration artifacts
         if: always()

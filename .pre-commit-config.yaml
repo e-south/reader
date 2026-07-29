@@ -64,7 +64,7 @@ repos:
               archived/|
               scratch/|
               _scratch/|
-              tmp/|
+              \.tmp/|
               prototypes/|
               datasets/|
               batches/|
@@ -96,7 +96,7 @@ repos:
             archived/|
             scratch/|
             _scratch/|
-            tmp/|
+            \.tmp/|
             prototypes/|
             datasets/|
             batches/|

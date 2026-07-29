@@ -2,7 +2,7 @@
 doc_id: reader-reliability
 surface: reliability-contract
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-28
 summary: Operational contract for Reader discovery, preflight, execution, provenance checks, and recovery.
 ---
 
@@ -70,9 +70,10 @@ Mutation happens only in the execution commands:
 After execution, verify:
 
 - `outputs/manifests/records.json`
+- `outputs/manifests/invocations.jsonl`
 - generated plot and export files
 - `reader records`
-- `reader inspect`
+- `reader verify`
 
 The verify phase should prove what happened, not ask the operator to infer it from filesystem sprawl.
 
@@ -99,7 +100,7 @@ Examples:
 - broken config -> `reader validate` or `reader ls` surfaces a config error
 - invalid reads/writes linkage -> validation error before execution
 - missing records catalog -> explicit `reader records` failure
-- invalid JSON mode for mutating commands -> hard parameter error
+- invalid JSON-mode arguments -> versioned error envelope and nonzero exit
 
 Recovery should follow the shortest deterministic path.
 
@@ -118,18 +119,21 @@ Reliability is incomplete without provenance.
 - record history
 - producer identity
 - producer plugin
-- runtime input references
+- normalized complete config identity
+- Reader version and installed-source identity
+- source-file path, size, and SHA-256 evidence
+- exact upstream record revisions
 - effective plugin-config digest
-- dataframe artifact content digest
+- generated-file path, size, and SHA-256 evidence
 - optional source-recipe provenance
 
-Raw file references do not yet carry source-content digests, and file bundles
-do not yet carry per-file content digests. Those gaps must remain visible in
-inspection and documentation until a stricter record schema supplies them.
+Reader reads and writes record schema v5 only. `reader verify` checks this
+evidence against current files and configuration. A non-v5 record payload is
+an invalid catalog and must be reproduced from source inputs.
 
-The current provenance keeps the workbench inspectable as experiments and
-plots accumulate without implying stronger source integrity than the catalog
-actually records.
+Reader also writes attempt and result events to
+`outputs/manifests/invocations.jsonl`. `JOURNAL.md` is a short authored
+experiment capsule, not execution history.
 
 Experiment-scoped retron reviews resolve semantic summary and trace inputs from
 the source record catalog, require the current dataframe contracts, and verify
@@ -146,6 +150,7 @@ Use the cheapest command that answers the current question.
 - use `reader run --dry-run` before executing a slice
 - use `reader ls --details --format json` for workbench-wide inspection
 - use `reader inspect --format json` for one experiment’s current state
+- use `reader verify --format json` for machine-checkable provenance
 
 Shorter feedback loops reduce retries by shortening the path from action to trustworthy feedback.
 
@@ -163,8 +168,8 @@ Use [docs/guides/automation.md](./docs/guides/automation.md) for the compact JSO
 
 ## Current Reliability Debt
 
-- Large protocol and retron presentation modules raise the cost of reviewing a
-  local change and make incomplete test selection more likely.
+- Some retron presentation modules remain large enough to make local review and
+  focused test selection harder.
 - Files representing formats or partitions of one protocol figure share its
   figure-level summary. Multi-panel figures that need panel-specific accessible
   descriptions require a separate presentation-layer contract.

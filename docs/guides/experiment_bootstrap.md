@@ -2,7 +2,7 @@
 doc_id: reader-experiment-bootstrap
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-28
 summary: Workflow for creating an experiment workspace from classified inputs and verifying the first Reader run.
 ---
 
@@ -98,24 +98,21 @@ experiments/YYYY/YYYYMMDD_shortslug/
   config.yaml
   inputs/
   notebooks/
-  outputs/
 ```
 
 Keep hand-authored notebooks in `notebooks/`. `reader notebook` writes generated
-scaffolds under `outputs/notebooks/`.
+scaffolds under `outputs/notebooks/`. Reader creates `outputs/` lazily when a
+command produces generated state.
 
 ## 4. Intake raw data
 
 Use the raw workbook or instrument export as the source of truth and keep the
 original filename in `inputs/`.
 
-If the user explicitly points at Google Drive and `gws` is available, use the
-local Google Workspace tooling instead of manual browser instructions:
-
-```bash
-gws-account run bu drive files list ...
-gws-account run bu drive files get --params '{"fileId":"...","alt":"media"}' --output <path>
-```
+If the source is Google Drive or another external system, use the configured
+workspace integration to materialize the original file, then record the source
+identity and staged SHA-256 in the intake note. Reader begins at the local
+experiment boundary; it does not own remote transfer semantics.
 
 When the workbook schema drifts from prior experiments, inspect it before
 editing config:
@@ -189,11 +186,13 @@ uv run reader run <config|dir|index>
 uv run reader plot <config|dir|index>
 uv run reader export <config|dir|index>
 uv run reader records <config|dir|index>
+uv run reader verify <config|dir|index>
 ```
 
 Verification should include:
 
 - `outputs/manifests/records.json`
+- a successful `reader verify` result
 - expected plot files
 - expected export files
 - any key fold-change or summary tables the experiment is supposed to produce
@@ -206,10 +205,10 @@ Omit `--years` to audit every numeric year directory under `experiments/`, or
 pass explicit years when you want a narrower run:
 
 ```bash
-uv run python tools/audit_local_experiments.py
-uv run python tools/audit_local_experiments.py --format json
-uv run python tools/audit_local_experiments.py --years <yyyy> [<yyyy> ...]
-uv run python tools/audit_local_experiments.py --include-non-active
+uv run reader audit experiments
+uv run reader audit experiments --format json
+uv run reader audit experiments --years <yyyy> [--years <yyyy>]
+uv run reader audit experiments --include-non-active
 ```
 
 This tool stages experiments into temporary copies so the audit does not mutate

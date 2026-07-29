@@ -74,7 +74,7 @@ Clarification policy:
 6. Prefer JSON command output whenever another tool or agent will consume the
    result.
 7. For repo-wide local experiment checks, use
-   `uv run python tools/audit_local_experiments.py [--years <yyyy> [<yyyy> ...]]`
+   `uv run reader audit experiments [--years <yyyy>]`
    and add `--include-non-active` only when draft/template configs are
    intentionally in scope.
 8. Prefer `reader notebook --mode none` when the task needs a generated review

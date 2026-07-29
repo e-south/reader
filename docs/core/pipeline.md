@@ -2,7 +2,7 @@
 doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-19
+last_verified: 2026-07-28
 summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
@@ -24,6 +24,12 @@ schema: reader/v8
 
 experiment:
   id: 20250614_sensor_panel_M9_glu
+
+evidence:
+  data_class: plate_reader_screen
+  data_class_reason: Time-series plate-reader assay with an explicit sample map.
+  replicate_kind: biological
+  replicate_identity_field: position
 
 protocol:
   id: plate_reader/dual_reporter_screen
@@ -55,10 +61,18 @@ stable Reader channel names used by downstream analyses.
   Explicit experiment identity. `experiment.id` is required. Optional `experiment.lifecycle`
   may be `draft` or `template` for intentionally non-runnable configs; omit it for
   normal active experiments.
+- `evidence`
+  Optional experiment evidence for a registered DOP `data_class`, a short
+  selection reason, replicate kind, and a stable replicate identity column when
+  one exists. Reader records this evidence; it does not infer it from notes or
+  filenames. When present, the selected class must list the bound protocol under
+  its registry-owned `protocol_candidates` (`uv run reader dop classes --format json`).
 - `protocol`
   Assay binding plus semantic config.
 - `resources`
-  External files such as `sample_map` or `metadata`.
+  Declared files such as `sample_map` or `metadata`. Resources are file-only;
+  directory discovery roots belong under protocol inputs such as
+  `protocol.inputs.ingest.auto_roots`.
 - `annotations`
   Labels, orders, collections, and metric-neutral ordered state spaces.
 - `paths`
@@ -68,6 +82,19 @@ stable Reader channel names used by downstream analyses.
 
 There is no public `graph_patch`, no top-level `pipeline` / `plots` /
 `exports`, and no `protocol.with`.
+
+## Output ownership
+
+Reader's configured output paths are relative to one experiment directory.
+That experiment's `outputs/` contains generated records, plots, exports,
+notebook scaffolds, and manifests. A repository-root `outputs/` directory is
+invalid because it has no experiment owner.
+
+Cross-experiment reviews and aggregates are experiments in their own right.
+Their publishing commands therefore require an explicit output experiment and
+resolve its configured `outputs/` directory. Domain-level Python writers remain
+path-agnostic so downstream repositories can publish into their own owned
+workspaces without inheriting Reader's repository layout.
 
 ## Ordered state-space annotation
 

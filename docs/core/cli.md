@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-20
+last_verified: 2026-07-28
 summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
 ---
 
@@ -27,14 +27,15 @@ Manifest-backed multi-experiment response summaries use a separate explicit
 lifecycle:
 
 ```bash
+uv run reader init OUTPUT_EXPERIMENT --protocol workbench/generic
 uv run reader response-window preflight REQUEST.yaml --format json
-uv run reader response-window build REQUEST.yaml --out-dir BUNDLE --format json
-uv run reader response-window verify BUNDLE --format json
-uv run reader response-window review BUNDLE --mode run
+uv run reader response-window build REQUEST.yaml --output-experiment OUTPUT_EXPERIMENT --format json
+uv run reader response-window verify OUTPUT_EXPERIMENT/outputs --format json
+uv run reader response-window review OUTPUT_EXPERIMENT/outputs --mode run
 uv run reader response-window promoter-evidence BUNDLE BINDINGS \
-  --out-dir EVIDENCE --experiment-id EXPERIMENT --design-id DESIGN \
+  --output-experiment EVIDENCE_EXPERIMENT --experiment-id EXPERIMENT --design-id DESIGN \
   --reduction-id REDUCTION --format json
-uv run reader response-window promoter-evidence-verify EVIDENCE --format json
+uv run reader response-window promoter-evidence-verify EVIDENCE_EXPERIMENT/outputs --format json
 ```
 
 These commands consume published experiment records. They do not bypass the
@@ -94,15 +95,22 @@ uv run reader ls --root experiments --details --readiness --format json
 The JSON payload uses explicit `catalog`, `selection`, `summary`, and
 `experiments` blocks so agents do not need to reconstruct the experiment list by
 walking every row or guessing which filters produced the current view.
+JSON collections return 25 entries per page by default. Use `--limit N` and
+replay `meta.continuation` with `--continuation TOKEN`; the summary continues
+to describe the complete filtered collection. Limits may range from 1 through
+100. Paging does not change the table view.
 When `--readiness` is enabled, `selection.readiness` is `true`, each experiment
 entry gains a `readiness` block, and `summary.by_readiness` counts experiments by
 `config_error`, `draft`, `template`, `dependency_blocked`, `blocked`, `runnable`,
-`uncataloged_outputs_present`, or `records_ready`.
+`uncataloged_outputs_present`, `catalog_ready`, or `records_ready`.
 
 Within each readiness block, `records.catalog` reports whether `records.json`
 exists and `records.available` reports whether it contains usable current
-records. An empty catalog is runnable, not records-ready. An invalid catalog is
-blocked and is reported without interpreting its record entries.
+records. `records.verification` reports `ok`, `unverifiable`, `failed`, or
+`null` when no current records exist. A valid schema-v5 catalog whose config or
+build identity differs from the current environment is `catalog_ready`;
+verified current evidence is `records_ready`. An empty catalog is runnable,
+and an invalid or artifact-drifted catalog is blocked.
 
 Filter the list down to one assay family, one lifecycle, or just broken configs:
 
@@ -167,7 +175,15 @@ Emit the experiment as structured JSON with `authoring`, `semantics`, and
 
 ```bash
 uv run reader inspect CONFIG|DIR|INDEX --format json
+uv run reader inspect CONFIG|DIR|INDEX --section readiness --format json
+uv run reader inspect CONFIG|DIR|INDEX --section plan --format json
 ```
+
+The stable `inspect --section` names are `identity`, `authoring`, `semantics`,
+`plan`, `compiled`, `inputs`, `generated`, and `readiness`. Each projection
+keeps experiment identity beside the requested section. Named protocol JSON
+descriptions similarly accept `identity`, `authoring`, `semantics`, `defaults`,
+or `compiled` through `protocols <id> --section NAME --format json`.
 
 In JSON mode, `semantics.program` is the authored view of the active semantic
 program for the experiment. The same program, with execution bindings and
@@ -237,7 +253,7 @@ uv run reader validate CONFIG|DIR|INDEX
 uv run reader validate CONFIG|DIR|INDEX --format json
 ```
 
-In JSON mode, `uv run reader validate` keeps the preflight mode in `selection`,
+On successful JSON validation, the envelope's `data` object keeps the preflight mode in `selection`,
 then separates overall status/counts into `summary` from file-check details in
 `validation`. `uv run reader validate --no-files --format json` still reports
 declared file and auto-root counts even when the checks are skipped.
@@ -290,20 +306,16 @@ uv run reader records CONFIG|DIR|INDEX --format json
 uv run reader records CONFIG|DIR|INDEX --all --format json
 ```
 
-In JSON mode, `uv run reader records` keeps experiment identity at the top level, then
-adds the record-manifest path, a summary by record kind and producer, and the
-latest record entries. File-bundle record schema v4 requires new plot entries
-to include one typed description for every path, sourced from the matching
-protocol figure or explicit producer metadata. Export entries carry the
-producing plugin's operational bundle description. Reader can inspect schema v3
-file bundles whose descriptions were not recorded and preserves absolute bundle
-paths written by that schema. Current schema v4 publication remains confined
-below `outputs/`. Missing descriptions are reported rather than inferred from
-filenames. `--all` does not dump every stored
-revision. It adds per-record revision counts and a total
-revision summary so the output stays compact. The table view summarizes
-multi-file bundles by count and location. JSON keeps the full structured
-`files` and `path_descriptions` arrays without a redundant joined path string.
+In JSON mode, `uv run reader records` keeps experiment identity at the top of
+`data`, then adds the record-manifest path, a summary by record kind and
+producer, and the latest record entries. Current schema-v5 records bind the
+complete config identity, Reader build identity, typed input evidence, exact
+upstream revisions, and generated-file evidence. File bundles include one
+typed description for every path. Non-v5 record payloads are rejected as an
+invalid catalog and must be reproduced from source inputs. `--all` adds
+revision counts rather than dumping every stored revision. Use `reader verify`
+to prove the current catalog rather than treating `records` as an integrity
+check.
 
 Useful flags:
 
@@ -346,7 +358,7 @@ uv run reader plot CONFIG|DIR|INDEX --list
 uv run reader plot CONFIG|DIR|INDEX --list --format json
 ```
 
-In JSON mode, `uv run reader plot --list` keeps the bound experiment at the top level,
+In JSON mode, `uv run reader plot --list` keeps the bound experiment at the top of `data`,
 then adds `catalog`, `selection`, and `summary` blocks before the resolved
 `plots` entries.
 
@@ -354,6 +366,7 @@ Dry-run a plot plan without executing:
 
 ```bash
 uv run reader plot CONFIG|DIR|INDEX --dry-run
+uv run reader plot CONFIG|DIR|INDEX --dry-run --format json
 ```
 
 Filter plots:
@@ -399,6 +412,7 @@ Dry-run an export plan without executing:
 
 ```bash
 uv run reader export CONFIG|DIR|INDEX --dry-run
+uv run reader export CONFIG|DIR|INDEX --dry-run --format json
 ```
 
 Filter exports:
@@ -422,7 +436,11 @@ Render a cross-experiment heatmap from completed SFXI vec8 records or explicit
 vec8 table files:
 
 ```bash
-uv run reader aggregate-sfxi-vec8 SOURCE... --out-dir outputs/reviews/sfxi_vec8_aggregate
+uv run reader init experiments/2026/20260708_sfxi_vec8_aggregate \
+  --protocol workbench/generic \
+  --title "SFXI vec8 cross-experiment aggregate"
+uv run reader aggregate-sfxi-vec8 SOURCE... \
+  --output-experiment experiments/2026/20260708_sfxi_vec8_aggregate
 ```
 
 `SOURCE` may be an experiment config, experiment directory, outputs directory,
@@ -433,6 +451,9 @@ workbook snapshot.
 
 Useful flags:
 
+- `--output-experiment <CONFIG|DIR|INDEX>` is required. The named aggregate
+  experiment owns the generated bundle through its configured `outputs/`
+  directory; arbitrary workbench output directories are rejected.
 - `--filename <name>` changes the artifact filename stem.
 - `--title <text>` sets the heatmap title.
 - `--dpi <n>` sets PNG resolution; the default is 300 DPI.

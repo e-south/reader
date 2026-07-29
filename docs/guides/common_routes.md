@@ -2,7 +2,7 @@
 doc_id: reader-common-routes
 surface: task-router
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Short command routes for common Reader discovery, preflight, execution, output, and recovery tasks.
 ---
 
@@ -22,8 +22,10 @@ The first command lists discovered experiments. `--details` adds selected
 pipeline, plot, and export summaries. `--readiness` adds the current preflight
 state, including `config_error`, `template`, `draft`, `dependency_blocked`,
 `blocked`, `runnable`, `uncataloged_outputs_present`, and `records_ready`.
-`records_ready` requires at least one usable current record; the existence of an
-empty or invalid catalog is not sufficient.
+`catalog_ready` means a valid schema-v5 catalog exists but its recorded config
+or Reader build differs from the current environment. `records_ready` requires
+every current record to pass source, config, dependency, and generated-file
+verification; an empty or invalid catalog is not sufficient.
 
 ## Inspect one experiment
 
@@ -65,9 +67,12 @@ uv run reader plot <config|dir|index>
 uv run reader export <config|dir|index> --list
 uv run reader export <config|dir|index>
 uv run reader records <config|dir|index>
+uv run reader verify <config|dir|index>
 ```
 
-Run the pipeline first, then list or render plots and exports as needed. `reader records` is the quickest way to inspect the output catalog after execution.
+Run the pipeline first, then list or render plots and exports as needed.
+`reader records` inspects the catalog; `reader verify` proves the current
+evidence still matches its sources and files.
 
 ## Use JSON for automation
 

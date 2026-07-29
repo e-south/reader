@@ -2,7 +2,7 @@
 doc_id: reader-workbench-gardening
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Maintainer workflow for bounded reader architecture, documentation, CLI, and verification gardening.
 ---
 
@@ -203,8 +203,8 @@ change gate and then add representative runtime proof only where needed.
 Docs or routing changes:
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 git diff --check
 ```
 

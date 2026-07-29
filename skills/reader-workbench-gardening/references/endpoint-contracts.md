@@ -18,7 +18,7 @@ Required evidence:
   instead of duplicating it
 - [references/external-sources.md](./external-sources.md) records official
   source rows when external claims shape the contract
-- `uv run python tools/check_docs.py` passes after docs or routing edits
+- `uv run reader maintain docs` passes after docs or routing edits
 
 ## `autonomy-capability`
 
@@ -32,7 +32,7 @@ Required evidence:
 - a gardening cycle can choose one explicit mode and one bounded slice
 - [references/test-matrix.md](./test-matrix.md) provides should/should-not
   trigger prompts and consistency checks
-- `uv run python tools/audit_repo_skills.py` passes
+- `uv run reader maintain skills` passes
 
 ## `architecture-invariants`
 

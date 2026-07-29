@@ -2,7 +2,7 @@
 doc_id: reader-docs-index
 surface: documentation-index
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Routes readers to the smallest current guide or reference for operating and maintaining reader.
 ---
 
@@ -42,6 +42,10 @@ outputs. Use the reference pages when you need exact CLI or config details.
 ## Reference
 
 - [CLI reference](./core/cli.md): full command reference.
+- [Python API](./core/python_api.md): typed inspection, planning, record, and
+  verification entrypoints for integrations.
+- [Record provenance](./core/record_provenance.md): schema-v5 evidence,
+  verification states, and the single-schema validity gate.
 - [Configuring `reader/v8`](./core/pipeline.md): config schema and protocol-owned settings.
 - [Ordered state spaces](./core/ordered_state_spaces.md): metric-neutral state
   identity and exact metadata-value binding.

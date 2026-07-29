@@ -2,7 +2,7 @@
 doc_id: reader-quality
 surface: quality-contract
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-28
 summary: Quality criteria and verification evidence for Reader discovery, preflight, execution, and extension work.
 ---
 
@@ -76,7 +76,7 @@ Use [docs/guides/preflight_run_verify.md](./docs/guides/preflight_run_verify.md)
 
 The minimum verification bundle for workbench-facing changes should include:
 
-- `uv run python tools/check_docs.py`
+- `uv run reader maintain docs`
 - targeted CLI command coverage for the changed surface
 - targeted tests for changed behavior
 - `uv run ruff check .`
@@ -86,7 +86,7 @@ The minimum verification bundle for workbench-facing changes should include:
 
 For documentation-only changes, at least verify:
 
-- `uv run python tools/check_docs.py`
+- `uv run reader maintain docs`
 - linked routes are still valid
 - command examples match current CLI behavior
 - changed docs stay aligned with `reader/v8`

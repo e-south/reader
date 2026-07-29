@@ -39,7 +39,7 @@ jobs:
         run: uv lock --check
 
       - name: Docs integrity
-        run: uv run --locked python tools/check_docs.py
+        run: uv run --locked reader maintain docs
 
       - name: Lint
         run: uv run --locked ruff check .

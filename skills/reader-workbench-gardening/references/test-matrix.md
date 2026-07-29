@@ -33,8 +33,8 @@ Should not trigger:
 Run:
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 git diff --check
 ```
 

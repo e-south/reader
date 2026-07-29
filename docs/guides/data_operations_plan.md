@@ -2,7 +2,7 @@
 doc_id: reader-data-operations-plan
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Entry point for classifying datasets and recording metadata, transfer, readiness, and verification decisions.
 ---
 
@@ -53,7 +53,9 @@ overlay.
 
 ## Operating Contract
 
-- Data classes are decision aids, not new config schema.
+- The DOP registry defines the available data classes. An experiment may record
+  its selected class and reason in `evidence`; that block is evidence of the
+  intake decision, not a second protocol or execution schema.
 - `config.yaml`, `inputs/`, and hand-authored notes are the source of truth.
 - Generated artifacts under `outputs/` are evidence, not source material.
 - If well identity, treatment meaning, channel semantics, or control

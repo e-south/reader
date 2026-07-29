@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-workflow
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Configure, preflight, run, inspect, export, and open notebooks for a Reader SFXI experiment.
 ---
 
@@ -82,12 +82,13 @@ transform named `sfxi_vec8` writing `sfxi_vec8/vec8`.
 ```bash
 uv run reader run <config-or-experiment>
 uv run reader records <config-or-experiment> --format json
+uv run reader verify <config-or-experiment> --format json
 ```
 
 The run writes generated records under the experiment's `outputs/` directory.
 The vec8 dataframe is a manifest-backed Parquet artifact with contract
-`sfxi.vec8.v3`. Treat the records catalog as the discovery surface instead of
-guessing an artifact path.
+`sfxi.vec8.v3`. Use `records` to discover it and `verify` to check recorded
+digests; do not guess an artifact path.
 
 ## Export a workbook
 

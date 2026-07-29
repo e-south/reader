@@ -2,7 +2,7 @@
 doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-20
+last_verified: 2026-07-28
 summary: Event-relative response summaries, verified review collections, and experiment-level evidence navigation.
 ---
 
@@ -19,37 +19,50 @@ For the shared assay-record boundary and sibling analysis routes, see
 ## Public service
 
 ```bash
+uv run reader init experiments/2026/20260717_stress_response_window_aggregate \
+  --protocol workbench/generic \
+  --title "Stress response-window cross-experiment aggregate"
+
 uv run reader response-window preflight REQUEST.yaml \
   --reader-root . \
   --format json
 
 uv run reader response-window build REQUEST.yaml \
   --reader-root . \
-  --out-dir outputs/reviews/response_window/latest \
+  --output-experiment experiments/2026/20260717_stress_response_window_aggregate \
   --overwrite \
   --format json
 
 uv run reader response-window verify \
-  outputs/reviews/response_window/latest \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs \
   --format json
 
 uv run reader response-window review \
-  outputs/reviews/response_window/latest \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs \
   --mode run
 
+uv run reader init experiments/2026/20260720_promoter_evidence_review \
+  --protocol workbench/generic \
+  --title "Promoter evidence review"
+
 uv run reader response-window promoter-evidence \
-  outputs/reviews/response_window/latest \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs \
   PATH/TO/promoter_candidate_bindings \
-  --out-dir outputs/reviews/promoter_evidence/design-id \
+  --output-experiment experiments/2026/20260720_promoter_evidence_review \
   --experiment-id EXPERIMENT_ID \
   --design-id READER_DESIGN_ID \
   --reduction-id REDUCTION_ID \
   --format json
 
 uv run reader response-window promoter-evidence-verify \
-  outputs/reviews/promoter_evidence/design-id \
+  experiments/2026/20260720_promoter_evidence_review/outputs \
   --format json
 ```
+
+These bundles remain explicit cross-repository handoffs, but their Reader-side
+publication is experiment-owned. Each aggregate or evidence unit has its own
+directory under `experiments/` and publishes through that experiment's
+configured `outputs/`; a repository-root `outputs/` path is invalid.
 
 The analysis Python facade is `reader.response_window`. Review and promoter
 evidence publication use `reader.response_window_review`.
@@ -317,7 +330,7 @@ instead reduce each well over the declared window and then aggregate wells;
 the figure states this distinction because those operations need not produce
 the same numerical curve-derived value.
 
-Assay-neutral navigation mechanics live in `reader.notebook_review`. That module
+Assay-neutral navigation mechanics live in `reader.domains.review`. That module
 indexes exact review-collection memberships and has no plate-reader, SFXI,
 response-window, study, or campaign semantics. The response-window package owns
 its design-row adapter, condition selector, validation, and plots.

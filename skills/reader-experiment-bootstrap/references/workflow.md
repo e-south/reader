@@ -76,7 +76,7 @@ uv run reader records <config|dir|index>
 ## Local experiment audit
 
 ```bash
-uv run python tools/audit_local_experiments.py [--years <yyyy> [<yyyy> ...]] [--include-non-active]
+uv run reader audit experiments [--years <yyyy>] [--include-non-active]
 ```
 
 This audit stages experiments into temporary copies so the original experiment

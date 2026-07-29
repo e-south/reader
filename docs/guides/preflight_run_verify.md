@@ -2,7 +2,7 @@
 doc_id: reader-preflight-run-verify
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-28
 summary: Canonical non-mutating preflight, execution, and provenance-verification loop for one experiment.
 ---
 
@@ -66,17 +66,25 @@ loopback URL for agent/browser review.
 
 ```bash
 uv run reader records <config|dir|index>
+uv run reader verify <config|dir|index>
 uv run reader inspect <config|dir|index>
 ```
 
-Then inspect:
+`records` is the catalog view. `verify` checks the current config, source files,
+upstream record revisions, generated files, and their recorded digests. A zero
+exit status is the machine-checkable proof that the current schema-v5 records
+still match those inputs and outputs.
+
+For a human review, also inspect:
 
 - `outputs/manifests/records.json`
+- `outputs/manifests/invocations.jsonl`
 - generated plot files
 - generated export files
 
-Verification should prove what ran and what was produced. It should not require
-guessing from filesystem state alone.
+The record catalog proves what was produced; the invocation ledger records each
+attempt and terminal result. Neither requires guessing from filesystem state or
+using `JOURNAL.md` as a machine log.
 
 ## Recovery loop
 

@@ -136,25 +136,26 @@ archived/
 # Per-experiment command journals are local workbench logs, not source docs.
 /experiments/**/JOURNAL.md
 /experiments/**/journal.md
+!/experiments/template/JOURNAL.md
 
 # Docs are tracked (pipeline + plugins live here).
 !/docs/
 !/docs/**
 docs/**/.DS_Store
 
-# Raw instrument dumps and generated outputs (anywhere)
+# Raw instrument dumps and generated experiment outputs
 raw/
 raw_data/
 **/raw/
 **/raw_data/
 
-outputs/
-**/outputs/
+# Experiment-local outputs are Reader's canonical generated state.
+/experiments/**/outputs/
 
-# Common local scratch dirs
+# Local scratch is explicit and visually separate from work products.
+/.tmp/
 _scratch/
 scratch/
-tmp/
 prototypes/
 datasets/
 batches/
