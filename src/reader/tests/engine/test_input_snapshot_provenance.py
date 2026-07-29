@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from reader.contracts import builtin_contract_catalog
-from reader.errors import RecordError
+from reader.errors import ExecutionError, RecordError
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
@@ -368,3 +368,99 @@ def test_failed_file_output_catalog_write_restores_last_successful_bundle(
     assert store.read_record("export:report") == first
     staging = context.outputs_dir / ".staging"
     assert not staging.exists() or list(staging.iterdir()) == []
+
+
+def test_relative_file_output_is_promoted_from_staging_root(tmp_path: Path) -> None:
+    raw = tmp_path / "inputs" / "raw.txt"
+    raw.parent.mkdir()
+    raw.write_text("payload", encoding="utf-8")
+
+    class RelativeExportPlugin(Plugin):
+        ConfigModel = PluginConfig
+
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_path_input("raw")}
+
+        @classmethod
+        def output_ports(cls):
+            return {"artifact": file_path_output("artifact")}
+
+        def run(self, ctx, inputs, cfg):
+            del cfg
+            relative_path = Path("exports/report.txt")
+            output = ctx.outputs_dir / relative_path
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(inputs["raw"].read_text(encoding="utf-8"), encoding="utf-8")
+            return {"artifact": relative_path}
+
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    execute_step(
+        step=PluginStep(
+            kind="export",
+            id="report",
+            plugin="export/relative",
+            reads={"raw": FileRef(path=raw)},
+        ),
+        phase="exports",
+        store=store,
+        ctx=_context(tmp_path),
+        registry=_registry("export/relative", RelativeExportPlugin),
+    )
+
+    output = tmp_path / "outputs" / "exports" / "report.txt"
+    assert output.read_text(encoding="utf-8") == "payload"
+    assert store.read_record("export:report").files == (output,)
+
+
+def test_file_output_transaction_rejects_symlinked_staging_parent(tmp_path: Path) -> None:
+    raw = tmp_path / "inputs" / "raw.txt"
+    raw.parent.mkdir()
+    raw.write_text("payload", encoding="utf-8")
+    outputs = tmp_path / "outputs"
+    store = RecordStore(
+        outputs,
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outputs / ".staging").symlink_to(outside, target_is_directory=True)
+    calls: list[Path] = []
+
+    class ExportPlugin(Plugin):
+        ConfigModel = PluginConfig
+
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_path_input("raw")}
+
+        @classmethod
+        def output_ports(cls):
+            return {"artifact": file_path_output("artifact")}
+
+        def run(self, ctx, inputs, cfg):
+            del inputs, cfg
+            calls.append(ctx.outputs_dir)
+            return {"artifact": ctx.outputs_dir / "exports/report.txt"}
+
+    with pytest.raises(ExecutionError, match="staging directory must stay within"):
+        execute_step(
+            step=PluginStep(
+                kind="export",
+                id="report",
+                plugin="export/file",
+                reads={"raw": FileRef(path=raw)},
+            ),
+            phase="exports",
+            store=store,
+            ctx=_context(tmp_path),
+            registry=_registry("export/file", ExportPlugin),
+        )
+
+    assert calls == []
+    assert list(outside.iterdir()) == []

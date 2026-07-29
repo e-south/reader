@@ -29,8 +29,7 @@ class FileOutputTransaction:
 
     def __init__(self, *, context: RunContext, step_id: str) -> None:
         self._final_context = context
-        staging_parent = context.outputs_dir / ".staging"
-        staging_parent.mkdir(parents=True, exist_ok=True)
+        staging_parent = _confined_staging_parent(context.outputs_dir)
         prefix = _SAFE_PREFIX.sub("_", step_id).strip("._") or "file-output"
         self._staging_root = Path(mkdtemp(prefix=f"{prefix}__", dir=staging_parent))
         self.context = replace(
@@ -71,10 +70,10 @@ class FileOutputTransaction:
         staged_paths = collect_file_output_paths(output_ports=output_ports, outputs=outputs, where=where)
         if not staged_paths:
             raise ExecutionError(f"{where}: must emit at least one explicit file output")
-        path_map = self._path_map(staged_paths, where=where)
+        path_map, promotion_paths = self._path_maps(staged_paths, where=where)
         rollback_root = self._staging_root / ".rollback"
 
-        for staged_path, final_path in path_map.items():
+        for staged_path, final_path in promotion_paths.items():
             relative_path = final_path.relative_to(self._final_context.outputs_dir)
             backup_path = rollback_root / relative_path
             previous_exists = final_path.exists()
@@ -112,10 +111,11 @@ class FileOutputTransaction:
             ) from exc
         return self._staging_root / relative_path
 
-    def _path_map(self, paths: list[Path], *, where: str) -> dict[Path, Path]:
+    def _path_maps(self, paths: list[Path], *, where: str) -> tuple[dict[Path, Path], dict[Path, Path]]:
         staging_root = self._staging_root.resolve(strict=True)
         final_root = self._final_context.outputs_dir.resolve(strict=True)
         path_map: dict[Path, Path] = {}
+        promotion_paths: dict[Path, Path] = {}
         final_paths: set[Path] = set()
         for raw_path in paths:
             staged_path = raw_path if raw_path.is_absolute() else staging_root / raw_path
@@ -132,8 +132,9 @@ class FileOutputTransaction:
             if final_path in final_paths:
                 raise ExecutionError(f"{where}: duplicate file output target: {final_path}")
             path_map[Path(raw_path)] = final_path
+            promotion_paths[resolved] = final_path
             final_paths.add(final_path)
-        return path_map
+        return path_map, promotion_paths
 
     def _rollback(self) -> None:
         for promotion in reversed(self._promotions):
@@ -146,6 +147,23 @@ class FileOutputTransaction:
             else:
                 promotion.final_path.unlink(missing_ok=True)
         self._promotions.clear()
+
+
+def _confined_staging_parent(outputs_dir: Path) -> Path:
+    staging_parent = outputs_dir / ".staging"
+    message = "File-output staging directory must stay within the experiment outputs directory"
+    if staging_parent.is_symlink():
+        raise ExecutionError(message)
+    try:
+        outputs_root = outputs_dir.resolve(strict=True)
+        staging_parent.mkdir(parents=True, exist_ok=True)
+        resolved = staging_parent.resolve(strict=True)
+        resolved.relative_to(outputs_root)
+    except (OSError, ValueError) as exc:
+        raise ExecutionError(message) from exc
+    if staging_parent.is_symlink() or not resolved.is_dir():
+        raise ExecutionError(message)
+    return resolved
 
 
 def _remap_output_value(value: Any, *, path_map: dict[Path, Path]) -> Any:
