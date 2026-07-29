@@ -443,7 +443,7 @@ def _faceted_effect_trace_figure_policy(*, rows: int, cols: int) -> _TraceFigure
         ),
         adjust_with_legend=_TraceSubplotPolicy(
             top=0.86,
-            bottom=0.185,
+            bottom=0.22,
             left=0.11,
             right=0.99,
             hspace=0.30,
@@ -451,7 +451,7 @@ def _faceted_effect_trace_figure_policy(*, rows: int, cols: int) -> _TraceFigure
         ),
         legend=_TraceLegendPolicy(
             loc="lower center",
-            bbox_to_anchor=(0.5, 0.02),
+            bbox_to_anchor=(0.5, 0.012),
             ncol_limit=6,
         ),
     )
