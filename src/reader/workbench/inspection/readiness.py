@@ -9,7 +9,7 @@ from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.engine.planning import build_next_steps
 from reader.workbench.engine.validation import validation_summary
-from reader.workbench.graph import resolve_workbench
+from reader.workbench.graph import RecordRef, resolve_workbench
 from reader.workbench.records import verify_record_store
 
 from .common import summarize_outputs_dir
@@ -129,6 +129,22 @@ def readiness_primary_command(payload: dict[str, object] | None) -> str:
     return command or "—"
 
 
+def _surface_record_dependencies_verified(steps, verification_report: dict[str, object] | None) -> bool:
+    required_record_ids = {
+        ref.record_id for step in steps for ref in (step.reads or {}).values() if isinstance(ref, RecordRef)
+    }
+    if not verification_report or verification_report.get("status") != "ok":
+        return False
+    if not required_record_ids:
+        return True
+    record_statuses = {
+        str(record.get("record_id")): record.get("status")
+        for record in verification_report.get("records", [])
+        if isinstance(record, dict)
+    }
+    return all(record_statuses.get(record_id) == "ok" for record_id in required_record_ids)
+
+
 def experiment_readiness_payload(
     *,
     job_path: Path,
@@ -184,6 +200,10 @@ def experiment_readiness_payload(
     uncataloged_outputs_present = (
         any(generated[key] for key in ("records", "plots", "exports")) and not records_available
     )
+    verified_records = bool(verification_report and verification_report["status"] == "ok")
+    plot_ready = verified_records and _surface_record_dependencies_verified(workbench.plots, verification_report)
+    export_ready = verified_records and _surface_record_dependencies_verified(workbench.exports, verification_report)
+    surfaces_waiting = (bool(workbench.plots) and not plot_ready) or (bool(workbench.exports) and not export_ready)
     can_run = summary["status"] == "ok"
     file_issues = int(summary["files"].get("issues") or 0)
     dependency_issues = int(summary["dependencies"].get("issues") or 0)
@@ -234,11 +254,29 @@ def experiment_readiness_payload(
         ]
     elif records_available:
         state = "records_ready"
-        summary_text = "records ready and verified"
+        summary_text = (
+            "current records verified; configured surfaces await record dependencies"
+            if surfaces_waiting
+            else "records ready and verified"
+        )
         next_steps = [
             {"command": command, "description": description}
-            for command, description in build_next_steps(decl, job_label=str(job_path), runtime=runtime)
+            for command, description in build_next_steps(
+                decl,
+                job_label=str(job_path),
+                runtime=runtime,
+                include_plot=plot_ready,
+                include_export=export_ready,
+            )
         ]
+        if surfaces_waiting:
+            next_steps.insert(
+                0,
+                {
+                    "command": reader_command("run", job_path),
+                    "description": "Produce the missing record dependencies before using configured plot or export surfaces.",
+                },
+            )
     elif uncataloged_outputs_present:
         state = "uncataloged_outputs_present"
         summary_text = "generated outputs present without usable current records"
@@ -266,7 +304,6 @@ def experiment_readiness_payload(
         for record in verification_report.get("records", []):
             for issue in record.get("issues", []):
                 errors.append(f"record verification ({record['record_id']}): {issue['reason']}")
-    verified_records = bool(verification_report and verification_report["status"] == "ok")
     return {
         "state": state,
         "summary": summary_text,
@@ -286,8 +323,8 @@ def experiment_readiness_payload(
             "run": can_run,
             "records": records_available,
             "verify": records_catalog,
-            "plot": verified_records and bool(workbench.plots),
-            "export": verified_records and bool(workbench.exports),
+            "plot": plot_ready and bool(workbench.plots),
+            "export": export_ready and bool(workbench.exports),
             "notebook_scaffold": bool(workbench.notebooks),
             "notebook_scan_records": verified_records and bool(workbench.notebooks),
         },

@@ -18,6 +18,8 @@ def build_next_steps(
     *,
     job_label: str | None = None,
     runtime: ReaderRuntime | None = None,
+    include_plot: bool = True,
+    include_export: bool = True,
 ) -> list[tuple[str, str]]:
     runtime = runtime or builtin_runtime()
     label = (job_label or "").strip()
@@ -36,9 +38,9 @@ def build_next_steps(
     )
     require_notebook_template_for_protocol(notebook_template, protocol=bound_protocol)
     steps.append((_cmd("records"), "Review generated records"))
-    if plot_specs:
+    if plot_specs and include_plot:
         steps.append((_cmd("plot"), "Save plot files to outputs/plots"))
-    if export_specs:
+    if export_specs and include_export:
         steps.append((_cmd("export"), "Write export files to outputs/exports"))
     steps.append((_cmd("notebook"), f"Open a notebook (template {notebook_template})"))
     return steps
