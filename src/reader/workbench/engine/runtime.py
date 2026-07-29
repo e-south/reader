@@ -178,8 +178,8 @@ def run_spec(
     )
     ledger = InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=out_dir)
     if reset_records:
-        ledger.reset()
         store.reset_catalog()
+        ledger.reset()
     ctx = build_run_context(
         decl=decl,
         runtime=runtime,

@@ -661,6 +661,43 @@ def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_p
     assert catalog["latest"]["ingest/df"]["schema_version"] == 5
 
 
+def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+    ledger_path = tmp_path / "outputs" / "manifests" / "invocations.jsonl"
+    prior_ledger = ledger_path.read_bytes()
+
+    def _fail_catalog_reset(_store: RecordStore) -> None:
+        raise RecordError("catalog reset failed")
+
+    monkeypatch.setattr(RecordStore, "reset_catalog", _fail_catalog_reset)
+
+    with pytest.raises(RecordError, match="catalog reset failed"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert ledger_path.read_bytes() == prior_ledger
+
+
 def test_run_spec_reset_records_starts_a_new_invocation_epoch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
