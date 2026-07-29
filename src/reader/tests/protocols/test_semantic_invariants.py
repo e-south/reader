@@ -27,7 +27,9 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
         "workbench/generic",
         "plate_reader/dual_reporter_screen",
         "plate_reader/single_reporter_screen",
+        "plate_reader/response_window",
         "logic/sfxi_screen",
+        "logic/sfxi_vec8_collection",
         "cytometry/flow_panel",
     ]
 

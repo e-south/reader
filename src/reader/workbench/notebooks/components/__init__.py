@@ -1,7 +1,8 @@
 from .deliverables import (
     NotebookDeliverables,
+    build_notebook_deliverable_selector,
     collect_notebook_deliverables,
-    render_notebook_deliverables_panel,
+    render_notebook_deliverable_viewport,
 )
 from .overview import (
     NotebookOverview,
@@ -13,9 +14,10 @@ from .overview import (
 __all__ = [
     "NotebookDeliverables",
     "NotebookOverview",
+    "build_notebook_deliverable_selector",
     "build_design_treatment_summary_rows",
     "build_notebook_overview",
     "collect_notebook_deliverables",
-    "render_notebook_deliverables_panel",
+    "render_notebook_deliverable_viewport",
     "render_notebook_overview_panel",
 ]

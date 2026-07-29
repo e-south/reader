@@ -30,7 +30,12 @@ class ResourceInputDecl:
     resource_id: str
 
 
-InputBindingDecl = RecordInputDecl | FileInputDecl | ResourceInputDecl
+@dataclass(frozen=True)
+class RecordCollectionInputDecl:
+    resource_ids: tuple[str, ...]
+
+
+InputBindingDecl = RecordInputDecl | FileInputDecl | ResourceInputDecl | RecordCollectionInputDecl
 
 
 @dataclass(frozen=True)

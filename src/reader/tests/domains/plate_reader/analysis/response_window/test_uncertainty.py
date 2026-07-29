@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowRequest
+from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowAnalysisSpec
 from reader.domains.plate_reader.analysis.response_window.provenance import stable_seed
 from reader.domains.plate_reader.analysis.response_window.sources import STATE_ORDER
 from reader.domains.plate_reader.analysis.response_window.uncertainty import (
@@ -29,7 +29,7 @@ def test_joint_bootstrap_preserves_paired_well_covariance() -> None:
 
 
 def test_reference_bootstrap_draws_keep_anchored_fluorescence_at_zero() -> None:
-    request = ResponseWindowRequest.from_mapping(_payload())
+    request = ResponseWindowAnalysisSpec.from_mapping(_payload())
     records = []
     for state_index, state in enumerate(STATE_ORDER):
         for replicate_index, magnitude in enumerate((1.0 + state_index, 4.0 + state_index)):

@@ -9,6 +9,7 @@ from .model import (
     file_path_input,
     file_path_output,
     file_set_input,
+    record_collection_input,
     validate_input_ports,
     validate_output_ports,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "file_path_input",
     "file_path_output",
     "file_set_input",
+    "record_collection_input",
     "validate_input_ports",
     "validate_output_ports",
 ]

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from reader.protocols.model import ProtocolBinding, ProtocolSemanticProgram
 
-ResourceKind = Literal["file"]
+ResourceKind = Literal["file", "record"]
 ReplicateKind = Literal["biological", "technical", "mixed", "not_applicable"]
 
 
@@ -276,9 +276,21 @@ class AnnotationSemantics:
 
 
 @dataclass(frozen=True)
-class ResourceEntry:
-    kind: ResourceKind
+class FileResourceEntry:
+    kind: Literal["file"]
     path: Path
+
+
+@dataclass(frozen=True)
+class RecordResourceEntry:
+    kind: Literal["record"]
+    experiment_id: str
+    record_id: str
+    experiment_root: Path
+    outputs_dir: Path
+
+
+ResourceEntry = FileResourceEntry | RecordResourceEntry
 
 
 @dataclass(frozen=True)
@@ -295,10 +307,16 @@ class ResourceCatalog:
             raise ValueError(f"Unknown resource '{resource_id}'. Declare it under resources. (available: {options})")
         return resource
 
-    def require_file(self, resource_id: str) -> ResourceEntry:
+    def require_file(self, resource_id: str) -> FileResourceEntry:
         resource = self.require(resource_id)
         if resource.kind != "file":
             raise ValueError(f"Resource '{resource_id}' has kind '{resource.kind}', expected file")
+        return resource
+
+    def require_record(self, resource_id: str) -> RecordResourceEntry:
+        resource = self.require(resource_id)
+        if resource.kind != "record":
+            raise ValueError(f"Resource '{resource_id}' has kind '{resource.kind}', expected record")
         return resource
 
 

@@ -10,6 +10,7 @@ from reader.protocols.semantic_coverage import (
 )
 from reader.workbench.decl.model import (
     PluginStepDecl,
+    RecordCollectionInputDecl,
     RecordInputDecl,
     RecordOutputDecl,
 )
@@ -28,6 +29,76 @@ from .common import (
 )
 
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
+
+
+def compile_plate_reader_response_window(protocol: Any):
+    input_names = ("response_records", "magnitude_records", "trajectory_records")
+    effective_inputs = protocol.effective_inputs()
+    analysis = protocol.effective_analysis()
+    resource_ids = {name: tuple(effective_inputs.get(name, ())) for name in input_names}
+    writes = {
+        name: RecordOutputDecl(record_id=f"response_window/{name}")
+        for name in ("wells", "designs", "bootstrap_draws", "traces", "events")
+    }
+    pipeline = (
+        _step(
+            id="response_window",
+            plugin="transform/response_window",
+            reads={name: RecordCollectionInputDecl(resource_ids=resource_ids[name]) for name in input_names},
+            writes=writes,
+            with_=analysis,
+        ),
+    )
+    primary_reduction_id = _primary_reduction_id(analysis)
+    selected_plots = protocol.select_plot_outputs(allowed={"response_window_summary"})
+    plots = tuple(
+        _step(
+            id="response_window_summary",
+            plugin="plot/response_window_summary",
+            reads={"designs": RecordInputDecl(record_id="response_window/designs")},
+            with_=_deep_merge(
+                {"primary_reduction_id": primary_reduction_id},
+                protocol.plot_view_config(figure_id="response_window_summary"),
+            ),
+        )
+        for _ in selected_plots
+    )
+    selected_exports = protocol.select_export_outputs(
+        defaults=("designs_table", "events_table"),
+        allowed={"designs_table", "events_table"},
+    )
+    export_records = {
+        "designs_table": ("response_window/designs", "response_window_designs.csv"),
+        "events_table": ("response_window/events", "response_window_events.csv"),
+    }
+    exports = tuple(
+        _step(
+            id=artifact_id,
+            plugin="export/csv",
+            reads={"df": RecordInputDecl(record_id=export_records[artifact_id][0])},
+            with_=_deep_merge(
+                {"path": export_records[artifact_id][1]},
+                protocol.export_artifact_config(artifact_id=artifact_id),
+            ),
+        )
+        for artifact_id in selected_exports
+    )
+    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
+    return CompiledProtocolPlan(
+        pipeline=pipeline,
+        plots=plots,
+        exports=exports,
+        notebooks=(default_notebook_call(template),),
+        semantic_program=protocol.descriptor.semantic_program(),
+    )
+
+
+def _primary_reduction_id(analysis: dict[str, Any]) -> str:
+    reductions = analysis.get("reductions", ())
+    primary = [item.get("id") for item in reductions if isinstance(item, dict) and item.get("role") == "primary"]
+    if len(primary) != 1 or not isinstance(primary[0], str) or not primary[0].strip():
+        raise ConfigError("protocol.analysis.reductions must declare exactly one primary reduction id")
+    return primary[0].strip()
 
 
 def compile_plate_reader_dual_reporter_screen(protocol: Any):

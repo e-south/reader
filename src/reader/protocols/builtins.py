@@ -14,7 +14,9 @@ from .compiler import (
     compile_cytometry_flow_panel,
     compile_generic_protocol,
     compile_logic_sfxi_screen,
+    compile_logic_sfxi_vec8_collection,
     compile_plate_reader_dual_reporter_screen,
+    compile_plate_reader_response_window,
 )
 from .model import (
     ProtocolArtifactSpec,
@@ -93,7 +95,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         execution=ProtocolExecutionPlan(
             notebook=ProtocolNotebookPolicy(
-                default_template="notebook/basic",
+                default_template="notebook/eda",
                 allowed_templates=(
                     "notebook/basic",
                     "notebook/eda",
@@ -101,9 +103,163 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "notebook/cytometry",
                     "notebook/sfxi_eda",
                 ),
-                summary="Generic workbench protocol defaults to the minimal record explorer and allows explicit overrides.",
+                summary="Generic workbenches default to the shared progressive-disclosure deliverable explorer.",
             ),
             compiler=compile_generic_protocol,
+        ),
+    ),
+    ProtocolDescriptor(
+        protocol="logic/sfxi_vec8_collection",
+        domain="logic",
+        family="record_collection",
+        summary="Combine SFXI vec8 records from declared Reader experiments with exact revision provenance.",
+        tags=("logic", "aggregate", "records"),
+        input_fields=(
+            _field(
+                "record_resources",
+                "Ordered resources.by_id keys that identify source dataframe records.",
+                kind="string_list",
+                default=[],
+            ),
+        ),
+        figures=(
+            ProtocolFigureSpec(
+                id="vec8_collection_heatmap",
+                kind="summary",
+                summary="Cross-experiment heatmap over the collected vec8 records.",
+                primary=True,
+            ),
+        ),
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="collection_overview",
+                summary="Primary cross-experiment vec8 heatmap.",
+                figures=("vec8_collection_heatmap",),
+            ),
+        ),
+        default_plot_profile="collection_overview",
+        artifacts=(ProtocolArtifactSpec(id="vec8_table", summary="CSV table of the collected vec8 rows."),),
+        execution=ProtocolExecutionPlan(
+            notebook=ProtocolNotebookPolicy(
+                default_template="notebook/eda",
+                allowed_templates=("notebook/eda", "notebook/basic", "notebook/sfxi_eda"),
+                summary="Record collections use the shared progressive-disclosure deliverable workbench.",
+            ),
+            compiler=compile_logic_sfxi_vec8_collection,
+        ),
+    ),
+    ProtocolDescriptor(
+        protocol="plate_reader/response_window",
+        domain="plate_reader",
+        family="event_relative_record_collection",
+        summary="Materialize event-relative summaries from aligned records owned by declared Reader experiments.",
+        tags=("plate_reader", "aggregate", "event", "window", "records"),
+        input_fields=tuple(
+            _field(
+                key,
+                summary,
+                kind="string_list",
+                default=[],
+            )
+            for key, summary in (
+                ("response_records", "Ordered record resources for the response signal."),
+                ("magnitude_records", "Ordered record resources for the magnitude signal."),
+                ("trajectory_records", "Ordered record resources for the trajectory signal."),
+            )
+        ),
+        analysis_fields=(
+            _field(
+                "source",
+                "Signal, reference, and state-value bindings.",
+                allow_unknown=True,
+                default={
+                    "response_channel": "response",
+                    "magnitude_channel": "magnitude",
+                    "growth_channel": "growth",
+                    "reference_design_id": "reference",
+                    "state_column": "state",
+                    "state_values": {"00": "00", "10": "10", "01": "01", "11": "11"},
+                    "state_values_case_sensitive": True,
+                },
+            ),
+            _field(
+                "event",
+                "Declared event and acquisition-segment semantics.",
+                allow_unknown=True,
+                default={
+                    "event_id": "event",
+                    "event_kind": "declared_transition",
+                    "segment_column": "segment",
+                    "pre_segment_index": 0,
+                    "post_segment_index": 1,
+                    "estimate_method": "segment_gap_midpoint",
+                    "declaration": "Transition between declared acquisition segments.",
+                },
+            ),
+            _field(
+                "reductions",
+                "Event-relative reduction definitions.",
+                kind="mapping_list",
+                default=[
+                    {
+                        "id": "primary",
+                        "window_start_event_h": 0.0,
+                        "window_end_event_h": 1.0,
+                        "method": "geometric_time_mean",
+                        "response_basis": "post_window",
+                        "role": "primary",
+                    }
+                ],
+            ),
+            _field(
+                "aggregation",
+                "Replicate and uncertainty aggregation settings.",
+                allow_unknown=True,
+                default={
+                    "replicate_stat": "median",
+                    "bootstrap_samples": 100,
+                    "confidence_level": 0.95,
+                    "random_seed": 0,
+                },
+            ),
+            _field(
+                "quality",
+                "Trace support and value-quality requirements.",
+                allow_unknown=True,
+                default={
+                    "positive_floor": 1e-09,
+                    "max_interior_gap_h": 1.0,
+                    "min_replicates_per_state": 2,
+                },
+            ),
+        ),
+        figures=(
+            ProtocolFigureSpec(
+                id="response_window_summary",
+                kind="summary",
+                summary="Primary event-relative response and anchored-magnitude components.",
+                primary=True,
+            ),
+        ),
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="response_window_overview",
+                summary="Primary event-relative summary view.",
+                figures=("response_window_summary",),
+            ),
+        ),
+        default_plot_profile="response_window_overview",
+        artifacts=(
+            ProtocolArtifactSpec(id="designs_table", summary="CSV of design-level response-window summaries."),
+            ProtocolArtifactSpec(id="events_table", summary="CSV of source event intervals."),
+        ),
+        execution=ProtocolExecutionPlan(
+            notebook=ProtocolNotebookPolicy(
+                default_template="notebook/eda",
+                allowed_templates=("notebook/eda", "notebook/basic"),
+                summary="Event-relative collections use the shared progressive-disclosure workbench.",
+            ),
+            compiler=compile_plate_reader_response_window,
         ),
     ),
     ProtocolDescriptor(
@@ -1201,10 +1357,13 @@ _PLATE_READER_SINGLE_REPORTER_PROTOCOL = build_plate_reader_variant_protocol(
 )
 
 BUILTIN_PROTOCOLS = (
-    BUILTIN_PROTOCOLS[0],
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "workbench/generic"),
     _DUAL_REPORTER_PROTOCOL,
     _PLATE_READER_SINGLE_REPORTER_PROTOCOL,
-    *BUILTIN_PROTOCOLS[2:],
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/response_window"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/sfxi_screen"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/sfxi_vec8_collection"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "cytometry/flow_panel"),
 )
 
 

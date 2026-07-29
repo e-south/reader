@@ -8,9 +8,11 @@ from reader.plugins.transform.fold_change import FoldChange
 from reader.plugins.transform.outlier_filter import OutlierFilter
 from reader.plugins.transform.overflow import OverflowHandling
 from reader.plugins.transform.ratio import RatioTransform
+from reader.plugins.transform.response_window import ResponseWindowTransform
 from reader.plugins.transform.sample_map import SampleMapMerge
 from reader.plugins.transform.sample_metadata import SampleMetadataMerge
 from reader.plugins.transform.sfxi import SFXITransform
+from reader.plugins.transform.sfxi_vec8_collection import SFXIVec8CollectionTransform
 from reader.workbench.ontology import PluginSemantics
 
 from ..types import AssetDescriptor, build_plugin_asset
@@ -67,6 +69,16 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
         plugin_cls=SFXITransform,
     ),
     build_plugin_asset(
+        plugin_id="transform/sfxi_vec8_collection",
+        semantics=PluginSemantics(
+            domain="logic",
+            family="record_collection",
+            summary="Combine exact SFXI vec8 record revisions from multiple Reader experiments.",
+            tags=("logic", "aggregate", "provenance"),
+        ),
+        plugin_cls=SFXIVec8CollectionTransform,
+    ),
+    build_plugin_asset(
         plugin_id="transform/ratio",
         semantics=PluginSemantics(
             domain="plate_reader",
@@ -75,6 +87,16 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
             tags=("ratios", "derived_signal"),
         ),
         plugin_cls=RatioTransform,
+    ),
+    build_plugin_asset(
+        plugin_id="transform/response_window",
+        semantics=PluginSemantics(
+            domain="plate_reader",
+            family="event_relative_summary",
+            summary="Materialize event-relative summaries from provenance-bound source records.",
+            tags=("event", "window", "aggregate", "provenance"),
+        ),
+        plugin_cls=ResponseWindowTransform,
     ),
     build_plugin_asset(
         plugin_id="transform/sample_map",

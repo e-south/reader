@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from reader.contracts import ContractCatalog
-
-from .contracts import EventSpec, ResponseSourceSpec
-from .provenance import sha256_file
+from .contracts import EventSpec, ResponseWindowSourceSpec
 
 STATE_ORDER = ("00", "10", "01", "11")
 ANNOTATED_CONTRACT = "plate_reader.annotated.v1"
@@ -35,81 +31,30 @@ class EventInterval:
 @dataclass(frozen=True)
 class ExperimentSource:
     experiment_id: str
-    experiment_dir: Path
-    config_path: Path
-    records_path: Path
-    response_path: Path
-    magnitude_path: Path
-    trajectory_path: Path
     response: pd.DataFrame
     magnitude: pd.DataFrame
     trajectory: pd.DataFrame
     event: EventInterval
-    record_digests: dict[str, str]
 
 
-@dataclass(frozen=True)
-class ResolvedExperimentSource:
-    experiment_id: str
-    experiment_dir: Path
-    config_path: Path
-    records_path: Path
-    record_paths: dict[str, Path]
-    record_contracts: dict[str, str]
-    record_digests: dict[str, str]
-    state_column: str
-    treatment_map: dict[str, str]
-    state_values_case_sensitive: bool
-
-
-ExperimentSourceLoader = Callable[[str, ResponseSourceSpec, EventSpec], ExperimentSource]
-
-
-def load_experiment_source(
-    resolved: ResolvedExperimentSource,
+def build_experiment_source(
     *,
-    source_spec: ResponseSourceSpec,
+    experiment_id: str,
+    response_frame: pd.DataFrame,
+    magnitude_frame: pd.DataFrame,
+    trajectory_frame: pd.DataFrame,
+    source_spec: ResponseWindowSourceSpec,
     event_spec: EventSpec,
-    contracts: ContractCatalog,
 ) -> ExperimentSource:
-    """Load one experiment from records resolved by the Reader runtime."""
+    """Normalize three already-resolved records into one analysis source."""
 
-    experiment_id = resolved.experiment_id
-    record_contracts = (
-        (source_spec.response_record_id, ANNOTATED_CONTRACT),
-        (source_spec.magnitude_record_id, ANNOTATED_CONTRACT),
-        (source_spec.trajectory_record_id, ANNOTATED_CONTRACT),
-    )
-    record_paths: dict[str, Path] = {}
-    digests: dict[str, str] = {}
-    for record_id, expected_contract in record_contracts:
-        path = resolved.record_paths.get(record_id)
-        if path is None:
-            raise ValueError(f"{experiment_id}: required record {record_id!r} is missing.")
-        contract_id = resolved.record_contracts.get(record_id)
-        if contract_id != expected_contract:
-            raise ValueError(
-                f"{experiment_id}: record {record_id!r} has contract {contract_id!r}; expected {expected_contract!r}."
-            )
-        expected_digest = resolved.record_digests.get(record_id, "")
-        if not expected_digest:
-            raise ValueError(f"{experiment_id}: record {record_id!r} lacks content_digest.")
-        actual_digest = sha256_file(path)
-        if actual_digest != expected_digest:
-            raise ValueError(
-                f"{experiment_id}: record {record_id!r} digest mismatch; "
-                f"expected {expected_digest}, observed {actual_digest}."
-            )
-        digests[record_id] = actual_digest
-        record_paths[record_id] = path
-
-    state_column = resolved.state_column
-    treatment_map = resolved.treatment_map
-    case_sensitive = resolved.state_values_case_sensitive
+    state_column = source_spec.state_column
+    treatment_map = source_spec.state_values
+    case_sensitive = source_spec.state_values_case_sensitive
     if set(treatment_map) != set(STATE_ORDER) or len(set(treatment_map.values())) != len(STATE_ORDER):
         raise ValueError(f"{experiment_id}: resolved state map must define four distinct 00, 10, 01, and 11 values.")
     response = _load_signal(
-        record_paths[source_spec.response_record_id],
+        response_frame,
         channel=source_spec.response_channel,
         state_column=state_column,
         treatment_map=treatment_map,
@@ -118,7 +63,7 @@ def load_experiment_source(
         context=f"{experiment_id}:response",
     )
     magnitude = _load_signal(
-        record_paths[source_spec.magnitude_record_id],
+        magnitude_frame,
         channel=source_spec.magnitude_channel,
         state_column=state_column,
         treatment_map=treatment_map,
@@ -127,7 +72,7 @@ def load_experiment_source(
         context=f"{experiment_id}:magnitude",
     )
     trajectory = _load_signal(
-        record_paths[source_spec.trajectory_record_id],
+        trajectory_frame,
         channel=source_spec.growth_channel,
         state_column=state_column,
         treatment_map=treatment_map,
@@ -151,17 +96,10 @@ def load_experiment_source(
 
     return ExperimentSource(
         experiment_id=experiment_id,
-        experiment_dir=resolved.experiment_dir,
-        config_path=resolved.config_path,
-        records_path=resolved.records_path,
-        response_path=record_paths[source_spec.response_record_id],
-        magnitude_path=record_paths[source_spec.magnitude_record_id],
-        trajectory_path=record_paths[source_spec.trajectory_record_id],
         response=response,
         magnitude=magnitude,
         trajectory=trajectory,
         event=event,
-        record_digests=digests,
     )
 
 
@@ -211,7 +149,7 @@ def resolve_event_interval(
 
 
 def _load_signal(
-    path: Path,
+    frame: pd.DataFrame,
     *,
     channel: str,
     state_column: str,
@@ -221,7 +159,7 @@ def _load_signal(
     context: str,
     require_positive: bool = True,
 ) -> pd.DataFrame:
-    frame = pd.read_parquet(path)
+    frame = frame.copy()
     required = {"design_id", "position", "time", "channel", "value", state_column, event_spec.segment_column}
     missing = sorted(required - set(frame.columns))
     if missing:
@@ -307,8 +245,6 @@ __all__ = [
     "STATE_ORDER",
     "EventInterval",
     "ExperimentSource",
-    "ExperimentSourceLoader",
-    "ResolvedExperimentSource",
-    "load_experiment_source",
+    "build_experiment_source",
     "resolve_event_interval",
 ]

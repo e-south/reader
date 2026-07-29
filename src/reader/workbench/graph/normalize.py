@@ -7,6 +7,7 @@ from reader.errors import ConfigError
 from reader.workbench.decl import (
     FileInputDecl,
     PluginStepDecl,
+    RecordCollectionInputDecl,
     RecordInputDecl,
     RecordOutputDecl,
     ResourceInputDecl,
@@ -14,7 +15,15 @@ from reader.workbench.decl import (
 )
 from reader.workbench.experiment import ResourceCatalog
 from reader.workbench.graph.nodes import NotebookTemplateCall, PluginStep, Workbench, ensure_unique_workbench_ids
-from reader.workbench.graph.refs import FileRef, InputRef, OutputRef, RecordRef, ResourceRef
+from reader.workbench.graph.refs import (
+    FileRef,
+    InputRef,
+    OutputRef,
+    RecordCollectionRef,
+    RecordRef,
+    ResourceRef,
+    SourceRecordRef,
+)
 from reader.workbench.ontology import WorkbenchPluginStepKind, get_workbench_surface_semantics
 from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.templates import resolve_notebook_template_descriptor
@@ -92,6 +101,25 @@ def normalize_input_binding(
                 f"{section} {step_id}: reads '{key}' references unknown resource '{binding.resource_id}'."
             ) from err
         return ResourceRef(resource_id=binding.resource_id, path=resource.path)
+    if isinstance(binding, RecordCollectionInputDecl):
+        records: list[SourceRecordRef] = []
+        for resource_id in binding.resource_ids:
+            try:
+                resource = resources.require_record(resource_id)
+            except ValueError as err:
+                raise ConfigError(
+                    f"{section} {step_id}: reads '{key}' references unknown record resource '{resource_id}'."
+                ) from err
+            records.append(
+                SourceRecordRef(
+                    resource_id=resource_id,
+                    experiment_id=resource.experiment_id,
+                    record_id=resource.record_id,
+                    experiment_root=resource.experiment_root,
+                    outputs_dir=resource.outputs_dir,
+                )
+            )
+        return RecordCollectionRef(records=tuple(records))
     raise ConfigError(f"{section} {step_id}: reads '{key}' uses unsupported binding type {type(binding).__name__}")
 
 

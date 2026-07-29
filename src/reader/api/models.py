@@ -108,6 +108,14 @@ class PlanResult(ApiResult):
 
 
 @dataclass(frozen=True)
+class NotebookResult(ApiResult):
+    experiment: ExperimentIdentity
+    path: str
+    template: str
+    created: bool
+
+
+@dataclass(frozen=True)
 class SurfaceCatalogResult(ApiResult):
     experiment: ExperimentIdentity
     kind: str
@@ -203,6 +211,7 @@ __all__ = [
     "ExperimentEvidence",
     "ExperimentIdentity",
     "InspectionResult",
+    "NotebookResult",
     "PlanResult",
     "PluginCatalogResult",
     "PluginDescriptorResult",

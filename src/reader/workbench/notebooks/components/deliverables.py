@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from reader.errors import RecordError
 from reader.runtime import builtin_runtime
 from reader.workbench.records import DataFrameArtifactRecord, FileBundleRecord
@@ -20,27 +22,113 @@ class NotebookDeliverables:
     issue_rows: tuple[dict[str, Any], ...]
 
 
-def render_notebook_deliverables_panel(mo: Any, deliverables: NotebookDeliverables) -> Any:
+def build_notebook_deliverable_selector(mo: Any, deliverables: NotebookDeliverables) -> Any | None:
+    options = _deliverable_options(deliverables)
+    if not options:
+        return None
+    labels = {label: key for key, label, _ in options}
+    return mo.ui.dropdown(
+        options=labels,
+        value=next(iter(labels)),
+        label="Deliverable",
+        full_width=True,
+    )
+
+
+def render_notebook_deliverable_viewport(
+    mo: Any,
+    deliverables: NotebookDeliverables,
+    selector: Any | None,
+    *,
+    outputs_dir: Path,
+) -> Any:
+    options = {key: (label, row) for key, label, row in _deliverable_options(deliverables)}
+    if selector is None or not options:
+        primary = mo.md("No deliverables are registered yet. Run the experiment, then refresh this notebook.")
+        selected_details = mo.md("No deliverable is selected.")
+    else:
+        selected = selector.value
+        label, row = options.get(selected, next(iter(options.values())))
+        primary = _render_deliverable_preview(mo, row, outputs_dir=outputs_dir)
+        selected_details = _render_table(mo, (row,), "No metadata is available.")
+
     sections = {
+        "Selected metadata": selected_details,
         "Summary": _render_table(mo, deliverables.summary_rows, "No deliverable summary is available."),
         "Plots": _render_table(mo, deliverables.plot_rows, "No plot files are registered yet."),
         "Exports": _render_table(mo, deliverables.export_rows, "No export files are registered yet."),
+        "Records": _render_table(mo, deliverables.record_rows, "No dataframe records are registered yet."),
         "Notebook artifacts": _render_table(
             mo,
             deliverables.notebook_artifact_rows,
             "No notebook artifact files are registered yet.",
         ),
-        "Records": _render_table(mo, deliverables.record_rows, "No dataframe records are registered yet."),
         "Notebooks": _render_table(mo, deliverables.notebook_rows, "No generated notebooks were found."),
     }
     if deliverables.issue_rows:
         sections["Readiness notes"] = _render_table(mo, deliverables.issue_rows, "No readiness notes.")
+    controls = [] if selector is None else [selector]
     return mo.vstack(
         [
-            mo.md("## Outputs and deliverables"),
-            mo.accordion(sections, multiple=True, lazy=True),
+            mo.md("## Deliverables"),
+            *controls,
+            primary,
+            mo.accordion(sections, multiple=False, lazy=True),
         ]
     )
+
+
+def _deliverable_options(
+    deliverables: NotebookDeliverables,
+) -> tuple[tuple[str, str, dict[str, Any]], ...]:
+    groups = (
+        ("plot", "Plot", deliverables.plot_rows),
+        ("export", "Export", deliverables.export_rows),
+        ("record", "Data", deliverables.record_rows),
+        ("notebook_artifact", "Notebook artifact", deliverables.notebook_artifact_rows),
+        ("notebook", "Notebook", deliverables.notebook_rows),
+    )
+    options: list[tuple[str, str, dict[str, Any]]] = []
+    used_labels: set[str] = set()
+    for kind, prefix, rows in groups:
+        for index, row in enumerate(rows):
+            identity = str(row.get("Record ID") or row.get("File") or row.get("Notebook") or row.get("Path"))
+            label = f"{prefix} · {identity}"
+            if label in used_labels:
+                label = f"{label} · {index + 1}"
+            used_labels.add(label)
+            options.append((f"{kind}:{index}", label, row))
+    return tuple(options)
+
+
+def _render_deliverable_preview(mo: Any, row: dict[str, Any], *, outputs_dir: Path) -> Any:
+    raw_path = row.get("Path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return _render_table(mo, (row,), "No preview is available.")
+    candidate = Path(raw_path)
+    path = candidate if candidate.is_absolute() else Path(outputs_dir) / candidate
+    try:
+        path = path.resolve(strict=True)
+        path.relative_to(Path(outputs_dir).resolve(strict=True))
+    except (OSError, RuntimeError, ValueError):
+        return mo.md("The selected deliverable is missing or resolves outside this experiment's outputs.")
+    suffix = path.suffix.lower()
+    description = str(row.get("Description") or row.get("Record ID") or path.name)
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}:
+        return mo.image(str(path), alt=description)
+    if suffix == ".parquet":
+        try:
+            frame = pd.read_parquet(path)
+        except Exception as exc:
+            return mo.md(f"Could not preview `{path.name}`: `{exc}`")
+        return mo.ui.table(frame.head(200), page_size=min(12, max(1, len(frame))))
+    if suffix == ".csv":
+        try:
+            frame = pd.read_csv(path, nrows=200)
+        except Exception as exc:
+            return mo.md(f"Could not preview `{path.name}`: `{exc}`")
+        return mo.ui.table(frame, page_size=min(12, max(1, len(frame))))
+    return mo.md(f"**{path.name}**  \n{description}  \n`{path}`")
 
 
 def collect_notebook_deliverables(outputs_dir: Path, *, notebooks_dir: Path | None = None) -> NotebookDeliverables:

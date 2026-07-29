@@ -13,7 +13,9 @@ from reader.protocols.compiler import (
     compile_cytometry_flow_panel,
     compile_generic_protocol,
     compile_logic_sfxi_screen,
+    compile_logic_sfxi_vec8_collection,
     compile_plate_reader_dual_reporter_screen,
+    compile_plate_reader_response_window,
     compile_plate_reader_single_reporter_screen,
 )
 from reader.runtime import builtin_runtime
@@ -30,8 +32,22 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": (),
         "plots": (),
         "exports": (),
-        "notebooks": ("notebook/basic",),
-        "sha256": "5cbd7074a19e743fcda5da3507e4d51e30e136095bc1e36b10159ad86db5d422",  # pragma: allowlist secret
+        "notebooks": ("notebook/eda",),
+        "sha256": "b72e51a22f39565a96d01d12c59af55106372cd62a6615cf11f32234916808d1",  # pragma: allowlist secret
+    },
+    "logic/sfxi_vec8_collection": {
+        "pipeline": ("collect_vec8",),
+        "plots": ("vec8_collection_heatmap",),
+        "exports": ("vec8_table",),
+        "notebooks": ("notebook/eda",),
+        "sha256": "c9d8cd1ee3a7ccea54c2dd62a5bd87156ffc53f20f9c491734fb089e98ab4b85",  # pragma: allowlist secret
+    },
+    "plate_reader/response_window": {
+        "pipeline": ("response_window",),
+        "plots": ("response_window_summary",),
+        "exports": ("designs_table", "events_table"),
+        "notebooks": ("notebook/eda",),
+        "sha256": "8f4704b99ac1991ebe29f390d37a8cc35db1d384848291e55899cd2e07e334fc",  # pragma: allowlist secret
     },
     "logic/sfxi_screen": {
         "pipeline": (
@@ -130,7 +146,9 @@ def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str
         compile_cytometry_flow_panel,
         compile_generic_protocol,
         compile_logic_sfxi_screen,
+        compile_logic_sfxi_vec8_collection,
         compile_plate_reader_dual_reporter_screen,
+        compile_plate_reader_response_window,
         compile_plate_reader_single_reporter_screen,
     ],
 )

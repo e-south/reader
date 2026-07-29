@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .contracts import ReplicateStat, ResponseWindowRequest
+from .contracts import ReplicateStat, ResponseWindowAnalysisSpec
 from .provenance import stable_seed
 from .sources import STATE_ORDER
 
 
-def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowRequest) -> pd.DataFrame:
+def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
     """Resample wells jointly across all state response and reference channels."""
 
     anchor_id = request.source.reference_design_id

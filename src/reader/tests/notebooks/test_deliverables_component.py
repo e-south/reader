@@ -9,13 +9,21 @@ from reader.runtime import builtin_runtime
 from reader.workbench.graph import ProvenanceInput, RecordRef
 from reader.workbench.notebooks.components.deliverables import (
     NotebookDeliverables,
+    build_notebook_deliverable_selector,
     collect_notebook_deliverables,
-    render_notebook_deliverables_panel,
+    render_notebook_deliverable_viewport,
 )
 from reader.workbench.records import PathDescription
 
 
 class _FakeUi:
+    def dropdown(self, *, options, value, label, full_width):
+        return type(
+            "Dropdown",
+            (),
+            {"options": options, "value": options[value], "label": label, "full_width": full_width},
+        )()
+
     def table(self, rows, *, page_size):
         return {"kind": "table", "rows": list(rows), "page_size": page_size}
 
@@ -34,6 +42,9 @@ class _FakeMarimo:
 
     def vstack(self, items):
         return {"kind": "vstack", "items": list(items)}
+
+    def image(self, source, *, alt):
+        return {"kind": "image", "source": source, "alt": alt}
 
 
 def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_notebooks(tmp_path: Path) -> None:
@@ -154,35 +165,33 @@ def test_collect_notebook_deliverables_reports_retired_record_schema_as_invalid(
     assert "schema_version must be 5" in deliverables.issue_rows[0]["Issue"]
 
 
-def test_render_notebook_deliverables_panel_uses_lazy_accordion() -> None:
+def test_deliverable_workbench_uses_one_selector_one_viewport_and_lazy_details(tmp_path: Path) -> None:
+    plot = tmp_path / "plots" / "summary.png"
+    plot.parent.mkdir()
+    plot.write_bytes(b"image")
     mo = _FakeMarimo()
     deliverables = NotebookDeliverables(
         summary_rows=({"Deliverable": "Plot files", "Count": 1},),
         record_rows=(),
-        plot_rows=({"Path": "plots/summary.pdf"},),
+        plot_rows=(
+            {
+                "Record ID": "plot:summary",
+                "File": "summary.png",
+                "Path": "plots/summary.png",
+                "Description": "Primary summary.",
+            },
+        ),
         export_rows=(),
         notebook_artifact_rows=(),
         notebook_rows=(),
         issue_rows=(),
     )
 
-    panel = render_notebook_deliverables_panel(mo, deliverables)
+    selector = build_notebook_deliverable_selector(mo, deliverables)
+    viewport = render_notebook_deliverable_viewport(mo, deliverables, selector, outputs_dir=tmp_path)
 
-    assert panel["kind"] == "vstack"
-    assert mo.accordion_calls == [
-        {
-            "sections": {
-                "Summary": {"kind": "table", "rows": [{"Deliverable": "Plot files", "Count": 1}], "page_size": 1},
-                "Plots": {"kind": "table", "rows": [{"Path": "plots/summary.pdf"}], "page_size": 1},
-                "Exports": {"kind": "markdown", "text": "No export files are registered yet."},
-                "Notebook artifacts": {
-                    "kind": "markdown",
-                    "text": "No notebook artifact files are registered yet.",
-                },
-                "Records": {"kind": "markdown", "text": "No dataframe records are registered yet."},
-                "Notebooks": {"kind": "markdown", "text": "No generated notebooks were found."},
-            },
-            "multiple": True,
-            "lazy": True,
-        }
-    ]
+    assert selector.label == "Deliverable"
+    assert viewport["kind"] == "vstack"
+    assert any(item.get("kind") == "image" for item in viewport["items"] if isinstance(item, dict))
+    assert mo.accordion_calls[-1]["multiple"] is False
+    assert mo.accordion_calls[-1]["lazy"] is True

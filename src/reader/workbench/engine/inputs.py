@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from reader.errors import ExecutionError
-from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef
+from reader.workbench.graph import FileRef, InputRef, RecordCollectionRef, RecordRef, ResourceRef
 from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.ports import InputPortSpec
-from reader.workbench.records import RecordStore
+from reader.workbench.records import RecordStore, SourceRecordCollection, resolve_source_record
 from reader.workbench.registry import Plugin, PluginConfig
 
 
@@ -83,6 +83,15 @@ def _resolve_inputs(
             if path.is_dir():
                 raise ExecutionError(f"Input file path is a directory for '{label}': {path}")
             inputs[label] = (path,) if expected.kind == "file_set" else path
+            continue
+        if isinstance(target, RecordCollectionRef):
+            if expected.kind != "record_collection":
+                raise ExecutionError(
+                    f"Input '{label}' expects port kind {expected.kind!r} and cannot bind to a record collection"
+                )
+            inputs[label] = SourceRecordCollection(
+                tuple(resolve_source_record(ref, contracts=store.contracts) for ref in target.records)
+            )
             continue
         if not isinstance(target, RecordRef):
             raise ExecutionError(f"Unsupported input binding for '{label}': {target!r}")

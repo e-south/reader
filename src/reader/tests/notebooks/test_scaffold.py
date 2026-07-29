@@ -87,8 +87,9 @@ def test_notebook_scaffold_surfaces_deliverables_with_progressive_disclosure(tmp
     content = nb_path.read_text(encoding="utf-8")
 
     assert "collect_notebook_deliverables" in content
-    assert "render_notebook_deliverables_panel" in content
-    assert "render_notebook_deliverables_panel(mo, deliverables)" in content
+    assert "build_notebook_deliverable_selector" in content
+    assert "render_notebook_deliverable_viewport" in content
+    assert "mo.accordion" not in content
 
 
 def test_notebook_scaffold_ignores_legacy_dir_when_present(tmp_path: Path) -> None:

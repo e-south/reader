@@ -155,18 +155,34 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
 
     data.setdefault("resources", {})
     if not isinstance(data["resources"], dict):
-        raise ConfigError("resources must be a mapping of resource_id -> {kind, path}")
+        raise ConfigError("resources must be a mapping of resource_id -> file or record declarations")
     normalized_resources: dict[str, dict[str, str]] = {}
     for resource_id, resource in (data["resources"] or {}).items():
         if not isinstance(resource, dict):
-            raise ConfigError(f"resources.{resource_id} must be a mapping with kind/path")
+            raise ConfigError(f"resources.{resource_id} must be a mapping")
         kind = resource.get("kind")
-        path_raw = resource.get("path")
-        if kind != "file":
-            raise ConfigError(f"resources.{resource_id}.kind must be 'file'")
-        if not isinstance(path_raw, str) or not path_raw.strip():
-            raise ConfigError(f"resources.{resource_id}.path must be a non-empty string")
-        normalized_resources[str(resource_id)] = {"kind": str(kind), "path": str(path_raw)}
+        if kind == "file":
+            _ensure_only_keys(resource, {"kind", "path"}, where=f"resources.{resource_id}")
+            path_raw = resource.get("path")
+            if not isinstance(path_raw, str) or not path_raw.strip():
+                raise ConfigError(f"resources.{resource_id}.path must be a non-empty string")
+            normalized_resources[str(resource_id)] = {"kind": "file", "path": path_raw}
+            continue
+        if kind == "record":
+            _ensure_only_keys(resource, {"kind", "experiment", "record"}, where=f"resources.{resource_id}")
+            experiment = resource.get("experiment")
+            record = resource.get("record")
+            if not isinstance(experiment, str) or not experiment.strip():
+                raise ConfigError(f"resources.{resource_id}.experiment must be a non-empty string")
+            if not isinstance(record, str) or not record.strip():
+                raise ConfigError(f"resources.{resource_id}.record must be a non-empty string")
+            normalized_resources[str(resource_id)] = {
+                "kind": "record",
+                "experiment": experiment.strip(),
+                "record": record.strip(),
+            }
+            continue
+        raise ConfigError(f"resources.{resource_id}.kind must be 'file' or 'record'")
     data["resources"] = {"by_id": normalized_resources}
 
     data.setdefault("annotations", {})

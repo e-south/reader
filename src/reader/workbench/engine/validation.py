@@ -7,7 +7,7 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 
-from reader.errors import ConfigError, ExecutionError
+from reader.errors import ConfigError, ExecutionError, ReaderError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.commands import reader_command
@@ -15,6 +15,7 @@ from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.experiment import ExperimentSemantics
 from reader.workbench.graph import (
     FileRef,
+    RecordCollectionRef,
     RecordRef,
     ResourceRef,
     ensure_unique_workbench_ids,
@@ -22,6 +23,7 @@ from reader.workbench.graph import (
     resolve_workbench,
 )
 from reader.workbench.paths import resolve_path_within_root
+from reader.workbench.records import DataFrameArtifactRecord, resolve_source_record
 from reader.workbench.registry import Plugin, PreflightIssue
 from reader.workbench.templates import require_notebook_template_for_protocol
 
@@ -62,6 +64,15 @@ def _assert_known_read_targets(*, label: str, step: Any, available_labels: set[s
                 f"{label} {step.id}: reads '{key}' targets '{input_ref_display(target)}', "
                 f"but the plugin expects a {port.kind} record."
             )
+        if port.kind == "record_collection" and not isinstance(target, RecordCollectionRef):
+            raise ConfigError(f"{label} {step.id}: reads '{key}' must target a declared record collection.")
+        if isinstance(target, RecordCollectionRef):
+            if port.kind != "record_collection":
+                raise ConfigError(
+                    f"{label} {step.id}: reads '{key}' targets a record collection, "
+                    f"but the plugin expects {port.kind!r}."
+                )
+            continue
         if port.kind in {"file_path", "file_set"} and isinstance(target, RecordRef):
             raise ConfigError(
                 f"{label} {step.id}: reads '{key}' targets record '{target.record_id}', "
@@ -264,6 +275,43 @@ def _plugin_preflight_issues(
     return issues
 
 
+def _source_record_preflight_issues(
+    *,
+    items: list[Any],
+    registry: Any,
+    contracts: Any,
+) -> tuple[int, list[str]]:
+    declared = 0
+    issues: list[str] = []
+    for step in items:
+        plugin_cls = registry.resolve(step.plugin)
+        ports = plugin_cls.input_ports()
+        for label, ref in (step.reads or {}).items():
+            if not isinstance(ref, RecordCollectionRef):
+                continue
+            declared += len(ref.records)
+            if not ref.records:
+                issues.append(f"pipeline:{step.id} • {label} → no source records declared")
+                continue
+            expected_contract = ports[label].contract
+            for source_ref in ref.records:
+                source_label = f"{source_ref.experiment_id}:{source_ref.record_id}"
+                try:
+                    resolved = resolve_source_record(source_ref, contracts=contracts)
+                    record = resolved.record
+                    if not isinstance(record, DataFrameArtifactRecord):
+                        raise ConfigError(f"source record is {record.kind!r}, not a dataframe artifact")
+                    if expected_contract is not None and not contracts.satisfies(
+                        actual=record.contract_id,
+                        expected=expected_contract,
+                    ):
+                        raise ConfigError(f"contract {record.contract_id!r} does not satisfy {expected_contract!r}")
+                    record.verify_content_digest()
+                except (OSError, ReaderError) as exc:
+                    issues.append(f"pipeline:{step.id} • {label} → {source_label}: {exc}")
+    return declared, issues
+
+
 def validation_summary(
     decl: WorkbenchDecl,
     *,
@@ -336,6 +384,8 @@ def validation_summary(
     files_checked = None
     file_issues: list[str] = []
     dependency_issues: list[str] = []
+    source_record_issues: list[str] = []
+    source_records_declared = 0
     readiness_errors: list[str] = []
     if check_files:
         files_checked = (len(declared_entries), len(declared_roots))
@@ -346,6 +396,11 @@ def validation_summary(
             if not root.exists():
                 file_issues.append(f"{label}:{step_id} • auto_roots → {_render_rel(root, exp_root=exp_root)}")
         if registry is not None:
+            source_records_declared, source_record_issues = _source_record_preflight_issues(
+                items=pipeline_steps,
+                registry=registry,
+                contracts=runtime.contracts,
+            )
             for label, step_id, issue in (
                 _plugin_preflight_issues(
                     items=pipeline_steps,
@@ -374,7 +429,7 @@ def validation_summary(
                     dependency_issues.append(rendered)
                 else:
                     file_issues.append(rendered)
-        readiness_errors = [*file_issues, *dependency_issues]
+        readiness_errors = [*file_issues, *dependency_issues, *source_record_issues]
 
     file_total, root_total = files_checked or (len(declared_entries), len(declared_roots))
     if not check_files:
@@ -422,6 +477,21 @@ def validation_summary(
             "summary": (f"error ({len(dependency_issues)} issue(s))" if dependency_issues else "ok"),
         }
 
+    source_records_payload = {
+        "checked": check_files,
+        "declared": source_records_declared,
+        "issues": len(source_record_issues),
+        "summary": (
+            "skipped (--no-files)"
+            if not check_files
+            else (
+                f"error ({len(source_record_issues)} issue(s))"
+                if source_record_issues
+                else f"ok ({source_records_declared} record(s))"
+            )
+        ),
+    }
+
     checks = [
         "schema",
         "plugin availability",
@@ -430,7 +500,7 @@ def validation_summary(
         "plugin config",
     ]
     if check_files:
-        checks.append("runtime readiness")
+        checks.extend(("runtime readiness", "source record revisions"))
 
     return {
         "status": "error" if readiness_errors else "ok",
@@ -444,6 +514,7 @@ def validation_summary(
         "checks": checks,
         "files": files_payload,
         "dependencies": dependencies_payload,
+        "source_records": source_records_payload,
         "errors": readiness_errors,
         "tip": (
             f"fix readiness issues or use '{reader_command('validate', '--no-files')}' for config-only checks"
@@ -479,6 +550,7 @@ def validate(
     ]
     lines.append(f"[dim]files[/dim]: {summary['files']['summary']}")
     lines.append(f"[dim]dependencies[/dim]: {summary['dependencies']['summary']}")
+    lines.append(f"[dim]source records[/dim]: {summary['source_records']['summary']}")
     if summary["errors"]:
         lines.append("[dim]errors[/dim]:")
         lines.extend(f"- {item}" for item in summary["errors"])

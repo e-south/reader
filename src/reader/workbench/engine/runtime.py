@@ -30,7 +30,7 @@ from .invocations import (
 )
 from .planning import build_next_steps, explain
 from .setup import build_run_context, configure_logger, normalize_log_level, resolve_palette_book, slice_pipeline_steps
-from .validation import validation_summary
+from .validation import _source_record_preflight_issues, validation_summary
 
 
 def run_spec(
@@ -137,6 +137,15 @@ def run_spec(
             produced_record_revisions=(),
             ledger_path=None,
         )
+
+    if registry is not None:
+        _, source_record_issues = _source_record_preflight_issues(
+            items=pipeline_steps,
+            registry=registry,
+            contracts=runtime.contracts,
+        )
+        if source_record_issues:
+            raise ConfigError("Run preflight failed before output mutation: " + source_record_issues[0])
 
     out_dir.mkdir(parents=True, exist_ok=True)
     logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)

@@ -1,12 +1,25 @@
 """Stable, task-oriented interfaces for Reader experiments and plugins."""
 
-from .facade import describe_plugin, inspect, open_experiment, plan, plots, plugins, records, run, validate, verify
+from .facade import (
+    describe_plugin,
+    inspect,
+    notebook,
+    open_experiment,
+    plan,
+    plots,
+    plugins,
+    records,
+    run,
+    validate,
+    verify,
+)
 from .models import (
     ApiResult,
     Experiment,
     ExperimentEvidence,
     ExperimentIdentity,
     InspectionResult,
+    NotebookResult,
     PlanResult,
     PluginCatalogResult,
     PluginDescriptorResult,
@@ -27,6 +40,7 @@ __all__ = [
     "ExperimentEvidence",
     "ExperimentIdentity",
     "InspectionResult",
+    "NotebookResult",
     "PlanResult",
     "PluginCatalogResult",
     "PluginDescriptorResult",
@@ -41,6 +55,7 @@ __all__ = [
     "VerificationResult",
     "describe_plugin",
     "inspect",
+    "notebook",
     "open_experiment",
     "plan",
     "plots",

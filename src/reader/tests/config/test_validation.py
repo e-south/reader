@@ -280,6 +280,39 @@ def test_load_normalizes_annotations_and_resources(tmp_path: Path) -> None:
     assert spec.annotations.collections["group_ab"].items == {"A": ["g1", "2"], "B": ["True"]}
 
 
+def test_load_normalizes_record_resource_identity(tmp_path: Path) -> None:
+    data = _base_config()
+    data["resources"] = {
+        "source": {
+            "kind": "record",
+            "experiment": " source-experiment ",
+            "record": " annotated/df ",
+        }
+    }
+
+    spec = ReaderSpec.load(write_config(tmp_path, data))
+
+    source = spec.resources.by_id["source"]
+    assert source.kind == "record"
+    assert source.experiment == "source-experiment"
+    assert source.record == "annotated/df"
+
+
+def test_load_rejects_file_fields_on_record_resource(tmp_path: Path) -> None:
+    data = _base_config()
+    data["resources"] = {
+        "source": {
+            "kind": "record",
+            "experiment": "source-experiment",
+            "record": "annotated/df",
+            "path": "./outputs/table.parquet",
+        }
+    }
+
+    with pytest.raises(ConfigError, match=r"resources\.source has unknown keys \['path'\]"):
+        ReaderSpec.load(write_config(tmp_path, data))
+
+
 def test_load_rejects_non_list_annotation_collection_items(tmp_path: Path) -> None:
     data = _base_config()
     data["annotations"] = {

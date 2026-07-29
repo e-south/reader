@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -96,11 +96,29 @@ class PlottingSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class ResourceSpec(BaseModel):
+class FileResourceSpec(BaseModel):
     kind: Literal["file"]
     path: str
 
     model_config = {"extra": "forbid"}
+
+
+class RecordResourceSpec(BaseModel):
+    kind: Literal["record"]
+    experiment: str
+    record: str
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("experiment", "record", mode="after")
+    @classmethod
+    def _validate_nonempty(cls, value: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("record resource experiment and record values must be non-empty strings")
+        return value.strip()
+
+
+ResourceSpec = Annotated[FileResourceSpec | RecordResourceSpec, Field(discriminator="kind")]
 
 
 class ResourcesSpec(BaseModel):

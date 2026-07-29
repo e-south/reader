@@ -21,7 +21,21 @@ class ResourceRef:
     path: Path
 
 
-InputRef = RecordRef | FileRef | ResourceRef
+@dataclass(frozen=True)
+class SourceRecordRef:
+    resource_id: str
+    experiment_id: str
+    record_id: str
+    experiment_root: Path
+    outputs_dir: Path
+
+
+@dataclass(frozen=True)
+class RecordCollectionRef:
+    records: tuple[SourceRecordRef, ...]
+
+
+InputRef = RecordRef | FileRef | ResourceRef | SourceRecordRef | RecordCollectionRef
 
 
 @dataclass(frozen=True)
@@ -41,6 +55,10 @@ def input_ref_display(ref: InputRef) -> str:
         return ref.record_id
     if isinstance(ref, ResourceRef):
         return f"resource({ref.resource_id})"
+    if isinstance(ref, SourceRecordRef):
+        return f"record_resource({ref.resource_id}:{ref.experiment_id}:{ref.record_id})"
+    if isinstance(ref, RecordCollectionRef):
+        return "record_collection(" + ", ".join(item.resource_id for item in ref.records) + ")"
     return f"file({ref.path})"
 
 
@@ -48,11 +66,28 @@ def output_ref_display(ref: OutputRef) -> str:
     return ref.record_id
 
 
-def input_ref_to_dict(ref: InputRef) -> dict[str, str]:
+def input_ref_to_dict(ref: InputRef) -> dict[str, Any]:
     if isinstance(ref, RecordRef):
         return {"record": ref.record_id}
     if isinstance(ref, ResourceRef):
         return {"resource": ref.resource_id, "path": str(ref.path)}
+    if isinstance(ref, SourceRecordRef):
+        return {
+            "record_resource": ref.resource_id,
+            "experiment": ref.experiment_id,
+            "record": ref.record_id,
+        }
+    if isinstance(ref, RecordCollectionRef):
+        return {
+            "record_collection": [
+                {
+                    "resource": item.resource_id,
+                    "experiment": item.experiment_id,
+                    "record": item.record_id,
+                }
+                for item in ref.records
+            ]
+        }
     return {"file": str(ref.path)}
 
 
@@ -60,7 +95,7 @@ def output_ref_to_dict(ref: OutputRef) -> dict[str, str]:
     return {"record": ref.record_id}
 
 
-def provenance_input_to_dict(binding: ProvenanceInput) -> dict[str, str]:
+def provenance_input_to_dict(binding: ProvenanceInput) -> dict[str, Any]:
     return {"label": binding.label, **input_ref_to_dict(binding.ref)}
 
 

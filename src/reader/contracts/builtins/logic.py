@@ -47,6 +47,21 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         kind="logic-summary",
     ),
     DataFrameContract(
+        id="sfxi.vec8_collection.v1",
+        description="Cross-experiment SFXI vec8 collection with explicit source identity.",
+        columns=[
+            ColumnRule("source_index", "int", nonnegative=True),
+            ColumnRule("source_id", "string"),
+            ColumnRule("source_row_index", "int", nonnegative=True),
+            ColumnRule("row_label", "string"),
+            *_sfxi_vec8_columns(),
+        ],
+        unique_keys=[["source_id", "design_id"]],
+        parents=("sfxi.vec8.v3",),
+        domain="logic",
+        kind="logic-summary-collection",
+    ),
+    DataFrameContract(
         id="crosstalk_pairs.v1",
         description="Pairwise crosstalk summary for design pairs at a single time/target.",
         columns=[
