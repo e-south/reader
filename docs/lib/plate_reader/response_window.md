@@ -34,11 +34,11 @@ uv run reader response-window build REQUEST.yaml \
   --format json
 
 uv run reader response-window verify \
-  experiments/2026/20260717_stress_response_window_aggregate/outputs \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs/bundles/response-window \
   --format json
 
 uv run reader response-window review \
-  experiments/2026/20260717_stress_response_window_aggregate/outputs \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs/bundles/response-window \
   --mode run
 
 uv run reader init experiments/2026/20260720_promoter_evidence_review \
@@ -46,7 +46,7 @@ uv run reader init experiments/2026/20260720_promoter_evidence_review \
   --title "Promoter evidence review"
 
 uv run reader response-window promoter-evidence \
-  experiments/2026/20260717_stress_response_window_aggregate/outputs \
+  experiments/2026/20260717_stress_response_window_aggregate/outputs/bundles/response-window \
   PATH/TO/promoter_candidate_bindings \
   --output-experiment experiments/2026/20260720_promoter_evidence_review \
   --experiment-id EXPERIMENT_ID \
@@ -55,14 +55,17 @@ uv run reader response-window promoter-evidence \
   --format json
 
 uv run reader response-window promoter-evidence-verify \
-  experiments/2026/20260720_promoter_evidence_review/outputs \
+  experiments/2026/20260720_promoter_evidence_review/outputs/bundles/promoter-evidence \
   --format json
 ```
 
 These bundles remain explicit cross-repository handoffs, but their Reader-side
 publication is experiment-owned. Each aggregate or evidence unit has its own
 directory under `experiments/` and publishes through that experiment's
-configured `outputs/`; a repository-root `outputs/` path is invalid.
+configured `outputs/bundles/<bundle-kind>/` namespace; a repository-root
+`outputs/` path is invalid. This boundary keeps an aggregate publication from
+replacing that experiment's record catalog, plots, exports, or config even when
+`--overwrite` is explicit.
 
 The analysis Python facade is `reader.response_window`. Review and promoter
 evidence publication use `reader.response_window_review`.

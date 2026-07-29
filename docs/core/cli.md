@@ -30,12 +30,13 @@ lifecycle:
 uv run reader init OUTPUT_EXPERIMENT --protocol workbench/generic
 uv run reader response-window preflight REQUEST.yaml --format json
 uv run reader response-window build REQUEST.yaml --output-experiment OUTPUT_EXPERIMENT --format json
-uv run reader response-window verify OUTPUT_EXPERIMENT/outputs --format json
-uv run reader response-window review OUTPUT_EXPERIMENT/outputs --mode run
+uv run reader response-window verify OUTPUT_EXPERIMENT/outputs/bundles/response-window --format json
+uv run reader response-window review OUTPUT_EXPERIMENT/outputs/bundles/response-window --mode run
 uv run reader response-window promoter-evidence BUNDLE BINDINGS \
   --output-experiment EVIDENCE_EXPERIMENT --experiment-id EXPERIMENT --design-id DESIGN \
   --reduction-id REDUCTION --format json
-uv run reader response-window promoter-evidence-verify EVIDENCE_EXPERIMENT/outputs --format json
+uv run reader response-window promoter-evidence-verify \
+  EVIDENCE_EXPERIMENT/outputs/bundles/promoter-evidence --format json
 ```
 
 These commands consume published experiment records. They do not bypass the
@@ -43,6 +44,8 @@ normal experiment pipeline or infer treatment semantics from file names.
 The response service accepts `reader.response_window.request.v3`, publishes
 `reader.response_window.bundle.v5`, and publishes promoter evidence under
 `reader.response_window.promoter_evidence_bundle.v5`.
+Aggregate publishers use `outputs/bundles/<bundle-kind>/`; `--overwrite`
+replaces only that owned bundle, never the experiment's ordinary output tree.
 Promoter evidence additionally consumes an explicit, study-owned candidate
 binding; Reader does not open the study candidate table or calculate an OPAL
 objective. Its optional v2 objective overlay accepts screen-only raw components

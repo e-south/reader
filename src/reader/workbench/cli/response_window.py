@@ -11,6 +11,7 @@ from rich import box
 from rich.panel import Panel
 
 from reader.errors import ReaderError
+from reader.workbench.paths import resolve_confined_sink_root
 
 from .helpers import resolve_output_experiment
 from .notebooks import _launch_marimo
@@ -68,11 +69,12 @@ def preflight(
         if result.ready:
             emit_json(result.to_payload())
         else:
+            missing = ", ".join(result.missing_display_examples)
             emit_json_error(
                 code="preflight_failed",
-                field="request",
-                reason="Response-window preflight did not satisfy all readiness checks.",
-                remediation="Correct the failed source, reduction, aggregation, or QC checks, then run preflight again.",
+                field="missing_display_examples",
+                reason=f"Configured response-window display examples were not observed: {missing}.",
+                remediation="Correct request.display.examples or produce the missing designs, then run preflight again.",
             )
     else:
         _render_preflight(result)
@@ -100,7 +102,7 @@ def build(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
-        out_dir = resolve_output_experiment(output_experiment)
+        out_dir = _bundle_destination(output_experiment, bundle_kind="response-window")
         bundle = build_response_window_bundle(
             reader_root=reader_root,
             request_path=request,
@@ -188,7 +190,7 @@ def promoter_evidence(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
-        out_dir = resolve_output_experiment(output_experiment)
+        out_dir = _bundle_destination(output_experiment, bundle_kind="promoter-evidence")
         bundle = build_promoter_evidence_bundle(
             response_bundle_root=response_bundle_root,
             bindings_root=bindings_root,
@@ -298,6 +300,17 @@ def _render_preflight(result: ResponseWindowPreflight) -> None:
     )
     console.print(f"[muted]Primary reduction:[/muted] {result.primary_reduction_id}")
     console.print(f"[muted]Missing review examples:[/muted] {missing}")
+
+
+def _bundle_destination(output_experiment: str, *, bundle_kind: str) -> Path:
+    """Keep aggregate publications distinct from an experiment's workbench outputs."""
+
+    outputs_dir = resolve_output_experiment(output_experiment)
+    return resolve_confined_sink_root(
+        outputs_dir / "bundles" / bundle_kind,
+        root=outputs_dir,
+        label=f"{bundle_kind} bundle",
+    )
 
 
 app.add_typer(response_window_app, name="response-window")
