@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/builtins/generic.py
-
-Generic tabular contracts shared across analysis domains.
---------------------------------------------------------------------------------
-"""
+"""Generic tabular contracts shared across analysis domains."""
 
 from __future__ import annotations
 

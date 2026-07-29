@@ -36,7 +36,7 @@ READINESS_CAPABILITY_KEYS = frozenset(
         "plot",
         "export",
         "notebook_scaffold",
-        "notebook_scan_records",
+        "notebook_read_records",
     }
 )
 
@@ -64,7 +64,7 @@ def config_error_readiness_payload(error: str) -> dict[str, object]:
             "plot": False,
             "export": False,
             "notebook_scaffold": False,
-            "notebook_scan_records": False,
+            "notebook_read_records": False,
         },
         "errors": [error],
         "next_steps": [],
@@ -102,7 +102,7 @@ def _non_active_lifecycle_payload(*, lifecycle: str, job_path: Path) -> dict[str
             "plot": False,
             "export": False,
             "notebook_scaffold": True,
-            "notebook_scan_records": False,
+            "notebook_read_records": False,
         },
         "errors": [],
         "next_steps": [next_step],
@@ -326,7 +326,7 @@ def experiment_readiness_payload(
             "plot": plot_ready and bool(workbench.plots),
             "export": export_ready and bool(workbench.exports),
             "notebook_scaffold": bool(workbench.notebooks),
-            "notebook_scan_records": verified_records and bool(workbench.notebooks),
+            "notebook_read_records": verified_records and bool(workbench.notebooks),
         },
         "errors": errors,
         "next_steps": next_steps,

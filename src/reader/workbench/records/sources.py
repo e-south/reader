@@ -6,7 +6,12 @@ from reader.contracts import ContractCatalog
 from reader.errors import RecordError
 from reader.workbench.graph import SourceRecordRef
 
-from .model import DataFrameArtifactRecord, FileBundleRecord, record_revision_digest
+from .model import (
+    DataFrameArtifactRecord,
+    FileBundleRecord,
+    record_revision_digest,
+    verify_record_artifact_integrity,
+)
 from .store import RecordStore
 
 
@@ -17,6 +22,11 @@ class ResolvedSourceRecord:
     ref: SourceRecordRef
     record: DataFrameArtifactRecord | FileBundleRecord
     revision_digest: str
+
+    def verify_artifact_integrity(self) -> None:
+        """Verify the live artifacts bound to this exact catalog revision."""
+
+        verify_record_artifact_integrity(self.record, outputs_dir=self.ref.outputs_dir)
 
     def load_dataframe(self):
         if not isinstance(self.record, DataFrameArtifactRecord):

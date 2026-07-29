@@ -26,6 +26,7 @@ from reader.workbench.records.model import (
     record_from_dict,
     record_to_dict,
     sha256_file,
+    verify_record_artifact_integrity,
 )
 
 from .evidence import RecordInputEvidence, capture_artifact_evidence
@@ -50,12 +51,12 @@ class RecordStore:
         experiment_root: Path | None = None,
         create: bool = True,
     ) -> None:
-        self.root = outputs_dir
+        self.root = Path(outputs_dir).expanduser().absolute()
         self.contracts = contracts
         self.artifacts_dir = self.root / "artifacts"
         self.manifests_dir = self.root / "manifests"
         self.records_path = self.manifests_dir / "records.json"
-        self.experiment_root = (experiment_root or outputs_dir.parent).resolve(strict=False)
+        self.experiment_root = Path(experiment_root or self.root.parent).expanduser().absolute()
         if plots_subdir in (None, "", ".", "./"):
             self.plots_dir = self.root
         else:
@@ -233,6 +234,7 @@ class RecordStore:
                         f"Resolved input {item.label!r} is record {upstream.record_id!r}, "
                         f"expected {item.ref.record_id!r}"
                     )
+                verify_record_artifact_integrity(upstream, outputs_dir=self.root)
                 evidence.append(
                     RecordInputEvidence(
                         label=item.label,
@@ -258,6 +260,7 @@ class RecordStore:
                         f"{upstream.ref.experiment_id}:{upstream.ref.record_id}, expected "
                         f"{item.ref.experiment_id}:{item.ref.record_id}"
                     )
+                upstream.verify_artifact_integrity()
                 evidence.append(
                     RecordInputEvidence(
                         label=item.label,
@@ -305,12 +308,19 @@ class RecordStore:
                 current_revision = record_revision_digest(current, outputs_dir=self.root)
                 if current_revision != item.record_revision_digest:
                     raise RecordError(f"Input record {item.ref.record_id!r} changed after input evidence was captured.")
+                try:
+                    verify_record_artifact_integrity(current, outputs_dir=self.root)
+                except RecordError as exc:
+                    raise RecordError(
+                        f"Input record {item.ref.record_id!r} changed after input evidence was captured: {exc}"
+                    ) from exc
                 continue
             if isinstance(item.ref, SourceRecordRef):
                 from .sources import resolve_source_record  # noqa: PLC0415
 
                 try:
                     current = resolve_source_record(item.ref, contracts=self.contracts)
+                    current.verify_artifact_integrity()
                 except RecordError as exc:
                     raise RecordError(
                         f"Source record {item.ref.experiment_id}:{item.ref.record_id} changed after input "
@@ -424,18 +434,6 @@ class RecordStore:
         producer_kind: WorkbenchProducerKind = "pipeline",
         source_recipe: RecipeSource | None = None,
     ) -> DataFrameArtifactRecord:
-        self.ensure_layout()
-        base_name = f"{producer_id}.{producer_plugin.replace('/', '_')}"
-        base_step_dir = self.artifacts_dir / base_name
-        catalog = self._read_catalog()
-        previous_payload = catalog["latest"].get(record_id)
-        previous_record = None
-        if previous_payload is not None:
-            previous_record = self._materialize(record_id, previous_payload)
-            if not isinstance(previous_record, DataFrameArtifactRecord):
-                raise RecordError(
-                    f"Record id {record_id!r} is already used by a non-dataframe record; choose a unique id."
-                )
         self.contracts.validate(df, contract_id=contract_id, where=f"{producer_id}:{out_name}")
         producer = RecordProducer(
             kind=producer_kind,
@@ -451,6 +449,18 @@ class RecordStore:
         effective_build_identity = build_identity or current_build_identity()
         effective_code_digest = code_digest or effective_build_identity.source_digest
         effective_producer_config_digest = producer_config_digest or config_digest
+        self.ensure_layout()
+        base_name = f"{producer_id}.{producer_plugin.replace('/', '_')}"
+        base_step_dir = self.artifacts_dir / base_name
+        catalog = self._read_catalog()
+        previous_payload = catalog["latest"].get(record_id)
+        previous_record = None
+        if previous_payload is not None:
+            previous_record = self._materialize(record_id, previous_payload)
+            if not isinstance(previous_record, DataFrameArtifactRecord):
+                raise RecordError(
+                    f"Record id {record_id!r} is already used by a non-dataframe record; choose a unique id."
+                )
         filename = f"{out_name}.parquet"
         staged_path: Path | None = None
         revision_dir: Path | None = None
@@ -569,7 +579,7 @@ class RecordStore:
         path_descriptions: tuple[PathDescription, ...],
         build_identity: BuildIdentity | None = None,
     ) -> FileBundleRecord:
-        """Append a typed file bundle produced through a notebook artifact sink."""
+        """Append a typed file bundle produced through canonical artifact publication."""
 
         return self._append_file_bundle_record(
             producer=RecordProducer(kind="notebook", id=producer_id, template=producer_template),
@@ -621,6 +631,13 @@ class RecordStore:
         file_evidence = tuple(capture_artifact_evidence(path, root=self.root) for path in materialized_paths)
         effective_build_identity = build_identity or current_build_identity()
         record_inputs = self._require_captured_inputs(inputs)
+        self.ensure_layout()
+        catalog = self._read_catalog()
+        previous_payload = catalog["latest"].get(record_id)
+        if previous_payload is not None:
+            previous_record = self._materialize(record_id, previous_payload)
+            if isinstance(previous_record, DataFrameArtifactRecord):
+                raise RecordError(f"Record id {record_id!r} is already used by a dataframe record; choose a unique id.")
         record = FileBundleRecord(
             record_id=record_id,
             kind="file_bundle",
@@ -635,8 +652,6 @@ class RecordStore:
             producer_config_digest=producer_config_digest or config_digest,
             build_identity=effective_build_identity,
         )
-        self.ensure_layout()
-        catalog = self._read_catalog()
         payload = record_to_dict(record, outputs_dir=self.root)
         self._assert_captured_inputs_current(record_inputs)
         catalog["latest"][record_id] = payload

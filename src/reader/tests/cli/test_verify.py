@@ -61,7 +61,13 @@ def test_verify_json_reports_verified_v5_records(tmp_path) -> None:
     payload = cli_success_data(result.output)
     assert payload["schema"] == "reader.verify/v1"
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert payload["summary"] == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
 
 
 def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) -> None:
@@ -85,7 +91,13 @@ def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) ->
     assert result.exit_code == 0
     payload = cli_success_data(result.output)
     assert payload["status"] == "ok"
-    assert payload["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert payload["summary"] == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
 
 
 def test_verify_json_is_machine_readable_and_nonzero_for_corruption(tmp_path) -> None:

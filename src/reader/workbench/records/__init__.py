@@ -1,4 +1,3 @@
-from .discovery import discover_dataframe_records
 from .evidence import ArtifactEvidence, RecordInputEvidence, capture_artifact_evidence
 from .identity import BuildIdentity, current_build_identity, digest_json
 from .model import (
@@ -12,6 +11,7 @@ from .model import (
     record_paths,
     record_revision_digest,
     record_to_dict,
+    verify_record_artifact_integrity,
 )
 from .sources import ResolvedSourceRecord, SourceRecordCollection, resolve_source_record
 from .store import RecordStore
@@ -34,11 +34,11 @@ __all__ = [
     "capture_artifact_evidence",
     "current_build_identity",
     "digest_json",
-    "discover_dataframe_records",
     "record_from_dict",
     "record_revision_digest",
     "resolve_source_record",
     "record_paths",
     "record_to_dict",
     "verify_record_store",
+    "verify_record_artifact_integrity",
 ]

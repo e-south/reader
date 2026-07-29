@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_engine_contracts.py
-
-Tests for engine contract enforcement and writes aliasing.
---------------------------------------------------------------------------------
-"""
+"""Tests for engine contract enforcement and writes aliasing."""
 
 from pathlib import Path
 from types import SimpleNamespace

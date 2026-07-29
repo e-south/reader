@@ -219,6 +219,10 @@ class InvocationLedger:
         flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
             descriptor = os.open(self.path, flags, 0o644)
+        except OSError as exc:
+            raise ExecutionError(f"Could not append invocation event under outputs/manifests: {exc}") from exc
+        try:
+            initial_size = os.fstat(descriptor).st_size
             try:
                 written = os.write(descriptor, payload)
                 if written != len(payload):
@@ -226,10 +230,21 @@ class InvocationLedger:
                         f"Invocation ledger append was incomplete: wrote {written} of {len(payload)} bytes"
                     )
                 os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            except BaseException as exc:
+                try:
+                    os.ftruncate(descriptor, initial_size)
+                    os.fsync(descriptor)
+                except OSError as rollback_error:
+                    raise ExecutionError(
+                        "Invocation ledger append failed and Reader could not restore the previous file boundary"
+                    ) from rollback_error
+                if isinstance(exc, OSError):
+                    raise ExecutionError(f"Could not append invocation event under outputs/manifests: {exc}") from exc
+                raise
         except OSError as exc:
-            raise ExecutionError(f"Could not append invocation event under outputs/manifests: {exc}") from exc
+            raise ExecutionError(f"Could not inspect invocation ledger under outputs/manifests: {exc}") from exc
+        finally:
+            os.close(descriptor)
 
 
 def capture_revision_snapshot(store: Any) -> dict[str, dict[str, Any]]:

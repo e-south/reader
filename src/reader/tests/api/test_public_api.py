@@ -31,7 +31,10 @@ from reader.api import (
     verify,
 )
 from reader.errors import ConfigError, RegistryError
+from reader.runtime import builtin_runtime
 from reader.tests.support.configs import base_reader_config, write_config
+from reader.workbench.config import ReaderSpec
+from reader.workbench.decl import build_workbench_decl
 
 
 def _generic_experiment(tmp_path: Path) -> Path:
@@ -55,6 +58,9 @@ def test_open_experiment_accepts_config_or_directory_without_creating_outputs(tm
     assert from_directory.identity == from_config.identity
     assert from_config.identity.id == "example"
     assert from_config.identity.protocol == "workbench/generic"
+    assert not hasattr(from_config, "spec")
+    assert not hasattr(from_config, "declaration")
+    assert not hasattr(from_config, "runtime")
     assert not (config_path.parent / "outputs").exists()
 
 
@@ -108,17 +114,20 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
             },
         ),
     )
-    experiment = open_experiment(config_path)
-    layout = experiment.declaration.experiment_semantics.layout
-    store = experiment.runtime.record_store(
+    runtime = builtin_runtime()
+    spec = ReaderSpec.load(config_path)
+    declaration = build_workbench_decl(spec, source_path=config_path, protocols=runtime.protocols)
+    experiment = open_experiment(config_path, runtime=runtime)
+    layout = declaration.experiment_semantics.layout
+    store = runtime.record_store(
         layout.outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
-        experiment_root=experiment.declaration.experiment.root,
+        experiment_root=declaration.experiment.root,
     )
-    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
     for producer_id, record_id, config_digest in (
-        ("ingest", "ingest/df", experiment.declaration.config_digest),
+        ("ingest", "ingest/df", declaration.config_digest),
         ("retired", "retired/df", "sha256:retired-config"),
     ):
         store.persist_dataframe(
@@ -136,7 +145,13 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
     result = verify(experiment)
 
     assert result.status == "ok"
-    assert result.summary == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert result.summary == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert [record["record_id"] for record in result.records] == ["ingest/df"]
 
 

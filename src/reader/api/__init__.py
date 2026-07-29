@@ -1,5 +1,6 @@
 """Stable, task-oriented interfaces for Reader experiments and plugins."""
 
+from .artifacts import ArtifactBundleResult, ArtifactSpec, publish_artifact_bundle
 from .facade import (
     describe_plugin,
     inspect,
@@ -8,6 +9,7 @@ from .facade import (
     plan,
     plots,
     plugins,
+    read_dataframe,
     records,
     run,
     validate,
@@ -15,6 +17,7 @@ from .facade import (
 )
 from .models import (
     ApiResult,
+    DataFrameRecordResult,
     Experiment,
     ExperimentEvidence,
     ExperimentIdentity,
@@ -36,6 +39,9 @@ from .models import (
 
 __all__ = [
     "ApiResult",
+    "ArtifactBundleResult",
+    "ArtifactSpec",
+    "DataFrameRecordResult",
     "Experiment",
     "ExperimentEvidence",
     "ExperimentIdentity",
@@ -60,6 +66,8 @@ __all__ = [
     "plan",
     "plots",
     "plugins",
+    "publish_artifact_bundle",
+    "read_dataframe",
     "records",
     "run",
     "validate",

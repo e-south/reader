@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -9,11 +10,11 @@ from rich.console import Console
 from rich.theme import Theme
 
 from reader.contracts import builtin_contract_catalog
-from reader.errors import ConfigError, ExecutionError, RecordError
+from reader.errors import ConfigError, ExecutionError, InvocationFinalizationError, RecordError
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics
-from reader.workbench.assets import AssetCatalog, build_plugin_asset
+from reader.workbench.assets import build_plugin_asset
 from reader.workbench.decl.model import (
     ExperimentDecl,
     NotebookDecl,
@@ -98,7 +99,6 @@ def _synthetic_decl_and_runtime(tmp_path: Path) -> tuple[WorkbenchDecl, ReaderRu
         contracts=builtin_contract_catalog(),
         protocols=builtin_protocol_catalog(),
         plugins=registry,
-        assets=AssetCatalog([]),
     )
     return decl, runtime
 
@@ -165,6 +165,68 @@ def test_invocation_ledger_writes_attempt_and_terminal_result(tmp_path: Path) ->
             "revision_digest": "sha256:revision",
         }
     ]
+
+
+def test_invocation_ledger_restores_previous_boundary_after_short_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    attempt = ledger.append_attempt(
+        config_digest="sha256:config",
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    before = ledger.path.read_bytes()
+    original_write = os.write
+
+    def _short_write(descriptor: int, payload: bytes) -> int:
+        partial = payload[: max(1, len(payload) // 2)]
+        return original_write(descriptor, partial)
+
+    monkeypatch.setattr(os, "write", _short_write)
+
+    with pytest.raises(ExecutionError, match="append was incomplete"):
+        ledger.append_result(attempt, exit_status=0, produced_record_revisions=[])
+
+    assert ledger.path.read_bytes() == before
+    assert [event["event"] for event in _events(ledger.path)] == ["attempt"]
+
+
+def test_invocation_ledger_restores_previous_boundary_after_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    attempt = ledger.append_attempt(
+        config_digest="sha256:config",
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    before = ledger.path.read_bytes()
+    original_fsync = os.fsync
+    calls = 0
+
+    def _fail_once(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("fsync failed")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", _fail_once)
+
+    with pytest.raises(ExecutionError, match="Could not append invocation event"):
+        ledger.append_result(attempt, exit_status=0, produced_record_revisions=[])
+
+    assert ledger.path.read_bytes() == before
+    assert [event["event"] for event in _events(ledger.path)] == ["attempt"]
 
 
 def test_invocation_ledger_confines_outputs_to_experiment_root(tmp_path: Path) -> None:
@@ -407,6 +469,37 @@ def test_run_spec_returns_exact_produced_record_revisions(tmp_path: Path) -> Non
     result_event = _events(result.ledger_path)[1]
     assert result_event["invocation_id"] == result.invocation_id
     assert result_event["produced_record_revisions"] == [revision.to_dict()]
+
+
+def test_run_spec_preserves_committed_records_when_success_result_cannot_be_confirmed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+
+    def _fail_result(*_args, **_kwargs) -> None:
+        raise ExecutionError("ledger unavailable")
+
+    monkeypatch.setattr(InvocationLedger, "append_result", _fail_result)
+
+    with pytest.raises(InvocationFinalizationError, match="records were committed") as raised:
+        run_spec(
+            decl,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    store = runtime.record_store(outputs, experiment_root=tmp_path, create=False)
+    assert store.latest_dataframe("ingest/df") is not None
+    ledger_path = outputs / "manifests" / "invocations.jsonl"
+    assert [event["event"] for event in _events(ledger_path)] == ["attempt"]
+    assert raised.value.invocation_id
+    assert raised.value.produced_record_revisions[0]["record_id"] == "ingest/df"
 
 
 def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_path: Path) -> None:

@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/contracts/model.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,21 +20,32 @@ class ColumnRule:
     allow_nan: bool = False
     monotone_non_decreasing: bool = False
     nonnegative: bool = False
-    allowed_values: list[str] | None = None
+    allowed_values: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.allowed_values is not None:
+            object.__setattr__(self, "allowed_values", tuple(self.allowed_values))
 
 
 @dataclass(frozen=True)
 class DataFrameContract:
     id: ContractId
     description: str
-    columns: list[ColumnRule]
-    unique_keys: list[list[str]]
+    columns: tuple[ColumnRule, ...]
+    unique_keys: tuple[tuple[str, ...], ...]
     parents: tuple[ContractId, ...] = ()
     domain: str | None = None
     kind: str | None = None
-    primary_index: list[str] | None = None
+    primary_index: tuple[str, ...] | None = None
     notes: str | None = None
     allow_extra_columns: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "columns", tuple(self.columns))
+        object.__setattr__(self, "unique_keys", tuple(tuple(key) for key in self.unique_keys))
+        object.__setattr__(self, "parents", tuple(self.parents))
+        if self.primary_index is not None:
+            object.__setattr__(self, "primary_index", tuple(self.primary_index))
 
 
 def _is_dtype(series: pd.Series, want: DType) -> bool:
@@ -89,6 +91,10 @@ def validate_df(df: pd.DataFrame, contract: DataFrameContract, *, where: str) ->
             )
         if rule.nonnegative and (pd.to_numeric(s, errors="coerce") < 0).any():
             raise ContractError(f"[{where}] contract {contract.id}: column '{rule.name}' must be nonnegative")
+        if rule.monotone_non_decreasing and not s.dropna().is_monotonic_increasing:
+            raise ContractError(
+                f"[{where}] contract {contract.id}: column '{rule.name}' must be monotone non-decreasing"
+            )
         if rule.allowed_values is not None:
             bad = sorted(set(map(str, s.dropna().astype(str))) - set(map(str, rule.allowed_values)))
             if bad:

@@ -8,8 +8,15 @@ import pytest
 
 from reader.contracts import builtin_contract_catalog
 from reader.errors import RecordError
+from reader.workbench.engine.invocations import InvocationLedger
 from reader.workbench.graph import FileRef, ProvenanceInput, RecordRef
-from reader.workbench.records import ArtifactEvidence, RecordStore, RecordVerificationScope, verify_record_store
+from reader.workbench.records import (
+    ArtifactEvidence,
+    RecordStore,
+    RecordVerificationScope,
+    record_revision_digest,
+    verify_record_store,
+)
 from reader.workbench.records.identity import current_build_identity
 
 
@@ -50,6 +57,35 @@ def _write_record(tmp_path: Path):
     return store, record
 
 
+def _write_valid_invocation(tmp_path: Path):
+    store, record = _write_record(tmp_path)
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=store.root)
+    attempt = ledger.append_attempt(
+        config_digest="sha256:" + ("a" * 64),
+        build_identity=current_build_identity(),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    ledger.append_result(
+        attempt,
+        exit_status=0,
+        produced_record_revisions=[
+            {
+                "record_id": record.record_id,
+                "revision": 1,
+                "revision_digest": record_revision_digest(record, outputs_dir=store.root),
+            }
+        ],
+    )
+    events = [json.loads(line) for line in ledger.path.read_text(encoding="utf-8").splitlines()]
+    return store, ledger.path, events
+
+
+def _rewrite_invocations(path: Path, events: list[dict[str, object]]) -> None:
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+
 def test_new_records_are_schema_v5_and_verify_without_loading_dataframe(tmp_path: Path) -> None:
     store, record = _write_record(tmp_path)
 
@@ -67,7 +103,161 @@ def test_new_records_are_schema_v5_and_verify_without_loading_dataframe(tmp_path
     assert payload["size_bytes"] == record.path.stat().st_size
     assert report["schema"] == "reader.verify/v1"
     assert report["status"] == "ok"
-    assert report["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
+
+
+def test_verifier_accepts_writer_invocation_contract_and_catalog_revision(tmp_path: Path) -> None:
+    store, _ledger_path, _events = _write_valid_invocation(tmp_path)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "ok"
+    assert report["summary"]["invocations_checked"] == 1
+    assert report["summary"]["invocation_failures"] == 0
+
+
+def test_verifier_accepts_consistent_failed_invocation_result(tmp_path: Path) -> None:
+    store, _record = _write_record(tmp_path)
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=store.root)
+    attempt = ledger.append_attempt(
+        config_digest="sha256:config",
+        build_identity=current_build_identity(),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    ledger.append_result(
+        attempt,
+        exit_status=1,
+        produced_record_revisions=[],
+        failure=RuntimeError("synthetic failure"),
+    )
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "ok"
+    assert report["summary"]["invocation_failures"] == 0
+
+
+def test_verifier_rejects_result_before_attempt(tmp_path: Path) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    _rewrite_invocations(ledger_path, list(reversed(events)))
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert "invocation.order_invalid" in {issue["code"] for issue in report["issues"]}
+
+
+def test_verifier_rejects_malformed_invocation_fields(tmp_path: Path) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    events[0]["unexpected"] = True
+    _rewrite_invocations(ledger_path, events)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert "invocation.event_invalid" in {issue["code"] for issue in report["issues"]}
+
+
+def test_verifier_rejects_changed_invocation_identity(tmp_path: Path) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    events[1]["config_digest"] = "sha256:" + ("b" * 64)
+    _rewrite_invocations(ledger_path, events)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert "invocation.identity_mismatch" in {issue["code"] for issue in report["issues"]}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "failed"),
+        ("exit_status", 1),
+        ("failure", {"type": "RuntimeError", "reason": "contradicts success"}),
+    ],
+)
+def test_verifier_rejects_inconsistent_invocation_result_state(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    events[1][field] = value
+    _rewrite_invocations(ledger_path, events)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert "invocation.event_invalid" in {issue["code"] for issue in report["issues"]}
+
+
+def test_verifier_rejects_malformed_produced_revision(tmp_path: Path) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    events[1]["produced_record_revisions"][0]["revision"] = 0
+    _rewrite_invocations(ledger_path, events)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert "invocation.event_invalid" in {issue["code"] for issue in report["issues"]}
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("revision", 2, "invocation.revision_missing"),
+        ("revision_digest", "sha256:" + ("b" * 64), "invocation.revision_mismatch"),
+    ],
+)
+def test_verifier_reconciles_produced_revisions_with_catalog_history(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    expected_code: str,
+) -> None:
+    store, ledger_path, events = _write_valid_invocation(tmp_path)
+    events[1]["produced_record_revisions"][0][field] = value
+    _rewrite_invocations(ledger_path, events)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert expected_code in {issue["code"] for issue in report["issues"]}
 
 
 @pytest.mark.parametrize("corruption", ["empty_history", "divergent_final"])
@@ -87,7 +277,13 @@ def test_verifier_rejects_latest_history_lineage_corruption(tmp_path: Path, corr
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 0,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["issues"][0]["code"] == "catalog.invalid"
     assert "history" in report["issues"][0]["reason"]
 
@@ -108,7 +304,13 @@ def test_verifier_reports_unreadable_catalogs_as_invalid(tmp_path: Path, corrupt
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 0,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["issues"][0]["code"] == "catalog.invalid"
     assert "records.json" in report["issues"][0]["reason"]
 
@@ -131,7 +333,13 @@ def test_verifier_marks_records_from_another_reader_build_unverifiable(tmp_path:
     )
 
     assert report["status"] == "unverifiable"
-    assert report["summary"] == {"checked": 1, "failed": 0, "unverifiable": 1}
+    assert report["summary"] == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 1,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["records"][0]["issues"][0]["code"] == "build.identity_mismatch"
 
 
@@ -154,7 +362,13 @@ def test_verifier_rejects_malformed_build_digests_as_invalid_catalogs(tmp_path: 
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 0,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["issues"][0]["code"] == "catalog.invalid"
     assert "sha256" in report["issues"][0]["reason"]
 
@@ -186,7 +400,13 @@ def test_verifier_scopes_records_to_the_current_workbench_declaration(tmp_path: 
     )
 
     assert report["status"] == "ok"
-    assert report["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 1,
+        "failed": 0,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert [record["record_id"] for record in report["records"]] == ["current/df"]
 
 
@@ -218,7 +438,13 @@ def test_verifier_rejects_retired_record_schemas_as_invalid_catalogs(tmp_path: P
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 0,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["issues"][0]["code"] == "catalog.invalid"
     assert "schema_version must be 5" in report["issues"][0]["reason"]
 
@@ -234,7 +460,13 @@ def test_verifier_reports_corrupt_dataframe_bytes(tmp_path: Path) -> None:
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 1, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 1,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["records"][0]["issues"][0]["code"] == "artifact.size_mismatch"
 
 
@@ -253,7 +485,13 @@ def test_verifier_reports_artifact_io_failures_as_structured_issues(tmp_path: Pa
     )
 
     assert report["status"] == "failed"
-    assert report["summary"] == {"checked": 1, "failed": 1, "unverifiable": 0}
+    assert report["summary"] == {
+        "checked": 1,
+        "failed": 1,
+        "unverifiable": 0,
+        "invocations_checked": 0,
+        "invocation_failures": 0,
+    }
     assert report["records"][0]["issues"][0]["code"] == "artifact.io_error"
     assert "permission denied" in report["records"][0]["issues"][0]["reason"]
 

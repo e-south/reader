@@ -50,7 +50,13 @@ def verify(
         report = {
             "schema": "reader.verify/v1",
             "status": "failed",
-            "summary": {"checked": 0, "failed": 1, "unverifiable": 0},
+            "summary": {
+                "checked": 0,
+                "failed": 1,
+                "unverifiable": 0,
+                "invocations_checked": 0,
+                "invocation_failures": 0,
+            },
             "issues": [
                 {
                     "code": "experiment.invalid",
@@ -93,7 +99,9 @@ def _render_report(report: dict[str, object]) -> None:
     shared.console.print(
         Panel.fit(
             f"[{color}]{status}[/{color}] • checked={summary['checked']} • "
-            f"failed={summary['failed']} • unverifiable={summary['unverifiable']}",
+            f"failed={summary['failed']} • unverifiable={summary['unverifiable']} • "
+            f"invocations={summary['invocations_checked']} • "
+            f"invocation failures={summary['invocation_failures']}",
             title="Record verification",
             border_style=color,
             box=box.ROUNDED,
