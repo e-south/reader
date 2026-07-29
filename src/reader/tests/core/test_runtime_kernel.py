@@ -17,7 +17,7 @@ def test_builtin_runtime_is_stable_and_composes_builtin_world(tmp_path: Path) ->
     assert builtin_runtime() is runtime
     assert runtime.plugins.contracts is runtime.contracts
     assert runtime.bind_protocol(ProtocolBinding(id="workbench/generic")).id == "workbench/generic"
-    assert runtime.assets.resolve("transform/sample_map", kind="plugin").plugin_id == "transform/sample_map"
+    assert not hasattr(runtime, "assets")
 
     store = runtime.record_store(tmp_path / "outputs", create=False)
 

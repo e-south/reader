@@ -26,25 +26,6 @@ def load_job_models(job_path: Path, *, runtime: ReaderRuntime | None = None) -> 
     )
 
 
-def resolve_output_experiment(job: str | Path) -> Path:
-    """Resolve the canonical outputs directory for one experiment-owned publication."""
-
-    job_path = infer_job_path(str(job))
-    _, decl = load_job_models(job_path)
-    experiments_root = find_nearest_experiments_dir(job_path.parent)
-    try:
-        relative_root = decl.experiment.root.relative_to(experiments_root)
-    except ValueError as exc:
-        raise typer.BadParameter(
-            f"Output experiment must live under {experiments_root}: {decl.experiment.root}"
-        ) from exc
-    if len(relative_root.parts) != 2 or len(relative_root.parts[0]) != 4 or not relative_root.parts[0].isdigit():
-        raise typer.BadParameter(
-            f"Output experiment must use the canonical experiments/<year>/<experiment>/ layout: {decl.experiment.root}"
-        )
-    return decl.experiment_semantics.layout.outputs_dir
-
-
 def has_sfxi_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
     return _load("reader.workbench.engine._shared").pipeline_has_plugin(decl, runtime=runtime, tag="sfxi")
 
@@ -209,7 +190,7 @@ def infer_job_path(job: str | None) -> Path:
                 hidden_job = jobs_with_scaffolds_lookup[idx]
                 raise typer.BadParameter(
                     f"Experiment index {idx} points to hidden scaffold/template config {hidden_job.parent} under {root_path}. "
-                    f"Numeric indexes only address the default 'uv run reader ls' inventory. "
+                    "Numeric indexes only address the default 'reader ls' inventory. "
                     "Pass the path explicitly for scaffold/template configs."
                 )
             scaffold_hint = ""

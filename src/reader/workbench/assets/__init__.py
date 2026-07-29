@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
-    "builtins": {"build_workbench_asset_catalog", "static_asset_catalog"},
+    "builtins": {"static_asset_catalog"},
     "types": {
         "AssetCapabilities",
         "AssetCatalog",

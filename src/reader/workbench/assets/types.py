@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-from reader.domains.semantics import PluginDomain, validate_plugin_domain
 from reader.errors import ConfigError
-from reader.workbench.ontology import PluginCategory, PluginSemantics
+from reader.workbench.ontology import PluginCategory, PluginDomain, PluginSemantics, validate_plugin_domain
 
 AssetKind = Literal["plugin", "template"]
 

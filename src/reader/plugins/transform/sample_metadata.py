@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/sample_metadata.py
-
-Merge tidy measurements with a sample metadata table (keyed by sample_id by default).
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Merge tidy measurements with a sample metadata table (keyed by sample_id by default)."""
 
 from __future__ import annotations
 

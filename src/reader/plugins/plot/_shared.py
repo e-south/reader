@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/_shared.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from abc import abstractmethod

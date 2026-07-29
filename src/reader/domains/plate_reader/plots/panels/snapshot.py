@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/panels/snapshot.py
-
-Shared snapshot selection and drawing primitives.
---------------------------------------------------------------------------------
-"""
+"""Shared snapshot selection and drawing primitives."""
 
 from __future__ import annotations
 

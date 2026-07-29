@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/sfxi/selection.py
-
-SFXI selection: time picking + cornerization + replicate aggregation.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""SFXI selection: time picking + cornerization + replicate aggregation."""
 
 from __future__ import annotations
 

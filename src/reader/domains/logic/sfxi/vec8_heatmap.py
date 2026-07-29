@@ -18,13 +18,13 @@ _NUMERIC_COLUMNS = (
 )
 
 
-def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, source_id: str) -> pd.DataFrame:
+def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, experiment_id: str) -> pd.DataFrame:
     """Adapt one experiment's sfxi.vec8.v3 table to the heatmap renderer contract."""
 
     require_vec8_columns(vec8)
     if vec8.empty:
         raise SFXIError("SFXI vec8 heatmap has no rows to plot.")
-    normalized_source_id = _non_empty_text(source_id, field="source_id")
+    normalized_experiment_id = _non_empty_text(experiment_id, field="experiment_id")
 
     frame = vec8.copy().reset_index(drop=True)
     _require_non_empty_text_columns(frame, columns=("design_id", "reference_design_id"))
@@ -39,26 +39,25 @@ def normalize_experiment_vec8_heatmap_frame(vec8: pd.DataFrame, *, source_id: st
     frame["flat_logic"] = frame["flat_logic"].astype(bool)
 
     frame["source_index"] = 0
-    frame["source_id"] = normalized_source_id
-    frame["source_kind"] = "experiment_record"
+    frame["source_experiment_id"] = normalized_experiment_id
     frame["source_row_index"] = range(len(frame))
-    frame["row_label"] = _row_labels(frame, source_id=normalized_source_id)
+    frame["row_label"] = _row_labels(frame, experiment_id=normalized_experiment_id)
     return frame
 
 
 def render_experiment_sfxi_vec8_heatmap(
     vec8: pd.DataFrame,
     *,
-    source_id: str,
+    experiment_id: str,
     title: str | None = None,
     max_y_tick_labels: int = 80,
 ):
-    frame = normalize_experiment_vec8_heatmap_frame(vec8, source_id=source_id)
+    frame = normalize_experiment_vec8_heatmap_frame(vec8, experiment_id=experiment_id)
     return render_sfxi_vec8_heatmap(frame, title=title, max_y_tick_labels=max_y_tick_labels)
 
 
-def _row_labels(frame: pd.DataFrame, *, source_id: str) -> list[str]:
-    return [f"{source_id}::{design_id}" for design_id in frame["design_id"].astype(str).tolist()]
+def _row_labels(frame: pd.DataFrame, *, experiment_id: str) -> list[str]:
+    return [f"{experiment_id}::{design_id}" for design_id in frame["design_id"].astype(str).tolist()]
 
 
 def _finite_numeric(series: pd.Series, *, column: str, allow_nan: bool = False) -> pd.Series:

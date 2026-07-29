@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/domains/logic/crosstalk/test_pairs.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 import pandas as pd
 import pytest
 

@@ -1,15 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/distributions.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
-
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +9,7 @@ from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
-from .common import alias_column, best_subplot_grid, colors_for, emit_plot_figure, require_columns, warn_if_empty
+from .common import alias_column, best_subplot_grid, colors_for, plot_figure, require_columns, warn_if_empty
 from .grouping import GroupMatch, resolve_groups
 
 
@@ -52,7 +41,6 @@ def plot_distributions(
     *,
     df: pd.DataFrame,
     blanks: pd.DataFrame,
-    output_dir: Path | None,
     channels: list[str],
     # grouping
     group_on: str | None = "design_id",
@@ -177,7 +165,7 @@ def plot_distributions(
 
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+                figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
 
     else:  # panel_by == "group"
         if not gcol:
@@ -228,5 +216,5 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
     return figures

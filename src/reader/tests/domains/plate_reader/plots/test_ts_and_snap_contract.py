@@ -42,7 +42,6 @@ def _windowed_frame() -> pd.DataFrame:
 def test_time_series_window_does_not_change_snapshot_endpoint() -> None:
     figures = plot_ts_and_snap(
         df=_windowed_frame(),
-        output_dir=None,
         group_on=None,
         pool_sets=None,
         ts_channel="OD600",
@@ -76,7 +75,6 @@ def test_time_series_levels_follow_the_windowed_channel_rows() -> None:
 
     figures = plot_ts_and_snap(
         df=frame,
-        output_dir=None,
         group_on=None,
         pool_sets=None,
         ts_channel="OD600",
@@ -112,7 +110,6 @@ def test_paired_row_rejects_heterogeneous_treatment_domains() -> None:
     with pytest.raises(ValueError, match="identical ts_hue levels"):
         plot_ts_and_snap(
             df=frame,
-            output_dir=None,
             group_on="group",
             pool_sets=[{"G1": ["G1"]}, {"G2": ["G2"]}],
             group_layout="paired_row",
@@ -138,7 +135,6 @@ def test_paired_row_compares_only_visible_time_series_levels() -> None:
 
     figures = plot_ts_and_snap(
         df=frame,
-        output_dir=None,
         group_on="group",
         pool_sets=[{"G1": ["G1"]}, {"G2": ["G2"]}],
         group_layout="paired_row",
@@ -173,7 +169,6 @@ def test_paired_row_uses_one_treatment_color_map() -> None:
 
     figures = plot_ts_and_snap(
         df=pd.DataFrame(rows),
-        output_dir=None,
         group_on="group",
         pool_sets=[{"G1": ["G1"]}, {"G2": ["G2"]}],
         group_layout="paired_row",
@@ -212,7 +207,6 @@ def test_snapshot_only_group_uses_snapshot_hue_palette_without_time_series_rows(
 
     figures = plot_ts_and_snap(
         df=frame,
-        output_dir=None,
         group_on="group",
         pool_sets=[{"complete": ["complete"]}, {"snapshot-only": ["snapshot-only"]}],
         ts_channel="OD600",
@@ -243,19 +237,19 @@ def test_composite_figure_config_rejects_unknown_keys() -> None:
         )
 
 
-def test_composite_figure_config_accepts_scalar_extension() -> None:
+def test_composite_figure_returns_publication_metadata() -> None:
     cfg = TSAndSnapCfg.model_validate(
         {
             "ts_channel": "OD600",
             "ts_hue": "treatment",
             "snap_time": 12.0,
-            "fig": {"ext": "png"},
+            "fig": {"ext": "png", "dpi": 144},
+            "filename": "endpoint_pair",
         }
     )
 
     figures = plot_ts_and_snap(
         df=_windowed_frame(),
-        output_dir=None,
         group_on=None,
         pool_sets=None,
         ts_channel="OD600",
@@ -264,9 +258,10 @@ def test_composite_figure_config_accepts_scalar_extension() -> None:
         snap_channel="RFP/OD600",
         snap_time=12.0,
         fig_kwargs=cfg.fig.model_dump(exclude_none=True),
+        filename=cfg.filename,
     )
 
-    assert figures[0].ext == "png"
+    assert (figures[0].filename, figures[0].ext, figures[0].dpi) == ("endpoint_pair", "png", 144)
     plt.close(figures[0].fig)
 
 
@@ -275,7 +270,6 @@ def test_iqr_error_bars_emit_no_deprecation_warning() -> None:
         warnings.simplefilter("error", DeprecationWarning)
         figures = plot_ts_and_snap(
             df=_windowed_frame(),
-            output_dir=None,
             group_on=None,
             pool_sets=None,
             ts_channel="OD600",

@@ -1,20 +1,11 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/domains/logic/sfxi/test_selection.py
-
-Aggregate replicates per corner and map treatments -> {00,10,01,11}.
-Also ensures we pick time 'nearest' and counts are correct for both channels.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Aggregate replicates per corner and map treatments -> {00,10,01,11}.
+Also ensures we pick time 'nearest' and counts are correct for both channels."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from reader.domains.logic.sfxi.api import load_sfxi_config
+from reader.domains.logic.sfxi.config import load_sfxi_config
 from reader.domains.logic.sfxi.math import compute_vec8
 from reader.domains.logic.sfxi.reference import resolve_reference_design_id
 from reader.domains.logic.sfxi.selection import cornerize_and_aggregate
@@ -384,8 +375,8 @@ def test_load_sfxi_config_requires_design_id():
         load_sfxi_config(cfg)
 
 
-def test_load_sfxi_config_rejects_reference_genotype():
+def test_load_sfxi_config_rejects_unknown_reference_field():
     cfg = _base_sfxi_cfg()
-    cfg["reference"] = {"genotype": "REF"}
-    with pytest.raises(ValueError, match="reference.genotype"):
+    cfg["reference"] = {"unexpected": "value"}
+    with pytest.raises(ValueError, match="sfxi.reference has unsupported setting: unexpected"):
         load_sfxi_config(cfg)

@@ -1,17 +1,8 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/sample_map.py
-
-Merge tidy measurement table with a sample metadata map. Cleans the map by:
+"""Merge tidy measurement table with a sample metadata map. Cleans the map by:
   1) dropping all-empty columns
   2) dropping positions that carry no metadata beyond 'position'
   3) asserting remaining raw positions exist in the map
-Then merges many:1 on 'position'.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+Then merges many:1 on 'position'."""
 
 from __future__ import annotations
 

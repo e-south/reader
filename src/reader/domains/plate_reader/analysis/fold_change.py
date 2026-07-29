@@ -1,23 +1,36 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/analysis/fold_change.py
-
-Fold-change table construction for tidy plate-reader traces.
---------------------------------------------------------------------------------
-"""
+"""Fold-change table construction for tidy plate-reader traces."""
 
 from __future__ import annotations
 
+import logging
 import math
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 
 from reader.domains.plate_reader.analysis.timepoints import nearest_time_per_key
 from reader.domains.plate_reader.ordering import smart_string_numeric_key
+
+
+@dataclass(frozen=True)
+class FoldChangeAnalysisSpec:
+    """Explicit domain inputs for one fold-change analysis."""
+
+    target: str
+    report_times: tuple[float, ...]
+    time_tolerance: float = 0.51
+    agg: Literal["median", "mean"] = "median"
+    treatment_column: str = "treatment"
+    group_by: tuple[str, ...] = ("design_id",)
+    use_global_baseline: bool = False
+    global_baseline_value: str | None = None
+    overrides: tuple[Mapping[str, Any], ...] = ()
+    fc_column: str = "FC"
+    log2fc_column: str = "log2FC"
+    attach_metadata: tuple[str, ...] = ("batch",)
 
 
 def synonyms_for(col: str) -> list[str]:
@@ -45,9 +58,9 @@ def resolve_baseline_label(
     *,
     use_global: bool,
     global_value: str | None,
-    overrides: list[dict[str, Any]],
+    overrides: Sequence[Mapping[str, Any]],
     group_by_cols: list[str],
-    logger=None,
+    logger: logging.Logger | None = None,
 ) -> str | None:
     syn_view: dict[str, Any] = {}
     for group_col in group_by_cols:
@@ -69,17 +82,14 @@ def resolve_baseline_label(
             return str(rule["baseline_value"])
     if use_global and global_value is not None:
         return str(global_value)
-    try:
-        if logger is not None and overrides:
-            keys = ", ".join(group_by_cols)
-            logger.debug("fold_change: no override matched for {%s}=%s", keys, [row_like.get(k) for k in group_by_cols])
-    except Exception:
-        pass
+    if logger is not None and overrides:
+        keys = ", ".join(group_by_cols)
+        logger.debug("fold_change: no override matched for {%s}=%s", keys, [row_like.get(k) for k in group_by_cols])
     return None
 
 
 def log_fold_change_summary(
-    ctx,
+    logger: logging.Logger | None,
     *,
     target: str,
     timepoint: float,
@@ -89,54 +99,60 @@ def log_fold_change_summary(
     rows_emitted: int,
     missing_baseline_groups: int,
 ) -> None:
-    try:
-        n_groups = int(stats[group_cols].drop_duplicates().shape[0])
-        n_treat = int(stats[treatment_col].nunique())
-        ctx.logger.info(
-            "fold_change • target=[accent]%s[/accent] • t≈%.2f h • groups=%d • treatments=%d • rows=%d • missing_baseline=%d",
-            target,
-            float(timepoint),
-            n_groups,
-            n_treat,
-            rows_emitted,
-            missing_baseline_groups,
-        )
-    except Exception:
-        pass
+    if logger is None:
+        return
+    n_groups = int(stats[group_cols].drop_duplicates().shape[0])
+    n_treat = int(stats[treatment_col].nunique())
+    logger.info(
+        "fold_change • target=[accent]%s[/accent] • t≈%.2f h • groups=%d • treatments=%d • rows=%d • missing_baseline=%d",
+        target,
+        float(timepoint),
+        n_groups,
+        n_treat,
+        rows_emitted,
+        missing_baseline_groups,
+    )
 
 
-def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
+def compute_fold_change_table(
+    df: pd.DataFrame,
+    *,
+    spec: FoldChangeAnalysisSpec,
+    logger: logging.Logger | None = None,
+) -> pd.DataFrame:
     df = df.copy()
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
 
-    treatment_col = pick_alias_column(df, cfg.treatment_column)
-    group_cols = [col for col in (pick_alias_column(df, group) for group in cfg.group_by) if col]
+    treatment_col = pick_alias_column(df, spec.treatment_column)
+    group_cols = [col for col in (pick_alias_column(df, group) for group in spec.group_by) if col]
 
     if treatment_col is None:
-        raise ValueError(f"fold_change: treatment column '{cfg.treatment_column}' (or its alias) is missing")
+        raise ValueError(f"fold_change: treatment column '{spec.treatment_column}' (or its alias) is missing")
     if not group_cols:
         raise ValueError("fold_change: none of the group_by columns are present in the dataframe")
 
-    target = str(cfg.target)
+    target = str(spec.target)
     base = df[df["channel"].astype(str) == target].copy()
     if base.empty:
-        ctx.logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
-        return build_empty_fold_change_table(group_cols=group_cols, cfg=cfg)
+        if logger is not None:
+            logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
+        return build_empty_fold_change_table(group_cols=group_cols, spec=spec)
 
     out_rows: list[dict[str, Any]] = []
     nearest_keys: list[str] = [col for col in (group_cols + [treatment_col, "position"]) if col in base.columns]
 
-    for timepoint in [float(item) for item in cfg.report_times]:
+    for timepoint in [float(item) for item in spec.report_times]:
         snapped = nearest_time_per_key(
-            base, target_time=float(timepoint), keys=nearest_keys, tol=float(cfg.time_tolerance)
+            base, target_time=float(timepoint), keys=nearest_keys, tol=float(spec.time_tolerance)
         )
         if snapped.empty:
-            ctx.logger.warning(
-                "fold_change: t≈%.2f h: no rows within ±%.3g h for target=%s",
-                timepoint,
-                cfg.time_tolerance,
-                target,
-            )
+            if logger is not None:
+                logger.warning(
+                    "fold_change: t≈%.2f h: no rows within ±%.3g h for target=%s",
+                    timepoint,
+                    spec.time_tolerance,
+                    target,
+                )
             continue
 
         agg_extras = {}
@@ -149,7 +165,7 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
             snapped.assign(time_used=pd.to_numeric(snapped["time"], errors="coerce"))
             .groupby([*group_cols, treatment_col], dropna=False)
             .agg(
-                val=("value", cfg.agg),
+                val=("value", spec.agg),
                 n=("value", "count"),
                 time_used=("time_used", "median"),
                 **agg_extras,
@@ -168,11 +184,11 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
 
             baseline_label = resolve_baseline_label(
                 group_map,
-                use_global=cfg.use_global_baseline,
-                global_value=cfg.global_baseline_value,
-                overrides=cfg.overrides,
+                use_global=spec.use_global_baseline,
+                global_value=spec.global_baseline_value,
+                overrides=spec.overrides,
                 group_by_cols=group_cols,
-                logger=ctx.logger,
+                logger=logger,
             )
 
             baseline_rows = (
@@ -188,47 +204,42 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
 
             if (
                 baseline_rows.empty
-                and cfg.use_global_baseline
-                and cfg.global_baseline_value is not None
+                and spec.use_global_baseline
+                and spec.global_baseline_value is not None
                 and baseline_label is not None
-                and str(baseline_label) != str(cfg.global_baseline_value)
+                and str(baseline_label) != str(spec.global_baseline_value)
             ):
                 global_baseline_rows = (
-                    sub[sub[treatment_col].astype(str) == str(cfg.global_baseline_value)]
+                    sub[sub[treatment_col].astype(str) == str(spec.global_baseline_value)]
                     if not sub.empty
                     else pd.DataFrame()
                 )
                 if not global_baseline_rows.empty:
-                    try:
+                    if logger is not None:
                         group_desc = " | ".join(f"{col}={group_map.get(col)}" for col in group_cols)
-                        ctx.logger.info(
+                        logger.info(
                             "fold_change • t≈%.2f h • %s: override baseline %r not found → using global %r",
                             float(timepoint),
                             group_desc,
                             str(baseline_label),
-                            str(cfg.global_baseline_value),
+                            str(spec.global_baseline_value),
                         )
-                    except Exception:
-                        pass
-                    baseline_label = str(cfg.global_baseline_value)
+                    baseline_label = str(spec.global_baseline_value)
                     baseline_rows = global_baseline_rows
                     fallbacks_used += 1
 
             if baseline_rows.empty:
                 missing_baseline_groups += 1
-                try:
-                    if cfg.use_global_baseline and cfg.global_baseline_value is not None:
-                        group_desc = " | ".join(f"{col}={group_map.get(col)}" for col in group_cols)
-                        ctx.logger.warning(
-                            "[warn]fold_change[/warn] • t≈%.2f h • %s: baseline not present "
-                            "(override=%r, global=%r) — FC set to NaN",
-                            float(timepoint),
-                            group_desc,
-                            str(baseline_label),
-                            str(cfg.global_baseline_value),
-                        )
-                except Exception:
-                    pass
+                if logger is not None and spec.use_global_baseline and spec.global_baseline_value is not None:
+                    group_desc = " | ".join(f"{col}={group_map.get(col)}" for col in group_cols)
+                    logger.warning(
+                        "[warn]fold_change[/warn] • t≈%.2f h • %s: baseline not present "
+                        "(override=%r, global=%r) — FC set to NaN",
+                        float(timepoint),
+                        group_desc,
+                        str(baseline_label),
+                        str(spec.global_baseline_value),
+                    )
                 baseline_value = math.nan
                 baseline_n = 0
                 baseline_time = math.nan
@@ -264,8 +275,8 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
                     "target": target,
                     "time": float(timepoint),
                     "treatment": treatment_out,
-                    cfg.fc_column: fc,
-                    cfg.log2fc_column: log2fc,
+                    spec.fc_column: fc,
+                    spec.log2fc_column: log2fc,
                     "n": int(row["n"]),
                     "baseline_value": baseline_out,
                     "baseline_n": int(baseline_n),
@@ -276,7 +287,7 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
                 out_rows.append(emitted)
 
         log_fold_change_summary(
-            ctx,
+            logger,
             target=target,
             timepoint=timepoint,
             stats=grouped,
@@ -285,107 +296,104 @@ def compute_fold_change_table(ctx, df: pd.DataFrame, cfg) -> pd.DataFrame:
             rows_emitted=(len(out_rows) - rows_before),
             missing_baseline_groups=missing_baseline_groups,
         )
-        try:
-            if fallbacks_used:
-                ctx.logger.info(
-                    "fold_change • t≈%.2f h • override→global fallbacks: %d", float(timepoint), int(fallbacks_used)
-                )
-        except Exception:
-            pass
+        if logger is not None and fallbacks_used:
+            logger.info(
+                "fold_change • t≈%.2f h • override→global fallbacks: %d",
+                float(timepoint),
+                int(fallbacks_used),
+            )
 
-    out = build_empty_fold_change_table(group_cols=group_cols, cfg=cfg) if not out_rows else pd.DataFrame(out_rows)
+    out = build_empty_fold_change_table(group_cols=group_cols, spec=spec) if not out_rows else pd.DataFrame(out_rows)
 
-    for metadata_col in cfg.attach_metadata or []:
+    metadata_frame = base.copy()
+    metadata_frame["__output_treatment"] = metadata_frame[
+        "treatment" if "treatment" in metadata_frame.columns else treatment_col
+    ].astype(str)
+    metadata_keys = [*group_cols, "__output_treatment"]
+    output_metadata_keys = [*group_cols, "treatment"]
+    for metadata_col in spec.attach_metadata:
         if metadata_col in df.columns and metadata_col not in out.columns:
-            try:
-                base_meta = (
-                    base.groupby(group_cols + [treatment_col], dropna=False)[metadata_col]
-                    .agg(lambda series: series.dropna().iloc[0] if series.dropna().nunique() == 1 else np.nan)
-                    .reset_index()
-                )
-                out = out.merge(base_meta, on=group_cols + [treatment_col], how="left")
-            except Exception:
-                pass
+            base_meta = (
+                metadata_frame.groupby(metadata_keys, dropna=False)[metadata_col]
+                .agg(lambda series: series.dropna().iloc[0] if series.dropna().nunique() == 1 else np.nan)
+                .reset_index()
+                .rename(columns={"__output_treatment": "treatment"})
+            )
+            out = out.merge(base_meta, on=output_metadata_keys, how="left")
 
     for column in ["time", "baseline_time"]:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
-    for column in [cfg.fc_column, cfg.log2fc_column]:
+    for column in [spec.fc_column, spec.log2fc_column]:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
     for column in ["n", "baseline_n"]:
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce").astype("Int64")
 
-    try:
+    if logger is not None:
         treatment_levels = sorted(out["treatment"].astype(str).unique().tolist(), key=smart_string_numeric_key)
         group_preview = ", ".join(group_cols)
-        ctx.logger.info(
+        logger.info(
             "fold_change • done • target=[accent]%s[/accent] • times=[%s] • group_by=[%s] • treatments=[%s]",
             target,
-            ", ".join(f"{float(item):.2f}" for item in cfg.report_times),
+            ", ".join(f"{float(item):.2f}" for item in spec.report_times),
             group_preview or "—",
             ", ".join(treatment_levels[:10]) + (" …" if len(treatment_levels) > 10 else ""),
         )
-    except Exception:
-        pass
 
-    try:
-        if not out.empty and cfg.log2fc_column in out.columns:
-            good = out[pd.to_numeric(out[cfg.log2fc_column], errors="coerce").notna()].copy()
-            if not good.empty:
-                good[cfg.log2fc_column] = pd.to_numeric(good[cfg.log2fc_column], errors="coerce")
-                times = sorted(pd.to_numeric(good["time"], errors="coerce").dropna().unique())
+    if logger is not None and not out.empty and spec.log2fc_column in out.columns:
+        good = out[pd.to_numeric(out[spec.log2fc_column], errors="coerce").notna()].copy()
+        if not good.empty:
+            good[spec.log2fc_column] = pd.to_numeric(good[spec.log2fc_column], errors="coerce")
+            good["__abs_l2fc"] = good[spec.log2fc_column].abs()
+            times = sorted(pd.to_numeric(good["time"], errors="coerce").dropna().unique())
+            for timepoint in times:
+                sub = good[pd.to_numeric(good["time"], errors="coerce") == float(timepoint)].copy()
+                if sub.empty:
+                    continue
+                top = sub.sort_values("__abs_l2fc", ascending=False).head(5)
+
+                def _desc(row) -> str:
+                    group_desc = " | ".join(f"{col}={row[col]}" for col in group_cols if col in row.index)
+                    base_label = str(row.get("baseline_value", "")) or "—"
+                    return (
+                        f"   • {(group_desc + ' • ' if group_desc else '')}treatment={row['treatment']} "
+                        f"→ {row[spec.fc_column]:.3g}x "
+                        f"(log2FC={row[spec.log2fc_column]:.2f}; baseline={base_label})"
+                    )
+
+                lines = "\n".join(_desc(row) for _, row in top.iterrows())
+                logger.info("fold_change • t≈%.2f h • strongest changes:\n%s", float(timepoint), lines or "   —")
+            if group_cols:
+                primary_group = group_cols[0]
                 for timepoint in times:
                     sub = good[pd.to_numeric(good["time"], errors="coerce") == float(timepoint)].copy()
                     if sub.empty:
                         continue
-                    sub["__abs_l2fc"] = sub[cfg.log2fc_column].abs()
-                    top = sub.sort_values("__abs_l2fc", ascending=False).head(5)
-
-                    def _desc(row) -> str:
-                        group_desc = " | ".join(f"{col}={row[col]}" for col in group_cols if col in row.index)
-                        base_label = str(row.get("baseline_value", "")) or "—"
-                        return (
-                            f"   • {(group_desc + ' • ' if group_desc else '')}treatment={row['treatment']} "
-                            f"→ {row[cfg.fc_column]:.3g}x (log2FC={row[cfg.log2fc_column]:.2f}; baseline={base_label})"
-                        )
-
-                    lines = "\n".join(_desc(row) for _, row in top.iterrows())
-                    ctx.logger.info(
-                        "fold_change • t≈%.2f h • strongest changes:\n%s", float(timepoint), lines or "   —"
-                    )
-                if group_cols:
-                    primary_group = group_cols[0]
-                    for timepoint in times:
-                        sub = good[pd.to_numeric(good["time"], errors="coerce") == float(timepoint)].copy()
-                        if sub.empty:
-                            continue
-                        ctx.logger.info("fold_change • t=%.2f h • per-%s top changes:", float(timepoint), primary_group)
-                        for group_value, subset in sub.groupby(primary_group, dropna=False):
-                            top_subset = subset.sort_values("__abs_l2fc", ascending=False).head(3)
-                            items = (
-                                ", ".join(
-                                    f"treatment={row['treatment']}: {row[cfg.fc_column]:.3g}x "
-                                    f"(l2FC={row[cfg.log2fc_column]:.2f})"
-                                    for _, row in top_subset.iterrows()
-                                )
-                                or "—"
+                    logger.info("fold_change • t=%.2f h • per-%s top changes:", float(timepoint), primary_group)
+                    for group_value, subset in sub.groupby(primary_group, dropna=False):
+                        top_subset = subset.sort_values("__abs_l2fc", ascending=False).head(3)
+                        items = (
+                            ", ".join(
+                                f"treatment={row['treatment']}: {row[spec.fc_column]:.3g}x "
+                                f"(l2FC={row[spec.log2fc_column]:.2f})"
+                                for _, row in top_subset.iterrows()
                             )
-                            ctx.logger.info("   • %s → %s", str(group_value), items)
-    except Exception:
-        pass
+                            or "—"
+                        )
+                        logger.info("   • %s → %s", str(group_value), items)
 
     return out
 
 
-def build_empty_fold_change_table(*, group_cols: list[str], cfg) -> pd.DataFrame:
+def build_empty_fold_change_table(*, group_cols: list[str], spec: FoldChangeAnalysisSpec) -> pd.DataFrame:
     columns = [
         "target",
         "time",
         "treatment",
-        cfg.fc_column,
-        cfg.log2fc_column,
+        spec.fc_column,
+        spec.log2fc_column,
         "n",
         "baseline_value",
         "baseline_n",
@@ -393,3 +401,13 @@ def build_empty_fold_change_table(*, group_cols: list[str], cfg) -> pd.DataFrame
         *group_cols,
     ]
     return pd.DataFrame(columns=columns)
+
+
+__all__ = [
+    "FoldChangeAnalysisSpec",
+    "build_empty_fold_change_table",
+    "compute_fold_change_table",
+    "pick_alias_column",
+    "resolve_baseline_label",
+    "synonyms_for",
+]

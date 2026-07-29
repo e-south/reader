@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/export/csv.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from typing import Any

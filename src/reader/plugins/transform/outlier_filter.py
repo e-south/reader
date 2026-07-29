@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/outlier_filter.py
-
-Simple z-score filter per (channel, time).
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Simple z-score filter per (channel, time)."""
 
 from __future__ import annotations
 

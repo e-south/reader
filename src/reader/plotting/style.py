@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plotting/style.py
-
-Shared palette + subplot layout helpers for plotting modules.
---------------------------------------------------------------------------------
-"""
+"""Shared palette + subplot layout helpers for plotting modules."""
 
 from __future__ import annotations
 

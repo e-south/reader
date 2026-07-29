@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/io/sample_map.py
-
-Plate-reader sample-map parsing.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader sample-map parsing."""
 
 from collections import Counter
 from pathlib import Path

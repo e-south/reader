@@ -1,17 +1,7 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/plots/time_series.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,75 +13,18 @@ from reader.plotting.sinks import PlotFigure
 from reader.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
-from .common import alias_column, best_subplot_grid, emit_plot_figure, pretty_name, require_columns, warn_if_empty
+from .common import alias_column, best_subplot_grid, plot_figure, pretty_name, require_columns, warn_if_empty
 from .grouping import GroupMatch, resolve_groups
 from .panels import draw_time_series_panel, marker_map_for_levels
-
-
-def _extract_stress_from_treatment(value: object) -> str | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    parts = [part.strip() for part in text.split(",")]
-    stress_parts = [part for part in parts if "IPTG" not in part and part != "H2O"]
-    if not stress_parts:
-        return None
-    stress = ", ".join(stress_parts).strip()
-    return stress or None
-
-
-def _resolve_dynamic_hue_label_map(
-    *,
-    data: pd.DataFrame,
-    hue_col: str,
-    hue_levels: list[str],
-    base_label_map: Mapping[str, str] | None,
-) -> dict[str, str] | None:
-    resolved = {str(key): str(value) for key, value in (base_label_map or {}).items()}
-    if "treatment" not in data.columns:
-        return resolved or None
-    hue_values = data[hue_col].astype(str) if hue_col in data.columns else pd.Series(dtype=str)
-    for hue in hue_levels:
-        label = resolved.get(str(hue), str(hue))
-        if "relevant stress" not in label.lower() and "+stress" not in str(hue):
-            continue
-        mask = hue_values == str(hue)
-        if not mask.any():
-            continue
-        stresses = sorted(
-            {
-                stress
-                for stress in (_extract_stress_from_treatment(value) for value in data.loc[mask, "treatment"])
-                if stress
-            }
-        )
-        if len(stresses) != 1:
-            continue
-        stress = stresses[0]
-        if str(hue) == "-IPTG/+stress":
-            resolved[str(hue)] = f"{stress}, -IPTG"
-        elif str(hue) == "+IPTG/+stress":
-            resolved[str(hue)] = f"{stress}, +IPTG"
-        else:
-            resolved[str(hue)] = (
-                label.replace("Relevant stress", stress)
-                .replace("relevant stress", stress)
-                .replace("Relevant-stress", stress)
-                .replace("relevant-stress", stress)
-            )
-    return resolved or None
 
 
 def plot_time_series(
     *,
     df: pd.DataFrame,
-    blanks: pd.DataFrame,
-    output_dir: Path | None,
     x: str,
     y: list[str] | None,
     hue: str,
     channels: list[str] | None,
-    subplots: str | None = None,  # kept for API parity (ignored: always subplots per channel)
     group_on: str | None,
     pool_sets: list[dict[str, list[str]]] | None,
     pool_match: GroupMatch,
@@ -227,12 +160,7 @@ def plot_time_series(
         marker_map = marker_map_for_levels(hue_levels)
         colors = _colors(len(hue_levels))
         color_map = {h: colors[i % len(colors)] for i, h in enumerate(hue_levels)}
-        legend_label_map = _resolve_dynamic_hue_label_map(
-            data=d,
-            hue_col=hue_col,
-            hue_levels=hue_levels,
-            base_label_map=hue_label_map,
-        )
+        legend_label_map = {str(key): str(value) for key, value in (hue_label_map or {}).items()} or None
         rows, cols = best_subplot_grid(len(y_feats))
 
         with use_style(rc=(fig_kwargs or {}).get("rc"), color_cycle=colors):
@@ -360,5 +288,5 @@ def plot_time_series(
             if group_col and members != [None]:
                 group_tag = f"__{str(group_col)}={str(label)}"
             stub = (f"{filename}{group_tag}" if group_tag else filename) if filename else f"ts__{label}"
-            figures.extend(emit_plot_figure(fig=fig, filename=stub, output_dir=output_dir, fig_kwargs=fig_kwargs))
+            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
     return figures

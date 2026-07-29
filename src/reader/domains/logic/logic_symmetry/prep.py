@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/logic_symmetry/prep.py
-
-Logic-symmetry prep helper: pick one time per (design x batch x treatment).
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Logic-symmetry prep helper: pick one time per (design x batch x treatment)."""
 
 from __future__ import annotations
 

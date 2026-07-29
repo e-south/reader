@@ -183,7 +183,10 @@ def _load_signal(
     if not np.isfinite(work[["time", "value"]].to_numpy(dtype=float)).all():
         raise ValueError(f"{context} record contains non-finite time or values.")
     if require_positive and (work["value"].to_numpy(dtype=float) <= 0.0).any():
-        raise ValueError(f"{context} record contains non-positive ratio values.")
+        raise ValueError(
+            f"{context} record contains non-positive values; "
+            "response-window log-space reduction requires strictly positive source values."
+        )
     _normalize_value_provenance(work, context=context)
     return work.loc[
         :,

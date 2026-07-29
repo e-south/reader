@@ -461,7 +461,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
         return _step(
             id="raw_kinetics",
             plugin="plot/time_series",
-            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_condition":
@@ -596,7 +596,7 @@ def _plate_reader_single_reporter_plot_output(
         return _step(
             id="raw_kinetics",
             plugin="plot/time_series",
-            reads={"df": plot_reads["df"], "blanks": plot_reads["blanks"]},
+            reads={"df": plot_reads["df"]},
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_condition":

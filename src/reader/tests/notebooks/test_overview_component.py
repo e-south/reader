@@ -36,8 +36,8 @@ class _FakeMarimo:
 def test_build_design_treatment_summary_rows_lists_vocabularies_without_pairing() -> None:
     df = pd.DataFrame(
         {
-            "design_id": ["pDual-10-SECG-B0-ETH-02", "pDual-10-SECG-B0-ETH-01", None],
-            "treatment": ["EtOH_3_percent_0nM_cipro", "EtOH_0_percent_0nM_cipro", "EtOH_3_percent_0nM_cipro"],
+            "design_id": ["design_beta", "design_alpha", None],
+            "treatment": ["condition_b", "condition_a", "condition_b"],
         }
     )
 
@@ -45,10 +45,10 @@ def test_build_design_treatment_summary_rows_lists_vocabularies_without_pairing(
 
     assert note == ""
     assert rows == (
-        {"Category": "Design ID", "Value": "pDual-10-SECG-B0-ETH-01"},
-        {"Category": "Design ID", "Value": "pDual-10-SECG-B0-ETH-02"},
-        {"Category": "Treatment", "Value": "EtOH_0_percent_0nM_cipro"},
-        {"Category": "Treatment", "Value": "EtOH_3_percent_0nM_cipro"},
+        {"Category": "Design ID", "Value": "design_alpha"},
+        {"Category": "Design ID", "Value": "design_beta"},
+        {"Category": "Treatment", "Value": "condition_a"},
+        {"Category": "Treatment", "Value": "condition_b"},
     )
 
 
@@ -77,7 +77,7 @@ def test_build_notebook_overview_requires_identity_and_protocol(tmp_path: Path) 
 
 
 def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: Path) -> None:
-    experiment_id = "20260706_sfxi_sensor-panel-m9-glu-secg"
+    experiment_id = "20260102_sfxi_four-state-panel"
     overview = build_notebook_overview(
         experiment_id=experiment_id,
         experiment_title=experiment_id,
@@ -89,7 +89,7 @@ def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: 
     )
 
     assert overview.experiment_id == experiment_id
-    assert overview.experiment_title == "2026-07-06 · Sfxi Sensor Panel M9 Glu Secg"
+    assert overview.experiment_title == "2026-01-02 · Sfxi Four State Panel"
 
 
 def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> None:
@@ -107,7 +107,7 @@ def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> N
     panel = render_notebook_overview_panel(
         mo,
         overview,
-        design_treatment_rows=({"Category": "Design ID", "Value": "pDual-10"},),
+        design_treatment_rows=({"Category": "Design ID", "Value": "reference"},),
     )
 
     assert panel["kind"] == "vstack"
@@ -122,7 +122,7 @@ def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> N
             "sections": {
                 "Design/treatment scope": {
                     "kind": "table",
-                    "rows": [{"Category": "Design ID", "Value": "pDual-10"}],
+                    "rows": [{"Category": "Design ID", "Value": "reference"}],
                     "page_size": 1,
                 },
                 "Pipeline": {

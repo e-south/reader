@@ -21,6 +21,7 @@ from .common import (
     default_notebook_call,
 )
 from .plate_reader import (
+    _configured_fold_change_target,
     _configured_ingest_channels,
     _plate_reader_base_steps,
     _plate_reader_fold_change_step,
@@ -28,6 +29,7 @@ from .plate_reader import (
 )
 
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
+SFXI_SCREEN_LOGIC_CHANNEL = "YFP/CFP"
 
 
 def compile_logic_sfxi_vec8_collection(protocol: Any):
@@ -91,6 +93,7 @@ def compile_logic_sfxi_screen(protocol: Any):
         )
     )
     if include_fold_change:
+        _configured_fold_change_target(protocol, expected=SFXI_SCREEN_LOGIC_CHANNEL)
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     default_exports = (
         ("logic_summary_workbook",)
@@ -114,9 +117,12 @@ def compile_logic_sfxi_screen(protocol: Any):
     requires_vec8 = (
         include_vec8 or "sfxi_vec8_heatmap" in selected_plot_ids or "logic_summary_workbook" in selected_exports
     )
-    requires_promoted_df = requires_vec8 or "logic_symmetry" in selected_plot_ids
+    requires_logic_symmetry = "logic_symmetry" in selected_plot_ids
+    requires_promoted_df = requires_vec8 or requires_logic_symmetry
     if requires_promoted_df:
         pipeline.append(_sfxi_promote_step())
+    if requires_logic_symmetry:
+        pipeline.append(_logic_symmetry_step(protocol))
     if requires_vec8:
         pipeline.append(_sfxi_vec8_step(protocol))
 
@@ -152,6 +158,25 @@ def _sfxi_vec8_step(protocol: Any) -> PluginStepDecl:
     )
 
 
+def _logic_symmetry_step(protocol: Any) -> PluginStepDecl:
+    inputs = protocol.effective_inputs()
+    settings = _analysis_mapping(protocol.effective_analysis(), key="logic_symmetry")
+    return _step(
+        id="logic_symmetry_summary",
+        plugin="transform/logic_symmetry",
+        reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
+        with_=_deep_merge(
+            {
+                "response_channel": SFXI_SCREEN_LOGIC_CHANNEL,
+                "design_by": inputs.get("design_by", ["design_id"]),
+                "state_map_ref": inputs.get("state_map_ref", "induction_logic"),
+            },
+            settings,
+        ),
+        writes={"table": RecordOutputDecl(record_id="logic_symmetry/table")},
+    )
+
+
 def _sfxi_vec8_delta(protocol: Any) -> float:
     settings = _analysis_mapping(_analysis_options(protocol), key="sfxi_vec8")
     return float(settings.get("intensity_log2_offset_delta", 0.0))
@@ -174,8 +199,8 @@ def _logic_plot_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
         return _step(
             id="logic_symmetry",
             plugin="plot/logic_symmetry",
-            reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
-            with_=_deep_merge({"response_channel": "YFP/CFP"}, settings),
+            reads={"table": RecordInputDecl(record_id="logic_symmetry/table")},
+            with_=settings,
         )
     return _plate_reader_plot_output(protocol, output_id=output_id, measurement="yfp_cfp")
 

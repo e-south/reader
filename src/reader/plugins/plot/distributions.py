@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/distributions.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -54,7 +45,6 @@ class DistributionsPlot(FigurePlotPlugin):
         return plot_distributions(
             df=df,
             blanks=blanks,
-            output_dir=None,
             channels=cfg.channels,
             group_on=partition.group_by,
             pool_sets=partition.collection_items,

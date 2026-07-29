@@ -31,8 +31,8 @@ from reader.workbench.graph import resolve_workbench
 def _vec8_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "design_id": ["pDual-10-spyp", "pDual-10-SECG-B0-AND-01"],
-            "reference_design_id": ["pDual-10", "pDual-10"],
+            "design_id": ["design-2", "design-10"],
+            "reference_design_id": ["reference", "reference"],
             "time_selected_h": [12.0, 12.0],
             "intensity_log2_offset_delta": [0.0, 0.0],
             "r_logic": [8.0, 4.0],
@@ -50,8 +50,8 @@ def _vec8_df() -> pd.DataFrame:
 
 
 def test_sfxi_vec8_heatmap_plot_saves_artifact(tmp_path: Path) -> None:
-    ctx = SimpleNamespace(plots_dir=tmp_path, exp_dir=tmp_path / "exp_sfxi")
-    cfg = SFXIVec8HeatmapCfg(source_id="exp_sfxi", format=["png"], title="SFXI vec8 heatmap")
+    ctx = SimpleNamespace(plots_dir=tmp_path, exp_dir=tmp_path / "experiment-2")
+    cfg = SFXIVec8HeatmapCfg(experiment_id="experiment-2", format=["png"], title="SFXI vec8 heatmap")
     plugin = SFXIVec8HeatmapPlot()
     plugin.bind_runtime(
         descriptor=build_plugin_asset(
@@ -76,20 +76,20 @@ def test_normalize_experiment_vec8_heatmap_frame_rejects_missing_intensity_delta
     with pytest.raises(SFXIError, match="requires column 'intensity_log2_offset_delta'"):
         normalize_experiment_vec8_heatmap_frame(
             _vec8_df().drop(columns=["intensity_log2_offset_delta"]),
-            source_id="exp_sfxi",
+            experiment_id="experiment-2",
         )
 
 
 def test_normalize_experiment_vec8_heatmap_frame_accepts_optional_time_metadata() -> None:
     frame = normalize_experiment_vec8_heatmap_frame(
         _vec8_df().drop(columns=["time_selected_h"]),
-        source_id="exp_sfxi",
+        experiment_id="experiment-2",
     )
 
     assert "time_selected_h" not in frame.columns
     assert frame["row_label"].tolist() == [
-        "exp_sfxi::pDual-10-spyp",
-        "exp_sfxi::pDual-10-SECG-B0-AND-01",
+        "experiment-2::design-2",
+        "experiment-2::design-10",
     ]
 
 
@@ -97,7 +97,7 @@ def test_normalize_experiment_vec8_heatmap_frame_accepts_nullable_time_metadata(
     vec8 = _vec8_df()
     vec8.loc[0, "time_selected_h"] = float("nan")
 
-    frame = normalize_experiment_vec8_heatmap_frame(vec8, source_id="exp_sfxi")
+    frame = normalize_experiment_vec8_heatmap_frame(vec8, experiment_id="experiment-2")
 
     assert pd.isna(frame.loc[0, "time_selected_h"])
     assert frame.loc[1, "time_selected_h"] == pytest.approx(12.0)
@@ -118,7 +118,7 @@ def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -
         config_digest="sha256:test",
     )
     decl = WorkbenchDecl(
-        experiment=ExperimentDecl(id="exp_sfxi_plot", title="exp_sfxi_plot", lifecycle="active", root=tmp_path),
+        experiment=ExperimentDecl(id="vec8-plot", title="vec8-plot", lifecycle="active", root=tmp_path),
         experiment_semantics=ExperimentSemantics(
             protocol=ProtocolBinding(id="workbench/generic"),
             protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
@@ -139,7 +139,7 @@ def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -
                     id="sfxi_vec8_heatmap",
                     plugin="plot/sfxi_vec8_heatmap",
                     reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
-                    with_={"source_id": "exp_sfxi_plot", "format": ["png"]},
+                    with_={"experiment_id": "vec8-plot", "format": ["png"]},
                 ),
             )
         ),

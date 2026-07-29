@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/logic_symmetry/encodings.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

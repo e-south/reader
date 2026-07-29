@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/plugins/transform/test_sample_map_contracts.py
-
-Tests for sample-map transform contract promotion.
---------------------------------------------------------------------------------
-"""
+"""Tests for sample-map transform contract promotion."""
 
 from __future__ import annotations
 

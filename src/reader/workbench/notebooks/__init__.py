@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
-    "artifacts": {"NotebookArtifactSpec", "publish_notebook_artifact_bundle"},
     "scaffold": {"write_experiment_notebook"},
 }
 

@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/notebooks/test_scaffold.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,11 +19,11 @@ def test_plot_notebook_scaffold_uses_specs(tmp_path: Path) -> None:
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
-    assert 'label="Dataset (dataframe record)"' in content
-    assert "discover_dataframe_records" in content
-    assert "load_notebook_workbench_context" in content
+    assert "records(experiment)" in content
+    assert "read_dataframe(experiment, _record_id).dataframe" in content
+    assert "load_notebook_context" in content
+    assert "reader.workbench.notebooks.context" not in content
     assert "load_workbench_decl(cfg_path)" not in content
-    assert "df = None" in content
     assert "__PLOT_SPECS__" not in content
     assert "resolve_plot_specs" not in content
     assert "plot --mode save" not in content
@@ -47,27 +38,25 @@ def test_notebook_scaffold_defaults_to_outputs_dir(tmp_path: Path) -> None:
     assert nb_path.exists()
 
 
-def test_notebook_scaffold_includes_df_selector(tmp_path: Path) -> None:
+def test_notebook_scaffold_explores_dataframe_deliverables_in_primary_viewport(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
-    assert "dataframe record(s)" in content
-    assert 'label="Dataset (dataframe record)"' in content
-    assert "df = None" in content
-    assert "## Dataset table explorer" in content
-    assert "build_design_treatment_summary_rows" in content
+    assert "collect_notebook_deliverables" in content
+    assert "build_notebook_deliverable_selector" in content
+    assert "render_notebook_deliverable_viewport" in content
+    assert "dataframe_loader=_load_dataframe" in content
+    assert "read_dataframe(experiment, _record_id).dataframe" in content
     assert "render_notebook_overview_panel" in content
-    assert "Design + treatment summary" not in content
     assert "data_ready" not in content
     assert 'label="Group by"' not in content
     assert "Interactive plot explorer" not in content
     assert "explore_x = mo.ui.dropdown" not in content
     assert "explore_y = mo.ui.dropdown" not in content
     assert "explore_hue = mo.ui.dropdown" not in content
-    assert "mo.ui.table" in content
     assert "mo.ui.altair_chart" not in content
     assert "Quick plot" not in content
     assert "Available plot modules" not in content
@@ -90,6 +79,25 @@ def test_notebook_scaffold_surfaces_deliverables_with_progressive_disclosure(tmp
     assert "build_notebook_deliverable_selector" in content
     assert "render_notebook_deliverable_viewport" in content
     assert "mo.accordion" not in content
+
+
+def test_generated_eda_uses_one_record_driven_selector_and_viewport(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
+    runner = CliRunner()
+    result = runner.invoke(app, ["notebook", str(cfg_path), "--template", "notebook/eda", "--mode", "none"])
+    assert result.exit_code == 0
+    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
+    content = nb_path.read_text(encoding="utf-8")
+
+    assert content.count("build_notebook_deliverable_selector(mo, deliverables)") == 1
+    assert content.count("render_notebook_deliverable_viewport(") == 1
+    assert "dataframe_loader=_load_dataframe" in content
+    assert "read_dataframe(experiment, _record_id).dataframe" in content
+    assert "record_dropdown" not in content
+    assert "build_dataframe_record_catalog" not in content
+    assert "select_default_dataframe_record" not in content
+    assert "## Dataset selection" not in content
+    assert "## Dataset table explorer" not in content
 
 
 def test_notebook_scaffold_ignores_legacy_dir_when_present(tmp_path: Path) -> None:
@@ -135,21 +143,21 @@ def test_notebook_scaffold_uses_configured_notebook_spec(tmp_path: Path) -> None
     assert "Cytometry" in content
 
 
-def test_notebook_scaffold_disables_record_scan_by_default(tmp_path: Path) -> None:
+def test_notebook_scaffold_has_no_uncataloged_record_scan_mode(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     content = nb_path.read_text(encoding="utf-8")
-    assert "allow_scan=False" in content
+    assert "discover_dataframe_records" not in content
+    assert "allow_scan" not in content
+    assert "read_parquet" not in content
 
 
-def test_notebook_scaffold_can_enable_record_scan(tmp_path: Path) -> None:
+def test_notebook_cli_rejects_removed_record_scan_option(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, base_reader_config(experiment_id="exp_nb"))
     runner = CliRunner()
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none", "--scan-records"])
-    assert result.exit_code == 0
-    nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
-    content = nb_path.read_text(encoding="utf-8")
-    assert "allow_scan=True" in content
+    assert result.exit_code == 2
+    assert not (tmp_path / "outputs" / "notebooks" / default_notebook_name()).exists()

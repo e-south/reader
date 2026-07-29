@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_validator_promote.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from types import SimpleNamespace
 
 import pandas as pd
@@ -29,7 +20,7 @@ def test_promote_preserves_missing_batch_without_synthesizing():
             "channel": ["YFP"],
             "value": [1.0],
             "treatment": ["H2O"],
-            "design_id": ["spyP__tetO"],
+            "design_id": ["design_a__condition_a"],
         }
     )
     cfg = PromoteCfg()
@@ -45,7 +36,7 @@ def test_promote_synthesizes_batch_only_when_explicit():
             "channel": ["YFP"],
             "value": [1.0],
             "treatment": ["H2O"],
-            "design_id": ["spyP__tetO"],
+            "design_id": ["design_a__condition_a"],
         }
     )
     cfg = PromoteCfg(synthesize_batch=True, synthesized_batch_value=7)
@@ -61,7 +52,7 @@ def test_promote_requires_explicit_batch_when_requested():
             "channel": ["YFP"],
             "value": [1.0],
             "treatment": ["H2O"],
-            "design_id": ["spyP__tetO"],
+            "design_id": ["design_a__condition_a"],
         }
     )
     cfg = PromoteCfg(require_columns=["treatment", "design_id", "batch"])

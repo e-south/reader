@@ -1,14 +1,5 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/alias.py
-
-Alias mappings for categorical columns. Either replace in-place or create
-<column>_alias columns. Prints a succinct per-column summary of applied aliases.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Alias mappings for categorical columns. Either replace in-place or create
+<column>_alias columns. Prints a succinct per-column summary of applied aliases."""
 
 from __future__ import annotations
 

@@ -1,17 +1,8 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-plugins/transform/fold_change.py
-
-Fold-change report:
-  • Selects the nearest snapshot time(s) per group
-  • Computes FC against explicit baselines (global or per-group overrides)
-  • Emits a validated artifact (fold_change.v1) — no mutation of the main tidy df
-  • Prints a concise, rich stdout summary (via logger) for quick inspection
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Fold-change report:
+• Selects the nearest snapshot time(s) per group
+• Computes FC against explicit baselines (global or per-group overrides)
+• Emits a validated artifact (fold_change.v1) — no mutation of the main tidy df
+• Prints a concise, rich stdout summary (via logger) for quick inspection"""
 
 from __future__ import annotations
 
@@ -19,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from reader.domains.plate_reader.analysis import compute_fold_change_table
+from reader.domains.plate_reader.analysis import FoldChangeAnalysisSpec, compute_fold_change_table
 from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 
@@ -69,4 +60,18 @@ class FoldChange(Plugin):
     # ------------------------------- run --------------------------------
 
     def run(self, ctx, inputs, cfg: FoldChangeCfg):
-        return {"table": compute_fold_change_table(ctx, inputs["df"], cfg)}
+        spec = FoldChangeAnalysisSpec(
+            target=cfg.target,
+            report_times=tuple(cfg.report_times),
+            time_tolerance=cfg.time_tolerance,
+            agg=cfg.agg,
+            treatment_column=cfg.treatment_column,
+            group_by=tuple(cfg.group_by),
+            use_global_baseline=cfg.use_global_baseline,
+            global_baseline_value=cfg.global_baseline_value,
+            overrides=tuple(dict(rule) for rule in cfg.overrides),
+            fc_column=cfg.fc_column,
+            log2fc_column=cfg.log2fc_column,
+            attach_metadata=tuple(cfg.attach_metadata),
+        )
+        return {"table": compute_fold_change_table(inputs["df"], spec=spec, logger=ctx.logger)}

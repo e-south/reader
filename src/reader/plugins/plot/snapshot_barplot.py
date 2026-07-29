@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/snapshot_barplot.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -53,7 +44,6 @@ class SnapshotBarplot(FigurePlotPlugin):
 
         return plot_snapshot_barplot(
             df=df,
-            output_dir=None,
             x=cfg.x,
             y=cfg.y,
             hue=cfg.hue,

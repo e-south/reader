@@ -1,3 +1,9 @@
+"""Domain-owned preparation and Altair rendering for dual-reporter triptychs.
+
+The capability accepts explicit tidy data and has no workbench, record-store,
+or notebook-lifecycle dependencies.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

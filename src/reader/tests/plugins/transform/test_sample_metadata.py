@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/plugins/transform/test_sample_metadata.py
-
-Coverage for sample-metadata transform behavior.
---------------------------------------------------------------------------------
-"""
+"""Coverage for sample-metadata transform behavior."""
 
 from __future__ import annotations
 

@@ -1,15 +1,7 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/cli/test_ux.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 import re
+from importlib.metadata import version
 from pathlib import Path
 
 import pandas as pd
@@ -30,7 +22,7 @@ from reader.tests.support import (
     write_config,
 )
 from reader.workbench import PluginSemantics, cli
-from reader.workbench.assets import AssetCatalog, build_plugin_asset
+from reader.workbench.assets import build_plugin_asset
 from reader.workbench.config import ReaderSpec
 from reader.workbench.engine import build_next_steps
 from reader.workbench.ports import dataframe_input, file_bundle_output
@@ -667,7 +659,6 @@ def test_plugins_command_shows_workbench_semantics(monkeypatch) -> None:
             contracts=builtin_contract_catalog(),
             protocols=builtin_protocol_catalog(),
             plugins=reg,
-            assets=AssetCatalog([]),
         ),
     )
 
@@ -757,14 +748,14 @@ def test_single_reporter_protocol_example_config_surfaces_semantic_channels() ->
 
 def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
     runner = CliRunner()
-    target = tmp_path / "experiments" / "20260317_new_assay"
+    target = tmp_path / "experiments" / "my_experiment"
     result = runner.invoke(cli.app, ["init", str(target), "--protocol", "plate_reader/dual_reporter_screen"])
     assert result.exit_code == 0
     assert (target / "config.yaml").exists()
     assert (target / "inputs").is_dir()
     assert (target / "notebooks").is_dir()
     spec = ReaderSpec.load(target / "config.yaml")
-    assert spec.experiment.id == "20260317_new_assay"
+    assert spec.experiment.id == "my_experiment"
     assert spec.protocol.id == "plate_reader/dual_reporter_screen"
 
 
@@ -809,18 +800,35 @@ def test_demo_command_lists_expected_workbench_lifecycle() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["demo"])
     assert result.exit_code == 0
-    assert "uv run reader ls" in result.output
+    assert "reader ls" in result.output
     assert "--details" in result.output
     assert "--readiness" in result.output
-    assert "uv run reader inspect" in result.output
+    assert "reader inspect" in result.output
     assert "<experiment>" in result.output
-    assert "config.ya" in result.output
     assert "reader init" in result.output
     assert "<protocol-id>" in result.output
-    assert "uv run reader validate" in result.output
-    assert "uv run reader run" in result.output
-    assert "uv run reader records" in result.output
-    assert "uv run reader notebook" in result.output
+    assert "reader validate" in result.output
+    assert "reader run" in result.output
+    assert "reader records" in result.output
+    assert "reader notebook" in result.output
+    assert "reader verify" in result.output
+
+
+def test_installed_command_help_uses_reader_ls_inventory() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["inspect", "--help"])
+
+    assert result.exit_code == 0
+    assert "reader ls" in result.output
+    assert "uv run reader ls" not in result.output
+
+
+def test_version_option_reports_distribution_version() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == version("reader-workbench")
 
 
 def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:

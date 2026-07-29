@@ -5,6 +5,7 @@ from reader.plugins.transform.assay_labels import AnnotationLabelsTransform
 from reader.plugins.transform.blank import BlankCorrection
 from reader.plugins.transform.crosstalk_pairs import CrosstalkPairs
 from reader.plugins.transform.fold_change import FoldChange
+from reader.plugins.transform.logic_symmetry import LogicSymmetryTransform
 from reader.plugins.transform.outlier_filter import OutlierFilter
 from reader.plugins.transform.overflow import OverflowHandling
 from reader.plugins.transform.ratio import RatioTransform
@@ -57,6 +58,16 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
             tags=("logic", "pairs", "summary"),
         ),
         plugin_cls=CrosstalkPairs,
+    ),
+    build_plugin_asset(
+        plugin_id="transform/logic_symmetry",
+        semantics=PluginSemantics(
+            domain="logic",
+            family="summary_transform",
+            summary="Compute logic-symmetry metrics over an explicit four-state mapping.",
+            tags=("logic", "geometry", "summary"),
+        ),
+        plugin_cls=LogicSymmetryTransform,
     ),
     build_plugin_asset(
         plugin_id="transform/sfxi",

@@ -113,7 +113,7 @@ def test_resolve_workbench_normalizes_compiled_bindings_to_typed_refs(tmp_path: 
         path=(tmp_path / "inputs" / "metadata.xlsx").resolve(),
     )
     assert raw_kinetics.reads["df"] == RecordRef(record_id="ratio_yfp_od600/df")
-    assert raw_kinetics.reads["blanks"] == RecordRef(record_id="blank/blanks")
+    assert set(raw_kinetics.reads) == {"df"}
 
 
 def test_materialize_workbench_serializes_typed_refs_back_to_binding_dicts(tmp_path: Path) -> None:

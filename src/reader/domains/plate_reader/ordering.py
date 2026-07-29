@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/ordering.py
-
-Plate-reader ordering semantics for treatments, doses, and labels.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader ordering semantics for treatments, doses, and labels."""
 
 from __future__ import annotations
 

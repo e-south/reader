@@ -1,15 +1,8 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/transform/sfxi.py
-
-SFXI: setpoint_fidelity_x_intensity → vec8
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""SFXI: setpoint_fidelity_x_intensity → vec8"""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import Field
 
@@ -18,16 +11,26 @@ from reader.workbench.ports import dataframe_input, dataframe_output
 from reader.workbench.registry import Plugin, PluginConfig
 
 
+class SFXIResponseBinding(PluginConfig):
+    logic_channel: str = Field(min_length=1)
+    intensity_channel: str = Field(min_length=1)
+
+
+class SFXIReferenceBinding(PluginConfig):
+    design_id: str = Field(min_length=1)
+    stat: Literal["mean", "median"] = "mean"
+
+
 class SFXICfg(PluginConfig):
-    response: dict[str, str]  # {"logic_channel":..., "intensity_channel":...}
+    response: SFXIResponseBinding
     design_by: list[str] = Field(default_factory=lambda: ["design_id"])
     time_column: str = "time"
     treatment_column: str | None = None
-    time_mode: str = "nearest"  # nearest|last_before|first_after|exact
+    time_mode: Literal["nearest", "last_before", "first_after", "exact"] = "nearest"
     target_time_h: float | None = None
-    time_tolerance_h: float = 0.5
-    state_map_ref: str
-    reference: dict[str, str | None] = Field(default_factory=lambda: {"design_id": None, "stat": "mean"})
+    time_tolerance_h: float | None = 0.5
+    state_map_ref: str = Field(min_length=1)
+    reference: SFXIReferenceBinding
     require_all_corners_per_design: bool = True
     eps_ratio: float = 1e-9
     eps_range: float = 1e-12

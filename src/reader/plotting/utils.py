@@ -1,11 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plotting/utils.py
-
-Shared plotting utilities (filesystem + naming helpers).
---------------------------------------------------------------------------------
-"""
+"""Shared plotting utilities (filesystem + naming helpers)."""
 
 from __future__ import annotations
 

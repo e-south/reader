@@ -745,8 +745,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         protocol="logic/sfxi_screen",
         domain="logic",
         family="logic_summary",
-        summary="SFXI logic-screen protocol for mapping inducible corners to vec8 logic/intensity summaries.",
-        tags=("logic", "sfxi", "screen"),
+        summary="Dual-reporter plate-reader adapter for SFXI vec8 logic and intensity summaries.",
+        tags=("logic", "sfxi", "screen", "dual_reporter", "plate_reader"),
         resources=(
             ProtocolResourceSpec(
                 id="sample_map",
@@ -760,10 +760,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "column": "treatment",
                     "state_order": ["00", "10", "01", "11"],
                     "values": {
-                        "00": "-inducer/-stress",
-                        "10": "+inducer/-stress",
-                        "01": "-inducer/+stress",
-                        "11": "+inducer/+stress",
+                        "00": "-input-a/-input-b",
+                        "10": "+input-a/-input-b",
+                        "01": "-input-a/+input-b",
+                        "11": "+input-a/+input-b",
                     },
                     "case_sensitive": True,
                 }
@@ -877,16 +877,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
             ),
             _field(
-                "response",
-                "Response/intensity channel binding for vec8 summaries.",
-                children=(
-                    _field("logic_channel", "Channel used for logic fidelity.", kind="string", default="YFP/CFP"),
-                    _field(
-                        "intensity_channel", "Channel used for intensity scaling.", kind="string", default="YFP/OD600"
-                    ),
-                ),
-            ),
-            _field(
                 "reference",
                 "Reference design and aggregation policy for vec8 normalization.",
                 children=(
@@ -947,6 +937,60 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
             _field("include_vec8", "Build the vec8 summary table.", kind="bool", default=True),
             _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
+            _field(
+                "logic_symmetry",
+                "Logic-symmetry summary settings used when that deliverable is selected.",
+                children=(
+                    _field("batch_col", "Replicate-batch column.", kind="string", default="batch"),
+                    _field(
+                        "treatment_column",
+                        "Optional treatment column override; otherwise the ordered state space owns it.",
+                        kind="string",
+                        allow_none=True,
+                    ),
+                    _field(
+                        "replicate_stat",
+                        "Replicate aggregator for each state corner.",
+                        kind="string",
+                        choices=("mean", "median"),
+                        default="mean",
+                    ),
+                    _field(
+                        "prep",
+                        "Optional time-selection policy before corner aggregation.",
+                        children=(
+                            _field("enable", "Apply explicit time selection.", kind="bool", default=False),
+                            _field(
+                                "mode",
+                                "Time-selection mode.",
+                                kind="string",
+                                choices=("first", "last", "median", "exact", "nearest"),
+                                default="last",
+                            ),
+                            _field(
+                                "target_time",
+                                "Target time for exact or nearest selection.",
+                                kind="number",
+                                allow_none=True,
+                            ),
+                            _field("tolerance", "Allowed time distance.", kind="number", default=0.51),
+                            _field(
+                                "align_corners",
+                                "Use one shared time anchor across all four states.",
+                                kind="bool",
+                                default=False,
+                            ),
+                            _field(
+                                "case_sensitive_treatments",
+                                "Optional case-sensitivity override for source state labels.",
+                                kind="bool",
+                                allow_none=True,
+                            ),
+                            _field("time_column", "Column containing time values.", kind="string", default="time"),
+                        ),
+                    ),
+                ),
+            ),
             _field(
                 "sfxi_vec8",
                 "SFXI vec8 transform settings.",
@@ -1193,11 +1237,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
                 ProtocolPluginDefaultsSpec(
                     plugin="transform/sfxi",
-                    summary="Default SFXI vec8 build settings derive from the protocol instead of every step config.",
+                    summary="The dual-reporter adapter binds its concrete channels to the generic SFXI transform.",
                     with_={
                         "response": {
-                            "logic_channel": binding_value("response.logic_channel", "YFP/CFP"),
-                            "intensity_channel": binding_value("response.intensity_channel", "YFP/OD600"),
+                            "logic_channel": "YFP/CFP",
+                            "intensity_channel": "YFP/OD600",
                         },
                         "design_by": binding_value("design_by", ["design_id"]),
                         "time_column": binding_value("time_column", "time"),

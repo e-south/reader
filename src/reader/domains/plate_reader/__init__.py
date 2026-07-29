@@ -1,8 +1,1 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/plate_reader/__init__.py
-
-Plate-reader domain package.
---------------------------------------------------------------------------------
-"""
+"""Plate-reader domain package."""

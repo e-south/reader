@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/crosstalk/pairs.py
-
-Crosstalk pairing utilities built on fold-change tables.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Crosstalk pairing utilities built on fold-change tables."""
 
 from __future__ import annotations
 

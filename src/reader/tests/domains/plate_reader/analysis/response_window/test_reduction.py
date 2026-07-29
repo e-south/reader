@@ -6,7 +6,7 @@ import pytest
 from reader.domains.plate_reader.analysis.response_window.reduction import summarize_trace
 
 
-def test_geometric_time_mean_preserves_constant_ratio() -> None:
+def test_geometric_time_mean_preserves_constant_signal() -> None:
     summary = summarize_trace(
         np.asarray([0.0, 1.0, 2.0]),
         np.asarray([4.0, 4.0, 4.0]),

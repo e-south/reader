@@ -1,14 +1,8 @@
 """
-<reader project>
-src/reader/domains/logic/logic_symmetry/overlay.py
-
 Ideal overlay definitions for the logic-symmetry plot.
 
 Adds a tile-rendering mode (4-square horizontal strip for 00,10,01,11) and
 a 'tiles_dual' gate set including antagonistic/negative counterparts.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
 """
 
 from __future__ import annotations

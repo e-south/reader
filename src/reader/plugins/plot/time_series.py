@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/time_series.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -49,22 +40,16 @@ class TimeSeriesPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {
-            "df": dataframe_input("df", "tidy.v1"),
-            "blanks": dataframe_input("blanks", "tidy.v1", optional=True),
-        }
+        return {"df": dataframe_input("df", "tidy.v1")}
 
     def render(self, ctx, inputs, cfg: TimeSeriesCfg) -> list[PlotFigure]:
         df: pd.DataFrame = inputs["df"]
-        blanks = inputs.get("blanks", df.iloc[0:0].copy())
         from reader.domains.plate_reader.plots.time_series import plot_time_series  # noqa: PLC0415
 
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
 
         return plot_time_series(
             df=df,
-            blanks=blanks,
-            output_dir=None,
             x=cfg.x,
             xlabel=cfg.xlabel,
             y=cfg.y,
@@ -72,7 +57,6 @@ class TimeSeriesPlot(FigurePlotPlugin):
             hue_label_map=cfg.hue_label_map,
             hue=cfg.hue,
             channels=cfg.channels,
-            subplots=None,
             group_on=partition.group_by,
             pool_sets=partition.collection_items,
             pool_match=partition.match,

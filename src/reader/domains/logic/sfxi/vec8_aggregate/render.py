@@ -16,8 +16,7 @@ from .constants import VEC8_CHANNELS
 CHANNEL_LABELS = ("v00", "v10", "v01", "v11", "y00*", "y10*", "y01*", "y11*")
 LOGIC_CHANNEL_COUNT = 4
 LOGIC_COLORBAR_LABEL = "$v_i$ normalized response"
-INTENSITY_COLORBAR_LABEL = "$y_i^\\star$ log2 intensity"
-CONTROL_SORT_RANKS = {"spyp": 0, "sula": 1, "pdual10": 2}
+INTENSITY_COLORBAR_LABEL = "$y_i^\\star$ anchored log2 intensity"
 NATURAL_SORT_TOKEN = re.compile(r"\d+|\D+")
 TILE_SIZE_IN = 0.38
 AXES_LEFT_MAX = 0.52
@@ -242,7 +241,7 @@ def _draw_channel_annotations(ax, *, font_size: float) -> None:
     ax.text(
         LOGIC_CHANNEL_COUNT + (len(VEC8_CHANNELS) - LOGIC_CHANNEL_COUNT) / 2,
         1.13,
-        "Fluor.\nintensity",
+        "Anchored\nintensity",
         ha="center",
         va="bottom",
         linespacing=0.9,
@@ -313,22 +312,16 @@ def _ordered_plot_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _row_sort_key(row: pd.Series, *, fallback_index: int) -> tuple[object, ...]:
     design_id = str(row["design_id"])
-    control_rank = _control_sort_rank(design_id)
-    source_key = _natural_sort_key(_short_source_label(str(row["source_id"])))
-    if control_rank < len(CONTROL_SORT_RANKS):
-        return (0, control_rank, source_key, fallback_index)
-    return (1, _natural_sort_key(_short_design_label(design_id)), source_key, fallback_index)
+    source_label = str(row[_source_label_column(row.index)])
+    return (_natural_sort_key(design_id), _natural_sort_key(source_label), fallback_index)
 
 
 def _row_group_key(design_id: str) -> tuple[object, ...]:
-    control_rank = _control_sort_rank(design_id)
-    if control_rank < len(CONTROL_SORT_RANKS):
-        return ("control",)
-    return ("design", _natural_sort_key(_design_family_label(design_id)))
+    return _natural_sort_key(_design_family_label(design_id))
 
 
 def _display_row_labels(frame: pd.DataFrame) -> list[str]:
-    source_labels = frame["source_id"].astype(str).map(_short_source_label)
+    source_labels = frame[_source_label_column(frame.columns)].astype(str).map(_short_source_label)
     design_labels = frame["design_id"].astype(str).map(_short_design_label)
     time_labels = frame["time_selected_h"].map(_timepoint_label) if "time_selected_h" in frame.columns else None
     labels = []
@@ -343,48 +336,26 @@ def _display_row_labels(frame: pd.DataFrame) -> list[str]:
     return fallback.tolist()
 
 
+def _source_label_column(columns) -> str:
+    if "source_resource_id" in columns:
+        return "source_resource_id"
+    if "source_experiment_id" in columns:
+        return "source_experiment_id"
+    raise SFXIError("SFXI vec8 heatmap requires explicit source resource or experiment identity.")
+
+
 def _short_source_label(value: str) -> str:
-    text = value.strip()
-    head = text.split("_", maxsplit=1)[0]
-    if len(head) == 8 and head.isdigit():
-        return head
-    return _middle_truncate(text, max_chars=24)
+    return _middle_truncate(value.strip(), max_chars=24)
 
 
 def _short_design_label(value: str) -> str:
-    text = value.strip()
-    normalized = _normalized_identifier(text)
-    if "spyp" in normalized:
-        return "spyP"
-    if "sulap" in normalized or "sula" in normalized:
-        return "sulA"
-    for prefix in ("pDual-10-SECG-B0-", "pDual-10-"):
-        if text.startswith(prefix) and len(text) > len(prefix):
-            return _middle_truncate(text[len(prefix) :], max_chars=28)
-    return _middle_truncate(text, max_chars=28)
+    return _middle_truncate(value.strip(), max_chars=28)
 
 
 def _design_family_label(design_id: str) -> str:
-    label = _short_design_label(design_id)
-    if label in {"spyP", "sulA"}:
-        return "control"
-    match = re.match(r"[A-Za-z]+", label)
-    return match.group(0) if match else label
-
-
-def _control_sort_rank(design_id: str) -> int:
-    normalized = _normalized_identifier(design_id)
-    if "spyp" in normalized:
-        return CONTROL_SORT_RANKS["spyp"]
-    if "sulap" in normalized or "sula" in normalized:
-        return CONTROL_SORT_RANKS["sula"]
-    if normalized == "pdual10":
-        return CONTROL_SORT_RANKS["pdual10"]
-    return len(CONTROL_SORT_RANKS)
-
-
-def _normalized_identifier(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
+    text = design_id.strip()
+    match = re.match(r"[A-Za-z]+", text)
+    return match.group(0) if match else text
 
 
 def _natural_sort_key(value: str) -> tuple[tuple[int, object], ...]:

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .contracts import ReplicateStat, ResponseWindowAnalysisSpec
-from .provenance import stable_seed
+from .seeds import stable_seed
 from .sources import STATE_ORDER
 
 
@@ -32,7 +32,7 @@ def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalys
             rng = np.random.default_rng(
                 stable_seed(request.aggregation.random_seed, experiment_id, str(design_id), state, reduction_id)
             )
-            response_draws, fluorescence_draws = joint_state_bootstrap_draws(
+            response_draws, anchored_magnitude_draws = joint_state_bootstrap_draws(
                 response_values,
                 magnitude_values,
                 anchor_values,
@@ -42,7 +42,7 @@ def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalys
                 paired_anchor=str(design_id) == anchor_id,
             )
             state_draws[f"r{state}"] = response_draws
-            state_draws[f"b{state}"] = fluorescence_draws
+            state_draws[f"b{state}"] = anchored_magnitude_draws
         frame = pd.DataFrame(state_draws)
         frame.insert(0, "draw_index", np.arange(len(frame), dtype=int))
         frame.insert(0, "reduction_id", str(design_wells["reduction_id"].iloc[0]))

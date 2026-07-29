@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from reader.domains.logic.sfxi.vec8_aggregate import LoadedSFXIVec8Source, aggregate_sfxi_vec8_sources
+from reader.domains.logic.sfxi.vec8_aggregate import SFXIVec8Source, aggregate_sfxi_vec8_sources
 from reader.workbench.ports import dataframe_output, record_collection_input
 from reader.workbench.records import SourceRecordCollection
 from reader.workbench.registry import Plugin, PluginConfig
@@ -27,19 +25,13 @@ class SFXIVec8CollectionTransform(Plugin):
 
     def run(self, ctx, inputs, cfg):
         collection: SourceRecordCollection = inputs["sources"]
-        loaded = tuple(
-            LoadedSFXIVec8Source(
-                source_id=item.ref.experiment_id,
-                source_path=Path(item.ref.experiment_id),
-                table_path=Path(item.ref.record_id),
-                source_kind="experiment_record",
-                frame=item.load_dataframe(),
+        sources = tuple(
+            SFXIVec8Source(
+                resource_id=item.ref.resource_id,
+                experiment_id=item.ref.experiment_id,
                 record_id=item.ref.record_id,
+                frame=item.load_dataframe(),
             )
             for item in collection
         )
-        frame = aggregate_sfxi_vec8_sources(loaded).frame.drop(
-            columns=["source_path", "table_path", "source_kind"],
-            errors="ignore",
-        )
-        return {"vec8": frame}
+        return {"vec8": aggregate_sfxi_vec8_sources(sources).frame}

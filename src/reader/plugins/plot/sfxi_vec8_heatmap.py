@@ -17,7 +17,7 @@ from reader.workbench.registry import PluginConfig
 
 
 class SFXIVec8HeatmapCfg(PluginConfig):
-    source_id: str | None = None
+    experiment_id: str | None = None
     title: str | None = None
     max_y_tick_labels: int = 80
     filename: str | None = None
@@ -38,11 +38,11 @@ class SFXIVec8HeatmapPlot(FigurePlotPlugin):
             render_experiment_sfxi_vec8_heatmap,
         )
 
-        source_id = cfg.source_id or _source_id_from_context(ctx)
-        title = cfg.title or f"{source_id} SFXI vec8 heatmap"
+        experiment_id = cfg.experiment_id or _experiment_id_from_context(ctx)
+        title = cfg.title or f"{experiment_id} SFXI vec8 heatmap"
         fig = render_experiment_sfxi_vec8_heatmap(
             vec8,
-            source_id=source_id,
+            experiment_id=experiment_id,
             title=title,
             max_y_tick_labels=cfg.max_y_tick_labels,
         )
@@ -50,7 +50,7 @@ class SFXIVec8HeatmapPlot(FigurePlotPlugin):
         return [PlotFigure(fig=fig, filename=filename, ext=ext, dpi=cfg.dpi) for ext in cfg.format]
 
 
-def _source_id_from_context(ctx) -> str:
+def _experiment_id_from_context(ctx) -> str:
     exp_dir = getattr(ctx, "exp_dir", None)
     if isinstance(exp_dir, Path):
         return exp_dir.name
@@ -58,4 +58,4 @@ def _source_id_from_context(ctx) -> str:
         name = Path(str(exp_dir)).name
         if name:
             return name
-    raise SFXIError("plot/sfxi_vec8_heatmap requires source_id when no experiment directory is available.")
+    raise SFXIError("plot/sfxi_vec8_heatmap requires experiment_id when no experiment directory is available.")

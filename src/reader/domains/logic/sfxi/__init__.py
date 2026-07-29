@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/logic/sfxi/__init__.py
-
-SFXI internals used by the transform plugin.
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""SFXI internals used by the transform plugin."""
 
 from .math import compute_vec8
 from .reference import resolve_reference_design_id

@@ -1,12 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/tests/test_mpl_cache.py
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
-
 import os
 from pathlib import Path
 

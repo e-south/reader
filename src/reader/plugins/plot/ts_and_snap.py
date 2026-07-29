@@ -1,13 +1,4 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/plugins/plot/ts_and_snap.py
-
-Two-panel plot (time series + snapshot barplot).
-
-Author(s): Eric J. South
---------------------------------------------------------------------------------
-"""
+"""Two-panel plot (time series + snapshot barplot)."""
 
 from __future__ import annotations
 
@@ -174,7 +165,6 @@ class TSAndSnapPlot(FigurePlotPlugin):
 
         return plot_ts_and_snap(
             df=df,
-            output_dir=None,
             group_on=partition.group_by,
             pool_sets=partition.collection_items,
             pool_match=partition.match,

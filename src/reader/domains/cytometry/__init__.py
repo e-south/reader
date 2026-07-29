@@ -1,10 +1,3 @@
-"""
---------------------------------------------------------------------------------
-<reader project>
-src/reader/domains/cytometry/__init__.py
-
-Cytometry-domain package root.
---------------------------------------------------------------------------------
-"""
+"""Cytometry-domain package root."""
 
 __all__: list[str] = []

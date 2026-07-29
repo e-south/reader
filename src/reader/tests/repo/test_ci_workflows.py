@@ -69,9 +69,26 @@ def test_dependency_audit_covers_runtime_and_notebook_surfaces() -> None:
     steps = _workflow("checks.yaml")["jobs"]["package"]["steps"]
     audit = next(step for step in steps if step.get("name") == "Audit operational dependencies")
 
-    assert "--no-dev --group notebooks --no-emit-project" in audit["run"]
+    assert "--no-dev --extra notebooks --no-emit-project" in audit["run"]
     assert "--no-deps" in audit["run"]
     assert "--disable-pip" in audit["run"]
+
+
+def test_test_job_installs_published_notebook_extra() -> None:
+    steps = _workflow("checks.yaml")["jobs"]["tests"]["steps"]
+    install = next(step for step in steps if step.get("name") == "Install locked dependencies")
+
+    assert install["run"] == "uv sync --locked --group dev --extra notebooks"
+
+
+def test_coverage_upload_has_repository_context_and_fails_closed() -> None:
+    steps = _workflow("checks.yaml")["jobs"]["coverage"]["steps"]
+    checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
+    upload = next(step for step in steps if str(step.get("uses", "")).startswith("codecov/codecov-action@"))
+
+    assert checkout
+    assert upload["with"]["use_oidc"] is True
+    assert upload["with"]["fail_ci_if_error"] is True
 
 
 def test_release_oidc_is_limited_to_publish_job() -> None:
@@ -79,7 +96,17 @@ def test_release_oidc_is_limited_to_publish_job() -> None:
 
     assert jobs["build"].get("permissions") is None
     assert jobs["publish"]["permissions"] == {"id-token": "write"}
-    assert jobs["publish"]["environment"] == "pypi"
+    assert jobs["publish"]["environment"] == {
+        "name": "pypi",
+        "url": "https://pypi.org/p/reader-workbench",
+    }
+
+
+def test_release_requires_a_tagged_main_commit() -> None:
+    steps = _workflow("release.yaml")["jobs"]["build"]["steps"]
+    verify_main = next(step for step in steps if step.get("name") == "Verify release commit is on main")
+
+    assert 'git merge-base --is-ancestor "${GITHUB_SHA}" origin/main' in verify_main["run"]
 
 
 def test_workflow_actions_are_pinned_to_immutable_commits() -> None:
