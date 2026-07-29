@@ -464,3 +464,54 @@ def test_file_output_transaction_rejects_symlinked_staging_parent(tmp_path: Path
 
     assert calls == []
     assert list(outside.iterdir()) == []
+
+
+def test_file_output_transaction_rejects_symlinked_destination_parent(tmp_path: Path) -> None:
+    raw = tmp_path / "inputs" / "raw.txt"
+    raw.parent.mkdir()
+    raw.write_text("payload", encoding="utf-8")
+    outputs = tmp_path / "outputs"
+    store = RecordStore(
+        outputs,
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outputs / "exports").mkdir(exist_ok=True)
+    (outputs / "exports" / "archive").symlink_to(outside, target_is_directory=True)
+
+    class ExportPlugin(Plugin):
+        ConfigModel = PluginConfig
+
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_path_input("raw")}
+
+        @classmethod
+        def output_ports(cls):
+            return {"artifact": file_path_output("artifact")}
+
+        def run(self, ctx, inputs, cfg):
+            del cfg
+            output = ctx.exports_dir / "archive" / "report.txt"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(inputs["raw"].read_text(encoding="utf-8"), encoding="utf-8")
+            return {"artifact": output}
+
+    with pytest.raises(ExecutionError, match="destination path must not contain symlinks"):
+        execute_step(
+            step=PluginStep(
+                kind="export",
+                id="report",
+                plugin="export/file",
+                reads={"raw": FileRef(path=raw)},
+            ),
+            phase="exports",
+            store=store,
+            ctx=_context(tmp_path),
+            registry=_registry("export/file", ExportPlugin),
+        )
+
+    assert list(outside.iterdir()) == []
+    assert store.latest_record("export:report") is None

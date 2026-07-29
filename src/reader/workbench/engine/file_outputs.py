@@ -72,9 +72,13 @@ class FileOutputTransaction:
             raise ExecutionError(f"{where}: must emit at least one explicit file output")
         path_map, promotion_paths = self._path_maps(staged_paths, where=where)
         rollback_root = self._staging_root / ".rollback"
+        final_root = self._final_context.outputs_dir.resolve(strict=True)
+        for final_path in promotion_paths.values():
+            _assert_confined_destination(final_path, final_root=final_root, where=where)
 
         for staged_path, final_path in promotion_paths.items():
-            relative_path = final_path.relative_to(self._final_context.outputs_dir)
+            _assert_confined_destination(final_path, final_root=final_root, where=where)
+            relative_path = final_path.relative_to(final_root)
             backup_path = rollback_root / relative_path
             previous_exists = final_path.exists()
             promotion = _Promotion(
@@ -82,14 +86,19 @@ class FileOutputTransaction:
                 backup_path=backup_path,
                 previous_exists=previous_exists,
             )
-            self._promotions.append(promotion)
 
             final_path.parent.mkdir(parents=True, exist_ok=True)
+            _assert_confined_destination(final_path, final_root=final_root, where=where)
             if previous_exists:
                 if not final_path.is_file() or final_path.is_symlink():
                     raise ExecutionError(f"{where}: output target must be a regular file: {final_path}")
                 backup_path.parent.mkdir(parents=True, exist_ok=True)
+                _assert_confined_destination(final_path, final_root=final_root, where=where)
+                self._promotions.append(promotion)
                 final_path.replace(backup_path)
+            else:
+                self._promotions.append(promotion)
+            _assert_confined_destination(final_path, final_root=final_root, where=where)
             staged_path.replace(final_path)
 
         return {
@@ -164,6 +173,23 @@ def _confined_staging_parent(outputs_dir: Path) -> Path:
     if staging_parent.is_symlink() or not resolved.is_dir():
         raise ExecutionError(message)
     return resolved
+
+
+def _assert_confined_destination(final_path: Path, *, final_root: Path, where: str) -> None:
+    message = f"{where}: destination path must not contain symlinks or leave the outputs directory"
+    try:
+        relative_path = final_path.relative_to(final_root)
+        current = final_root
+        for part in relative_path.parts:
+            current /= part
+            if current.is_symlink():
+                raise ExecutionError(message)
+            if current.exists():
+                current.resolve(strict=True).relative_to(final_root)
+    except ExecutionError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise ExecutionError(message) from exc
 
 
 def _remap_output_value(value: Any, *, path_map: dict[Path, Path]) -> Any:
