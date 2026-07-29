@@ -70,9 +70,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
 
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
 - [Plate-reader metric outputs](./lib/plate_reader/metric_outputs.md): shared
-  dual-reporter assay records and the independent SFXI and response-window
-  output routes.
+  plate-reader records and protocol-owned SFXI and response-window analyses.
 - [SFXI vec8 in Reader](./lib/sfxi_vec8_in_reader.md): measured vec8
   generation, workflow, and plot surfaces.
 - [Plate-reader response-window analysis](./lib/plate_reader/response_window.md):
-  event-relative response and reference-relative fluorescence records.
+  event-relative summaries from declared cross-experiment record resources.

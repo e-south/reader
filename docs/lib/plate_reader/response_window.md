@@ -3,68 +3,59 @@ doc_id: reader-plate-response-window
 surface: public-analysis-contract
 owner: reader-maintainers
 last_verified: 2026-07-29
-summary: Event-relative response summaries and verified experiment-scoped review bundles.
+summary: Event-relative response summaries produced by the canonical record-backed experiment lifecycle.
 ---
 
 # Plate-reader response-window analysis
 
-`response-window` converts manifest-backed trajectories into event-relative
-summaries. Only a `reader.response_window.request.v3` request selects source
-records, event timing, reductions, and display examples.
+The `plate_reader/response_window` protocol converts declared dataframe records
+into event-relative summaries. It is a specialized analysis over generic
+Reader record resources, not a separate service or publication format.
 
 ## Lifecycle
 
 ```bash
-uv run reader response-window preflight REQUEST.yaml --reader-root . --format json
-
-uv run reader response-window build REQUEST.yaml \
-  --reader-root . \
-  --output-experiment experiments/2026/20260717_response_window_aggregate \
-  --overwrite \
-  --format json
-
-uv run reader response-window verify \
-  experiments/2026/20260717_response_window_aggregate/outputs/bundles/response-window \
-  --format json
-
-uv run reader response-window review \
-  experiments/2026/20260717_response_window_aggregate/outputs/bundles/response-window \
-  --mode run
+uv run reader init experiments/response_summary --protocol plate_reader/response_window
+# Edit config.yaml: bind response, magnitude, and trajectory record resources.
+uv run reader inspect experiments/response_summary
+uv run reader validate experiments/response_summary
+uv run reader run experiments/response_summary
+uv run reader records experiments/response_summary
+uv run reader verify experiments/response_summary
+uv run reader notebook experiments/response_summary --mode none
 ```
 
-The output experiment is required. An aggregate is a unit of work, so its
-bundle lives below `experiments/<year>/<experiment>/outputs/bundles/`; Reader
-does not publish to a repository-root output directory.
+The aggregate is an experiment and owns its generated records, plots, exports,
+notebook, and manifests under its own `outputs/`. Reader does not publish to a
+repository-root output directory.
 
 ## Contract
 
-Preflight verifies request syntax, source contracts, digests, event bounds,
-reductions, aggregation, QC, and configured examples without publishing.
-Build writes atomically and verifies before returning. Verify repeats the
-public contract independently. Review verifies first and then opens the
-generated notebook.
+The protocol declares three aligned record collections: response, magnitude,
+and trajectory. Its analysis block owns channel bindings, the reference design,
+the state-value mapping, the event definition, reductions, aggregation, and
+quality thresholds. A normal run produces manifest-backed records for:
 
-The bundle records:
-
-- source experiment, record, contract, and content digests;
 - resolved event timing and event-relative coordinates;
 - well-level interpolation and reduction results;
-- replicate aggregation, uncertainty, and censor bounds;
-- display-ready tables and a generated review notebook.
+- replicate aggregation, uncertainty, and censor bounds; and
+- design summaries, traces, and event intervals.
+
+The standard plot and CSV export plugins consume those records. The standard
+EDA notebook discovers their registered deliverables from `RecordStore`.
 
 Channel labels are source metadata. The response-window contract does not turn
 a named channel into a downstream biological or campaign claim.
 
 ## Failure boundary
 
-Reader rejects missing or changed records, ambiguous state mappings,
-out-of-range events, invalid reductions, insufficient coverage, digest drift,
-unsafe paths, incomplete displays, and incompatible schemas. It does not infer
-missing identity from experiment names.
+Before output mutation, Reader rejects empty collections, missing or changed
+source records, incompatible dataframe contracts, and content-digest drift.
+The domain analysis then rejects misaligned experiment order, ambiguous state
+mappings, invalid event bounds or reductions, and insufficient trace support.
+It does not infer identity or semantics from experiment names.
 
-The Python service is `reader.api.response_window`. Review-table and figure
-helpers are available from `reader.api.response_window.review`; consumers do
-not need domain, runtime, or workbench internals.
+Python callers use `open_experiment` and the ordinary `reader.api` operations.
 
 ## Related references
 

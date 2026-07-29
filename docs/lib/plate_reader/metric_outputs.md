@@ -9,8 +9,7 @@ summary: Route compatible measurement records to independent typed analysis outp
 # Plate-reader metric outputs
 
 Reader separates instrument ingestion from analysis-specific outputs. An
-experiment name never selects analysis behavior; a protocol or versioned
-request does.
+experiment name never selects analysis behavior; a protocol does.
 
 ## Shared measurement records
 
@@ -30,7 +29,10 @@ summary time, event, ordered-state ontology, classification, or objective.
 | --- | --- | --- | --- |
 | General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
 | SFXI vec8 | `logic/sfxi_screen` | one selected acquisition-time snapshot | `sfxi_vec8/vec8` under `sfxi.vec8.v3` |
-| Response window | `reader.response_window.request.v3` | one declared event and event-relative windows | verified `reader.response_window.bundle.v5` |
+| Response window | `plate_reader/response_window` | one declared event and event-relative windows | normal dataframe, plot, export, and notebook records |
+
+Record-backed collection protocols use `resources` of kind `record`; they do
+not copy source configs or publish custom manifests.
 
 The lanes may read compatible source records, but they do not share reductions
 or infer one another from filenames. Downstream interpretation remains a

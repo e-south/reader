@@ -2,7 +2,7 @@
 doc_id: reader-record-provenance
 surface: contract-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Schema-v5 record evidence, verification semantics, and invalid-catalog recovery.
 ---
 
@@ -17,6 +17,8 @@ binds together:
 - each consumed file’s experiment-relative path, byte size, SHA-256, and
   selection policy;
 - the exact upstream record revision consumed by downstream steps; and
+- the exact experiment and record revision consumed through each cross-experiment
+  record resource; and
 - each generated file’s output-relative path, byte size, and SHA-256.
 
 Plot and export plugins still update their configured current files under
