@@ -62,6 +62,41 @@ def test_time_series_window_does_not_change_snapshot_endpoint() -> None:
     plt.close(figures[0].fig)
 
 
+def test_time_series_levels_follow_the_windowed_channel_rows() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A1", "B1", "C1"],
+            "time": [0.0, 8.0, 0.0, 12.0],
+            "channel": ["OD600", "OD600", "RFP/OD600", "OD600"],
+            "value": [0.1, 0.3, 5.0, 0.8],
+            "treatment": ["visible", "visible", "wrong-channel", "outside-window"],
+            "subject": ["tracked", "tracked", "wrong-channel", "outside-window"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=frame,
+        output_dir=None,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        ts_style="subject",
+        order_hue=["visible"],
+        order_style=["tracked"],
+        ts_time_window=[0.0, 8.0],
+        snap_x="treatment",
+        snap_channel="OD600",
+        snap_time=0.0,
+    )
+
+    ax_ts = figures[0].fig.axes[0]
+    legends = [legend for legend in [ax_ts.get_legend(), *ax_ts.artists] if hasattr(legend, "get_texts")]
+    assert len(ax_ts.lines) == 1
+    assert {text.get_text() for legend in legends for text in legend.get_texts()} == {"visible", "tracked"}
+    plt.close(figures[0].fig)
+
+
 def test_paired_row_rejects_heterogeneous_treatment_domains() -> None:
     frame = pd.DataFrame(
         {
@@ -87,6 +122,38 @@ def test_paired_row_rejects_heterogeneous_treatment_domains() -> None:
             snap_channel="OD600",
             snap_time=0.0,
         )
+
+
+def test_paired_row_compares_only_visible_time_series_levels() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "B1", "B2"],
+            "time": [0.0] * 4,
+            "channel": ["OD600", "RFP/OD600", "OD600", "RFP/OD600"],
+            "value": [0.1, 4.0, 0.2, 5.0],
+            "group": ["G1", "G1", "G2", "G2"],
+            "treatment": ["visible", "G1-hidden", "visible", "G2-hidden"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=frame,
+        output_dir=None,
+        group_on="group",
+        pool_sets=[{"G1": ["G1"]}, {"G2": ["G2"]}],
+        group_layout="paired_row",
+        ts_channel="OD600",
+        ts_hue="treatment",
+        order_hue=["visible"],
+        snap_x="treatment",
+        snap_channel="OD600",
+        snap_time=0.0,
+    )
+
+    axes = figures[0].fig.axes
+    assert len(axes[0].lines) == 1
+    assert len(axes[2].lines) == 1
+    plt.close(figures[0].fig)
 
 
 def test_paired_row_uses_one_treatment_color_map() -> None:

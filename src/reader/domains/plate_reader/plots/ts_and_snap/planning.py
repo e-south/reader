@@ -132,6 +132,7 @@ def prepare_composite_inputs(
         raise ValueError(
             f"ts_and_snap: snap_channel {resolved_snap_channel!r} not in data. Available: {available_snap_channels}"
         )
+    ts_work = ts_work[ts_work["channel"].astype(str) == resolved_ts_channel].copy()
 
     if group_col:
         universe = order_levels(work[group_col].astype(str).unique().tolist())
@@ -265,14 +266,14 @@ def prepare_snapshot_panel_data(
 def resolve_paired_hue_levels(
     *, groups: tuple[GroupFrame, ...], hue_col: str, configured: list[str] | None
 ) -> list[str]:
-    domains = [set(group.snapshot[hue_col].astype(str).unique().tolist()) for group in groups]
+    domains = [set(group.time_series[hue_col].astype(str).unique().tolist()) for group in groups]
     if any(domain != domains[0] for domain in domains[1:]):
         raise ValueError(
             "ts_and_snap: group_layout='paired_row' requires identical ts_hue levels in every group "
             "so one legend and color map remain truthful"
         )
     return resolve_level_order(
-        observed=groups[0].snapshot[hue_col].astype(str).unique().tolist(),
+        observed=groups[0].time_series[hue_col].astype(str).unique().tolist(),
         configured=configured,
         name="order_hue",
     )

@@ -172,13 +172,25 @@ def plot_ts_and_snap(
     ):
         """Draw one group pair into caller-owned axes."""
 
+        time_series_data = prepare_time_series_panel_data(
+            frame=ts_d,
+            channel=ch_ts,
+            x_col=ts_x_col,
+            add_sheet_lines=ts_add_sheet_line,
+        )
+        ts = time_series_data.frame
+
         # TS hue levels + colors
-        hue_levels_ts = shared_hue_levels or resolve_level_order(
-            observed=d[ts_hue_col].astype(str).unique().tolist(), configured=order_hue, name="order_hue"
+        hue_levels_ts = (
+            shared_hue_levels
+            if shared_hue_levels is not None
+            else resolve_level_order(
+                observed=ts[ts_hue_col].astype(str).unique().tolist(), configured=order_hue, name="order_hue"
+            )
         )
         style_levels_ts = (
             resolve_level_order(
-                observed=d[ts_style_col].astype(str).unique().tolist(),
+                observed=ts[ts_style_col].astype(str).unique().tolist(),
                 configured=order_style,
                 name="order_style",
             )
@@ -202,13 +214,6 @@ def plot_ts_and_snap(
             return {h: snap_colors[i % len(snap_colors)] for i, h in enumerate(hue_levels_snap)}
 
         # ---- Left: time series (mean ± CI) ----
-        time_series_data = prepare_time_series_panel_data(
-            frame=ts_d,
-            channel=ch_ts,
-            x_col=ts_x_col,
-            add_sheet_lines=ts_add_sheet_line,
-        )
-        ts = time_series_data.frame
         if not ts.empty:
             draw_time_series_panel(
                 ax_ts,
@@ -373,7 +378,7 @@ def plot_ts_and_snap(
     else:
         for group in group_frames:
             hue_levels = resolve_level_order(
-                observed=group.snapshot[ts_hue_col].astype(str).unique().tolist(),
+                observed=group.time_series[ts_hue_col].astype(str).unique().tolist(),
                 configured=order_hue,
                 name="order_hue",
             )
