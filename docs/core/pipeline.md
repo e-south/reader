@@ -2,7 +2,7 @@
 doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
@@ -70,8 +70,8 @@ stable Reader channel names used by downstream analyses.
 - `protocol`
   Assay binding plus semantic config.
 - `resources`
-  Declared files such as `sample_map` or `metadata`. Resources are file-only;
-  directory discovery roots belong under protocol inputs such as
+  Declared files and exact records owned by other Reader experiments. Directory
+  discovery roots belong under protocol inputs such as
   `protocol.inputs.ingest.auto_roots`.
 - `annotations`
   Labels, orders, collections, and metric-neutral ordered state spaces.
@@ -91,10 +91,39 @@ notebook scaffolds, and manifests. A repository-root `outputs/` directory is
 invalid because it has no experiment owner.
 
 Cross-experiment reviews and aggregates are experiments in their own right.
-Their publishing commands therefore require an explicit output experiment and
-resolve its configured `outputs/` directory. Domain-level Python writers remain
-path-agnostic so downstream repositories can publish into their own owned
-workspaces without inheriting Reader's repository layout.
+They declare source records, compile through a protocol, and publish only to
+their configured `outputs/` directory through the normal engine.
+
+## Resource kinds
+
+A file resource is confined to its owning experiment:
+
+```yaml
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.xlsx
+```
+
+A record resource names one current dataframe record in another Reader
+experiment. The referenced experiment must live beneath the same canonical
+`experiments/` owner. Directory names and year partitions are not part of the
+contract.
+
+```yaml
+resources:
+  source_a:
+    kind: record
+    experiment: source_experiment_a
+    record: annotated/df
+```
+
+Protocols bind one or more record-resource ids to typed collection ports.
+Before a real run creates output state, Reader verifies that every source
+record exists, satisfies the port's dataframe contract, and still matches its
+recorded content digest. The produced record then captures each exact source
+revision. Reader does not copy source configs or record catalogs into the
+aggregate experiment.
 
 ## Ordered state-space annotation
 
@@ -152,9 +181,9 @@ Users do not select plugins directly. They choose:
 - optional export `include` / `exclude`
 - optional per-artifact `artifacts` config
 
-Unknown keys in the public config fail fast. `reader/v8` does not
-longer silently drops misspelled `protocol` keys, unknown plot/export output
-blocks, or malformed annotation collections.
+Unknown keys in the public config fail fast. `reader/v8` no longer silently
+drops misspelled protocol keys, unknown plot/export output blocks, or malformed
+annotation collections.
 
 ## Plate-reader example
 

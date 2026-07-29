@@ -2,8 +2,8 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
-summary: Full reader CLI command reference with discovery, execution, outputs, notebooks, and aggregate review commands.
+last_verified: 2026-07-29
+summary: Full Reader CLI reference for discovery, execution, outputs, notebooks, and record-backed aggregate experiments.
 ---
 
 # CLI reference
@@ -23,23 +23,22 @@ A typical order is:
 5. `uv run reader validate` to run preflight checks.
 6. `uv run reader run`, `uv run reader plot`, `uv run reader export`, and `uv run reader notebook` to materialize outputs.
 
-Manifest-backed multi-experiment response summaries use a separate explicit
-lifecycle:
+Record-backed multi-experiment analyses use the same lifecycle:
 
 ```bash
-uv run reader init OUTPUT_EXPERIMENT --protocol workbench/generic
-uv run reader response-window preflight REQUEST.yaml --format json
-uv run reader response-window build REQUEST.yaml --output-experiment OUTPUT_EXPERIMENT --format json
-uv run reader response-window verify OUTPUT_EXPERIMENT/outputs/bundles/response-window --format json
-uv run reader response-window review OUTPUT_EXPERIMENT/outputs/bundles/response-window --mode run
+uv run reader init OUTPUT_EXPERIMENT --protocol plate_reader/response_window
+# Declare source records in OUTPUT_EXPERIMENT/config.yaml.
+uv run reader inspect OUTPUT_EXPERIMENT
+uv run reader validate OUTPUT_EXPERIMENT
+uv run reader run OUTPUT_EXPERIMENT
+uv run reader verify OUTPUT_EXPERIMENT
+uv run reader notebook OUTPUT_EXPERIMENT --mode none
 ```
 
-These commands consume published experiment records. They do not bypass the
-normal experiment pipeline or infer treatment semantics from file names.
-The response service accepts `reader.response_window.request.v3` and
-publishes `reader.response_window.bundle.v5`.
-Aggregate publishers use `outputs/bundles/<bundle-kind>/`; `--overwrite`
-replaces only that owned bundle, never the experiment's ordinary output tree.
+The aggregate experiment declares `resources` of kind `record`. Reader resolves
+each experiment and record identity, verifies the current revision and content,
+and records that revision as input evidence. Domain-specific transforms, plots,
+and exports then run through the ordinary compiled plan and `RecordStore`.
 
 `uv run reader` commands accept a config path, experiment directory, or an index from `uv run reader ls` (shown below as `CONFIG|DIR|INDEX`).
 
@@ -425,35 +424,23 @@ uv run reader export CONFIG|DIR|INDEX --only crosstalk_pairs_table --set with.pa
 
 ## Aggregate SFXI vec8
 
-Render a cross-experiment heatmap from completed SFXI vec8 records or explicit
-vec8 table files:
+Create a record-backed aggregate experiment, declare its source records, and
+run the ordinary lifecycle:
 
 ```bash
-uv run reader init experiments/2026/20260708_sfxi_vec8_aggregate \
-  --protocol workbench/generic \
+uv run reader init experiments/2026/20260708_sfxi_vec8_collection \
+  --protocol logic/sfxi_vec8_collection \
   --title "SFXI vec8 cross-experiment aggregate"
-uv run reader aggregate-sfxi-vec8 SOURCE... \
-  --output-experiment experiments/2026/20260708_sfxi_vec8_aggregate
+# Edit config.yaml: add record resources and list their ids under
+# protocol.inputs.record_resources.
+uv run reader validate experiments/2026/20260708_sfxi_vec8_collection
+uv run reader run experiments/2026/20260708_sfxi_vec8_collection
+uv run reader verify experiments/2026/20260708_sfxi_vec8_collection
 ```
 
-`SOURCE` may be an experiment config, experiment directory, outputs directory,
-or a direct `.csv`, `.parquet`, or `.xlsx` vec8 table. Experiment and outputs
-directory sources require the `sfxi_vec8/vec8` dataframe record. Pass
-`outputs/exports/sfxi/vec8.xlsx` directly only when reviewing that exported
-workbook snapshot.
-
-Useful flags:
-
-- `--output-experiment <CONFIG|DIR|INDEX>` is required. The named aggregate
-  experiment owns the generated bundle through its configured `outputs/`
-  directory; arbitrary workbench output directories are rejected.
-- `--filename <name>` changes the artifact filename stem.
-- `--title <text>` sets the heatmap title.
-- `--dpi <n>` sets PNG resolution; the default is 300 DPI.
-- `--overwrite` replaces an existing artifact bundle.
-- `--format json` emits artifact paths, source rows, and summary counts.
-
-The aggregate command writes a PNG heatmap, tidy CSV, and manifest. See
+Each resource must name a Reader experiment and its `sfxi_vec8/vec8` record.
+The protocol produces a collection dataframe, heatmap, CSV export, EDA
+notebook, and ordinary manifest evidence. See
 [SFXI plot surfaces](../lib/sfxi/plots.md#cross-experiment-heatmap)
 for the source and provenance rules.
 

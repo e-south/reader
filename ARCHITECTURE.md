@@ -74,24 +74,25 @@ The repository test suite enforces the most important inverse boundary:
 `domains/` cannot import `api`, `maintenance`, `plugins`, `protocols`,
 `runtime`, or `workbench`.
 
-### Response-window capability map
+### Aggregate capability map
 
-Response-window processing crosses several layers without giving any one
-layer all responsibilities:
+Cross-experiment analyses use the same lifecycle as source experiments. Core
+owns record references and provenance; protocols and domain packages own the
+meaning of a particular collection:
 
 | Surface | Responsibility |
 | --- | --- |
-| `domains/plate_reader/analysis/response_window/` | Request contracts, source validation, reductions, aggregation, and uncertainty |
-| `domains/plate_reader/evidence/response_window/` | Bundle publication, preflight, provenance checks, and verification |
+| `workbench/experiments.py` | Resolve experiment identities below the canonical `experiments/` owner without assuming a year or directory name |
+| `workbench/records/sources.py` | Resolve exact source-record revisions for typed record-collection ports |
+| `domains/plate_reader/analysis/response_window/` | Response-window source validation, reductions, aggregation, and uncertainty |
 | `domains/plate_reader/plots/response_window/` | Assay-specific review tables, figure planning, rendering, and display labels |
-| `runtime/response_window.py` | Resolve experiment declarations and records, then compose the domain service |
-| `api/response_window/` | Stable Python service and review facades |
-| `workbench/cli/response_window.py` and `workbench/notebooks/response_window.py` | Operator commands and notebook generation |
+| `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
+| `protocols/` | Compile the declared collection, plots, exports, and notebook into the normal workbench plan |
 
-This capability is not a runtime plugin: it coordinates several verified
-experiment records and publishes an aggregate experiment bundle. Its figure
-decisions are assay-specific, so they do not belong in the assay-neutral
-`reader.plotting` package.
+SFXI vec8 collection uses the same core record-reference seam. Neither
+capability owns experiment discovery, direct publication, a custom manifest,
+or a second API lifecycle. Their scientific rules remain specialized and do
+not enter the generic workbench kernel.
 
 ### Agent workflow surface
 
@@ -118,6 +119,10 @@ source -> ingest -> dataframe record -> transform -> dataframe record
 Adding an ingest format, transform, or figure should extend one segment of this
 flow. It should not introduce a second route from config to execution or make a
 domain package discover workbench state.
+
+For an aggregate experiment, `source` can also be an exact dataframe record
+from another declared experiment. The transform still receives explicit typed
+data, and the resulting records follow the same engine and manifest path.
 
 ## Runtime Lifecycle
 
@@ -165,6 +170,9 @@ These are the invariants the codebase should preserve.
 - Domain packages own math, parsing, ordering, and figure-planning logic.
 - Domain packages accept explicit data and parameters; runtime adapters resolve
   configs, catalogs, and generated records before calling them.
+- Cross-experiment inputs are `resources` of kind `record`. They resolve by
+  experiment id and record id, bind to exact revisions, and pass through typed
+  record-collection ports.
 - Generated runtime files live under each experiment's `outputs/`; they are not hand-edited.
 - The repository root has no runtime `outputs/` contract. A cross-experiment
   aggregate is itself an experiment and owns its generated bundles under that

@@ -14,7 +14,7 @@ need to assemble runtime, declaration, graph, engine, and record objects.
 
 ```python
 from reader import open_experiment
-from reader.api import inspect, plan, plots, records, run, validate, verify
+from reader.api import inspect, notebook, plan, plots, records, run, validate, verify
 
 experiment = open_experiment("experiments/2026/my_experiment")
 
@@ -25,6 +25,7 @@ plot_catalog = plots(experiment)
 record_catalog = records(experiment)
 verification = verify(experiment)
 execution = run(experiment)
+notebook_result = notebook(experiment)
 ```
 
 Each operation returns a typed result with `to_dict()` for serialization. An
@@ -47,6 +48,10 @@ Each operation returns a typed result with `to_dict()` for serialization. An
 - `run(experiment)` executes pipeline steps through the same engine path as the
   CLI and returns the invocation id, selected steps, exact produced record
   revisions, and invocation-ledger path.
+- `notebook(experiment, name=None, template=None, overwrite=False)` generates a
+  protocol-compatible Marimo workbench under the experiment's configured
+  output directory. The shared EDA surface uses one deliverable selector, one
+  primary viewport, and a lazy single-open accordion for detail.
 
 Use `run(experiment, dry_run=True)` to validate and select the effective
 pipeline without creating `outputs/`; its result has status `planned` and no
@@ -69,24 +74,9 @@ ports, dataframe contracts, and promoted contract surfaces. Protocols remain
 the public experiment-authoring layer; plugin discovery is for integrations
 and maintainer tooling.
 
-## Response-window operations
-
-```python
-from reader.api.response_window import (
-    build_response_window_bundle,
-    preflight_response_window_request,
-    verify_response_window_bundle,
-)
-from reader.api.response_window.review import load_review_tables, render_review_figure
-```
-
-The service facade composes Reader runtime state with the plate-reader domain
-contracts. Review helpers expose verified tables and assay-specific figures
-without making callers import domain or workbench implementation modules.
-
 ## Boundary
 
-Import public operations from `reader.api`, use `reader.api.response_window`
-for the response-window capability, or use `open_experiment` from the package
-root. Modules under `reader.domains`, `reader.runtime`, and `reader.workbench`
-are implementation details.
+Import public operations from `reader.api` or use `open_experiment` from the
+package root. Domain-specific protocols, including record-backed aggregates,
+use these same operations. Modules under `reader.domains`, `reader.runtime`,
+and `reader.workbench` are implementation details.

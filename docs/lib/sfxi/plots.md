@@ -40,23 +40,22 @@ uv run reader plot <config-or-experiment> --only sfxi_vec8_heatmap
 
 ## Cross-experiment heatmap
 
-`reader aggregate-sfxi-vec8` combines typed vec8 records or explicitly named
-vec8 tables. The aggregate is itself an experiment-owned unit of work.
+`logic/sfxi_vec8_collection` combines typed vec8 records. The aggregate is
+itself an experiment-owned unit of work.
 
 ```bash
 uv run reader init experiments/2026/20260708_vec8_aggregate \
-  --protocol workbench/generic \
+  --protocol logic/sfxi_vec8_collection \
   --title "Vec8 aggregate"
-
-uv run reader aggregate-sfxi-vec8 \
-  EXPERIMENT_OR_VEC8_TABLE [EXPERIMENT_OR_VEC8_TABLE ...] \
-  --output-experiment experiments/2026/20260708_vec8_aggregate
+# Declare record resources and protocol.inputs.record_resources in config.yaml.
+uv run reader validate experiments/2026/20260708_vec8_aggregate
+uv run reader run experiments/2026/20260708_vec8_aggregate
 ```
 
-Reader writes the heatmap, tidy CSV, and digest-bearing manifest below that
-experiment's `outputs/` directory. It rejects ambiguous sources, incompatible
-contracts, missing columns, negative offsets, incomplete vectors, and
-unconfined destinations.
+Reader writes the collection record, heatmap, CSV, notebook, and digest-bearing
+manifest below that experiment's `outputs/` directory. It rejects unknown
+experiments, missing or changed records, incompatible contracts, duplicate
+source ids, missing columns, negative offsets, and incomplete vectors.
 
 ## Related references
 

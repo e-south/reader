@@ -2,7 +2,7 @@
 doc_id: reader-dop-data-classes
 surface: operator-reference
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Reader data-class definitions and the evidence needed to choose one without guessing assay semantics.
 ---
 
@@ -25,7 +25,7 @@ uv run reader dop classes --format json
 | Plate-reader screen | Raw input is a Synergy/plate-reader export with well-level measurements and assay metadata. | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | Raw workbook/export, sample map, channel semantics, treatment/control meaning, plate/well coverage |
 | Flow-cytometry panel | Raw input is FCS or cytometry panel data. | `cytometry/flow_panel` | Raw FCS files and discovery policy, channel naming field, sample metadata, required metadata columns |
 | Logic/SFXI analysis | Dataset is a logic-response or SFXI-style screen with explicit response/intensity channels and an ordered state space. | `logic/sfxi_screen` | Raw files, metadata map, response/intensity channel choices, reference design, ordered 00/10/01/11 states |
-| Aggregate/review experiment | Inputs are prior `reader` records, plots, exports, or hand-authored review material rather than one raw assay run. | A dedicated `experiments/<year>/<experiment>/` unit using `workbench/generic` or a more specific aggregate protocol | Source experiment ids, record/export paths, review purpose, expected outputs or notebook template |
+| Record-collection analysis | Inputs are exact dataframe-record revisions from prior Reader experiments. | A dedicated experiment using `logic/sfxi_vec8_collection`, `plate_reader/response_window`, or another typed collection protocol | Source experiment ids, exact record ids, analysis semantics, expected records and review outputs |
 | Unsupported long-tail assay | The assay does not fit an existing protocol contract. | Start as a draft/template; add a protocol only after the metadata and execution contract are clear. | Raw source path, intended analysis, required metadata, missing protocol decision, owner for follow-up |
 
 If a dataset fits multiple classes, prefer the class whose declared inputs,

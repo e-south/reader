@@ -68,6 +68,9 @@ plugin wiring or internal graph structure.
 - [`src/reader/workbench/decl/build.py`](../../src/reader/workbench/decl/build.py)
   binds a `reader/v8` document to a protocol and produces the compiled
   workbench declaration.
+- [`src/reader/workbench/experiments.py`](../../src/reader/workbench/experiments.py)
+  resolves experiment identities beneath the canonical `experiments/` owner
+  without encoding year or folder-name conventions.
 - [`src/reader/workbench/experiment/model.py`](../../src/reader/workbench/experiment/model.py)
   owns experiment-local semantics: protocol binding, annotations, resources,
   layout, ordered state-space resolution, and the compiled protocol semantic
@@ -93,12 +96,14 @@ plugin wiring or internal graph structure.
 - [`src/reader/domains/`](../../src/reader/domains/)
   owns domain math, parsing, ordering, and figure-planning logic.
 - [`src/reader/domains/plate_reader/analysis/response_window/`](../../src/reader/domains/plate_reader/analysis/response_window/)
-  owns response-window contracts and calculations; its `evidence/` package
-  owns publication and verification.
+  owns response-window contracts and calculations.
 - [`src/reader/domains/plate_reader/plots/response_window/`](../../src/reader/domains/plate_reader/plots/response_window/)
   owns response-window-specific review tables and figures.
 - [`src/reader/plugins/`](../../src/reader/plugins/)
   owns thin execution adapters only.
+- [`src/reader/workbench/records/sources.py`](../../src/reader/workbench/records/sources.py)
+  resolves exact source-record revisions for generic record-collection ports;
+  domain packages never open another experiment's catalog.
 - [`src/reader/contracts/`](../../src/reader/contracts/)
   owns dataframe contract identities, validation rules, and built-in contract
   catalogs.
@@ -109,9 +114,6 @@ plugin wiring or internal graph structure.
 - [`src/reader/api/`](../../src/reader/api/)
   owns the stable task-oriented Python surface. It delegates to the same
   declaration, engine, and verification paths as the CLI.
-- [`src/reader/api/response_window/`](../../src/reader/api/response_window/)
-  is the public Python surface for response-window preflight, build, verify,
-  and review operations.
 - [`src/reader/maintenance/`](../../src/reader/maintenance/)
   owns repository documentation and skill checks exposed through
   `reader maintain`; it is not part of experiment execution.
@@ -132,8 +134,8 @@ More concretely:
 3. [`src/reader/workbench/graph/normalize.py`](../../src/reader/workbench/graph/normalize.py)
    normalizes declarations into runtime nodes and refs.
 4. [`src/reader/workbench/engine/`](../../src/reader/workbench/engine/)
-   validates inputs, resolves records/resources, and executes the selected
-   slice.
+   validates files and exact source-record revisions before output mutation,
+   then executes the selected slice.
 5. [`src/reader/workbench/records/store.py`](../../src/reader/workbench/records/store.py)
    persists dataframe records and file-bundle provenance under
    `outputs/manifests/records.json`.
@@ -156,6 +158,9 @@ separate hardening concern.
 - `inspection/` is presentation-only. It should not recompile or “repair”
   semantic state.
 - Generated artifacts live under `outputs/` and are never the source of truth.
+- Cross-experiment work is another experiment. It declares `record` resources,
+  compiles through a protocol, and persists through the same `RecordStore` as
+  every other run.
 - Ordered state spaces describe record identity only. Target masks, metric
   formulas, and calibration stay outside Reader experiment annotations.
 - When docs name a code surface, prefer linking to the actual file or package so

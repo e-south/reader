@@ -48,14 +48,15 @@ different reductions and publish different vector contracts. An experiment can
 therefore share state identity without coupling either analysis to the other's
 metric.
 
-The SFXI protocol field `protocol.inputs.state_map_ref` and the response-window
-request field `source.state_map_ref` both name an entry under
-`annotations.ordered_state_spaces`. Reader does not provide an alternate state
-mapping path or infer a state order from source labels.
+The SFXI protocol field `protocol.inputs.state_map_ref` names an entry under
+`annotations.ordered_state_spaces`. The response-window protocol declares its
+own source-value mapping because it combines records from multiple experiments.
+Neither analysis infers state order from source labels.
 
 ## Code map
 
 - Wire parsing: [`src/reader/workbench/config/`](../../src/reader/workbench/config/)
 - Experiment semantics: [`src/reader/workbench/experiment/`](../../src/reader/workbench/experiment/)
 - SFXI binding: [`src/reader/domains/logic/sfxi/treatment_semantics.py`](../../src/reader/domains/logic/sfxi/treatment_semantics.py)
-- Response-window binding: [`src/reader/runtime/response_window.py`](../../src/reader/runtime/response_window.py)
+- Response-window analysis: [`src/reader/domains/plate_reader/analysis/response_window/`](../../src/reader/domains/plate_reader/analysis/response_window/)
+- Record-collection binding: [`src/reader/workbench/records/sources.py`](../../src/reader/workbench/records/sources.py)
