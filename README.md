@@ -1,5 +1,3 @@
-# reader
-
 ![Reader: organize assay inputs, validate before running, and trace every output](assets/reader-banner.svg)
 
 [![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
