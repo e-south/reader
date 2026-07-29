@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import typer
 from typer.testing import CliRunner
 
 import reader.domains.logic.sfxi.vec8_aggregate.writer as aggregate_writer
@@ -570,10 +571,14 @@ def test_cli_aggregate_sfxi_vec8_requires_explicit_output_experiment(tmp_path: P
     )
     monkeypatch.chdir(tmp_path)
 
+    command = typer.main.get_command(app).commands["aggregate-sfxi-vec8"]
+    output_experiment = next(param for param in command.params if param.name == "output_experiment")
+
     result = CliRunner().invoke(app, ["aggregate-sfxi-vec8", str(config)])
 
     assert result.exit_code == 2
-    assert "--output-experiment" in result.output
+    assert output_experiment.required is True
+    assert "--output-experiment" in output_experiment.opts
     assert not (tmp_path / "outputs").exists()
 
 
