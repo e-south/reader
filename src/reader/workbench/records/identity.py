@@ -20,6 +20,13 @@ def digest_json(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
+def is_sha256_digest(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)
+
+
 @dataclass(frozen=True)
 class BuildIdentity:
     reader_version: str
@@ -28,7 +35,7 @@ class BuildIdentity:
     def __post_init__(self) -> None:
         if not isinstance(self.reader_version, str) or not self.reader_version.strip():
             raise RecordError("build_identity.reader_version must be a non-empty string")
-        if not isinstance(self.source_digest, str) or not self.source_digest.startswith("sha256:"):
+        if not is_sha256_digest(self.source_digest):
             raise RecordError("build_identity.source_digest must be a sha256 digest")
 
     def to_dict(self) -> dict[str, str]:

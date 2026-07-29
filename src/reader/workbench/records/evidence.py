@@ -8,6 +8,8 @@ from typing import Any
 from reader.errors import RecordError
 from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef
 
+from .identity import is_sha256_digest
+
 _DISCOVERY_POLICIES = frozenset(
     {
         "declared_file",
@@ -30,7 +32,7 @@ class ArtifactEvidence:
             raise RecordError("artifact evidence path must be relative and confined")
         if not isinstance(self.size_bytes, int) or self.size_bytes < 0:
             raise RecordError("artifact evidence size_bytes must be a non-negative integer")
-        if not _is_sha256_digest(self.content_digest):
+        if not is_sha256_digest(self.content_digest):
             raise RecordError("artifact evidence content_digest must be a sha256 digest")
         object.__setattr__(self, "relative_path", path)
 
@@ -77,7 +79,7 @@ class RecordInputEvidence:
                 raise RecordError("record references must use discovery_policy 'record'")
             if self.artifact is not None:
                 raise RecordError("record references must not include artifact evidence")
-            if not _is_sha256_digest(self.record_revision_digest):
+            if not is_sha256_digest(self.record_revision_digest):
                 raise RecordError("record references must include a sha256 record_revision_digest")
             return
         if not isinstance(self.ref, (FileRef, ResourceRef)):
@@ -180,10 +182,3 @@ def _sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
         for chunk in iter(lambda: artifact.read(chunk_size), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
-
-
-def _is_sha256_digest(value: object) -> bool:
-    if not isinstance(value, str) or not value.startswith("sha256:"):
-        return False
-    digest = value.removeprefix("sha256:")
-    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)

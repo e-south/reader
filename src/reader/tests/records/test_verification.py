@@ -135,6 +135,30 @@ def test_verifier_marks_records_from_another_reader_build_unverifiable(tmp_path:
     assert report["records"][0]["issues"][0]["code"] == "build.identity_mismatch"
 
 
+@pytest.mark.parametrize("field", ["build_identity", "code_digest"])
+def test_verifier_rejects_malformed_build_digests_as_invalid_catalogs(tmp_path: Path, field: str) -> None:
+    store, _record = _write_record(tmp_path)
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    payload = catalog["latest"]["ingest/df"]
+    if field == "build_identity":
+        payload["build_identity"]["source_digest"] = "sha256:"
+    else:
+        payload["code_digest"] = "sha256:"
+    catalog["history"]["ingest/df"][-1] = dict(payload)
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["summary"] == {"checked": 0, "failed": 1, "unverifiable": 0}
+    assert report["issues"][0]["code"] == "catalog.invalid"
+    assert "sha256" in report["issues"][0]["reason"]
+
+
 def test_verifier_scopes_records_to_the_current_workbench_declaration(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)

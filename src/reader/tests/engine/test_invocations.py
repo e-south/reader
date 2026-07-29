@@ -36,6 +36,8 @@ from reader.workbench.records import RecordStore
 from reader.workbench.records.identity import BuildIdentity
 from reader.workbench.registry import Plugin, PluginConfig, Registry
 
+_SOURCE_DIGEST = "sha256:" + ("a" * 64)
+
 
 class _SyntheticIngestConfig(PluginConfig):
     pass
@@ -110,7 +112,7 @@ def test_invocation_ledger_writes_attempt_and_terminal_result(tmp_path: Path) ->
     ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
-        build_identity=BuildIdentity(reader_version="1.2.3", source_digest="sha256:source"),
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
         operation="run",
         selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
         declared_inputs=[
@@ -142,7 +144,7 @@ def test_invocation_ledger_writes_attempt_and_terminal_result(tmp_path: Path) ->
     assert events[0]["operation"] == "run"
     assert events[0]["build_identity"] == {
         "reader_version": "1.2.3",
-        "source_digest": "sha256:source",
+        "source_digest": _SOURCE_DIGEST,
     }
     assert events[0]["selected_step_ids"] == {"pipeline": ["ingest"], "plots": [], "exports": []}
     assert events[0]["declared_inputs"] == [
@@ -175,7 +177,7 @@ def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
     ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
-        build_identity=BuildIdentity(reader_version="1.2.3", source_digest="sha256:source"),
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
         operation="run",
         selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
         declared_inputs=[],
@@ -203,7 +205,7 @@ def test_invocation_failure_redacts_common_credentials_without_losing_diagnostic
     ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
-        build_identity=BuildIdentity(reader_version="1.2.3", source_digest="sha256:source"),
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
         operation="run",
         selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
         declared_inputs=[],
@@ -248,7 +250,7 @@ def test_invocation_failure_redacts_provider_credentials_and_preserves_status(tm
     ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
-        build_identity=BuildIdentity(reader_version="1.2.3", source_digest="sha256:source"),
+        build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
         operation="run",
         selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
         declared_inputs=[],

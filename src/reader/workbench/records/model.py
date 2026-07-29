@@ -12,7 +12,7 @@ from reader.errors import RecordError
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 
 from .evidence import ArtifactEvidence, RecordInputEvidence
-from .identity import BuildIdentity, digest_json
+from .identity import BuildIdentity, digest_json, is_sha256_digest
 
 RECORD_SCHEMA_VERSION = 5
 _V5_BASE_FIELDS = {
@@ -126,6 +126,10 @@ class DataFrameArtifactRecord(WorkbenchRecord):
             raise RecordError("schema-v5 dataframe records require build_identity")
         if not isinstance(self.size_bytes, int) or self.size_bytes < 0:
             raise RecordError("schema-v5 dataframe records require non-negative size_bytes")
+        if not is_sha256_digest(self.content_digest):
+            raise RecordError("schema-v5 dataframe records require a sha256 content_digest")
+        if not is_sha256_digest(self.code_digest):
+            raise RecordError("schema-v5 dataframe records require a sha256 code_digest")
 
     def load_dataframe(self) -> pd.DataFrame:
         self.verify_content_digest()
