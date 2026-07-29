@@ -13,6 +13,9 @@ from reader.protocols.model import ProtocolAnalysisChoiceRef, ProtocolBindingVal
 from .runtime import compiled_workbench_payload, record_producer_map
 from .semantics import semantic_program_payload
 
+PROTOCOL_DESCRIPTOR_SECTIONS = ("identity", "authoring", "semantics", "defaults", "compiled")
+_PROTOCOL_IDENTITY_FIELDS = ("protocol", "domain", "family", "summary", "tags")
+
 
 def _table(title: str) -> Table:
     return Table(
@@ -223,8 +226,8 @@ def protocol_example_document(descriptor) -> dict[str, object]:
         "schema": "reader/v8",
         "experiment": {"id": "example_experiment"},
         "protocol": protocol_block,
-        "resources": {},
-        "annotations": {},
+        "resources": {item.id: {"kind": item.kind, "path": item.path} for item in descriptor.resources},
+        "annotations": deepcopy(descriptor.example_annotations),
     }
 
 
@@ -296,6 +299,15 @@ def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
         "authoring": {
             "inputs": protocol_surface_payload(descriptor.input_fields),
             "analysis": protocol_surface_payload(descriptor.analysis_fields),
+            "resources": [
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "path": item.path,
+                    "summary": item.summary,
+                }
+                for item in descriptor.resources
+            ],
             "outputs": protocol_authoring_output_payload(descriptor),
             "starter_config": protocol_example_document(descriptor),
         },
@@ -325,3 +337,23 @@ def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
             "compiled": compiled_payload,
         },
     }
+
+
+def protocol_descriptor_section_payload(
+    payload: dict[str, object],
+    *,
+    section: str,
+) -> dict[str, object]:
+    """Project a protocol descriptor through a stable semantic section name."""
+
+    if section not in PROTOCOL_DESCRIPTOR_SECTIONS:
+        raise ValueError(f"Unknown protocol descriptor section {section!r}")
+    projected = {field: deepcopy(payload[field]) for field in _PROTOCOL_IDENTITY_FIELDS}
+    if section in {"authoring", "semantics"}:
+        projected[section] = deepcopy(payload[section])
+    elif section != "identity":
+        implementation = payload["implementation"]
+        if not isinstance(implementation, dict):
+            raise ValueError("Protocol descriptor payload does not contain implementation details")
+        projected[section] = deepcopy(implementation[section])
+    return projected

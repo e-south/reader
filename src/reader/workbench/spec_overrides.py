@@ -15,6 +15,7 @@ from reader.workbench.graph import (
     ResourceRef,
     select_workbench_specs,
 )
+from reader.workbench.paths import resolve_path_within_root
 
 
 def build_surface_command(
@@ -165,7 +166,12 @@ def _coerce_cli_input_ref(value, *, root: Path, resources: ResourceCatalog) -> I
             return RecordRef(record_id=record.strip())
         if isinstance(file_path, str) and file_path.strip():
             path = Path(file_path.strip()).expanduser()
-            path = (root / path).resolve() if not path.is_absolute() else path.resolve()
+            try:
+                path = resolve_path_within_root(path, root=root)
+            except ValueError as err:
+                raise typer.BadParameter(
+                    "reads.* file bindings must stay under the experiment root after resolving symlinks"
+                ) from err
             return FileRef(path=path)
         if isinstance(resource_id, str) and resource_id.strip():
             return _resolve_cli_resource_ref(resource_id.strip(), resources=resources)

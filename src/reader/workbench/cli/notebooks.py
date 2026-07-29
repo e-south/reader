@@ -8,6 +8,7 @@ from rich import box
 from rich.panel import Panel
 
 from reader.errors import ConfigError, RecordError
+from reader.workbench.paths import resolve_confined_sink_root, resolve_path_within_root
 
 from . import shared
 from ._lazy import load as _load
@@ -61,6 +62,20 @@ def render_marimo_routes(*, target: Path, url: str, runtime_root: Path) -> None:
             box=box.ROUNDED,
         )
     )
+
+
+def _notebook_filename(raw: str) -> str:
+    candidate = Path(raw)
+    if (
+        not raw
+        or raw != raw.strip()
+        or candidate.is_absolute()
+        or len(candidate.parts) != 1
+        or candidate in {Path("."), Path("..")}
+        or candidate.suffix != ".py"
+    ):
+        raise ConfigError("--name must be a non-empty .py filename with no directory components")
+    return raw
 
 
 def _launch_marimo(
@@ -218,9 +233,19 @@ def _scaffold_notebook(
                 "Check pipeline assets or existing dataframe records."
             )
         notebooks_cfg = layout.notebooks_subdir
-        nb_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
-        target_name = name or default_notebook_name()
-        target = nb_dir / target_name
+        notebook_root = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
+        try:
+            nb_dir = resolve_confined_sink_root(notebook_root, root=outputs_dir, label="notebooks")
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        target_name = default_notebook_name() if name is None else _notebook_filename(name)
+        target_candidate = nb_dir / target_name
+        if target_candidate.is_symlink():
+            raise ConfigError(f"Notebook target must not be a symlink: {target_candidate}")
+        try:
+            target = resolve_path_within_root(target_candidate, root=nb_dir)
+        except ValueError as exc:
+            raise ConfigError(f"Notebook target must stay within the notebooks sink root: {target_candidate}") from exc
         if new:
             target = next_available_path(target)
         elif overwrite and target.exists():
@@ -237,6 +262,8 @@ def _scaffold_notebook(
             plot_specs_payload = [spec_to_dict(spec) for spec in selected]
         target, created = _load("reader.workbench.notebooks").write_experiment_notebook(
             target,
+            experiment_root=decl.experiment.root,
+            notebooks_root=nb_dir,
             template=selected_template,
             overwrite=overwrite,
             plot_specs=plot_specs_payload,

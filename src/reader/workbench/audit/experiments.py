@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import argparse
 import io
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -11,14 +11,14 @@ from pathlib import Path
 
 from rich.console import Console
 
-from reader.contracts import builtin_contract_catalog
 from reader.runtime import builtin_runtime
 from reader.workbench.decl import load_workbench_decl
 from reader.workbench.engine import run_spec
 from reader.workbench.engine.validation import validation_summary
 from reader.workbench.experiments import discover_experiment_configs
 from reader.workbench.graph import resolve_workbench
-from reader.workbench.records import RecordStore
+from reader.workbench.inspection.runtime import workbench_record_verification_scope
+from reader.workbench.records import verify_record_store
 
 
 @dataclass(slots=True)
@@ -32,25 +32,6 @@ class AuditResult:
     detail: str | None
     expected_plots: int
     expected_exports: int
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit local reader experiments on staged temp copies.")
-    parser.add_argument("--root", default="experiments", help="Experiments root (default: experiments)")
-    parser.add_argument(
-        "--years",
-        nargs="+",
-        help="Specific year directories to audit. Defaults to every numeric year directory under --root.",
-    )
-    parser.add_argument(
-        "--include-non-active",
-        action="store_true",
-        help="Include non-active lifecycles instead of reporting them as skipped",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default="text", help="Output format")
-    parser.add_argument("--report-path", help="Optional path to write a JSON report")
-    parser.add_argument("--fail-fast", action="store_true", help="Stop on the first failure")
-    return parser.parse_args()
 
 
 def discover_year_dirs(root: Path) -> list[str]:
@@ -78,19 +59,48 @@ def stage_experiment(source_dir: Path, target_dir: Path) -> Path:
         source_dir,
         target_dir,
         ignore=shutil.ignore_patterns("outputs", "__pycache__", ".DS_Store"),
+        symlinks=True,
     )
+    _retarget_internal_symlinks(source_dir=source_dir, target_dir=target_dir)
     return target_dir / "config.yaml"
+
+
+def _retarget_internal_symlinks(*, source_dir: Path, target_dir: Path) -> None:
+    """Map confined source symlinks into the staged tree without following links while copying."""
+
+    source_root = source_dir.resolve(strict=True)
+    target_root = target_dir.resolve(strict=True)
+    for current, dirnames, filenames in os.walk(target_root, followlinks=False):
+        current_path = Path(current)
+        for name in [*dirnames, *filenames]:
+            staged_link = current_path / name
+            if not staged_link.is_symlink():
+                continue
+            relative_link = staged_link.relative_to(target_root)
+            source_link = source_root / relative_link
+            try:
+                source_target = source_link.resolve(strict=True)
+                relative_target = source_target.relative_to(source_root)
+            except (OSError, RuntimeError, ValueError):
+                # External, dangling, or cyclic links remain links. Staged
+                # validation can then reject them without copytree traversing them.
+                continue
+            staged_target = target_root / relative_target
+            link_target = os.path.relpath(staged_target, start=staged_link.parent)
+            target_is_directory = source_target.is_dir()
+            staged_link.unlink()
+            staged_link.symlink_to(link_target, target_is_directory=target_is_directory)
 
 
 def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
     workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
-    store = RecordStore(
+    store = runtime.record_store(
         outputs,
-        contracts=builtin_contract_catalog(),
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
+        experiment_root=decl.experiment.root,
         create=False,
     )
     latest_ids = {record.record_id for record in store.iter_latest_records()}
@@ -115,6 +125,44 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
         return len(expected_plot_ids), len(expected_export_ids), "expected plot files were not created"
     if expected_export_ids and not any(path.is_file() for path in exports_dir.rglob("*")):
         return len(expected_plot_ids), len(expected_export_ids), "expected export files were not created"
+
+    verification = verify_record_store(
+        store,
+        experiment_root=decl.experiment.root,
+        expected_config_digest=decl.config_digest,
+        scope=workbench_record_verification_scope(workbench, runtime=runtime),
+    )
+    if verification["status"] != "ok":
+        issues = list(verification.get("issues") or [])
+        for record in verification.get("records") or []:
+            issues.extend(record.get("issues") or [])
+        first = issues[0] if issues else {"code": "verification.failed", "reason": "unknown verification failure"}
+        return (
+            len(expected_plot_ids),
+            len(expected_export_ids),
+            f"reader verify failed: {first['code']} • {first['reason']}",
+        )
+
+    invocation_path = outputs / "manifests" / "invocations.jsonl"
+    if not invocation_path.is_file():
+        return len(expected_plot_ids), len(expected_export_ids), "invocations.jsonl missing"
+    try:
+        events = [json.loads(line) for line in invocation_path.read_text(encoding="utf-8").splitlines()]
+    except (json.JSONDecodeError, OSError) as exc:
+        return len(expected_plot_ids), len(expected_export_ids), f"invocations.jsonl invalid: {exc}"
+    terminal = events[-1] if events else None
+    if (
+        terminal is None
+        or terminal.get("schema") != "reader.invocation/v1"
+        or terminal.get("event") != "result"
+        or terminal.get("status") != "succeeded"
+        or terminal.get("exit_status") != 0
+        or not any(
+            event.get("event") == "attempt" and event.get("invocation_id") == terminal.get("invocation_id")
+            for event in events[:-1]
+        )
+    ):
+        return len(expected_plot_ids), len(expected_export_ids), "invocation ledger lacks a matched successful result"
     return len(expected_plot_ids), len(expected_export_ids), None
 
 
@@ -132,6 +180,25 @@ def audit_config(config_path: Path, *, include_non_active: bool, runtime) -> Aud
             phase="lifecycle",
             seconds=time.perf_counter() - start,
             detail=f"skipped non-active lifecycle: {lifecycle}",
+            expected_plots=0,
+            expected_exports=0,
+        )
+
+    source_summary = validation_summary(
+        decl,
+        check_files=True,
+        exp_root=decl.experiment.root,
+        runtime=runtime,
+    )
+    if source_summary["status"] != "ok":
+        return AuditResult(
+            config=rel_config,
+            name=config_path.parent.name,
+            lifecycle=lifecycle,
+            status="failed",
+            phase="validate",
+            seconds=time.perf_counter() - start,
+            detail="; ".join(source_summary["errors"]) or "validation failed",
             expected_plots=0,
             expected_exports=0,
         )
@@ -224,34 +291,32 @@ def render_text(results: list[AuditResult]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    args = parse_args()
-    root = Path(args.root).resolve()
+def audit_experiments(
+    root: Path,
+    *,
+    years: tuple[str, ...] | None = None,
+    include_non_active: bool = False,
+    fail_fast: bool = False,
+) -> dict[str, object]:
+    root = root.resolve()
     if not root.exists() or not root.is_dir():
-        raise SystemExit(f"Experiments root not found: {root}")
-    years = discover_year_dirs(root) if args.years is None else [str(year) for year in args.years]
-    if not years:
-        raise SystemExit(f"No numeric year directories found under {root}. Use --years to select specific directories.")
+        raise ValueError(f"Experiments root not found: {root}")
+    selected_years = discover_year_dirs(root) if years is None else [str(year) for year in years]
+    if not selected_years:
+        raise ValueError(f"No numeric year directories found under {root}. Use --years to select specific directories.")
     runtime = builtin_runtime()
-    configs = discover_configs(root, set(years))
+    configs = discover_configs(root, set(selected_years))
 
     results: list[AuditResult] = []
     for config_path in configs:
-        result = audit_config(config_path, include_non_active=args.include_non_active, runtime=runtime)
+        result = audit_config(config_path, include_non_active=include_non_active, runtime=runtime)
         results.append(result)
-        if args.format == "text":
-            detail = f" :: {result.detail}" if result.detail else ""
-            print(
-                f"[{result.status.upper():7}] {result.name} "
-                f"(phase={result.phase}, lifecycle={result.lifecycle}){detail}",
-                flush=True,
-            )
-        if args.fail_fast and result.status == "failed":
+        if fail_fast and result.status == "failed":
             break
 
-    payload = {
+    return {
         "root": str(root),
-        "years": sorted(years),
+        "years": sorted(selected_years),
         "summary": {
             "experiments": len(results),
             "passed": sum(1 for item in results if item.status == "passed"),
@@ -260,16 +325,3 @@ def main() -> int:
         },
         "results": [asdict(result) for result in results],
     }
-    if args.report_path:
-        Path(args.report_path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-    if args.format == "json":
-        print(json.dumps(payload, indent=2), flush=True)
-    else:
-        print(render_text(results), flush=True)
-
-    return 1 if payload["summary"]["failed"] else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

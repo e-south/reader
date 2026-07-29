@@ -27,6 +27,7 @@ ConfigFieldKind = Literal[
     "scalar",
     "any",
 ]
+ProtocolResourceKind = Literal["file"]
 
 _UNSET = object()
 
@@ -133,6 +134,31 @@ class ProtocolBinding:
         object.__setattr__(self, "inputs", dict(self.inputs or {}))
         object.__setattr__(self, "analysis", dict(self.analysis or {}))
         object.__setattr__(self, "outputs", dict(self.outputs or {}))
+
+
+@dataclass(frozen=True)
+class ProtocolResourceSpec:
+    id: str
+    path: str
+    summary: str
+    kind: ProtocolResourceKind = "file"
+
+    def __post_init__(self) -> None:
+        resource_id = str(self.id).strip()
+        path = str(self.path).strip()
+        summary = str(self.summary).strip()
+        if not resource_id:
+            raise ValueError("ProtocolResourceSpec.id must be a non-empty string.")
+        if not path:
+            raise ValueError("ProtocolResourceSpec.path must be a non-empty string.")
+        path_parts = path.replace("\\", "/").split("/")
+        if path.startswith(("/", "~")) or ".." in path_parts:
+            raise ValueError("ProtocolResourceSpec.path must stay relative to the experiment directory.")
+        if not summary:
+            raise ValueError("ProtocolResourceSpec.summary must be a non-empty string.")
+        object.__setattr__(self, "id", resource_id)
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "summary", summary)
 
 
 @dataclass(frozen=True)
@@ -773,6 +799,8 @@ class ProtocolDescriptor:
     summary: str
     execution: ProtocolExecutionPlan
     tags: tuple[str, ...] = ()
+    resources: tuple[ProtocolResourceSpec, ...] = ()
+    example_annotations: dict[str, Any] = field(default_factory=dict)
     input_fields: tuple[ProtocolConfigFieldSpec, ...] = ()
     analysis_fields: tuple[ProtocolConfigFieldSpec, ...] = ()
     factors: tuple[ProtocolFactorSpec, ...] = ()
@@ -796,6 +824,13 @@ class ProtocolDescriptor:
         if not str(self.summary).strip():
             raise ValueError("ProtocolDescriptor.summary must be a non-empty string.")
         object.__setattr__(self, "tags", tuple(str(value) for value in self.tags))
+        resource_ids: set[str] = set()
+        for item in self.resources:
+            if item.id in resource_ids:
+                raise ValueError(f"Duplicate protocol resource {item.id!r}.")
+            resource_ids.add(item.id)
+        object.__setattr__(self, "resources", tuple(self.resources))
+        object.__setattr__(self, "example_annotations", deepcopy(self.example_annotations or {}))
         semantic_profile_ids: set[str] = set()
         for item in self.semantic_profiles:
             if item.id in semantic_profile_ids:

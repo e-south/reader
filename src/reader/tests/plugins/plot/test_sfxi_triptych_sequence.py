@@ -23,7 +23,7 @@ from reader.runtime import builtin_runtime
 from reader.tests.domains.plate_reader.analysis.response_window.test_promoter_evidence_bindings import (
     _write_binding_fixture,
 )
-from reader.tests.support import base_reader_config, write_config
+from reader.tests.support import base_reader_config, cli_success_data, write_config
 from reader.workbench.cli import app
 from reader.workbench.decl.model import (
     ExperimentDecl,
@@ -241,7 +241,7 @@ def test_logic_sfxi_plot_list_surfaces_triptych_sequence(tmp_path: Path) -> None
     result = CliRunner().invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"]["by_plugin"] == {"plot/sfxi_triptych_sequence": 1}
     assert payload["plots"][0]["id"] == "sfxi_triptych_sequence"
     reads = {item["label"]: item for item in payload["plots"][0]["reads"]}

@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.colors import to_rgba
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -25,9 +26,11 @@ from reader.domains.plate_reader.plots.retron_sponge import plot_retron_sponge_s
 from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader.domains.plate_reader.plots.snapshot_heatmap import plot_snapshot_heatmap, prepare_snapshot_heatmap_inputs
 from reader.domains.plate_reader.plots.time_series import plot_time_series
+from reader.domains.plate_reader.plots.ts_and_snap import plot_ts_and_snap
 from reader.errors import ConfigError
 from reader.plugins.plot.snapshot_barplot import SnapshotBarCfg
 from reader.plugins.plot.snapshot_heatmap import HeatmapCfg, SnapshotHeatmapPlot
+from reader.plugins.plot.ts_and_snap import TSAndSnapCfg
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
 from reader.tests.support import load_decl, write_config
 from reader.workbench.engine import validate as validate_job
@@ -466,6 +469,239 @@ def test_time_series_summary_keeps_plate_segments_separate_when_x_values_repeat(
 
     assert summary["segment"].tolist() == ["plate_1", "plate_1", "plate_2", "plate_2"]
     assert summary["mean"].tolist() == pytest.approx([1.1, 2.1, 3.1, 4.1])
+
+
+def test_ts_and_snap_preserves_subject_trajectories_and_explicit_orders() -> None:
+    subjects = ["WT retron26", "D01", "D02"]
+    treatments = ["Null", "200 nM aTc", "5 µM IPTG", "500 µM IPTG"]
+    rows: list[dict[str, object]] = []
+    for subject_idx, subject in enumerate(subjects):
+        for treatment_idx, treatment in enumerate(treatments):
+            for replicate in range(3):
+                position = f"{subject_idx}{treatment_idx}{replicate}"
+                for time in (0.0, 14.0):
+                    rows.append(
+                        {
+                            "position": position,
+                            "time": time,
+                            "channel": "OD600",
+                            "value": 0.08 + 0.03 * subject_idx + 0.01 * treatment_idx + 0.02 * time,
+                            "treatment": treatment,
+                            "assay_subject_id": subject,
+                        }
+                    )
+                rows.append(
+                    {
+                        "position": position,
+                        "time": 14.0,
+                        "channel": "RFP/OD600",
+                        "value": 1.0 + subject_idx + 0.5 * treatment_idx + 0.1 * replicate,
+                        "treatment": treatment,
+                        "assay_subject_id": subject,
+                    }
+                )
+
+    figures = plot_ts_and_snap(
+        df=pd.DataFrame(rows),
+        output_dir=None,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        ts_style="assay_subject_id",
+        order_hue=treatments,
+        order_style=subjects,
+        snap_x="treatment",
+        snap_channel="RFP/OD600",
+        snap_hue="assay_subject_id",
+        order_x=treatments,
+        order_snap_hue=subjects,
+        snap_time=14.0,
+        snap_agg="median",
+        snap_err="iqr",
+        square_panels=True,
+        fig_kwargs={"axis_label_size": 14, "tick_label_size": 12, "snap_tick_rotation": 0},
+        filename="canonical_competence",
+    )
+
+    assert len(figures) == 1
+    assert figures[0].filename == "canonical_competence"
+    ax_ts, ax_snap = figures[0].fig.axes
+    assert len(ax_ts.lines) == len(subjects) * len(treatments)
+    expected_trajectories = [
+        pytest.approx(
+            [
+                0.08 + 0.03 * subject_idx + 0.01 * treatment_idx,
+                0.08 + 0.03 * subject_idx + 0.01 * treatment_idx + 0.02 * 14.0,
+            ]
+        )
+        for treatment_idx, _ in enumerate(treatments)
+        for subject_idx, _ in enumerate(subjects)
+    ]
+    for line, expected in zip(ax_ts.lines, expected_trajectories, strict=True):
+        assert line.get_ydata().tolist() == expected
+    assert {line.get_linestyle() for line in ax_ts.lines} == {"-", "--", ":"}
+    assert [tick.get_text() for tick in ax_snap.get_xticklabels()] == treatments
+    assert len(ax_snap.patches) == len(subjects) * len(treatments)
+    assert ax_ts.get_box_aspect() == pytest.approx(1.0)
+    assert ax_snap.get_box_aspect() == pytest.approx(1.0)
+    for ax in (ax_ts, ax_snap):
+        assert not ax.spines["top"].get_visible()
+        assert not ax.spines["right"].get_visible()
+        assert ax.yaxis.label.get_fontsize() == pytest.approx(14.0)
+        assert all(tick.get_fontsize() == pytest.approx(12.0) for tick in ax.get_yticklabels())
+    plt.close(figures[0].fig)
+
+
+def test_ts_and_snap_without_style_preserves_legacy_hue_pooling() -> None:
+    df = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "B1", "B2"],
+            "time": [0.0, 0.0, 0.0, 0.0],
+            "channel": ["OD600", "OD600", "OD600", "OD600"],
+            "value": [0.1, 0.3, 0.2, 0.4],
+            "treatment": ["Null", "Null", "IPTG", "IPTG"],
+            "subject": ["WT", "D01", "WT", "D01"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=df,
+        output_dir=None,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        snap_channel="OD600",
+        snap_x="treatment",
+        snap_time=0.0,
+    )
+
+    ax_ts = figures[0].fig.axes[0]
+    assert len(ax_ts.lines) == 2
+    assert [line.get_ydata().tolist() for line in ax_ts.lines] == [pytest.approx([0.3]), pytest.approx([0.2])]
+    plt.close(figures[0].fig)
+
+
+@pytest.mark.parametrize("order_field", ["order_snap_hue", "order_snap_hue_ref"])
+def test_ts_and_snap_rejects_snapshot_hue_order_without_snapshot_hue(order_field: str) -> None:
+    with pytest.raises(ValidationError, match=rf"{order_field} requires snap_hue"):
+        TSAndSnapCfg.model_validate(
+            {
+                "ts_channel": "OD600",
+                "ts_hue": "treatment",
+                "snap_time": 14.0,
+                order_field: ["WT", "D01"] if order_field == "order_snap_hue" else "subjects",
+            }
+        )
+
+
+def test_ts_and_snap_honors_explicit_snapshot_order_when_hue_column_matches_time_series() -> None:
+    treatments = ["Null", "IPTG"]
+    df = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "B1", "B2"],
+            "time": [0.0, 0.0, 0.0, 0.0],
+            "channel": ["OD600", "OD600", "OD600", "OD600"],
+            "value": [0.1, 0.2, 0.3, 0.4],
+            "treatment": ["Null", "IPTG", "Null", "IPTG"],
+            "subject": ["WT", "WT", "D01", "D01"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=df,
+        output_dir=None,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        order_hue=treatments,
+        snap_channel="OD600",
+        snap_x="subject",
+        snap_hue="treatment",
+        order_x=["WT", "D01"],
+        order_snap_hue=list(reversed(treatments)),
+        snap_time=0.0,
+        snap_show_legend=True,
+    )
+
+    ax_snap = figures[0].fig.axes[1]
+    assert [text.get_text() for text in ax_snap.get_legend().get_texts()] == list(reversed(treatments))
+    plt.close(figures[0].fig)
+
+
+def test_ts_and_snap_renders_candidate_specific_pairs_in_one_row() -> None:
+    subjects = ["WT retron26", "D01", "D02"]
+    treatments = ["Null", "200 nM aTc", "5 µM IPTG", "500 µM IPTG"]
+    rows: list[dict[str, object]] = []
+    for subject_idx, subject in enumerate(subjects):
+        for treatment_idx, treatment in enumerate(treatments):
+            for replicate in range(3):
+                position = f"{subject_idx}{treatment_idx}{replicate}"
+                for time in (0.0, 12.0):
+                    rows.append(
+                        {
+                            "position": position,
+                            "time": time,
+                            "channel": "OD600",
+                            "value": 0.1 + 0.03 * subject_idx + 0.01 * treatment_idx + 0.02 * time,
+                            "treatment": treatment,
+                            "assay_subject_id": subject,
+                        }
+                    )
+                endpoint = 2.0 + subject_idx + treatment_idx
+                if subject == "D02" and treatment == "200 nM aTc":
+                    endpoint = 100.0
+                rows.append(
+                    {
+                        "position": position,
+                        "time": 12.0,
+                        "channel": "RFP/OD600",
+                        "value": endpoint + 0.1 * replicate,
+                        "treatment": treatment,
+                        "assay_subject_id": subject,
+                    }
+                )
+
+    figures = plot_ts_and_snap(
+        df=pd.DataFrame(rows),
+        output_dir=None,
+        group_on="assay_subject_id",
+        pool_sets=[{subject: [subject]} for subject in subjects],
+        group_layout="paired_row",
+        ts_channel="OD600",
+        ts_hue="treatment",
+        order_hue=treatments,
+        snap_x="treatment",
+        snap_channel="RFP/OD600",
+        order_x=treatments,
+        snap_color_by_x=True,
+        snap_time=12.0,
+        snap_agg="median",
+        snap_err="iqr",
+        square_panels=True,
+        fig_kwargs={"ts_title": "OD600 kinetics", "snap_title": "RFP/OD600 endpoint"},
+        filename="candidate_pairs",
+    )
+
+    assert len(figures) == 1
+    assert figures[0].filename == "candidate_pairs"
+    axes = figures[0].fig.axes
+    assert len(axes) == 6
+    for subject_idx, subject in enumerate(subjects):
+        ax_ts, ax_snap = axes[2 * subject_idx : 2 * subject_idx + 2]
+        assert len(ax_ts.lines) == len(treatments)
+        assert len(ax_snap.patches) == len(treatments)
+        assert [tick.get_text() for tick in ax_snap.get_xticklabels()] == treatments
+        assert ax_ts.get_title().startswith(f"{subject}\n")
+        assert ax_snap.get_title().startswith(f"{subject}\n")
+        assert ax_ts.get_box_aspect() == pytest.approx(1.0)
+        assert ax_snap.get_box_aspect() == pytest.approx(1.0)
+        for line, bar in zip(ax_ts.lines, ax_snap.patches, strict=True):
+            assert to_rgba(line.get_color()) == pytest.approx(bar.get_facecolor())
+    assert axes[1].get_ylim()[1] < axes[5].get_ylim()[1]
+    plt.close(figures[0].fig)
 
 
 def test_time_series_plot_renders_separate_segment_lines_with_ci() -> None:

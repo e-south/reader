@@ -2,7 +2,7 @@
 doc_id: reader-package-spec
 surface: architecture-reference
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Detailed package map and implementation contracts beneath the top-level Reader architecture.
 ---
 
@@ -35,7 +35,10 @@ it to answer three questions quickly:
   [`src/reader/plugins/`](../../src/reader/plugins/),
   [`src/reader/contracts/`](../../src/reader/contracts/),
   [`src/reader/plotting/`](../../src/reader/plotting/)
+- Runtime composition:
+  [`src/reader/runtime/`](../../src/reader/runtime/)
 - Operator surfaces:
+  [`src/reader/api/`](../../src/reader/api/),
   [`src/reader/workbench/cli/`](../../src/reader/workbench/cli/),
   [`docs/guides/preflight_run_verify.md`](../guides/preflight_run_verify.md),
   experiment `outputs/`
@@ -95,6 +98,16 @@ plugin wiring or internal graph structure.
 - [`src/reader/contracts/`](../../src/reader/contracts/)
   owns dataframe contract identities, validation rules, and built-in contract
   catalogs.
+- [`src/reader/runtime/`](../../src/reader/runtime/)
+  owns built-in composition and adapters that resolve workbench state before
+  calling domain operations. Domain packages never resolve configs or record
+  catalogs themselves.
+- [`src/reader/api/`](../../src/reader/api/)
+  owns the stable task-oriented Python surface. It delegates to the same
+  declaration, engine, and verification paths as the CLI.
+- [`src/reader/maintenance/`](../../src/reader/maintenance/)
+  owns repository documentation and skill checks exposed through
+  `reader maintain`; it is not part of experiment execution.
 
 ## Runtime flow
 
@@ -131,42 +144,23 @@ separate hardening concern.
   notebook policy.
 - Plugins stay mechanical. If a maintainer needs assay meaning to understand a
   plugin, that logic probably belongs in a domain or protocol package instead.
+- Domains accept explicit data and parameters. Config loading, record lookup,
+  and runtime composition stay outside `domains/`.
 - `inspection/` is presentation-only. It should not recompile or “repair”
   semantic state.
 - Generated artifacts live under `outputs/` and are never the source of truth.
 - Ordered state spaces describe record identity only. Target masks, metric
   formulas, and calibration stay outside Reader experiment annotations.
 - When docs name a code surface, prefer linking to the actual file or package so
-  `tools/check_docs.py` can catch drift.
+  `reader maintain docs` can catch drift.
 
 ## Current pressure points
 
-The compiled plan and experiment semantics share one program snapshot. Current
-maintainability pressure is concentrated in these areas:
-
-- Protocol concentration:
-  [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py),
-  [`src/reader/protocols/_builtins_plate_reader_variants.py`](../../src/reader/protocols/_builtins_plate_reader_variants.py),
-  [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py),
-  [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py), and
-  [`src/reader/protocols/semantic_coverage.py`](../../src/reader/protocols/semantic_coverage.py)
-  carry a large share of assay semantics. The plate-reader variants live in a
-  private family helper. New assay families should place descriptor, compiler,
-  and semantic-coverage logic in family-specific helpers rather than shared
-  catalog files.
-- Retron notebook concentration:
-  [`src/reader/workbench/notebooks/`](../../src/reader/workbench/notebooks/)
-  owns aggregate figure planning and rendering. Aggregate dataframe
-  preparation and shared retron normalization, motif, family-order, and slug
-  semantics live in
-  [`src/reader/domains/plate_reader/analysis/`](../../src/reader/domains/plate_reader/analysis/).
-  The semantic-source loader uses verified records and does not repair older
-  summary or trace schemas, but the presentation cluster remains large.
-- Figure-family concentration:
-  [`src/reader/domains/plate_reader/plots/retron_sponge_summary_views/`](../../src/reader/domains/plate_reader/plots/retron_sponge_summary_views/)
-  contains a large decomposition renderer. Its inputs are strict and
-  analysis-owned, but further splits should follow figure contracts rather than
-  arbitrary line-count targets.
+The canonical, changing inventory lives in
+[Architecture](../../ARCHITECTURE.md#current-architecture-pressure). This page
+intentionally does not duplicate it. Use the package map above to locate an
+owner, then move one coherent responsibility behind an explicit contract;
+line count alone is not a reason to split a module.
 
 ## Dependency management
 

@@ -11,9 +11,11 @@ from rich import box
 from rich.panel import Panel
 
 from reader.errors import ReaderError
+from reader.workbench.paths import resolve_confined_sink_root
 
+from .helpers import resolve_output_experiment
 from .notebooks import _launch_marimo
-from .shared import app, console, emit_json, normalize_output_format, table
+from .shared import app, console, emit_json, emit_json_error, normalize_output_format, table
 
 if TYPE_CHECKING:
     from reader.response_window import ResponseWindowBundle, ResponseWindowPreflight
@@ -64,7 +66,16 @@ def preflight(
         raise typer.BadParameter(str(exc)) from exc
     fmt = normalize_output_format(output_format)
     if fmt == "json":
-        emit_json(result.to_payload())
+        if result.ready:
+            emit_json(result.to_payload())
+        else:
+            missing = ", ".join(result.missing_display_examples)
+            emit_json_error(
+                code="preflight_failed",
+                field="missing_display_examples",
+                reason=f"Configured response-window display examples were not observed: {missing}.",
+                remediation="Correct request.display.examples or produce the missing designs, then run preflight again.",
+            )
     else:
         _render_preflight(result)
     if not result.ready:
@@ -74,7 +85,14 @@ def preflight(
 @response_window_app.command("build", help="Materialize an atomic, verified response-window bundle.")
 def build(
     request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v3 YAML file.")],
-    out_dir: Annotated[Path, typer.Option("--out-dir", help="Generated bundle destination.")],
+    output_experiment: Annotated[
+        str,
+        typer.Option(
+            "--output-experiment",
+            metavar="CONFIG|DIR|INDEX",
+            help="Experiment that owns the generated response-window bundle.",
+        ),
+    ],
     reader_root: Annotated[Path, typer.Option("--reader-root", help="Reader repository root.")] = Path("."),
     overwrite: Annotated[bool, typer.Option("--overwrite", help="Atomically replace an existing bundle.")] = False,
     output_format: Annotated[
@@ -84,6 +102,7 @@ def build(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
+        out_dir = _bundle_destination(output_experiment, bundle_kind="response-window")
         bundle = build_response_window_bundle(
             reader_root=reader_root,
             request_path=request,
@@ -145,7 +164,14 @@ def promoter_evidence(
         Path,
         typer.Argument(help="Verified study-issued promoter candidate-binding directory."),
     ],
-    out_dir: Annotated[Path, typer.Option("--out-dir", help="Promoter-evidence bundle destination.")],
+    output_experiment: Annotated[
+        str,
+        typer.Option(
+            "--output-experiment",
+            metavar="CONFIG|DIR|INDEX",
+            help="Experiment that owns the promoter-evidence bundle.",
+        ),
+    ],
     experiment_id: Annotated[str, typer.Option("--experiment-id", help="Exact Reader experiment ID.")],
     design_id: Annotated[str, typer.Option("--design-id", help="Exact Reader design alias.")],
     reduction_id: Annotated[str, typer.Option("--reduction-id", help="Exact response-window reduction ID.")],
@@ -164,6 +190,7 @@ def promoter_evidence(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
+        out_dir = _bundle_destination(output_experiment, bundle_kind="promoter-evidence")
         bundle = build_promoter_evidence_bundle(
             response_bundle_root=response_bundle_root,
             bindings_root=bindings_root,
@@ -273,6 +300,17 @@ def _render_preflight(result: ResponseWindowPreflight) -> None:
     )
     console.print(f"[muted]Primary reduction:[/muted] {result.primary_reduction_id}")
     console.print(f"[muted]Missing review examples:[/muted] {missing}")
+
+
+def _bundle_destination(output_experiment: str, *, bundle_kind: str) -> Path:
+    """Keep aggregate publications distinct from an experiment's workbench outputs."""
+
+    outputs_dir = resolve_output_experiment(output_experiment)
+    return resolve_confined_sink_root(
+        outputs_dir / "bundles" / bundle_kind,
+        root=outputs_dir,
+        label=f"{bundle_kind} bundle",
+    )
 
 
 app.add_typer(response_window_app, name="response-window")

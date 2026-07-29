@@ -135,6 +135,8 @@ def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_pa
 
         rendered_path, changed = write_experiment_notebook(
             target,
+            experiment_root=tmp_path,
+            notebooks_root=tmp_path,
             template=descriptor.template,
             overwrite=True,
             plot_specs=[],
@@ -161,6 +163,96 @@ def test_notebook_templates_render_through_scaffold_and_pass_marimo_check(tmp_pa
     assert result.returncode == 0, (
         f"Rendered notebooks failed marimo check:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+
+def test_notebook_writer_rejects_symlinked_notebooks_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    notebooks_root = tmp_path / "outputs" / "notebooks"
+    notebooks_root.parent.mkdir()
+    try:
+        notebooks_root.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(ConfigError, match="symlink path components"):
+        write_experiment_notebook(
+            notebooks_root / "review.py",
+            experiment_root=tmp_path,
+            notebooks_root=notebooks_root,
+            template="notebook/basic",
+        )
+
+    assert list(outside.iterdir()) == []
+
+
+def test_notebook_writer_rejects_notebooks_root_outside_experiment(tmp_path: Path) -> None:
+    experiment_root = tmp_path / "experiment"
+    outside = tmp_path / "outside"
+
+    with pytest.raises(ConfigError, match="must stay within"):
+        write_experiment_notebook(
+            outside / "review.py",
+            experiment_root=experiment_root,
+            notebooks_root=outside,
+            template="notebook/basic",
+        )
+
+    assert not outside.exists()
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_notebook_writer_rejects_symlink_target_before_existing_file_handling(overwrite: bool, tmp_path: Path) -> None:
+    notebooks_root = tmp_path / "outputs" / "notebooks"
+    notebooks_root.mkdir(parents=True)
+    outside = tmp_path / "outside.py"
+    outside.write_text("original", encoding="utf-8")
+    target = notebooks_root / "review.py"
+    try:
+        target.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(ConfigError, match="must not be a symlink"):
+        write_experiment_notebook(
+            target,
+            experiment_root=tmp_path,
+            notebooks_root=notebooks_root,
+            template="notebook/basic",
+            overwrite=overwrite,
+        )
+
+    assert outside.read_text(encoding="utf-8") == "original"
+
+
+@pytest.mark.parametrize("target_name", ["../escaped.py", "/tmp/escaped.py"])
+def test_notebook_writer_rejects_target_outside_configured_root(target_name: str, tmp_path: Path) -> None:
+    notebooks_root = tmp_path / "outputs" / "notebooks"
+    target = notebooks_root / target_name
+
+    with pytest.raises(ConfigError, match="configured notebooks root"):
+        write_experiment_notebook(
+            target,
+            experiment_root=tmp_path,
+            notebooks_root=notebooks_root,
+            template="notebook/basic",
+        )
+
+
+def test_notebook_writer_writes_normal_target_with_owned_context(tmp_path: Path) -> None:
+    notebooks_root = tmp_path / "outputs" / "notebooks"
+    target = notebooks_root / "review.py"
+
+    rendered, changed = write_experiment_notebook(
+        target,
+        experiment_root=tmp_path,
+        notebooks_root=notebooks_root,
+        template="notebook/basic",
+    )
+
+    assert changed is True
+    assert rendered == target
+    assert target.is_file()
 
 
 def test_notebook_template_uses_explicit_record_scan_placeholder() -> None:

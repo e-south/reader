@@ -24,7 +24,13 @@ from reader.workbench.engine import (
 )
 from reader.workbench.engine.inputs import resolve_missing_file_inputs
 from reader.workbench.graph import FileRef, OutputRef
-from reader.workbench.ports import dataframe_input, dataframe_output, file_bundle_output, file_path_input
+from reader.workbench.ports import (
+    dataframe_input,
+    dataframe_output,
+    file_bundle_output,
+    file_path_input,
+    file_set_input,
+)
 from reader.workbench.records import RecordStore
 from reader.workbench.registry import Plugin, PluginConfig
 
@@ -235,6 +241,36 @@ def test_resolve_inputs_rejects_directory_file_input(tmp_path):
         _resolve_inputs(store, {"raw": FileRef(path=data_dir)}, input_ports={"raw": file_path_input("raw")})
 
 
+def test_resolve_inputs_rejects_file_binding_for_dataframe_port(tmp_path: Path) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    path = tmp_path / "inputs.csv"
+    path.write_text("value\n1\n", encoding="utf-8")
+
+    with pytest.raises(ExecutionError, match="expects port kind 'dataframe'"):
+        _resolve_inputs(
+            store,
+            {"df": FileRef(path=path)},
+            input_ports={"df": dataframe_input("df", "tidy.v1")},
+            exp_dir=tmp_path,
+        )
+
+
+def test_resolve_inputs_rejects_file_binding_outside_experiment(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    outside = tmp_path / "outside.csv"
+    outside.write_text("value\n1\n", encoding="utf-8")
+    store = RecordStore(experiment / "outputs", contracts=builtin_contract_catalog())
+
+    with pytest.raises(ExecutionError, match="stay under the experiment root"):
+        _resolve_inputs(
+            store,
+            {"raw": FileRef(path=outside)},
+            input_ports={"raw": file_path_input("raw")},
+            exp_dir=experiment,
+        )
+
+
 def test_missing_file_resolver_rejects_unknown_ports(tmp_path: Path) -> None:
     plugin = InvalidFileResolverPlugin()
     plugin.bind_runtime(
@@ -288,6 +324,44 @@ def test_missing_file_resolver_rejects_path_outside_experiment(tmp_path: Path) -
             inputs={},
             input_ports=dict(plugin.input_ports()),
         )
+
+
+def test_missing_file_resolver_accepts_confined_file_set(tmp_path: Path) -> None:
+    first = tmp_path / "first.fcs"
+    second = tmp_path / "second.fcs"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    class FileSetResolverPlugin(InvalidFileResolverPlugin):
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_set_input("raw", optional=True)}
+
+        @classmethod
+        def resolve_missing_file_inputs(cls, *, exp_dir, cfg, inputs):
+            del exp_dir, cfg, inputs
+            return {"raw": (first, second)}
+
+    plugin = FileSetResolverPlugin()
+    plugin.bind_runtime(
+        descriptor=SimpleNamespace(
+            kind="plugin",
+            cls=FileSetResolverPlugin,
+            plugin_id="ingest/file_set_resolver",
+            name="ingest/file_set_resolver",
+        ),
+        contracts=builtin_contract_catalog(),
+    )
+
+    resolved = resolve_missing_file_inputs(
+        plugin=plugin,
+        exp_dir=tmp_path,
+        cfg=PluginConfig(),
+        inputs={},
+        input_ports=dict(plugin.input_ports()),
+    )
+
+    assert resolved == {"raw": (first.resolve(), second.resolve())}
 
 
 @pytest.mark.parametrize("contract", ["none", "files"])

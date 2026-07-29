@@ -2,7 +2,7 @@
 doc_id: reader-security
 surface: security-contract
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-28
 summary: Trust boundaries, path safety, dependency posture, and safe defaults for Reader operations.
 ---
 
@@ -51,7 +51,8 @@ External plugins and notebooks are executable Python. They are an extension surf
 - `paths.<subdir>` must remain relative to `paths.outputs`
 - path escapes via `..` are rejected
 - absolute subdirectory paths are rejected
-- generated outputs are expected under `outputs/`
+- generated runtime outputs are confined to each experiment's `outputs/`
+- notebook artifact staging and publication reject path and symlink escapes
 
 ### Execution boundaries
 
@@ -62,14 +63,18 @@ External plugins and notebooks are executable Python. They are an extension surf
 
 ### Provenance and integrity
 
-- persisted records include effective plugin-config digests
+- schema-v5 records bind complete and effective producer-config digests plus
+  Reader build identity
 - data and file bundles are tracked in `outputs/manifests/records.json`
-- auto-discovered raw workbooks are confined to the experiment root and
-  recorded by resolved path
-- dataframe artifact content digests are recorded and verified
-- raw file references do not yet carry source-content digests
-- file bundles are path-confined and described, but do not yet carry per-file
-  content digests
+- direct and auto-discovered input files are confined to the experiment root;
+  schema-v5 evidence records their relative path, byte size, SHA-256 digest,
+  and selection policy
+- dataframe and file-bundle artifacts carry byte sizes and SHA-256 digests that
+  `reader verify` checks against current files
+- input evidence is captured before execution and rechecked before catalog
+  commit so a mid-run source change refuses persistence
+- record readers accept schema v5 only; older payloads make the catalog invalid
+  and require regeneration from the owning experiment
 
 ## What Reader Does Not Promise
 
@@ -115,9 +120,10 @@ If the answer is yes to any of those, the change deserves an explicit security r
 
 ## Current Open Security Debt
 
-The main open risk is semantic drift. When assay semantics are split between
-protocol metadata and compiler behavior, operators have a harder time
-reasoning about execution. Opaque execution weakens reviewability.
+The main open risk is semantic drift. Reader limits it by compiling protocol
+semantics and execution bindings into one inspectable program. Nodes that are
+not executed must remain explicitly domain-defined or unavailable; they must
+not acquire behavior through an unreported plugin branch.
 
 The other standing boundary is external plugins. They remain a deliberate trust boundary rather than a sandboxed capability surface.
 

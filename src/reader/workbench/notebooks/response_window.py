@@ -31,8 +31,8 @@ def _():
     import matplotlib.pyplot as plt
     import marimo as mo
 
-    from reader.notebook_review import retained_review_option_key, retained_review_selection
-    from reader.notebook_presentation import (
+    from reader.domains.review import retained_review_option_key, retained_review_selection
+    from reader.workbench.notebooks.presentation import (
         experiment_display_title_from_config,
         experiment_selector_options,
     )

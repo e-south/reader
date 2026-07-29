@@ -200,6 +200,12 @@ def _assert_input_port_value(
         if isinstance(value, Path):
             return
         raise ExecutionError(f"[{where}] input '{name}' expects a file path but got {type(value).__name__}")
+    if port.kind == "file_set":
+        if isinstance(value, tuple) and value and all(isinstance(item, Path) for item in value):
+            return
+        raise ExecutionError(
+            f"[{where}] input '{name}' expects a non-empty tuple of file paths but got {type(value).__name__}"
+        )
     if port.kind == "file_bundle":
         files = getattr(value, "files", None)
         if files is None:

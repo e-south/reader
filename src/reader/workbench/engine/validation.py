@@ -57,12 +57,12 @@ def _assert_known_read_targets(*, label: str, step: Any, available_labels: set[s
         port = input_ports.get(key)
         if port is None:
             continue
-        if port.kind == "dataframe" and isinstance(target, FileRef | ResourceRef):
+        if port.kind in {"dataframe", "file_bundle"} and isinstance(target, FileRef | ResourceRef):
             raise ConfigError(
                 f"{label} {step.id}: reads '{key}' targets '{input_ref_display(target)}', "
-                "but the plugin expects a dataframe record."
+                f"but the plugin expects a {port.kind} record."
             )
-        if port.kind == "file_path" and isinstance(target, RecordRef):
+        if port.kind in {"file_path", "file_set"} and isinstance(target, RecordRef):
             raise ConfigError(
                 f"{label} {step.id}: reads '{key}' targets record '{target.record_id}', "
                 "but the plugin expects an explicit file/resource binding."
@@ -201,6 +201,11 @@ def _validate_specs(
                 experiment=experiment,
                 with_block=with_block,
             )
+            try:
+                cfg = plugin_cls.ConfigModel.model_validate(with_block)
+                plugin_cls.validate_semantic_references(experiment=experiment, cfg=cfg)
+            except Exception as err:
+                raise ConfigError(f"plot {spec_item.id}: invalid plugin semantic reference: {err}") from err
         data_outputs = {
             key: port.render() for key, port in plugin_cls.output_ports().items() if port.kind == "dataframe"
         }
@@ -265,12 +270,14 @@ def validation_summary(
     check_files: bool = False,
     exp_root: Path | None = None,
     runtime: ReaderRuntime | None = None,
+    plot_specs_override: list[Any] | None = None,
+    export_specs_override: list[Any] | None = None,
 ) -> dict[str, Any]:
     runtime = runtime or builtin_runtime()
     workbench = resolve_workbench(decl)
     pipeline_steps = list(workbench.pipeline)
-    plot_specs = list(workbench.plots)
-    export_specs = list(workbench.exports)
+    plot_specs = list(workbench.plots) if plot_specs_override is None else list(plot_specs_override)
+    export_specs = list(workbench.exports) if export_specs_override is None else list(export_specs_override)
     notebook_specs = list(workbench.notebooks)
     ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs, notebook_specs)
     categories = collect_categories(list(workbench.plugin_steps()))

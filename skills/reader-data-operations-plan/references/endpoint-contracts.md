@@ -17,7 +17,7 @@ Required evidence:
   owns DOP component boundaries
 - [External sources](./external-sources.md) records dated source rows for
   external DOP claims
-- `uv run python tools/check_docs.py` passes after docs or route edits
+- `uv run reader maintain docs` passes after docs or route edits
 
 Failure handling:
 - Repair missing routes before changing prose. If the source claim is stale or
@@ -35,7 +35,7 @@ Required evidence:
 - `uv run reader dop ready-specs --format json` works for evidence gates
 - [Test matrix](./test-matrix.md) names trigger, functional, and deterministic
   checks
-- `uv run python tools/audit_repo_skills.py` passes after skill edits
+- `uv run reader maintain skills` passes after skill edits
 
 Failure handling:
 - If JSON registry output is unavailable, stop the automation-facing claim and

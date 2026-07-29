@@ -2,7 +2,7 @@
 doc_id: reader-repo-maintenance
 surface: maintainer-runbook
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-28
 summary: Broader Reader branch, CI, repository health, and delivery workflow beyond the minimum change gate.
 ---
 
@@ -59,7 +59,7 @@ The quality bar for those checks is defined in [QUALITY.md](../QUALITY.md).
 For docs and routing changes, start with:
 
 ```bash
-uv run python tools/check_docs.py
+uv run reader maintain docs
 git diff --check
 ```
 
@@ -68,16 +68,16 @@ git diff --check
 `reader` uses two GitHub Actions workflows:
 
 - `CI` in [.github/workflows/ci.yaml](../.github/workflows/ci.yaml): pull-request and push feedback. It runs docs integrity, lockfile drift checks, lint, format, compile, build, and the default test run with coverage. The default run is `uv run pytest -q`, which excludes only the active-experiment run.
-- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slower main-branch, nightly, and manual validation. It runs `pytest -m integration` with `--durations=25` and uploads the experiment readiness summary as an artifact.
+- `Integration` in [.github/workflows/integration.yaml](../.github/workflows/integration.yaml): slower main-branch, nightly, and manual validation. It runs `pytest -m integration` with `--durations=25` and uploads a bounded experiment readiness inventory. CI requests up to 100 experiments explicitly and fails instead of publishing the artifact when the JSON envelope reports truncation.
 
 Local commands:
 
 - `uv run ruff check .`: repo-wide lint
 - `uv run ruff format . --check`: formatting check
-- `uv run python tools/check_docs.py`: docs links and routing integrity
-- `uv run pytest -q`: fast default test run, excludes only the active-experiment run
+- `uv run reader maintain docs`: docs links and routing integrity
+- `uv run pytest -q`: portable default test run; one local-data active-experiment case is intentionally deselected
 - `uv run pytest -q -m repo_matrix`: repo-wide config and metadata sweeps
 - `uv run pytest -q -m smoke`: representative real-experiment smoke tests
-- `uv run pytest -q -m active_experiments`: full active-experiment end-to-end run
+- `uv run pytest -q -m active_experiments`: local data-backed active-experiment end-to-end run; requires ignored raw inputs
 - `uv run pytest -q -m integration`: full integration set, including `repo_matrix` and `active_experiments`
 - `git diff --check`: whitespace and merge-marker hygiene

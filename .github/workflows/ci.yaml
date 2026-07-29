@@ -39,7 +39,7 @@ jobs:
         run: uv lock --check
 
       - name: Docs integrity
-        run: uv run --locked python tools/check_docs.py
+        run: uv run --locked reader maintain docs
 
       - name: Lint
         run: uv run --locked ruff check .
@@ -88,10 +88,12 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: default-test-artifacts
           path: .artifacts/
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false

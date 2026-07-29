@@ -8,6 +8,7 @@ from .model import (
     file_bundle_output,
     file_path_input,
     file_path_output,
+    file_set_input,
     validate_input_ports,
     validate_output_ports,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "file_bundle_output",
     "file_path_input",
     "file_path_output",
+    "file_set_input",
     "validate_input_ports",
     "validate_output_ports",
 ]

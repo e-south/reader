@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,18 +13,24 @@ import pandas as pd
 
 from reader.contracts import ContractCatalog, ContractId
 from reader.errors import RecordError
-from reader.workbench.graph import ProvenanceInput, RecipeSource
+from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
+from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records.model import (
     DataFrameArtifactRecord,
     FileBundleRecord,
     PathDescription,
     RecordProducer,
     RecordRecipeSource,
+    normalize_file_bundle_metadata,
     record_from_dict,
     record_to_dict,
     sha256_file,
 )
+
+from .evidence import RecordInputEvidence, capture_artifact_evidence
+from .identity import BuildIdentity, current_build_identity
+from .model import record_revision_digest
 
 RECORD_CATALOG_SCHEMA_VERSION = 3
 
@@ -41,6 +47,7 @@ class RecordStore:
         contracts: ContractCatalog,
         plots_subdir: str | None = "plots",
         exports_subdir: str | None = "exports",
+        experiment_root: Path | None = None,
         create: bool = True,
     ) -> None:
         self.root = outputs_dir
@@ -48,6 +55,7 @@ class RecordStore:
         self.artifacts_dir = self.root / "artifacts"
         self.manifests_dir = self.root / "manifests"
         self.records_path = self.manifests_dir / "records.json"
+        self.experiment_root = (experiment_root or outputs_dir.parent).resolve(strict=False)
         if plots_subdir in (None, "", ".", "./"):
             self.plots_dir = self.root
         else:
@@ -56,10 +64,25 @@ class RecordStore:
             self.exports_dir = self.root
         else:
             self.exports_dir = self.root / exports_subdir
+        self._validate_sink_roots()
         if create:
             self.ensure_layout()
 
+    def _validate_sink_roots(self) -> None:
+        try:
+            resolve_confined_sink_root(self.root, root=self.experiment_root, label="outputs")
+            for label, path in (
+                ("artifacts", self.artifacts_dir),
+                ("manifests", self.manifests_dir),
+                ("plots", self.plots_dir),
+                ("exports", self.exports_dir),
+            ):
+                resolve_confined_sink_root(path, root=self.root, label=label)
+        except ValueError as exc:
+            raise RecordError(str(exc)) from exc
+
     def ensure_layout(self) -> None:
+        self._validate_sink_roots()
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.manifests_dir.mkdir(parents=True, exist_ok=True)
         if self.plots_dir != self.root:
@@ -72,11 +95,23 @@ class RecordStore:
     def catalog_exists(self) -> bool:
         return self.records_path.exists()
 
+    def reset_catalog(self) -> None:
+        """Replace the generated record catalog with an empty current-schema catalog."""
+
+        self.ensure_layout()
+        self._write_catalog(_empty_catalog())
+
     def _read_catalog(self) -> dict[str, Any]:
         if not self.records_path.exists():
             raise RecordError("records.json is missing")
         try:
-            data = json.loads(self.records_path.read_text(encoding="utf-8"))
+            content = self.records_path.read_text(encoding="utf-8")
+        except UnicodeError as exc:
+            raise RecordError(f"records.json is not valid UTF-8: {exc}") from exc
+        except OSError as exc:
+            raise RecordError(f"Could not read records.json: {exc}") from exc
+        try:
+            data = json.loads(content)
         except json.JSONDecodeError as exc:
             raise RecordError(f"records.json is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):
@@ -90,7 +125,36 @@ class RecordStore:
             raise RecordError("records.json must include 'latest' and 'history' objects")
         if not isinstance(data["latest"], dict) or not isinstance(data["history"], dict):
             raise RecordError("records.json 'latest' and 'history' must be JSON objects")
+        self._validate_catalog_lineage(data)
         return data
+
+    def _validate_catalog_lineage(self, catalog: dict[str, Any]) -> None:
+        latest = catalog["latest"]
+        history = catalog["history"]
+        latest_ids = set(latest)
+        history_ids = set(history)
+        if latest_ids != history_ids:
+            missing_history = sorted(latest_ids - history_ids)
+            orphan_history = sorted(history_ids - latest_ids)
+            details = []
+            if missing_history:
+                details.append("latest records missing history: " + ", ".join(missing_history))
+            if orphan_history:
+                details.append("history records missing latest: " + ", ".join(orphan_history))
+            raise RecordError("records.json latest/history lineage is inconsistent: " + "; ".join(details))
+        for record_id in sorted(latest_ids):
+            revisions = history[record_id]
+            if not isinstance(revisions, list):
+                raise RecordError(f"records.json history for {record_id!r} must be a list")
+            if not revisions:
+                raise RecordError(f"records.json history for latest record {record_id!r} must be non-empty")
+            for payload in revisions:
+                self._materialize(record_id, payload)
+            self._materialize(record_id, latest[record_id])
+            if revisions[-1] != latest[record_id]:
+                raise RecordError(
+                    f"records.json history for {record_id!r} must end with the exact latest record payload"
+                )
 
     def _write_catalog(self, payload: dict[str, Any]) -> None:
         self.manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -117,12 +181,95 @@ class RecordStore:
                 staged_path.unlink(missing_ok=True)
 
     def _materialize(self, record_id: str, payload: dict[str, Any]) -> DataFrameArtifactRecord | FileBundleRecord:
-        record = record_from_dict(payload, outputs_dir=self.root)
+        record = record_from_dict(payload, outputs_dir=self.root, experiment_root=self.experiment_root)
         if record.record_id != record_id:
             raise RecordError(
                 f"records.json entry key {record_id!r} does not match payload record_id {record.record_id!r}"
             )
         return record
+
+    def capture_inputs(
+        self,
+        inputs: Iterable[ProvenanceInput],
+        *,
+        resolved_inputs: Mapping[str, Any] | None = None,
+    ) -> tuple[RecordInputEvidence, ...]:
+        """Bind immutable evidence to the exact inputs resolved for one computation."""
+
+        resolved_by_label = dict(resolved_inputs or {})
+        evidence: list[RecordInputEvidence] = []
+        for item in inputs:
+            if isinstance(item.ref, RecordRef):
+                upstream = resolved_by_label.get(item.label)
+                if upstream is None:
+                    upstream = self.latest_record(item.ref.record_id)
+                if upstream is None:
+                    raise RecordError(
+                        f"Input record {item.ref.record_id!r} is missing; produce it before persisting this record."
+                    )
+                if not isinstance(upstream, (DataFrameArtifactRecord, FileBundleRecord)):
+                    raise RecordError(f"Resolved input {item.label!r} must be a Reader record")
+                if upstream.record_id != item.ref.record_id:
+                    raise RecordError(
+                        f"Resolved input {item.label!r} is record {upstream.record_id!r}, "
+                        f"expected {item.ref.record_id!r}"
+                    )
+                evidence.append(
+                    RecordInputEvidence(
+                        label=item.label,
+                        ref=item.ref,
+                        discovery_policy="record",
+                        record_revision_digest=record_revision_digest(upstream, outputs_dir=self.root),
+                    )
+                )
+                continue
+            if isinstance(item.ref, ResourceRef):
+                default_policy = "declared_resource"
+            elif isinstance(item.ref, FileRef):
+                default_policy = "declared_file"
+            else:
+                raise RecordError(f"Unsupported input reference for {item.label!r}")
+            evidence.append(
+                RecordInputEvidence(
+                    label=item.label,
+                    ref=item.ref,
+                    discovery_policy=item.discovery_policy or default_policy,
+                    artifact=capture_artifact_evidence(item.ref.path, root=self.experiment_root),
+                )
+            )
+        return tuple(evidence)
+
+    def _require_captured_inputs(self, inputs: Iterable[RecordInputEvidence]) -> tuple[RecordInputEvidence, ...]:
+        captured = tuple(inputs)
+        if any(not isinstance(item, RecordInputEvidence) for item in captured):
+            raise RecordError(
+                "Record persistence requires pre-captured RecordInputEvidence; "
+                "capture inputs before computation with RecordStore.capture_inputs()."
+            )
+        self._assert_captured_inputs_current(captured)
+        return captured
+
+    def _assert_captured_inputs_current(self, captured: Iterable[RecordInputEvidence]) -> None:
+        for item in captured:
+            if isinstance(item.ref, RecordRef):
+                current = self.latest_record(item.ref.record_id)
+                if current is None:
+                    raise RecordError(
+                        f"Input record {item.ref.record_id!r} changed after input evidence was captured: "
+                        "the current revision is missing."
+                    )
+                current_revision = record_revision_digest(current, outputs_dir=self.root)
+                if current_revision != item.record_revision_digest:
+                    raise RecordError(f"Input record {item.ref.record_id!r} changed after input evidence was captured.")
+                continue
+            try:
+                current_artifact = capture_artifact_evidence(item.ref.path, root=self.experiment_root)
+            except (OSError, RecordError) as exc:
+                raise RecordError(
+                    f"Input file for {item.label!r} changed after input evidence was captured: {exc}"
+                ) from exc
+            if current_artifact != item.artifact:
+                raise RecordError(f"Input file for {item.label!r} changed after input evidence was captured.")
 
     def iter_latest_records(
         self,
@@ -209,9 +356,11 @@ class RecordStore:
         record_id: str,
         df: pd.DataFrame,
         contract_id: ContractId,
-        inputs: list[ProvenanceInput],
+        inputs: Iterable[RecordInputEvidence],
         config_digest: str,
+        producer_config_digest: str | None = None,
         code_digest: str | None = None,
+        build_identity: BuildIdentity | None = None,
         producer_kind: WorkbenchProducerKind = "pipeline",
         source_recipe: RecipeSource | None = None,
     ) -> DataFrameArtifactRecord:
@@ -238,8 +387,10 @@ class RecordStore:
                 else None
             ),
         )
-        record_inputs = tuple(inputs)
-        effective_code_digest = code_digest or ""
+        record_inputs = self._require_captured_inputs(inputs)
+        effective_build_identity = build_identity or current_build_identity()
+        effective_code_digest = code_digest or effective_build_identity.source_digest
+        effective_producer_config_digest = producer_config_digest or config_digest
         filename = f"{out_name}.parquet"
         staged_path: Path | None = None
         revision_dir: Path | None = None
@@ -260,6 +411,8 @@ class RecordStore:
                 and previous_record.content_digest == content_digest
                 and previous_record.contract_id == contract_id
                 and previous_record.code_digest == effective_code_digest
+                and previous_record.producer_config_digest == effective_producer_config_digest
+                and previous_record.build_identity == effective_build_identity
                 and previous_record.producer == producer
                 and previous_record.inputs == record_inputs
                 and previous_record.path.name == filename
@@ -283,8 +436,12 @@ class RecordStore:
                 path=data_path,
                 content_digest=content_digest,
                 code_digest=effective_code_digest,
+                producer_config_digest=effective_producer_config_digest,
+                build_identity=effective_build_identity,
+                size_bytes=data_path.stat().st_size,
             )
             payload = record_to_dict(record, outputs_dir=self.root)
+            self._assert_captured_inputs_current(record_inputs)
             catalog["latest"][record_id] = payload
             catalog["history"].setdefault(record_id, []).append(payload)
             self._write_catalog(catalog)
@@ -307,34 +464,88 @@ class RecordStore:
         producer_id: str,
         producer_plugin: str,
         record_id: str,
-        inputs: list[ProvenanceInput],
+        inputs: Iterable[RecordInputEvidence],
         config_digest: str,
+        producer_config_digest: str | None = None,
         files: list[Path],
         description: str,
         path_descriptions: tuple[PathDescription, ...] = (),
         source_recipe: RecipeSource | None = None,
+        build_identity: BuildIdentity | None = None,
     ) -> FileBundleRecord:
-        record = FileBundleRecord(
-            record_id=record_id,
-            kind="file_bundle",
-            producer=RecordProducer(
-                kind=producer_kind,
-                id=producer_id,
-                plugin=producer_plugin,
-                source_recipe=(
-                    RecordRecipeSource(recipe=source_recipe.recipe, with_=dict(source_recipe.with_ or {}))
-                    if source_recipe is not None
-                    else None
-                ),
+        producer = RecordProducer(
+            kind=producer_kind,
+            id=producer_id,
+            plugin=producer_plugin,
+            source_recipe=(
+                RecordRecipeSource(recipe=source_recipe.recipe, with_=dict(source_recipe.with_ or {}))
+                if source_recipe is not None
+                else None
             ),
-            created_at=datetime.now(UTC).isoformat(),
-            inputs=tuple(inputs),
+        )
+        return self._append_file_bundle_record(
+            producer=producer,
+            record_id=record_id,
+            inputs=inputs,
             config_digest=config_digest,
-            files=tuple(sorted(dict.fromkeys(files), key=str)),
+            producer_config_digest=producer_config_digest,
+            files=files,
+            description=description,
+            path_descriptions=path_descriptions,
+            build_identity=build_identity,
+        )
+
+    def append_notebook_file_bundle(
+        self,
+        *,
+        producer_id: str,
+        producer_template: str,
+        record_id: str,
+        inputs: Iterable[RecordInputEvidence],
+        config_digest: str,
+        producer_config_digest: str,
+        files: list[Path],
+        description: str,
+        path_descriptions: tuple[PathDescription, ...],
+        build_identity: BuildIdentity | None = None,
+    ) -> FileBundleRecord:
+        """Append a typed file bundle produced through a notebook artifact sink."""
+
+        return self._append_file_bundle_record(
+            producer=RecordProducer(kind="notebook", id=producer_id, template=producer_template),
+            record_id=record_id,
+            inputs=inputs,
+            config_digest=config_digest,
+            producer_config_digest=producer_config_digest,
+            files=files,
+            description=description,
+            path_descriptions=path_descriptions,
+            build_identity=build_identity,
+        )
+
+    def _append_file_bundle_record(
+        self,
+        *,
+        producer: RecordProducer,
+        record_id: str,
+        inputs: Iterable[RecordInputEvidence],
+        config_digest: str,
+        producer_config_digest: str | None,
+        files: list[Path],
+        description: str,
+        path_descriptions: tuple[PathDescription, ...],
+        build_identity: BuildIdentity | None,
+    ) -> FileBundleRecord:
+        normalized_files = tuple(sorted(dict.fromkeys(files), key=str))
+        # Validate bundle semantics before touching the filesystem so malformed
+        # descriptions and path mappings fail independently of artifact state.
+        description, path_descriptions = normalize_file_bundle_metadata(
+            producer_kind=producer.kind,
+            files=normalized_files,
             description=description,
             path_descriptions=path_descriptions,
         )
-        materialized_paths = tuple(path if path.is_absolute() else self.root / path for path in record.files)
+        materialized_paths = tuple(path if path.is_absolute() else self.root / path for path in normalized_files)
         missing = [path for path in materialized_paths if not path.exists()]
         if missing:
             raise RecordError(
@@ -347,9 +558,27 @@ class RecordStore:
                 f"File-bundle record {record_id!r} cannot persist non-file paths: "
                 + ", ".join(str(path) for path in non_files)
             )
+        file_evidence = tuple(capture_artifact_evidence(path, root=self.root) for path in materialized_paths)
+        effective_build_identity = build_identity or current_build_identity()
+        record_inputs = self._require_captured_inputs(inputs)
+        record = FileBundleRecord(
+            record_id=record_id,
+            kind="file_bundle",
+            producer=producer,
+            created_at=datetime.now(UTC).isoformat(),
+            inputs=record_inputs,
+            config_digest=config_digest,
+            files=normalized_files,
+            description=description,
+            path_descriptions=path_descriptions,
+            file_evidence=file_evidence,
+            producer_config_digest=producer_config_digest or config_digest,
+            build_identity=effective_build_identity,
+        )
         self.ensure_layout()
         catalog = self._read_catalog()
         payload = record_to_dict(record, outputs_dir=self.root)
+        self._assert_captured_inputs_current(record_inputs)
         catalog["latest"][record_id] = payload
         catalog["history"].setdefault(record_id, []).append(payload)
         self._write_catalog(catalog)

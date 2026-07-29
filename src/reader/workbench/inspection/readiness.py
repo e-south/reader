@@ -9,9 +9,11 @@ from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.engine.planning import build_next_steps
 from reader.workbench.engine.validation import validation_summary
-from reader.workbench.graph import resolve_workbench
+from reader.workbench.graph import RecordRef, resolve_workbench
+from reader.workbench.records import verify_record_store
 
 from .common import summarize_outputs_dir
+from .runtime import workbench_record_verification_scope
 
 READINESS_STATES = frozenset(
     {
@@ -22,6 +24,7 @@ READINESS_STATES = frozenset(
         "blocked",
         "runnable",
         "uncataloged_outputs_present",
+        "catalog_ready",
         "records_ready",
     }
 )
@@ -29,6 +32,7 @@ READINESS_CAPABILITY_KEYS = frozenset(
     {
         "run",
         "records",
+        "verify",
         "plot",
         "export",
         "notebook_scaffold",
@@ -50,11 +54,13 @@ def config_error_readiness_payload(error: str) -> dict[str, object]:
         "records": {
             "catalog": False,
             "available": False,
+            "verification": None,
             "uncataloged_outputs_present": False,
         },
         "capabilities": {
             "run": False,
             "records": False,
+            "verify": False,
             "plot": False,
             "export": False,
             "notebook_scaffold": False,
@@ -86,11 +92,13 @@ def _non_active_lifecycle_payload(*, lifecycle: str, job_path: Path) -> dict[str
         "records": {
             "catalog": False,
             "available": False,
+            "verification": None,
             "uncataloged_outputs_present": False,
         },
         "capabilities": {
             "run": False,
             "records": False,
+            "verify": False,
             "plot": False,
             "export": False,
             "notebook_scaffold": True,
@@ -121,6 +129,22 @@ def readiness_primary_command(payload: dict[str, object] | None) -> str:
     return command or "—"
 
 
+def _surface_record_dependencies_verified(steps, verification_report: dict[str, object] | None) -> bool:
+    required_record_ids = {
+        ref.record_id for step in steps for ref in (step.reads or {}).values() if isinstance(ref, RecordRef)
+    }
+    if not verification_report or verification_report.get("status") != "ok":
+        return False
+    if not required_record_ids:
+        return True
+    record_statuses = {
+        str(record.get("record_id")): record.get("status")
+        for record in verification_report.get("records", [])
+        if isinstance(record, dict)
+    }
+    return all(record_statuses.get(record_id) == "ok" for record_id in required_record_ids)
+
+
 def experiment_readiness_payload(
     *,
     job_path: Path,
@@ -138,19 +162,33 @@ def experiment_readiness_payload(
         runtime=runtime,
     )
     layout = decl.experiment_semantics.layout
+    workbench = resolve_workbench(decl)
     outputs_dir = layout.outputs_dir
     store = runtime.record_store(
         outputs_dir,
         plots_subdir=layout.plots_subdir,
         exports_subdir=layout.exports_subdir,
+        experiment_root=decl.experiment.root,
         create=False,
     )
     records_catalog = store.catalog_exists()
     records_available = False
     record_catalog_error: str | None = None
+    verification_report: dict[str, object] | None = None
+    verification_scope = workbench_record_verification_scope(workbench, runtime=runtime)
     if records_catalog:
         try:
-            records_available = bool(store.iter_latest_records())
+            current_records = tuple(
+                record for record in store.iter_latest_records() if verification_scope.includes(record)
+            )
+            records_available = bool(current_records)
+            if records_available:
+                verification_report = verify_record_store(
+                    store,
+                    experiment_root=decl.experiment.root,
+                    expected_config_digest=decl.config_digest,
+                    scope=verification_scope,
+                )
         except RecordError as exc:
             record_catalog_error = str(exc)
     generated = summarize_outputs_dir(
@@ -162,7 +200,10 @@ def experiment_readiness_payload(
     uncataloged_outputs_present = (
         any(generated[key] for key in ("records", "plots", "exports")) and not records_available
     )
-    workbench = resolve_workbench(decl)
+    verified_records = bool(verification_report and verification_report["status"] == "ok")
+    plot_ready = verified_records and _surface_record_dependencies_verified(workbench.plots, verification_report)
+    export_ready = verified_records and _surface_record_dependencies_verified(workbench.exports, verification_report)
+    surfaces_waiting = (bool(workbench.plots) and not plot_ready) or (bool(workbench.exports) and not export_ready)
     can_run = summary["status"] == "ok"
     file_issues = int(summary["files"].get("issues") or 0)
     dependency_issues = int(summary["dependencies"].get("issues") or 0)
@@ -193,13 +234,49 @@ def experiment_readiness_payload(
                 "description": "Inspect and repair the invalid records catalog before using persisted outputs.",
             }
         ]
+    elif records_available and verification_report and verification_report["status"] == "failed":
+        state = "blocked"
+        summary_text = "blocked (record verification failed)"
+        next_steps = [
+            {
+                "command": reader_command("verify", job_path, "--format", "json"),
+                "description": "Inspect source, dependency, config, or artifact drift before using persisted outputs.",
+            }
+        ]
+    elif records_available and verification_report and verification_report["status"] == "unverifiable":
+        state = "catalog_ready"
+        summary_text = "catalog ready; provenance is not fully verifiable"
+        next_steps = [
+            {
+                "command": reader_command("verify", job_path, "--format", "json"),
+                "description": "Inspect missing or stale evidence, then rerun affected surfaces to emit schema-v5 records.",
+            }
+        ]
     elif records_available:
         state = "records_ready"
-        summary_text = "records ready"
+        summary_text = (
+            "current records verified; configured surfaces await record dependencies"
+            if surfaces_waiting
+            else "records ready and verified"
+        )
         next_steps = [
             {"command": command, "description": description}
-            for command, description in build_next_steps(decl, job_label=str(job_path), runtime=runtime)
+            for command, description in build_next_steps(
+                decl,
+                job_label=str(job_path),
+                runtime=runtime,
+                include_plot=plot_ready,
+                include_export=export_ready,
+            )
         ]
+        if surfaces_waiting:
+            next_steps.insert(
+                0,
+                {
+                    "command": reader_command("run", job_path),
+                    "description": "Produce the missing record dependencies before using configured plot or export surfaces.",
+                },
+            )
     elif uncataloged_outputs_present:
         state = "uncataloged_outputs_present"
         summary_text = "generated outputs present without usable current records"
@@ -221,6 +298,12 @@ def experiment_readiness_payload(
     errors = deepcopy(summary["errors"])
     if record_catalog_error is not None:
         errors.append(f"records catalog: {record_catalog_error}")
+    if verification_report is not None and verification_report["status"] == "failed":
+        for issue in verification_report.get("issues", []):
+            errors.append(f"record verification: {issue['reason']}")
+        for record in verification_report.get("records", []):
+            for issue in record.get("issues", []):
+                errors.append(f"record verification ({record['record_id']}): {issue['reason']}")
     return {
         "state": state,
         "summary": summary_text,
@@ -233,15 +316,17 @@ def experiment_readiness_payload(
         "records": {
             "catalog": records_catalog,
             "available": records_available,
+            "verification": verification_report["status"] if verification_report else None,
             "uncataloged_outputs_present": uncataloged_outputs_present,
         },
         "capabilities": {
             "run": can_run,
             "records": records_available,
-            "plot": records_available and bool(workbench.plots),
-            "export": records_available and bool(workbench.exports),
+            "verify": records_catalog,
+            "plot": plot_ready and bool(workbench.plots),
+            "export": export_ready and bool(workbench.exports),
             "notebook_scaffold": bool(workbench.notebooks),
-            "notebook_scan_records": records_available and bool(workbench.notebooks),
+            "notebook_scan_records": verified_records and bool(workbench.notebooks),
         },
         "errors": errors,
         "next_steps": next_steps,

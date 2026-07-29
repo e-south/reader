@@ -12,15 +12,18 @@ def _():
     import marimo as mo
     import polars as pl
     from reader.domains.cytometry import analysis as cytometry_analysis
+    from reader.workbench.notebooks import NotebookArtifactSpec, publish_notebook_artifact_bundle
     from reader.workbench.notebooks.context import load_notebook_workbench_context
     from reader.workbench.records import discover_dataframe_records
     return (
         Path,
+        NotebookArtifactSpec,
         cytometry_analysis,
         discover_dataframe_records,
         json,
         load_notebook_workbench_context,
         mo,
+        publish_notebook_artifact_bundle,
     )
 
 
@@ -35,7 +38,7 @@ def _(Path, load_notebook_workbench_context):
         "title": decl.experiment.title or "",
     }
     pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
-    return decl, exp_dir, exp_meta, outputs_dir, pipeline_step_ids
+    return decl, exp_dir, exp_meta, notebook_context, outputs_dir, pipeline_step_ids
 
 
 @app.cell(hide_code=True)
@@ -102,10 +105,12 @@ def _(record_dropdown, record_info):
     if record_dropdown is None:
         selected_label = None
         record_path = None
+        selected_record_id = None
     else:
         selected_label = record_dropdown.value
         record_path = record_info.get(selected_label, {}).get("path")
-    return record_path, selected_label
+        selected_record_id = record_info.get(selected_label, {}).get("record_id")
+    return record_path, selected_label, selected_record_id
 
 
 @app.cell(hide_code=True)
@@ -1382,68 +1387,37 @@ def _(cyto_qc_table, mo):
 
 
 @app.cell(hide_code=True)
-def _(decl, mo, outputs_dir):
-    exports_cfg = decl.experiment_semantics.layout.exports_subdir
-    exports_dir = outputs_dir if exports_cfg in ("", ".", "./") else outputs_dir / str(exports_cfg)
-    cyto_export_format = mo.ui.dropdown(
-        options=["pdf", "png", "svg"],
-        value="pdf",
-        label="Plot format",
-        full_width=True,
-    )
-    cyto_plot_export_path = mo.ui.text(
-        value=str(exports_dir / "cytometry_eda.pdf"),
-        label="Plot export path",
-        full_width=True,
-    )
-    cyto_stats_export_path = mo.ui.text(
-        value=str(exports_dir / "cytometry_stats.csv"),
-        label="Stats export path (CSV)",
-        full_width=True,
-    )
-    cyto_gate_export_path = mo.ui.text(
-        value=str(exports_dir / "cytometry_gates.json"),
-        label="Gate config path (JSON)",
-        full_width=True,
-    )
+def _(mo):
     cyto_export_button = mo.ui.run_button(
         label="Export cytometry outputs",
         kind="success",
     )
     cyto_export_panel = mo.vstack(
         [
-            cyto_export_format,
-            cyto_plot_export_path,
-            cyto_stats_export_path,
-            cyto_gate_export_path,
+            mo.md(
+                "Publishes one manifest-backed PDF, CSV, and JSON bundle under the experiment exports directory."
+            ),
             cyto_export_button,
         ]
     )
     return (
         cyto_export_button,
-        cyto_export_format,
         cyto_export_panel,
-        cyto_gate_export_path,
-        cyto_plot_export_path,
-        cyto_stats_export_path,
-        exports_dir,
     )
 
 
 @app.cell
 def _(
-    Path,
+    NotebookArtifactSpec,
     cyto_export_button,
-    cyto_export_format,
     cyto_gate_config,
-    cyto_gate_export_path,
     cyto_marker_fig,
-    cyto_plot_export_path,
-    cyto_stats_export_path,
     cyto_stats_sample,
-    exports_dir,
     json,
     mo,
+    notebook_context,
+    publish_notebook_artifact_bundle,
+    selected_record_id,
 ):
     if cyto_marker_fig is None:
         mo.stop(True, mo.md("No cytometry plot available to export."))
@@ -1451,31 +1425,46 @@ def _(
         mo.stop(True, mo.md("No cytometry stats available to export."))
     _export_message = None
     if cyto_export_button.value:
-        _format = str(cyto_export_format.value).lower()
+        if selected_record_id is None:
+            mo.stop(True, mo.md("Select a cataloged dataframe record before exporting."))
 
-        _plot_target = Path(str(cyto_plot_export_path.value)).expanduser()
-        if not _plot_target.is_absolute():
-            _plot_target = (exports_dir / _plot_target).resolve()
-        if _plot_target.suffix and _plot_target.suffix.lower() != f".{_format}":
-            mo.stop(True, mo.md("Plot export path extension must match selected format."))
-        _plot_target.parent.mkdir(parents=True, exist_ok=True)
-        cyto_marker_fig.savefig(_plot_target, format=_format, bbox_inches="tight", facecolor="white")
+        def _write_plot(_plot_target):
+            cyto_marker_fig.savefig(_plot_target, format="pdf", bbox_inches="tight", facecolor="white")
 
-        _stats_target = Path(str(cyto_stats_export_path.value)).expanduser()
-        if not _stats_target.is_absolute():
-            _stats_target = (exports_dir / _stats_target).resolve()
-        _stats_target.parent.mkdir(parents=True, exist_ok=True)
-        cyto_stats_sample.write_csv(_stats_target)
+        def _write_stats(_stats_target):
+            cyto_stats_sample.write_csv(_stats_target)
 
-        _gate_target = Path(str(cyto_gate_export_path.value)).expanduser()
-        if not _gate_target.is_absolute():
-            _gate_target = (exports_dir / _gate_target).resolve()
-        _gate_target.parent.mkdir(parents=True, exist_ok=True)
-        _gate_target.write_text(json.dumps(cyto_gate_config, indent=2), encoding="utf-8")
+        def _write_gates(_gate_target):
+            _gate_target.write_text(json.dumps(cyto_gate_config, indent=2), encoding="utf-8")
 
-        _export_message = (
-            f"Saved plot to `{_plot_target}`; stats to `{_stats_target}`; gate config to `{_gate_target}`."
+        _record = publish_notebook_artifact_bundle(
+            notebook_context,
+            record_id="notebook:cytometry_eda",
+            producer_id="cytometry_eda",
+            template="notebook/cytometry",
+            upstream_records={"events": selected_record_id},
+            producer_config=cyto_gate_config,
+            description="Interactive cytometry plot, statistics, and gate definition.",
+            artifacts=(
+                NotebookArtifactSpec(
+                    relative_path="cytometry_eda.pdf",
+                    description="Interactive cytometry fluorescence and gating plot.",
+                    writer=_write_plot,
+                ),
+                NotebookArtifactSpec(
+                    relative_path="cytometry_stats.csv",
+                    description="Per-sample statistics from the selected cytometry event record.",
+                    writer=_write_stats,
+                ),
+                NotebookArtifactSpec(
+                    relative_path="cytometry_gates.json",
+                    description="Gate and threshold configuration used for the cytometry analysis.",
+                    writer=_write_gates,
+                ),
+            ),
         )
+        _paths = "; ".join(f"`{path}`" for path in _record.files)
+        _export_message = f"Published `{_record.record_id}` with {_paths}."
     if _export_message is not None:
         _ = mo.md(_export_message)
     return

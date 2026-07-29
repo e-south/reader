@@ -162,8 +162,8 @@ def load_reader_spec(path: Path, *, cls: type[ReaderSpec]) -> ReaderSpec:
             raise ConfigError(f"resources.{resource_id} must be a mapping with kind/path")
         kind = resource.get("kind")
         path_raw = resource.get("path")
-        if kind not in {"file", "directory"}:
-            raise ConfigError(f"resources.{resource_id}.kind must be 'file' or 'directory'")
+        if kind != "file":
+            raise ConfigError(f"resources.{resource_id}.kind must be 'file'")
         if not isinstance(path_raw, str) or not path_raw.strip():
             raise ConfigError(f"resources.{resource_id}.path must be a non-empty string")
         normalized_resources[str(resource_id)] = {"kind": str(kind), "path": str(path_raw)}

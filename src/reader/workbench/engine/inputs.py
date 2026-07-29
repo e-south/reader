@@ -63,7 +63,18 @@ def _resolve_inputs(
         if expected is None:
             raise ExecutionError(f"Unsupported input binding for unknown port '{label}'")
         if isinstance(target, FileRef | ResourceRef):
+            if expected.kind not in {"file_path", "file_set"}:
+                raise ExecutionError(
+                    f"Input '{label}' expects port kind {expected.kind!r} and cannot bind to a file/resource ref"
+                )
             path = target.path
+            if exp_dir is not None:
+                try:
+                    path = resolve_path_within_root(path, root=exp_dir)
+                except ValueError as exc:
+                    raise ExecutionError(
+                        f"Input file for '{label}' must stay under the experiment root after resolving symlinks"
+                    ) from exc
             if not path.exists():
                 hint = _missing_metadata_hint(label, path, exp_dir)
                 if hint:
@@ -71,7 +82,7 @@ def _resolve_inputs(
                 raise ExecutionError(f"Input file missing for '{label}': {path}")
             if path.is_dir():
                 raise ExecutionError(f"Input file path is a directory for '{label}': {path}")
-            inputs[label] = path
+            inputs[label] = (path,) if expected.kind == "file_set" else path
             continue
         if not isinstance(target, RecordRef):
             raise ExecutionError(f"Unsupported input binding for '{label}': {target!r}")
@@ -111,25 +122,31 @@ def resolve_missing_file_inputs(
     resolved = dict(inputs)
     for label, value in additions.items():
         port = input_ports[label]
-        if port.kind != "file_path" or not port.optional:
+        if port.kind not in {"file_path", "file_set"} or not port.optional:
             raise ExecutionError(
-                f"{plugin.plugin_id}: missing-file resolver may only fill optional file_path ports; "
+                f"{plugin.plugin_id}: missing-file resolver may only fill optional file_path or file_set ports; "
                 f"{label!r} is {port.kind!r} (optional={port.optional})"
             )
-        if not isinstance(value, Path):
+        values = value if port.kind == "file_set" else (value,)
+        if not isinstance(values, tuple) or not values or any(not isinstance(item, Path) for item in values):
+            expected = "a non-empty tuple of Paths" if port.kind == "file_set" else "a Path"
             raise ExecutionError(
-                f"{plugin.plugin_id}: missing-file resolver input {label!r} must be a Path, got {type(value).__name__}"
+                f"{plugin.plugin_id}: missing-file resolver input {label!r} must be {expected}, "
+                f"got {type(value).__name__}"
             )
-        try:
-            confined = resolve_path_within_root(value, root=exp_dir)
-        except ValueError as exc:
-            raise ExecutionError(
-                f"{plugin.plugin_id}: resolved input {label!r} must stay under the experiment root "
-                "after resolving symlinks"
-            ) from exc
-        if not confined.exists():
-            raise ExecutionError(f"Resolved input file missing for {label!r}: {confined}")
-        if not confined.is_file():
-            raise ExecutionError(f"Resolved input path is not a file for {label!r}: {confined}")
-        resolved[label] = confined
+        confined_values: list[Path] = []
+        for item in values:
+            try:
+                confined = resolve_path_within_root(item, root=exp_dir)
+            except ValueError as exc:
+                raise ExecutionError(
+                    f"{plugin.plugin_id}: resolved input {label!r} must stay under the experiment root "
+                    "after resolving symlinks"
+                ) from exc
+            if not confined.exists():
+                raise ExecutionError(f"Resolved input file missing for {label!r}: {confined}")
+            if not confined.is_file():
+                raise ExecutionError(f"Resolved input path is not a file for {label!r}: {confined}")
+            confined_values.append(confined)
+        resolved[label] = tuple(confined_values) if port.kind == "file_set" else confined_values[0]
     return resolved

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from reader.errors import ReaderError, RecordError
+from reader.errors import RecordError
 from reader.workbench.commands import reader_command
 from reader.workbench.experiments import discover_experiment_configs
 
@@ -24,6 +24,25 @@ def load_job_models(job_path: Path, *, runtime: ReaderRuntime | None = None) -> 
     return spec, _load("reader.workbench.decl").build_workbench_decl(
         spec, source_path=job_path, protocols=runtime.protocols
     )
+
+
+def resolve_output_experiment(job: str | Path) -> Path:
+    """Resolve the canonical outputs directory for one experiment-owned publication."""
+
+    job_path = infer_job_path(str(job))
+    _, decl = load_job_models(job_path)
+    experiments_root = find_nearest_experiments_dir(job_path.parent)
+    try:
+        relative_root = decl.experiment.root.relative_to(experiments_root)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"Output experiment must live under {experiments_root}: {decl.experiment.root}"
+        ) from exc
+    if len(relative_root.parts) != 2 or len(relative_root.parts[0]) != 4 or not relative_root.parts[0].isdigit():
+        raise typer.BadParameter(
+            f"Output experiment must use the canonical experiments/<year>/<experiment>/ layout: {decl.experiment.root}"
+        )
+    return decl.experiment_semantics.layout.outputs_dir
 
 
 def has_sfxi_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
@@ -275,28 +294,6 @@ def require_dataframe_records(decl: WorkbenchDecl, job_path: Path, *, runtime: R
         raise RecordError(
             f"No dataframe records listed in outputs/manifests/records.json. Run '{reader_command('run', job_path)}' first."
         )
-
-
-def append_journal(job_path: Path, command_line: str) -> None:
-    exp_dir = job_path.parent
-    journal = _canonical_journal_path(exp_dir)
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    header = "" if journal.exists() else "# Experiment Journal\n\n"
-    entry = f"### {ts}\n\n```\n{command_line}\n```\n\n"
-    journal.write_text(
-        header + (journal.read_text(encoding="utf-8") if journal.exists() else "") + entry,
-        encoding="utf-8",
-    )
-
-
-def _canonical_journal_path(exp_dir: Path) -> Path:
-    canonical = exp_dir / "JOURNAL.md"
-    entry_names = {path.name for path in exp_dir.iterdir()}
-    if "journal.md" in entry_names:
-        raise ReaderError(
-            f"Unsupported lowercase journal path in {exp_dir}. Rename journal.md to {canonical.name} before running Reader."
-        )
-    return canonical
 
 
 def resolve_pipeline_step_id(decl: WorkbenchDecl, which: str, *, job_path: Path | None = None) -> str:

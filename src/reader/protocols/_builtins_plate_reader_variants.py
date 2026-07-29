@@ -4,7 +4,12 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from reader.domains.plate_reader.analysis._retron_sponge_contract import DEFAULT_PRIMARY_POST_STRESS_HOURS
-from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
+from reader.workbench.input_discovery import (
+    DEFAULT_INPUT_EXCLUDE as DEFAULT_EXCLUDE,
+)
+from reader.workbench.input_discovery import (
+    DEFAULT_WORKBOOK_INCLUDE as DEFAULT_INCLUDE,
+)
 
 from .compiler import (
     compile_plate_reader_retron_sponge_screen,
@@ -24,6 +29,7 @@ from .model import (
     ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolRankingSpec,
+    ProtocolResourceSpec,
     ProtocolSemanticProfileOverride,
     ProtocolSemanticProfileSpec,
     ProtocolWindowSpec,
@@ -191,6 +197,13 @@ def build_plate_reader_variant_protocols(
             "compiled fold-change summaries."
         ),
         tags=("plate_reader", "single_reporter", "screen", "ratio", "fold_change"),
+        resources=(
+            ProtocolResourceSpec(
+                id="sample_map",
+                path="./inputs/metadata.xlsx",
+                summary="Well-to-sample metadata for the plate-reader workbook.",
+            ),
+        ),
         input_fields=map_free_kinetic_input_fields,
         analysis_fields=(
             field(
@@ -305,6 +318,14 @@ def build_plate_reader_variant_protocols(
                 primary=True,
             ),
             ProtocolFigureSpec(
+                id="subject_comparison",
+                kind="summary",
+                summary=(
+                    "Opt-in paired view that keeps assay subjects separate across normalizer kinetics and a "
+                    "treatment-ordered reporter endpoint."
+                ),
+            ),
+            ProtocolFigureSpec(
                 id="value_distributions",
                 kind="qc",
                 summary="Distribution view of the primary single-reporter ratio.",
@@ -383,6 +404,13 @@ def build_plate_reader_variant_protocols(
             "and cross-sensor ranking summaries."
         ),
         tags=("plate_reader", "retron", "sponge", "matched_control", "screen", "ratio"),
+        resources=(
+            ProtocolResourceSpec(
+                id="sample_map",
+                path="./inputs/metadata.xlsx",
+                summary="Well-to-sample metadata for the retron sponge plate.",
+            ),
+        ),
         input_fields=map_free_kinetic_input_fields,
         analysis_fields=(
             measurement_field,

@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from reader.runtime import builtin_runtime
+from reader.workbench.graph import ProvenanceInput, RecordRef
 from reader.workbench.notebooks.components.deliverables import (
     NotebookDeliverables,
     collect_notebook_deliverables,
@@ -88,12 +89,27 @@ def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_note
         files=[export_file],
         description="Write dataframe records to XLSX workbooks.",
     )
+    notebook_pdf = exports / "cytometry" / "cytometry_eda.pdf"
+    notebook_pdf.parent.mkdir()
+    notebook_pdf.write_text("pdf", encoding="utf-8")
+    store.append_notebook_file_bundle(
+        producer_id="cytometry_eda",
+        producer_template="notebook/cytometry",
+        record_id="notebook:cytometry_eda",
+        inputs=store.capture_inputs([ProvenanceInput(label="events", ref=RecordRef(record_id="summary/df"))]),
+        config_digest="sha256:test",
+        producer_config_digest="sha256:notebook",
+        files=[notebook_pdf],
+        description="Interactive cytometry outputs.",
+        path_descriptions=(PathDescription(path=notebook_pdf, description="Interactive cytometry EDA plot."),),
+    )
 
     deliverables = collect_notebook_deliverables(outputs, notebooks_dir=notebooks)
 
     assert {"Deliverable": "Dataframe records", "Count": 1} in deliverables.summary_rows
     assert {"Deliverable": "Plot files", "Count": 2} in deliverables.summary_rows
     assert {"Deliverable": "Export files", "Count": 1} in deliverables.summary_rows
+    assert {"Deliverable": "Notebook artifact files", "Count": 1} in deliverables.summary_rows
     assert {"Deliverable": "Generated notebooks", "Count": 1} in deliverables.summary_rows
     assert deliverables.record_rows[0]["Record ID"] == "summary/df"
     plot_rows = {row["Path"]: row for row in deliverables.plot_rows}
@@ -101,10 +117,14 @@ def test_collect_notebook_deliverables_summarizes_records_plots_exports_and_note
     assert plot_rows["plots/kinetics.pdf"]["Description"] == "Reporter kinetics over assay time."
     assert deliverables.export_rows[0]["Path"] == "exports/summary.xlsx"
     assert deliverables.export_rows[0]["Description"] == "Write dataframe records to XLSX workbooks."
+    notebook_row = deliverables.notebook_artifact_rows[0]
+    assert notebook_row["Path"] == "exports/cytometry/cytometry_eda.pdf"
+    assert notebook_row["Producer"] == "notebook:cytometry_eda"
+    assert notebook_row["Description"] == "Interactive cytometry EDA plot."
     assert deliverables.notebook_rows[0]["Path"] == "notebooks/EDA_20260708.py"
 
 
-def test_collect_notebook_deliverables_reports_descriptorless_v3_plot_catalog(tmp_path: Path) -> None:
+def test_collect_notebook_deliverables_reports_retired_record_schema_as_invalid(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
     runtime = builtin_runtime()
     store = runtime.record_store(outputs)
@@ -128,18 +148,10 @@ def test_collect_notebook_deliverables_reports_descriptorless_v3_plot_catalog(tm
 
     deliverables = collect_notebook_deliverables(outputs)
 
-    assert deliverables.plot_rows == (
-        {
-            "Record ID": "plot:missing_descriptions",
-            "Producer": "plot:missing_descriptions",
-            "Plugin": "plot/time_series",
-            "Description": "Bundle-level description only.",
-            "File": "missing_descriptions.png",
-            "Path": "plots/missing_descriptions.png",
-            "Exists": "no",
-        },
-    )
-    assert deliverables.issue_rows == ()
+    assert deliverables.plot_rows == ()
+    assert len(deliverables.issue_rows) == 1
+    assert deliverables.issue_rows[0]["Surface"] == "records"
+    assert "schema_version must be 5" in deliverables.issue_rows[0]["Issue"]
 
 
 def test_render_notebook_deliverables_panel_uses_lazy_accordion() -> None:
@@ -149,6 +161,7 @@ def test_render_notebook_deliverables_panel_uses_lazy_accordion() -> None:
         record_rows=(),
         plot_rows=({"Path": "plots/summary.pdf"},),
         export_rows=(),
+        notebook_artifact_rows=(),
         notebook_rows=(),
         issue_rows=(),
     )
@@ -162,6 +175,10 @@ def test_render_notebook_deliverables_panel_uses_lazy_accordion() -> None:
                 "Summary": {"kind": "table", "rows": [{"Deliverable": "Plot files", "Count": 1}], "page_size": 1},
                 "Plots": {"kind": "table", "rows": [{"Path": "plots/summary.pdf"}], "page_size": 1},
                 "Exports": {"kind": "markdown", "text": "No export files are registered yet."},
+                "Notebook artifacts": {
+                    "kind": "markdown",
+                    "text": "No notebook artifact files are registered yet.",
+                },
                 "Records": {"kind": "markdown", "text": "No dataframe records are registered yet."},
                 "Notebooks": {"kind": "markdown", "text": "No generated notebooks were found."},
             },

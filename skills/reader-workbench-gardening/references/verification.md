@@ -6,8 +6,8 @@ workbench.
 ## Docs-only or routing-only changes
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 git diff --check
 ```
 
@@ -17,8 +17,8 @@ embedded commands still match the current CLI surface.
 ## Skill and maintainer-doc changes
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 git diff --check
 ```
 

@@ -11,6 +11,8 @@ import pytest
         "reader.core",
         "reader.io",
         "reader.lib",
+        "reader.notebook_presentation",
+        "reader.notebook_review",
         "reader.domains.plate_reader.support",
         "reader.domains.logic.semantics",
         "reader.workbench.model",

@@ -1,3 +1,4 @@
+from .identity import reader_spec_digest
 from .load import load_reader_config_document
 from .model import (
     AnnotationCollectionSpec,
@@ -5,6 +6,7 @@ from .model import (
     AnnotationOrderedStateSpaceSpec,
     AnnotationOrderSpec,
     AnnotationSpec,
+    EvidenceSpec,
     ExperimentSpec,
     ExportOutputsSpec,
     NotebookOutputsSpec,
@@ -14,6 +16,7 @@ from .model import (
     PlottingSpec,
     ProtocolBindingSpec,
     ReaderSpec,
+    ReplicateKind,
     ResourceSpec,
     ResourcesSpec,
 )
@@ -24,6 +27,7 @@ __all__ = [
     "AnnotationOrderedStateSpaceSpec",
     "AnnotationOrderSpec",
     "AnnotationSpec",
+    "EvidenceSpec",
     "ExportOutputsSpec",
     "ExperimentSpec",
     "NotebookOutputsSpec",
@@ -32,8 +36,10 @@ __all__ = [
     "PlotOutputsSpec",
     "PlottingSpec",
     "ProtocolBindingSpec",
+    "ReplicateKind",
     "ReaderSpec",
     "ResourceSpec",
     "ResourcesSpec",
     "load_reader_config_document",
+    "reader_spec_digest",
 ]

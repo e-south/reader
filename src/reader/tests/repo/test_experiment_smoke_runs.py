@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
 from reader.tests.repo.experiment_matrix import END_TO_END_RUNNABLE_CONFIGS, repo_rel
-from reader.tests.support import REPO_ROOT, default_notebook_name, load_decl
+from reader.tests.support import REPO_ROOT, cli_success_data, default_notebook_name, load_decl
 from reader.workbench import resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.engine import run_spec
@@ -207,7 +207,7 @@ def test_cli_notebook_scaffold_on_staged_experiment_preserves_runnable_readiness
 
     inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
     assert inspect_result.exit_code == 0
-    inspect_payload = json.loads(inspect_result.output)
+    inspect_payload = cli_success_data(inspect_result.output)
     assert inspect_payload["implementation"]["readiness"]["state"] == "runnable"
 
 
@@ -230,12 +230,12 @@ def test_cli_preflight_surface_contracts_on_staged_retron_experiment(tmp_path: P
     assert export_list.exit_code == 0, export_list.output
     assert inspect_result.exit_code == 0, inspect_result.output
 
-    validate_no_files_payload = json.loads(validate_no_files.output)
-    validate_files_payload = json.loads(validate_files.output)
-    dry_run_payload = json.loads(dry_run.output)
-    plot_payload = json.loads(plot_list.output)
-    export_payload = json.loads(export_list.output)
-    inspect_payload = json.loads(inspect_result.output)
+    validate_no_files_payload = cli_success_data(validate_no_files.output)
+    validate_files_payload = cli_success_data(validate_files.output)
+    dry_run_payload = cli_success_data(dry_run.output)
+    plot_payload = cli_success_data(plot_list.output)
+    export_payload = cli_success_data(export_list.output)
+    inspect_payload = cli_success_data(inspect_result.output)
 
     assert validate_no_files_payload["summary"]["status"] == "ok"
     assert validate_files_payload["summary"]["status"] == "ok"
@@ -250,13 +250,16 @@ def test_cli_preflight_surface_contracts_on_staged_retron_experiment(tmp_path: P
 
 
 @pytest.mark.smoke
-def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journal(tmp_path: Path) -> None:
+def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_invocation_ledger(tmp_path: Path) -> None:
     cfg_path = _stage_experiment(tmp_path, "2026/20260317_tetra_functional_sponges")
+    journal = cfg_path.parent / "JOURNAL.md"
+    journal.write_text("# Experiment journal\n\nHuman-authored context.\n", encoding="utf-8")
+    journal_before = journal.read_bytes()
     runner = CliRunner()
 
     validate_result = runner.invoke(app, ["validate", str(cfg_path), "--format", "json"])
     assert validate_result.exit_code == 0
-    validate_payload = json.loads(validate_result.output)
+    validate_payload = cli_success_data(validate_result.output)
     assert validate_payload["summary"]["status"] == "ok"
 
     for command in (
@@ -269,7 +272,7 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
 
     inspect_result = runner.invoke(app, ["inspect", str(cfg_path), "--format", "json"])
     assert inspect_result.exit_code == 0
-    inspect_payload = json.loads(inspect_result.output)
+    inspect_payload = cli_success_data(inspect_result.output)
     assert inspect_payload["implementation"]["readiness"]["state"] == "records_ready"
     assert (
         inspect_payload["implementation"]["compiled"]["semantic_program"]["ranking"]["execution"]["status"]
@@ -278,7 +281,7 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
 
     records_result = runner.invoke(app, ["records", str(cfg_path), "--format", "json"])
     assert records_result.exit_code == 0
-    records_payload = json.loads(records_result.output)
+    records_payload = cli_success_data(records_result.output)
     record_ids = {item["record_id"] for item in records_payload["records"]}
     assert "semantic_metrics/trace" in record_ids
     assert "semantic_metrics/summary" in record_ids
@@ -309,9 +312,23 @@ def test_cli_retron_sponge_experiment_runs_end_to_end_and_writes_artifact_journa
     assert (outputs / layout.exports_subdir / "retron" / "semantic_summary.csv").exists()
     assert (outputs / layout.exports_subdir / "retron" / "semantic_trace.csv").exists()
 
-    journal = cfg_path.parent / "JOURNAL.md"
-    assert journal.exists()
-    journal_text = journal.read_text(encoding="utf-8")
-    assert "uv run reader run" in journal_text
-    assert "uv run reader plot" in journal_text
-    assert "uv run reader export" in journal_text
+    assert journal.read_bytes() == journal_before
+    invocation_path = manifests / "invocations.jsonl"
+    events = [json.loads(line) for line in invocation_path.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["attempt", "result"] * 3
+    attempts = events[::2]
+    results = events[1::2]
+    assert [attempt["invocation_id"] for attempt in attempts] == [result["invocation_id"] for result in results]
+    assert [attempt["operation"] for attempt in attempts] == ["run", "plot", "export"]
+    assert all(
+        result["declared_inputs"] == attempt["declared_inputs"]
+        for attempt, result in zip(attempts, results, strict=True)
+    )
+    assert attempts[0]["selected_step_ids"]["pipeline"]
+    assert attempts[0]["selected_step_ids"]["plots"] == []
+    assert attempts[1]["selected_step_ids"]["plots"]
+    assert attempts[1]["selected_step_ids"]["pipeline"] == []
+    assert attempts[2]["selected_step_ids"]["exports"]
+    assert attempts[2]["selected_step_ids"]["pipeline"] == []
+    assert all(result["status"] == "succeeded" and result["exit_status"] == 0 for result in results)
+    assert all(result["produced_record_revisions"] for result in results)

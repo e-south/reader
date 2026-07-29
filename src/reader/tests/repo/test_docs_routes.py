@@ -2,7 +2,71 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from reader.maintenance import docs as check_docs
+from reader.workbench.cli.shared import app
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def test_root_readme_is_a_human_first_landing_page() -> None:
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert text.startswith("![Reader:")
+    assert not text.startswith("# reader\n")
+    assert "uv run reader demo" in text
+    assert "docs/guides/getting_started.md" in text
+    assert "docs/guides/common_routes.md" in text
+    assert "docs/README.md" in text
+    assert "doc_id:" not in text
+
+
+def test_reader_demo_is_a_no_write_command_tour(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["demo"], env={"COLUMNS": "240"})
+
+    assert result.exit_code == 0, result.output
+    assert "Reader Demo" in result.output
+    assert "Find experiments" in result.output
+    assert "Scaffold a new experiment" in result.output
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_template_journal_is_a_neutral_authored_capsule() -> None:
+    journal = (REPO_ROOT / "experiments" / "template" / "JOURNAL.md").read_text(encoding="utf-8")
+    normalized = " ".join(journal.split())
+
+    assert journal.startswith("# Experiment journal\n")
+    assert "human-authored" in journal
+    assert "Keep this capsule human-authored" in normalized
+    assert "machine invocation events" not in normalized
+    assert "### 20" not in journal
+    assert "/Users/" not in journal
+    assert "uv run reader" not in journal
+    assert len(journal.splitlines()) <= 24
+
+
+def test_docs_inventory_excludes_generated_experiment_outputs(tmp_path: Path, monkeypatch) -> None:
+    source_doc = tmp_path / "docs" / "guide.md"
+    generated_doc = tmp_path / "experiments" / "2026" / "example" / "outputs" / "report.md"
+    source_doc.parent.mkdir(parents=True)
+    generated_doc.parent.mkdir(parents=True)
+    source_doc.write_text("# Guide\n", encoding="utf-8")
+    generated_doc.write_text("# Generated report\n", encoding="utf-8")
+
+    assert check_docs.iter_markdown_files(tmp_path) == [source_doc]
+
+
+def test_repository_python_checks_live_under_reader_source() -> None:
+    assert not list((REPO_ROOT / "tools").glob("*.py"))
+
+
+def test_integration_inventory_rejects_a_truncated_page() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "integration.yaml").read_text(encoding="utf-8")
+
+    assert "--limit 100" in workflow
+    assert "payload['meta']['truncated']" in workflow
 
 
 def test_reader_experiment_bootstrap_skill_routes_to_primary_guide() -> None:

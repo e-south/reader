@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +10,8 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 
 from reader.errors import ExecutionError, ReaderError
 from reader.workbench.context import RunContext
-from reader.workbench.graph import FileRef, ProvenanceInput
-from reader.workbench.records import PathDescription, RecordStore
+from reader.workbench.graph import FileRef, ProvenanceInput, RecordRef, ResourceRef
+from reader.workbench.records import PathDescription, RecordInputEvidence, RecordStore
 
 from ._shared import digest_cfg
 from .contracts import (
@@ -21,6 +22,7 @@ from .contracts import (
     collect_file_output_descriptions,
     collect_file_output_paths,
 )
+from .file_outputs import FileOutputTransaction
 from .inputs import _resolve_inputs, resolve_missing_file_inputs
 
 
@@ -29,23 +31,48 @@ def _runtime_provenance_inputs(*, step: Any, inputs: dict[str, Any]) -> list[Pro
     declared_reads = dict(step.reads or {})
     for label in sorted(inputs):
         ref = declared_reads.get(label)
+        value = inputs[label]
+        if isinstance(value, tuple) and value and all(isinstance(item, Path) for item in value):
+            for index, path in enumerate(value):
+                item_ref = ref if ref is not None and len(value) == 1 else FileRef(path=path)
+                if isinstance(item_ref, ResourceRef):
+                    policy = "declared_resource"
+                elif ref is not None:
+                    policy = "declared_file"
+                else:
+                    policy = "plugin_discovery"
+                provenance.append(
+                    ProvenanceInput(
+                        label=f"{label}[{index}]",
+                        ref=item_ref,
+                        discovery_policy=policy,
+                    )
+                )
+            continue
         if ref is None:
-            value = inputs[label]
             if not isinstance(value, Path):
                 raise ExecutionError(
                     f"{step.id}: resolved input {label!r} has no declared reference and is not a file path"
                 )
             ref = FileRef(path=value)
-        provenance.append(ProvenanceInput(label=label, ref=ref))
+            discovery_policy = "plugin_discovery"
+        elif isinstance(ref, RecordRef):
+            discovery_policy = "record"
+        elif isinstance(ref, ResourceRef):
+            discovery_policy = "declared_resource"
+        else:
+            discovery_policy = "declared_file"
+        provenance.append(ProvenanceInput(label=label, ref=ref, discovery_policy=discovery_policy))
     return provenance
 
 
 def _persist_dataframe_outputs(
     *,
     store: RecordStore,
+    ctx: RunContext,
     step: Any,
     cfg: Any,
-    provenance_inputs: list[ProvenanceInput],
+    input_evidence: tuple[RecordInputEvidence, ...],
     outputs: dict[str, Any],
     resolved_output_ports: dict[str, Any],
     output_labels: dict[str, Any],
@@ -64,8 +91,9 @@ def _persist_dataframe_outputs(
                 record_id=output_labels[out_name].record_id,
                 df=obj,
                 contract_id=port.contract or "",
-                inputs=provenance_inputs,
-                config_digest=digest_cfg(cfg),
+                inputs=input_evidence,
+                config_digest=ctx.config_digest,
+                producer_config_digest=digest_cfg(cfg),
                 source_recipe=step.source_recipe,
             )
             continue
@@ -78,7 +106,7 @@ def _persist_file_bundle_record(
     ctx: RunContext,
     step: Any,
     cfg: Any,
-    provenance_inputs: list[ProvenanceInput],
+    input_evidence: tuple[RecordInputEvidence, ...],
     outputs: dict[str, Any],
     resolved_output_ports: dict[str, Any],
     phase: str,
@@ -122,8 +150,9 @@ def _persist_file_bundle_record(
         producer_id=step.id,
         producer_plugin=step.plugin,
         record_id=f"{producer_kind}:{step.id}",
-        inputs=provenance_inputs,
-        config_digest=digest_cfg(cfg),
+        inputs=input_evidence,
+        config_digest=ctx.config_digest,
+        producer_config_digest=digest_cfg(cfg),
         files=record_files,
         description=description,
         path_descriptions=path_descriptions,
@@ -175,6 +204,8 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
         contracts=registry.contracts,
         where=step.id,
     )
+    provenance_inputs = _runtime_provenance_inputs(step=step, inputs=inputs)
+    input_evidence = store.capture_inputs(provenance_inputs, resolved_inputs=inputs)
 
     plug_inputs: dict[str, Any] = {}
     for key, value in inputs.items():
@@ -183,53 +214,66 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
         else:
             plug_inputs[key] = value
 
-    try:
-        outputs = plugin.run(ctx, plug_inputs, cfg)
-    except ReaderError:
-        raise
-    except Exception as err:
-        raise ExecutionError(f"{phase} {step.id} crashed: {err}") from err
+    transaction_context = (
+        FileOutputTransaction(context=ctx, step_id=step.id, phase=phase)
+        if phase in {"plots", "exports"}
+        else nullcontext()
+    )
+    with transaction_context as file_transaction:
+        plugin_context = file_transaction.context if file_transaction is not None else ctx
+        try:
+            outputs = plugin.run(plugin_context, plug_inputs, cfg)
+        except ReaderError:
+            raise
+        except Exception as err:
+            raise ExecutionError(f"{phase} {step.id} crashed: {err}") from err
 
-    resolved_output_ports = _resolve_runtime_output_ports(
-        plugin,
-        inputs=inputs,
-        outputs=outputs,
-        cfg=cfg,
-        contracts=registry.contracts,
-        where=step.id,
-    )
-    _assert_output_ports(
-        resolved_output_ports,
-        outputs,
-        contracts=registry.contracts,
-        where=step.id,
-    )
-    provenance_inputs = _runtime_provenance_inputs(step=step, inputs=inputs)
-    _persist_dataframe_outputs(
-        store=store,
-        step=step,
-        cfg=cfg,
-        provenance_inputs=provenance_inputs,
-        outputs=outputs,
-        resolved_output_ports=resolved_output_ports,
-        output_labels=output_labels,
-        phase=phase,
-    )
-    if phase in {"plots", "exports"}:
-        protocol_figure_description = _protocol_figure_description(ctx=ctx, step=step) if phase == "plots" else None
-        description = protocol_figure_description or descriptor.summary
-        _persist_file_bundle_record(
+        resolved_output_ports = _resolve_runtime_output_ports(
+            plugin,
+            inputs=inputs,
+            outputs=outputs,
+            cfg=cfg,
+            contracts=registry.contracts,
+            where=step.id,
+        )
+        _assert_output_ports(
+            resolved_output_ports,
+            outputs,
+            contracts=registry.contracts,
+            where=step.id,
+        )
+        _persist_dataframe_outputs(
             store=store,
             ctx=ctx,
             step=step,
             cfg=cfg,
-            provenance_inputs=provenance_inputs,
+            input_evidence=input_evidence,
             outputs=outputs,
             resolved_output_ports=resolved_output_ports,
+            output_labels=output_labels,
             phase=phase,
-            description=description,
-            protocol_figure_description=protocol_figure_description,
         )
+        if phase in {"plots", "exports"}:
+            outputs = file_transaction.promote(
+                outputs=outputs,
+                output_ports=resolved_output_ports,
+                where=f"{phase}:{step.id}",
+            )
+            protocol_figure_description = _protocol_figure_description(ctx=ctx, step=step) if phase == "plots" else None
+            description = protocol_figure_description or descriptor.summary
+            _persist_file_bundle_record(
+                store=store,
+                ctx=ctx,
+                step=step,
+                cfg=cfg,
+                input_evidence=input_evidence,
+                outputs=outputs,
+                resolved_output_ports=resolved_output_ports,
+                phase=phase,
+                description=description,
+                protocol_figure_description=protocol_figure_description,
+            )
+            file_transaction.commit()
 
 
 def run_steps(

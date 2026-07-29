@@ -2,7 +2,7 @@
 doc_id: reader-repo-change-gate
 surface: maintainer-runbook
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Minimum review and verification gate for tracked Reader code, docs, tests, and CLI changes.
 ---
 
@@ -23,7 +23,7 @@ Before finalizing a change:
 1. Review the diff.
 2. Confirm you did not hand-edit `experiments/**/outputs/`.
 3. Run the smallest verification set that matches the change:
-   - docs-only: run `uv run python tools/check_docs.py` and `git diff --check`
+   - docs-only: run `uv run reader maintain docs` and `git diff --check`
    - CLI/code: targeted tests plus `uv run ruff check .`, `uv run ruff format . --check`, and `git diff --check`
    - runtime or contract changes: targeted tests, `uv run ruff check .`, `uv run ruff format . --check`, a representative CLI preflight command, and `git diff --check`
 4. State any skipped verification explicitly.
@@ -39,7 +39,7 @@ Before finalizing a change:
 ## Canonical Verification Commands
 
 ```bash
-uv run python tools/check_docs.py
+uv run reader maintain docs
 uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q
@@ -50,7 +50,17 @@ uv run pytest -q -m integration
 git diff --check
 ```
 
-`uv run pytest -q` is the fast default test run: it excludes only the full data-backed active-experiment run while still covering ordinary integration checks and the repo-wide config sweep. Use `uv run pytest -q -m repo_matrix` when the change mainly touches repo config invariants, `uv run pytest -q -m active_experiments` for the full active-experiment end-to-end run, and `uv run pytest -q -m integration` when you intentionally want the full integration set. Use the smallest subset that matches the risk of the change and explain any omission.
+`uv run pytest -q` is the portable default test run: it excludes only the
+local data-backed active-experiment lane while still covering ordinary
+integration checks and the repo-wide config sweep. The excluded lane depends
+on raw experiment inputs that are intentionally absent from a clean checkout;
+its single deselection is therefore expected, not a hidden failure. Run
+`uv run pytest -q -m active_experiments` from a workbench that has those local
+inputs before publishing runtime or record-contract changes. Use
+`uv run pytest -q -m repo_matrix` when a change mainly touches repository
+config invariants and `uv run pytest -q -m integration` for the complete
+portable integration selection. Use the smallest subset that matches the risk
+of the change and explain any omission.
 
 ## Related Docs
 

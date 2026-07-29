@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import importlib
 
-__all__ = ["write_experiment_notebook"]
+_EXPORTS = {
+    "artifacts": {"NotebookArtifactSpec", "publish_notebook_artifact_bundle"},
+    "scaffold": {"write_experiment_notebook"},
+}
+
+__all__ = tuple(sorted({name for names in _EXPORTS.values() for name in names}))
 
 
 def __getattr__(name: str):
-    if name == "write_experiment_notebook":
-        module = importlib.import_module("reader.workbench.notebooks.scaffold")
-        return getattr(module, name)
+    for module_name, names in _EXPORTS.items():
+        if name in names:
+            module = importlib.import_module(f"reader.workbench.notebooks.{module_name}")
+            return getattr(module, name)
     raise AttributeError(name)

@@ -2,7 +2,7 @@
 doc_id: reader-sfxi-plots
 surface: plot-reference
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Reader SFXI plot inputs, configuration, outputs, descriptions, and dependency boundaries.
 ---
 
@@ -195,11 +195,19 @@ silently choosing an exported workbook. Pass a workbook directly only when the
 workbook itself is the intended review snapshot.
 
 ```bash
+uv run reader init experiments/2026/20260708_sfxi_vec8_aggregate \
+  --protocol workbench/generic \
+  --title "SFXI vec8 cross-experiment aggregate"
+
 uv run reader aggregate-sfxi-vec8 \
   experiments/2026/20260706_sfxi_sensor-panel-m9-glu-secg/config.yaml \
   experiments/2026/20260707_sfxi_sensor-panel-m9-glu-secg/config.yaml \
-  --out-dir outputs/reviews/sfxi_vec8_aggregate
+  --output-experiment experiments/2026/20260708_sfxi_vec8_aggregate
 ```
+
+`--output-experiment` is required. The aggregate is a unit of work, so it has
+its own experiment directory and publishes to that experiment's configured
+`outputs/`. Reader rejects a free-floating workbench destination.
 
 The command writes one bundle:
 

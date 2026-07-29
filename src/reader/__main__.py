@@ -7,7 +7,7 @@ Author(s): Eric J. South
 --------------------------------------------------------------------------------
 """
 
-from reader.workbench.cli import app
+from reader.workbench.cli import main
 
 if __name__ == "__main__":
-    app()
+    raise SystemExit(main())

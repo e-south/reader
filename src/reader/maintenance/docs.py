@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import re
-import sys
 from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from .model import MaintenanceReport
+
 SKIP_PARTS = {
     ".git",
     ".venv",
@@ -24,8 +24,7 @@ HTML_ANCHOR_RE = re.compile(r"""<a\s+(?:[^>]*?\s)?(?:id|name)=["']([^"']+)["']""
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 DOC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 REQUIRED_FRONTMATTER_FIELDS = {"doc_id", "surface", "owner", "last_verified", "summary"}
-TOP_LEVEL_DOCS = {
-    "README.md",
+FRONTMATTER_DOCS = {
     "ARCHITECTURE.md",
     "DESIGN.md",
     "QUALITY.md",
@@ -36,12 +35,7 @@ REQUIRED_LINKS = {
     "README.md": {
         "docs/README.md",
         "docs/guides/getting_started.md",
-        "docs/guides/preflight_run_verify.md",
-        "docs/guides/automation.md",
-        "docs/guides/data_operations_plan.md",
-        "docs/core/cli.md",
-        "docs/core/pipeline.md",
-        "docs/repo-maintenance.md",
+        "docs/guides/common_routes.md",
     },
     "docs/README.md": {
         "guides/getting_started.md",
@@ -83,6 +77,7 @@ REQUIRED_LINKS = {
     },
     "docs/core/spec.md": {
         "./pipeline.md",
+        "../../ARCHITECTURE.md",
         "../../src/reader/protocols/",
         "../../src/reader/workbench/dop/",
         "../../src/reader/workbench/experiment/",
@@ -104,13 +99,24 @@ REQUIRED_LINKS = {
 }
 
 
-def iter_markdown_files() -> list[Path]:
-    return sorted(path for path in REPO_ROOT.rglob("*.md") if not any(part in SKIP_PARTS for part in path.parts))
+def _is_generated_experiment_output(path: Path, repo_root: Path) -> bool:
+    relative = path.relative_to(repo_root)
+    return bool(relative.parts) and relative.parts[0] == "experiments" and "outputs" in relative.parts
 
 
-def iter_navigable_docs() -> list[Path]:
-    top_level = [REPO_ROOT / path for path in sorted(TOP_LEVEL_DOCS)]
-    return top_level + sorted((REPO_ROOT / "docs").rglob("*.md"))
+def iter_markdown_files(repo_root: Path) -> list[Path]:
+    repo_root = repo_root.resolve()
+    return sorted(
+        path
+        for path in repo_root.rglob("*.md")
+        if not any(part in SKIP_PARTS for part in path.parts) and not _is_generated_experiment_output(path, repo_root)
+    )
+
+
+def iter_navigable_docs(repo_root: Path) -> list[Path]:
+    repo_root = repo_root.resolve()
+    top_level = [repo_root / path for path in sorted(FRONTMATTER_DOCS)]
+    return top_level + sorted((repo_root / "docs").rglob("*.md"))
 
 
 def _frontmatter_payload(path: Path) -> tuple[dict[str, object] | None, str | None]:
@@ -130,11 +136,11 @@ def _frontmatter_payload(path: Path) -> tuple[dict[str, object] | None, str | No
     return payload, None
 
 
-def check_doc_frontmatter(files: list[Path]) -> list[str]:
+def check_doc_frontmatter(files: list[Path], repo_root: Path) -> list[str]:
     errors: list[str] = []
     seen_ids: dict[str, Path] = {}
     for path in files:
-        rel_path = path.relative_to(REPO_ROOT)
+        rel_path = path.relative_to(repo_root)
         payload, parse_error = _frontmatter_payload(path)
         if parse_error is not None:
             errors.append(f"front matter: {rel_path}: {parse_error}")
@@ -158,7 +164,7 @@ def check_doc_frontmatter(files: list[Path]) -> list[str]:
             previous = seen_ids.get(doc_id)
             if previous is not None:
                 errors.append(
-                    f"front matter: {rel_path}: duplicate doc_id {doc_id!r} also used by {previous.relative_to(REPO_ROOT)}"
+                    f"front matter: {rel_path}: duplicate doc_id {doc_id!r} also used by {previous.relative_to(repo_root)}"
                 )
             else:
                 seen_ids[doc_id] = path
@@ -247,15 +253,15 @@ def linked_paths(source: Path) -> set[Path]:
     return linked
 
 
-def check_internal_links(files: list[Path]) -> list[str]:
+def check_internal_links(files: list[Path], repo_root: Path) -> list[str]:
     errors: list[str] = []
     for file in files:
         for raw_target in LINK_RE.findall(file.read_text()):
             normalized = normalize_target(file, raw_target)
             if normalized is None:
                 continue
-            rel_file = file.relative_to(REPO_ROOT)
-            if not normalized.is_relative_to(REPO_ROOT):
+            rel_file = file.relative_to(repo_root)
+            if not normalized.is_relative_to(repo_root):
                 errors.append(f"link escapes repository: {rel_file} -> {raw_target}")
                 continue
             if not normalized.exists():
@@ -263,7 +269,7 @@ def check_internal_links(files: list[Path]) -> list[str]:
     return errors
 
 
-def check_markdown_anchors(files: list[Path]) -> list[str]:
+def check_markdown_anchors(files: list[Path], repo_root: Path) -> list[str]:
     anchors_by_file = {file.resolve(): markdown_anchors(file) for file in files}
     errors: list[str] = []
     for file in files:
@@ -278,15 +284,15 @@ def check_markdown_anchors(files: list[Path]) -> list[str]:
             if anchors is None:
                 continue
             if anchor not in anchors:
-                rel_file = file.relative_to(REPO_ROOT)
+                rel_file = file.relative_to(repo_root)
                 errors.append(f"broken anchor: {rel_file} -> {raw_target}")
     return errors
 
 
-def check_required_routes() -> list[str]:
+def check_required_routes(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for rel_source, rel_targets in REQUIRED_LINKS.items():
-        source = REPO_ROOT / rel_source
+        source = repo_root / rel_source
         linked = linked_paths(source)
         for rel_target in sorted(rel_targets):
             expected = (source.parent / rel_target).resolve()
@@ -295,20 +301,18 @@ def check_required_routes() -> list[str]:
     return errors
 
 
-def main() -> int:
-    files = iter_markdown_files()
-    errors = check_internal_links(files)
-    errors.extend(check_markdown_anchors(files))
-    errors.extend(check_required_routes())
-    errors.extend(check_doc_frontmatter(iter_navigable_docs()))
-    if errors:
-        print("docs integrity check failed", file=sys.stderr)
-        for error in errors:
-            print(f"- {error}", file=sys.stderr)
-        return 1
-    print(f"docs integrity ok: {len(files)} markdown files")
-    return 0
+def check_docs(repo_root: Path) -> MaintenanceReport:
+    """Check documentation integrity in a Reader source checkout."""
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    repo_root = repo_root.resolve()
+    files = iter_markdown_files(repo_root)
+    errors = check_internal_links(files, repo_root)
+    errors.extend(check_markdown_anchors(files, repo_root))
+    errors.extend(check_required_routes(repo_root))
+    errors.extend(check_doc_frontmatter(iter_navigable_docs(repo_root), repo_root))
+    return MaintenanceReport(
+        check="docs",
+        repo_root=repo_root,
+        checked=len(files),
+        errors=tuple(errors),
+    )

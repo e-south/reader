@@ -2,7 +2,7 @@
 doc_id: reader-design
 surface: design-principles
 owner: reader-maintainers
-last_verified: 2026-07-10
+last_verified: 2026-07-28
 summary: Product and information-design rules for the Reader authoring, protocol, output, and agent surfaces.
 ---
 
@@ -155,13 +155,18 @@ That is why discovery and preflight commands have machine-readable JSON surfaces
 
 Those freedoms look flexible at first and usually turn into ontology drift, higher support cost, and unreadable experiment config.
 
-## Current Design Debt
+## Current Design Pressure
 
-The public surface is protocol-owned and compact. The semantic compiler remains
-incomplete: protocol controls, windows, metrics, and ranking are not one
-executable typed analysis program.
+The public surface is protocol-owned and compact. Controls, windows, metrics,
+and ranking now compile into one typed semantic program carried by the resolved
+experiment. Execution bindings make each node's implementation status and
+materialized records inspectable.
 
-That means the current design is directionally correct, but not finished. The next honest improvement is to make protocol semantics more executable, not to widen the YAML surface again.
+Coverage is intentionally honest: a protocol family may still declare a node
+as domain-defined or unavailable when Reader does not execute it. The next
+useful improvement is to bind one such node to an explicit implementation and
+test its compiled record path. Widening the YAML surface does not solve a
+coverage gap.
 
 ## Related Docs
 

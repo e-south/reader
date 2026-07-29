@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from reader.notebook_review import (
+from reader.domains.review import (
     ReviewCollectionIndex,
     ReviewEntity,
     ReviewEntityKind,
@@ -167,8 +167,8 @@ def test_review_collection_uses_exact_entity_ids() -> None:
         index.experiments_for_entity("design")
 
 
-def test_notebook_review_primitive_stays_small_and_assay_neutral() -> None:
-    path = Path(__file__).resolve().parents[2] / "notebook_review.py"
+def test_review_contract_stays_small_and_assay_neutral() -> None:
+    path = Path(__file__).resolve().parents[2] / "domains" / "review.py"
     source = path.read_text(encoding="utf-8")
 
     assert len(source.splitlines()) <= 200

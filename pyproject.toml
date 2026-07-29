@@ -1,14 +1,20 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "reader"
 version = "1.0.0"
-description = "Lab instrumentation data pipeline (plugin engine)"
+description = "Validated, traceable analysis workflows for experimental instrument data"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 authors = [{ name = "Eric J. South", email = "ericjohnsouth@gmail.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
 
 
 dependencies = [
@@ -27,7 +33,12 @@ dependencies = [
 ]
 
 [project.scripts]
-reader = "reader.workbench.cli:app"
+reader = "reader.workbench.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/e-south/reader/tree/main/docs"
+Issues = "https://github.com/e-south/reader/issues"
+Repository = "https://github.com/e-south/reader"
 
 [tool.setuptools.package-dir]
 "" = "src"
@@ -35,6 +46,7 @@ reader = "reader.workbench.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["reader*"]
+exclude = ["reader.tests", "reader.tests.*"]
 namespaces = false
 
 [tool.setuptools.package-data]
@@ -103,7 +115,7 @@ addopts = [
 ]
 
 markers = [
-  "active_experiments: full data-backed active-experiment end-to-end matrix excluded from the default lane",
+  "active_experiments: local data-backed end-to-end matrix selected explicitly because raw experiment inputs are not shipped in a clean checkout",
   "integration: cross-surface integration coverage",
   "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
   "smoke: representative real-experiment runtime coverage kept in the default test lane",
@@ -111,7 +123,7 @@ markers = [
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
-  "outputs", "plots", "raw_data", "_scratch"
+  "outputs", "raw_data", "_scratch", ".tmp"
 ]
 
 [tool.coverage.run]

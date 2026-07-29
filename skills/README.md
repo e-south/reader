@@ -12,7 +12,7 @@ Guidelines:
 - Pair repo-local skills with existing global skills when the task also needs
   external tooling such as Google Workspace access or spreadsheet editing.
 
-Current repo-local skill:
+Current repo-local skills:
 
 - [`reader-data-operations-plan`](./reader-data-operations-plan/SKILL.md):
   DOP data-class classification, DOP registry/docs alignment, and DOP

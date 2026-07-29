@@ -1,42 +1,48 @@
----
-doc_id: reader-overview
-surface: repository-overview
-owner: reader-maintainers
-last_verified: 2026-07-10
-summary: Short entry point for installing reader and finding the canonical operating and maintainer guides.
----
+![Reader: experimental-data workbench from ingest through trace](assets/reader-banner.svg)
 
-[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions?query=workflow%3ACI)
+[![CI](https://github.com/e-south/reader/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/ci.yaml)
+[![Integration](https://github.com/e-south/reader/actions/workflows/integration.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/integration.yaml)
 [![codecov](https://codecov.io/gh/e-south/reader/graph/badge.svg)](https://codecov.io/gh/e-south/reader)
+
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+[![Package: wheel + sdist](https://img.shields.io/badge/package-wheel%20%2B%20sdist-4c1.svg)](pyproject.toml)
+[![Managed with uv](https://img.shields.io/badge/managed%20with-uv-6f4bf2.svg)](https://docs.astral.sh/uv/)
+[![Lint and format: Ruff](https://img.shields.io/badge/lint%20%2B%20format-Ruff-d7ff64.svg)](https://docs.astral.sh/ruff/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2f855a.svg)](LICENSE)
+[![Schema: reader/v8](https://img.shields.io/badge/schema-reader%2Fv8-1d6f8c.svg)](docs/core/pipeline.md)
 
-![reader banner](assets/reader-banner.svg)
+Reader ingests instrument files and experiment metadata, applies declared
+transformations, and writes validated records, plots, exports, and notebooks.
+Every unit of work—including a cross-experiment aggregate—lives under
+`experiments/<year>/<experiment>/`, with source material in `inputs/`, a
+`reader/v8` contract in `config.yaml`, and generated artifacts in `outputs/`.
 
-`reader` organizes experiment directories and runs config-driven analysis
-pipelines over structured assay data. Each experiment uses a fixed layout:
-raw inputs in `inputs/`, optional notebooks in `notebooks/`, generated results
-in `outputs/`, and a `reader/v8` `config.yaml` that declares the run.
+## Try it
 
----
+```bash
+uv sync --locked
+uv run reader demo
+```
 
-## Documentation
+The demo prints a guided command tour. It does not execute a pipeline or write
+files. To see the assay types Reader can scaffold:
 
-- [Documentation index](docs/README.md): full map of user, reference, and
-  maintainer docs.
-- [Getting started](docs/guides/getting_started.md): install `reader`, check
-  the environment, and inspect a first experiment.
-- [Preflight, run, verify](docs/guides/preflight_run_verify.md): inspect,
-  validate, and execute one experiment.
-- [Automation and JSON](docs/guides/automation.md): machine-readable
-  discovery, inspection, and preflight routes.
-- [Data Operations Plan](docs/guides/data_operations_plan.md): classify data
-  before intake and capture the minimum metadata needed for reliable reuse.
-- [Experiment bootstrap](docs/guides/experiment_bootstrap.md): create an
-  experiment from local or Drive-backed inputs.
-- [Workbench gardening](docs/guides/workbench_gardening.md): maintainer
-  workflow for architecture and docs cleanup.
-- [CLI reference](docs/core/cli.md): full command reference.
-- [Configuring `reader/v8`](docs/core/pipeline.md): schema and protocol-owned
-  config surface.
-- [Repo maintenance](docs/repo-maintenance.md): repo-wide checks, CI, and
-  maintainer routines.
+```bash
+uv run reader protocols
+uv run reader init ./experiments/2026/20260728_my_experiment --protocol plate_reader/single_reporter_screen
+```
+
+Every generated starter can be inspected and validated before data is added.
+
+## Learn more
+
+- [Getting started](docs/guides/getting_started.md) — install Reader, run the
+  demo, and scaffold a first experiment.
+- [Common tasks](docs/guides/common_routes.md) — shortest commands for
+  discovery, validation, execution, and automation.
+- [Python API](docs/core/python_api.md) — typed, task-oriented experiment and
+  plugin interfaces for integrations.
+- [Documentation index](docs/README.md) — complete user, reference, and
+  maintainer documentation.
+
+Reader is available under the [MIT license](LICENSE).

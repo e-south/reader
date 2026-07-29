@@ -7,7 +7,7 @@ from typing import Literal
 from reader.contracts import ContractId, OutputContractSurface
 from reader.errors import RegistryError
 
-type PortKind = Literal["dataframe", "file_path", "file_bundle"]
+type PortKind = Literal["dataframe", "file_path", "file_set", "file_bundle"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,8 @@ class InputPortSpec:
             return self.contract or "dataframe"
         if self.kind == "file_path":
             return "file"
+        if self.kind == "file_set":
+            return "file set"
         return "file bundle"
 
 
@@ -42,6 +44,8 @@ class OutputPortSpec:
 
     def __post_init__(self) -> None:
         _validate_port_name(self.name)
+        if self.kind == "file_set":
+            raise RegistryError("Output ports must not use input-only kind 'file_set'")
         if self.kind == "dataframe":
             _validate_dataframe_contract(self.contract, where=f"Dataframe output port {self.name!r}", optional=False)
             return
@@ -77,6 +81,10 @@ def dataframe_input(name: str, contract: ContractId | None = None, *, optional: 
 
 def file_path_input(name: str, *, optional: bool = False) -> InputPortSpec:
     return InputPortSpec(name=name, kind="file_path", optional=optional)
+
+
+def file_set_input(name: str, *, optional: bool = False) -> InputPortSpec:
+    return InputPortSpec(name=name, kind="file_set", optional=optional)
 
 
 def file_bundle_input(name: str, *, optional: bool = False) -> InputPortSpec:
@@ -140,7 +148,7 @@ def _validate_port_name(name: str) -> None:
     if name.endswith("?"):
         raise RegistryError(f"Port name {name!r} must not encode optionality with a '?' suffix")
     if name == "files":
-        raise RegistryError("Port name 'files' is reserved; use a typed file_path or file_bundle port")
+        raise RegistryError("Port name 'files' is reserved; use a typed file_path, file_set, or file_bundle port")
 
 
 def _validate_dataframe_contract(contract: ContractId | None, *, where: str, optional: bool) -> None:

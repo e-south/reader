@@ -36,6 +36,7 @@ from reader.domains.plate_reader.analysis.response_window.sources import (
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.decl import load_workbench_decl
 from reader.workbench.experiment import ResolvedOrderedStateSpace
+from reader.workbench.notebooks.response_window import write_review_notebook
 
 _RESPONSE_WINDOW_STATE_ORDER = ("00", "10", "01", "11")
 
@@ -66,6 +67,7 @@ def build_response_window_bundle(
         overwrite=overwrite,
         contracts=runtime.contracts,
         source_loader=_source_loader(reader_root=reader_root, runtime=runtime),
+        notebook_writer=write_review_notebook,
     )
 
 

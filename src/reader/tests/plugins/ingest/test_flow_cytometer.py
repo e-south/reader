@@ -30,7 +30,7 @@ def test_flow_cytometer_ingest_basic():
         pytest.skip("Cytometer fixture file is not available in this checkout")
     plugin = FlowCytometerIngest()
     cfg = FlowCytometerCfg(print_summary=False)
-    outputs = plugin.run(_ctx(fcs_path.parent.parent), {"raw": fcs_path}, cfg)
+    outputs = plugin.run(_ctx(fcs_path.parent.parent), {"raw": (fcs_path,)}, cfg)
     df = outputs["df"]
     channels = outputs["channels"]
     assert {"position", "time", "channel", "value", "sample_id"} <= set(df.columns)

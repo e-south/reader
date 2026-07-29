@@ -110,7 +110,7 @@ def plot_logic_symmetry(
     overlay_gate_set = _dget(ideals_overlay, "gate_set", "logic_family")
     overlay_style_cfg = _dget(ideals_overlay, "style", {})
 
-    # Choose mode: explicit style.mode OR auto "tiles" for gate sets beginning with "tiles"
+    # Use an explicit style mode or derive the natural representation from the gate set.
     mode_val = _dget(overlay_style_cfg, "mode", None)
     if mode_val is None:
         mode_val = "tiles" if str(overlay_gate_set).startswith("tiles") else "dot"
@@ -124,7 +124,7 @@ def plot_logic_symmetry(
         show_labels=bool(_dget(overlay_style_cfg, "show_labels", True)),
         label_offset=float(_dget(overlay_style_cfg, "label_offset", 0.02)),
         label_line_height=float(_dget(overlay_style_cfg, "label_line_height", 0.018)),
-        label_fontsize=int(_dget(overlay_style_cfg, "label_fontsize", 12)),  # NEW
+        label_fontsize=int(_dget(overlay_style_cfg, "label_fontsize", 12)),
         tile_cell_w=float(_dget(overlay_style_cfg, "tile_cell_w", 0.035)),
         tile_cell_h=float(_dget(overlay_style_cfg, "tile_cell_h", 0.035)),
         tile_gap=float(_dget(overlay_style_cfg, "tile_gap", 0.0)),

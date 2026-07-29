@@ -15,7 +15,7 @@ from reader.tests.repo.experiment_matrix import (
     OPTIONAL_DEPENDENCY_BLOCKERS,
     repo_rel,
 )
-from reader.tests.support import REPO_ROOT, load_decl
+from reader.tests.support import REPO_ROOT, cli_success_data, load_decl
 from reader.workbench import resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.config import ReaderSpec
@@ -125,10 +125,25 @@ def test_repo_cli_inventory_details_matches_experiment_discovery() -> None:
     experiments_root = REPO_ROOT / "experiments"
     runner = CliRunner()
 
-    result = runner.invoke(app, ["ls", "--root", str(experiments_root), "--details", "--format", "json"])
+    result = runner.invoke(
+        app,
+        [
+            "ls",
+            "--root",
+            str(experiments_root),
+            "--details",
+            "--limit",
+            "100",
+            "--format",
+            "json",
+        ],
+    )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    envelope = json.loads(result.output)
+    assert envelope["meta"]["truncated"] is False
+    assert envelope["meta"]["continuation"] is None
+    payload = cli_success_data(result.output)
     expected_configs = discover_experiment_configs(experiments_root)
     expected_decls = {str(path.resolve()): load_decl(path) for path in expected_configs}
     expected_protocols = Counter(decl.experiment_semantics.protocol.id for decl in expected_decls.values())
@@ -173,7 +188,7 @@ def test_crosstalk_repo_config_surfaces_both_heatmaps_via_cli() -> None:
     result = runner.invoke(app, ["plot", str(config_path), "--list", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert [item["id"] for item in payload["plots"]] == [
         "ratio_heatmap",
         "support_heatmap",
@@ -199,8 +214,8 @@ def test_retron_sponge_repo_configs_surface_full_plot_portfolio_and_review_noteb
 
     assert plot_result.exit_code == 0
     assert inspect_result.exit_code == 0
-    plot_payload = json.loads(plot_result.output)
-    inspect_payload = json.loads(inspect_result.output)
+    plot_payload = cli_success_data(plot_result.output)
+    inspect_payload = cli_success_data(inspect_result.output)
     plot_ids = [item["id"] for item in plot_payload["plots"]]
     assert plot_payload["summary"]["plots"] == len(RETRON_SPONGE_FULL_PLOT_IDS)
     assert set(plot_ids) == set(RETRON_SPONGE_FULL_PLOT_IDS)

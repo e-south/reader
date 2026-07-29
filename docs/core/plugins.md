@@ -2,7 +2,7 @@
 doc_id: reader-plugin-development
 surface: maintainer-guide
 owner: reader-maintainers
-last_verified: 2026-07-17
+last_verified: 2026-07-28
 summary: Maintainer guide for adding mechanical Reader plugins behind protocol-owned semantics and typed contracts.
 ---
 
@@ -161,13 +161,13 @@ conventions.
 Runtime validation then checks reads, writes, and contract compatibility before
 execution.
 
-An ingest plugin that discovers one optional file may implement
-`resolve_missing_file_inputs`. The engine accepts additions only for optional
-`file_path` ports, forbids replacing an explicit graph binding, verifies the
-resolved regular file remains under the experiment root after symlink
-resolution, and records that exact file reference as input provenance. The
-plugin's `run` method then consumes the resolved path like any declared input;
-it does not discover the file a second time.
+An ingest plugin that discovers input files may implement
+`resolve_missing_file_inputs`. Use an optional `file_path` port for one file or
+an optional `file_set` port for a nonempty tuple. The engine forbids replacing
+an explicit graph binding, confines every resolved regular file to the
+experiment root after symlink resolution, and records each exact file as input
+evidence. The plugin's `run` method consumes the resolved path or tuple; it does
+not discover the files a second time.
 
 ## Plot and export guidance
 

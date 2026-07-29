@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from functools import cache
 
-from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
+from reader.workbench.input_discovery import (
+    DEFAULT_INPUT_EXCLUDE as DEFAULT_EXCLUDE,
+)
+from reader.workbench.input_discovery import (
+    DEFAULT_WORKBOOK_INCLUDE as DEFAULT_INCLUDE,
+)
 
 from ._builtins_plate_reader_variants import build_plate_reader_variant_protocols
 from .compiler import (
@@ -25,6 +30,7 @@ from .model import (
     ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolRankingSpec,
+    ProtocolResourceSpec,
     ProtocolSemanticProfileSpec,
     ProtocolWindowSpec,
     binding_value,
@@ -80,14 +86,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFactorSpec(name="replicate", role="replicate", summary="Replicate grouping axis.", required=False),
             ProtocolFactorSpec(name="time", role="time", summary="Observation axis when present.", required=False),
         ),
-        figures=(
-            ProtocolFigureSpec(
-                id="generic_qc",
-                kind="qc",
-                summary="Quality-control measurements and diagnostics defined by the selected experiment domain.",
-                primary=True,
-            ),
-        ),
         ranking=ProtocolRankingSpec(
             primary_metric="domain_defined",
             direction="higher_is_better",
@@ -118,6 +116,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             "optional crosstalk pair selection."
         ),
         tags=("plate_reader", "dual_reporter", "screen", "ratio", "fold_change"),
+        resources=(
+            ProtocolResourceSpec(
+                id="sample_map",
+                path="./inputs/metadata.xlsx",
+                summary="Well-to-sample metadata for the plate-reader workbook.",
+            ),
+        ),
         input_fields=(
             _field(
                 "ingest",
@@ -186,7 +191,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "fold_change",
                 "Fold-change summary inputs for screen-style comparisons.",
                 children=(
-                    _field("report_times", "Report times in hours for fold-change snapshots.", kind="number_list"),
+                    _field(
+                        "report_times",
+                        "Report times in hours for fold-change snapshots.",
+                        kind="number_list",
+                        default=[14.0],
+                    ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
                     _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
                     _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
@@ -582,6 +592,28 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         family="logic_summary",
         summary="SFXI logic-screen protocol for mapping inducible corners to vec8 logic/intensity summaries.",
         tags=("logic", "sfxi", "screen"),
+        resources=(
+            ProtocolResourceSpec(
+                id="sample_map",
+                path="./inputs/metadata.xlsx",
+                summary="Well-to-sample metadata for the logic-screen workbook.",
+            ),
+        ),
+        example_annotations={
+            "ordered_state_spaces": {
+                "induction_logic": {
+                    "column": "treatment",
+                    "state_order": ["00", "10", "01", "11"],
+                    "values": {
+                        "00": "-inducer/-stress",
+                        "10": "+inducer/-stress",
+                        "01": "-inducer/+stress",
+                        "11": "+inducer/+stress",
+                    },
+                    "case_sensitive": True,
+                }
+            }
+        },
         input_fields=(
             _field(
                 "ingest",
@@ -652,7 +684,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "Optional fold-change summary inputs used before vec8 export.",
                 children=(
                     _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
-                    _field("report_times", "Report times in hours for fold-change snapshots.", kind="number_list"),
+                    _field(
+                        "report_times",
+                        "Report times in hours for fold-change snapshots.",
+                        kind="number_list",
+                        default=[14.0],
+                    ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
                     _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
                     _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
@@ -1123,6 +1160,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         family="panel_analysis",
         summary="Flow-cytometry panel protocol for gated event tables and channel-level summaries.",
         tags=("cytometry", "fcs", "panel"),
+        resources=(
+            ProtocolResourceSpec(
+                id="metadata",
+                path="./inputs/metadata.csv",
+                summary="Sample metadata joined to imported flow-cytometry events.",
+            ),
+        ),
         input_fields=(
             _field(
                 "ingest",
@@ -1195,14 +1239,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFactorSpec(name="sample", role="sample", summary="Sample/run identifier."),
             ProtocolFactorSpec(name="condition", role="condition", summary="Experimental condition."),
             ProtocolFactorSpec(name="gate", role="gate", summary="Gate or subset definition.", required=False),
-        ),
-        figures=(
-            ProtocolFigureSpec(
-                id="cytometry_qc",
-                kind="qc",
-                summary="Channel distributions, event counts, and gate diagnostics for the selected cytometry dataset.",
-                primary=True,
-            ),
         ),
         ranking=ProtocolRankingSpec(
             primary_metric="domain_defined",

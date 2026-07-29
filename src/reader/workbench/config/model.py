@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from reader.errors import ConfigError
+from reader.workbench.dop import builtin_dop_registry
 
 
 class ExperimentSpec(BaseModel):
@@ -35,6 +36,51 @@ class ExperimentSpec(BaseModel):
         return lifecycle
 
 
+ReplicateKind = Literal["biological", "technical", "mixed", "not_applicable"]
+
+
+class EvidenceSpec(BaseModel):
+    data_class: str
+    data_class_reason: str
+    replicate_kind: ReplicateKind
+    replicate_identity_field: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("data_class", mode="after")
+    @classmethod
+    def _validate_data_class(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("evidence.data_class must be a non-empty string")
+        builtin_dop_registry().data_class(cleaned)
+        return cleaned
+
+    @field_validator("data_class_reason", mode="after")
+    @classmethod
+    def _validate_data_class_reason(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("evidence.data_class_reason must be a non-empty string")
+        return cleaned
+
+    @field_validator("replicate_identity_field", mode="after")
+    @classmethod
+    def _validate_replicate_identity_field(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("evidence.replicate_identity_field must be a non-empty string when provided")
+        return cleaned
+
+    @model_validator(mode="after")
+    def _validate_replicate_identity(self) -> EvidenceSpec:
+        if self.replicate_kind == "not_applicable" and self.replicate_identity_field is not None:
+            raise ValueError("evidence.replicate_identity_field cannot be set when replicate_kind is not_applicable")
+        return self
+
+
 class PathsSpec(BaseModel):
     outputs: str = "./outputs"
     plots: str = "plots"
@@ -51,7 +97,7 @@ class PlottingSpec(BaseModel):
 
 
 class ResourceSpec(BaseModel):
-    kind: str
+    kind: Literal["file"]
     path: str
 
     model_config = {"extra": "forbid"}
@@ -185,6 +231,7 @@ class ReaderSpec(BaseModel):
     plotting: PlottingSpec = Field(default_factory=PlottingSpec)
     resources: ResourcesSpec = Field(default_factory=ResourcesSpec)
     annotations: AnnotationSpec = Field(default_factory=AnnotationSpec)
+    evidence: EvidenceSpec | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -194,6 +241,21 @@ class ReaderSpec(BaseModel):
         if v != "reader/v8":
             raise ConfigError("Config schema must be 'reader/v8'. This repo only supports reader/v8.")
         return v
+
+    @model_validator(mode="after")
+    def _validate_evidence_protocol_candidate(self) -> ReaderSpec:
+        if self.evidence is None:
+            return self
+
+        data_class = builtin_dop_registry().data_class(self.evidence.data_class)
+        protocol_id = self.protocol.id.strip()
+        if protocol_id not in data_class.protocol_candidates:
+            valid_candidates = ", ".join(data_class.protocol_candidates)
+            raise ValueError(
+                f"evidence.data_class {data_class.id!r} does not admit protocol.id {protocol_id!r}. "
+                f"Valid protocol candidates: {valid_candidates}"
+            )
+        return self
 
     @classmethod
     def load(cls, path: Path) -> ReaderSpec:

@@ -156,66 +156,15 @@ A = u10 - u01
 
 ---
 
-## YAML usage (minimal working example)
+## Reader configuration
 
-```yaml
-plots:
-    - name: ordered_state_space
-      module: logic_symmetry
-      params:
-        response_channel: "YFP/CFP"
-        design_by: ["genotype"]
-        batch_col: "batch"
-        treatment_map:
-          "00": "EtOH 3%, 0 nM cipro"
-          "10": "EtOH 3%, 0 nM cipro"
-          "01": "EtOH 0%,100 nM cipro"
-          "11": "EtOH 3%, 100 nM cipro"
-        treatment_case_sensitive: true
-
-        # Optional pre-selection if data are time series
-        prep:
-          enable: true
-          mode: "nearest"        # nearest|first|last|median|exact
-          target_time: 10        # hours
-          tolerance: 0.6
-          align_corners: false   # set true to force one common time per (design,batch)
-
-        aggregation:
-          replicate_stat: "mean"     # mean|median
-          uncertainty: "halo"        # none|errorbars|halo
-
-        encodings:
-          size_by: "log_r"           # log_r|cv|fixed
-          size_fixed: 80
-          hue: null
-          alpha_by: "batch"
-          alpha_min: 0.35
-          alpha_max: 1.0
-          shape_by: null
-          shape_cycle: ["o","s","^","D","P","X","v","*"]
-          shape_max_categories: null
-
-        ideals_overlay:
-          enable: false
-          gate_set: "logic_family"   # core|logic_family|full16
-          style:
-            alpha: 0.25
-            size: 40
-            color: "#888888"
-            show_labels: true
-
-        visuals:
-          color: "#6e6e6e"
-          xlim: [-1.02, 1.02]
-          ylim: [-1.02, 1.02]
-          grid: true
-
-        output:
-          format: ["pdf"]
-          dpi: 300
-          figsize: [7, 6]
-```
+Reader exposes this calculation through the `logic/sfxi_screen` protocol. Put
+the exact four-state mapping under
+`annotations.ordered_state_spaces`, select the protocol-owned
+`logic_symmetry` figure, and configure assay semantics under `protocol.inputs`
+and `protocol.analysis`. See the maintained
+[SFXI workflow](../../../../../docs/lib/sfxi/workflow.md) for a complete
+`reader/v8` fragment and preflight sequence.
 
 ### Notes & options
 
@@ -226,8 +175,11 @@ plots:
 
 ## Outputs
 
-* `logic_symmetry_<name>.pdf|png` — one figure with all points
-* **Table (in-memory):** one row per `(design_by…, batch)` when computed during plotting. Persist it explicitly via pipeline/export if needed.
+* A manifest-backed figure bundle selected by the protocol-owned
+  `logic_symmetry` figure id.
+* An in-memory table with one row per `(design_by…, batch)` while plotting.
+  Persist a table through an explicit pipeline or export contract when needed;
+  the plot plugin does not write a CSV.
 
 ```
 <design_by...>, batch,
@@ -252,4 +204,5 @@ size_value, hue_value, alpha_value, shape_value
 * Map your **exact** treatment labels to `00/10/01/11`.
 * Ensure **one time** per `(design, batch, treatment)`.
 * Pick encodings (`size_by`, `hue`, `alpha_by`, `shape_by`).
-* Run `reader` → get a clear `(L, A)` plot plus a CSV of supporting metrics.
+* Run the selected Reader plot → get a manifest-backed `(L, A)` figure. Add an
+  explicit export when supporting metrics must be persisted.

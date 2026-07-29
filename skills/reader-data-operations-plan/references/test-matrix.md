@@ -36,8 +36,8 @@ Should not trigger:
 Run:
 
 ```bash
-uv run python tools/audit_repo_skills.py
-uv run python tools/check_docs.py
+uv run reader maintain skills
+uv run reader maintain docs
 uv run pytest -q src/reader/tests/repo/test_docs_routes.py
 uv run reader dop classes --format json
 uv run reader dop ready-specs --format json

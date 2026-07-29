@@ -17,6 +17,8 @@ def render_records(
     job_path,
     all_revisions: bool,
     format: str,
+    limit: int | None = None,
+    continuation: str | None = None,
 ) -> None:
     _, decl = load_job_models(job_path)
     outputs_dir = decl.experiment_semantics.layout.outputs_dir
@@ -33,18 +35,31 @@ def render_records(
         )
 
     fmt = normalize_output_format(format)
+    limit, continuation = shared.normalize_paging_options(limit, continuation)
+    shared.require_json_paging(format=fmt, limit=limit, continuation=continuation)
     if fmt == "json":
-        emit_json(
-            _load("reader.workbench.inspection.results").record_catalog_payload(
-                experiment=_load("reader.workbench.inspection.experiments").experiment_identity_payload(
-                    job_path=job_path, decl=decl
-                ),
-                store=store,
-                outputs_dir=outputs_dir,
-                runtime=runtime,
-                include_history=all_revisions,
-            )
+        payload = _load("reader.workbench.inspection.results").record_catalog_payload(
+            experiment=_load("reader.workbench.inspection.experiments").experiment_identity_payload(
+                job_path=job_path, decl=decl
+            ),
+            store=store,
+            outputs_dir=outputs_dir,
+            runtime=runtime,
+            include_history=all_revisions,
         )
+        page = shared.page_json_collection(
+            payload["records"],
+            key=lambda item: str(item["record_id"]),
+            surface="records",
+            selection={
+                "config": str(job_path),
+                "include_history": all_revisions,
+            },
+            limit=limit,
+            continuation=continuation,
+        )
+        payload["records"] = list(page.items)
+        emit_json(payload, truncated=page.truncated, continuation=page.continuation)
         return
 
     latest_records = store.iter_latest_records()

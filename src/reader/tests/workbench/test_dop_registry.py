@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
-
 from typer.testing import CliRunner
 
 from reader.protocols import builtin_protocol_catalog
+from reader.tests.support import cli_success_data
 from reader.workbench import cli
 from reader.workbench.dop import builtin_dop_registry
 from reader.workbench.inspection.readiness import READINESS_CAPABILITY_KEYS, READINESS_STATES
@@ -30,6 +29,9 @@ def test_dop_registry_ready_specs_match_reader_readiness_contract() -> None:
         capability_keys=READINESS_CAPABILITY_KEYS,
     )
 
+    assert "catalog_ready" in READINESS_STATES
+    assert "verify" in READINESS_CAPABILITY_KEYS
+
     assert [spec.id for spec in registry.ready_specs()] == [
         "classified",
         "metadata_ready",
@@ -46,7 +48,7 @@ def test_dop_classes_cli_emits_json() -> None:
     result = runner.invoke(cli.app, ["dop", "classes", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     ids = [item["id"] for item in payload["data_classes"]]
     assert ids[0] == "plate_reader_screen"
     assert "unsupported_long_tail_assay" in ids
@@ -61,7 +63,7 @@ def test_dop_classes_cli_filters_by_protocol() -> None:
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert [item["id"] for item in payload["data_classes"]] == ["plate_reader_screen"]
 
 
@@ -70,7 +72,7 @@ def test_dop_ready_specs_cli_emits_json() -> None:
     result = runner.invoke(cli.app, ["dop", "ready-specs", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert [item["id"] for item in payload["ready_specs"]] == [
         "classified",
         "metadata_ready",

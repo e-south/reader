@@ -2,7 +2,7 @@
 doc_id: reader-architecture
 surface: architecture
 owner: reader-maintainers
-last_verified: 2026-07-11
+last_verified: 2026-07-28
 summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
 ---
 
@@ -44,34 +44,53 @@ experiments/
     outputs/
 ```
 
-`config.yaml` is the authored source of truth. `outputs/` is generated state. `records.json` under `outputs/manifests/` is the canonical provenance ledger for emitted records and file bundles.
+`config.yaml` is the authored source of truth. `outputs/` is generated state.
+`records.json` under `outputs/manifests/` is the canonical catalog for emitted
+records and file bundles. `invocations.jsonl` records execution attempts and
+terminal outcomes.
 
 ## Component Map
 
-The main ownership boundaries are:
+Each source package has one architectural role:
 
-- `src/reader/protocols/`
-  Protocol catalog, built-in assay families, semantic protocol bindings, and protocol-owned defaults for plots, exports, and notebooks.
-- `src/reader/workbench/config/`
-  YAML loading and schema validation only.
-- `src/reader/workbench/experiment/`
-  Typed experiment-local semantics such as resources, annotations, output layout, and bound protocol state.
-- `src/reader/workbench/decl/`
-  Compiled declaration layer between authored config and runtime execution.
-- `src/reader/workbench/graph/`
-  Typed runtime refs for records, files, resources, and workbench nodes.
-- `src/reader/workbench/engine/`
-  Planning, validation, contract enforcement, and runtime execution.
-- `src/reader/workbench/records/`
-  Record persistence, provenance, and catalog discovery.
-- `src/reader/workbench/assets/`
-  Explicit built-in asset catalogs for plugins and notebook templates.
-- `src/reader/plugins/`
-  Thin execution adapters grouped by category: ingest, transform, validator, plot, export.
-- `src/reader/domains/`
-  Domain-owned parsing, analysis, ordering, and plotting logic.
-- `src/reader/contracts/`
-  Dataframe contract kernel and built-in contract catalog.
+| Package | Owns | Must not own |
+| --- | --- | --- |
+| `api/` | Stable task-oriented Python operations and typed results | Assay semantics or alternate execution paths |
+| `protocols/` | Assay vocabulary, defaults, semantic programs, and family compilers | Raw parser or renderer implementations |
+| `domains/` | Experimental parsing, transforms, analysis, ordering, and figure planning | Config loading, record lookup, runtime composition, or CLI behavior |
+| `plugins/` | Thin ingest, transform, validator, plot, and export adapters | Hidden assay policy |
+| `contracts/` | Dataframe identities, schemas, and validation | Workflow order |
+| `plotting/` | Assay-neutral figure styles, sinks, and save mechanics | Assay-specific plotting decisions |
+| `runtime/` | Composition and adapters that connect domain operations to workbench state | New domain meaning |
+| `workbench/` | Config, compiled declarations, graph refs, execution, records, CLI, notebooks, and experiment-local state | Raw scientific logic that can stand alone |
+| `maintenance/` | Repository checks exposed through the Reader CLI | Experiment execution |
+
+Within `workbench/`, the dependency direction is config and protocol binding,
+then declarations and graph refs, then engine execution and records. CLI,
+inspection, and notebooks are operator surfaces over that path; they are not
+alternate semantic owners.
+
+The repository test suite enforces the most important inverse boundary:
+`domains/` cannot import `api`, `maintenance`, `plugins`, `protocols`,
+`runtime`, or `workbench`.
+
+## Capability Flow
+
+The control path and data path are separate but meet at typed plugin ports:
+
+```text
+config -> protocol -> compiled plan -> engine -> plugin adapter
+                                                |
+source -> ingest -> dataframe record -> transform -> dataframe record
+                                                   |
+                                      plot | export | notebook
+                                                   |
+                                             file-bundle record
+```
+
+Adding an ingest format, transform, or figure should extend one segment of this
+flow. It should not introduce a second route from config to execution or make a
+domain package discover workbench state.
 
 ## Runtime Lifecycle
 
@@ -86,6 +105,7 @@ The deterministic execution path is:
 6. Execute:
    `reader run`, `reader plot`, `reader export`, `reader notebook`.
 7. Persist generated records and artifacts under `outputs/` with manifest-backed provenance.
+8. Append a structured invocation result that points to exact produced record revisions.
 
 The CLI mirrors this lifecycle on purpose. Discovery and preflight are first-class, not side effects of execution.
 
@@ -101,6 +121,9 @@ The CLI mirrors this lifecycle on purpose. Discovery and preflight are first-cla
   Owns dataframe contract identities and validation rules.
 - Notebook template registry
   Owns scaffoldable notebook entry points and protocol compatibility.
+- Runtime composition
+  Assembles the built-in catalogs once and supplies stateful adapters such as
+  record-store access to CLI and API operations.
 
 These registries are meant to reduce cognitive load, not increase it. Experiment authors should normally interact with protocols and semantic outputs. Maintainers use plugin registries when extending or debugging the workbench kernel.
 
@@ -113,20 +136,27 @@ These are the invariants the codebase should preserve.
 - Protocols own assay semantics and user-facing output vocabulary.
 - Plugins are mechanics. They should be thin adapters around domain logic.
 - Domain packages own math, parsing, ordering, and figure-planning logic.
-- Generated files live under `outputs/`; they are not hand-edited.
+- Domain packages accept explicit data and parameters; runtime adapters resolve
+  configs, catalogs, and generated records before calling them.
+- Generated runtime files live under each experiment's `outputs/`; they are not hand-edited.
+- The repository root has no runtime `outputs/` contract. Cross-experiment or
+  review-only bundles require an explicit destination owned by their downstream
+  study, handoff, or temporary review task.
 - Records and artifacts must be traceable through `outputs/manifests/records.json`.
+- Execution attempts and outcomes belong in `outputs/manifests/invocations.jsonl`,
+  not an authored journal.
 - Discovery, validation, and dry-run surfaces must remain available without executing the full pipeline.
 
 ## Current Architecture Pressure
 
 The compiled semantic program has one path from protocol binding through the
-runtime plan and inspection payloads. The following maintainability problems
-remain:
+runtime plan and inspection payloads. The following concentrated owners remain
+worth decomposing when a change reaches them:
 
 - plate-reader protocol descriptors are concentrated in
   `src/reader/protocols/_builtins_plate_reader_variants.py`
-- `src/reader/protocols/compiler.py` mixes shared compilation with some
-  assay-specific output assembly
+- `src/reader/protocols/compilers/plate_reader.py` remains the largest family
+  compiler; `src/reader/protocols/compiler.py` is only its stable public facade
 - retron aggregate figure planning and rendering live under
   `src/reader/workbench/notebooks/`; dataframe preparation and shared retron
   semantics belong to `src/reader/domains/plate_reader/analysis/`
