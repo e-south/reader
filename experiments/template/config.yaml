@@ -1,0 +1,113 @@
+schema: reader/v8
+experiment:
+  id: template
+  title: synthetic_logic_panel
+  lifecycle: template
+protocol:
+  id: logic/sfxi_screen
+  inputs:
+    ingest:
+      mode: mixed
+      channel_map:
+        "OD600:600": OD600
+        "CFP:433,475": CFP
+        "YFP:500,530": YFP
+      auto_pick: single
+    response:
+      logic_channel: YFP/CFP
+      intensity_channel: YFP/OD600
+    reference:
+      design_id: REF
+      stat: mean
+    design_by:
+    - design_id
+    state_map_ref: induction_logic
+    target_time_h: 10
+    time_mode: nearest
+    time_tolerance_h: 0.5
+  analysis:
+    include_fold_change: false
+    include_export: false
+    preprocessing:
+      blank:
+        method: subtract
+        capture_blanks: true
+      overflow:
+        action: max
+        clip_quantile: 0.999
+  outputs:
+    plots:
+      profile: none
+      views:
+        raw_kinetics:
+          x: time
+          y:
+          - OD600
+          - CFP
+          - YFP
+          hue: treatment
+          partition:
+            collection_ref: group_ab
+          fig:
+            rc:
+              savefig_dpi: 300
+        logic_symmetry:
+          response_channel: YFP/CFP
+          design_by:
+          - design_id
+          batch_col: batch
+          aggregation:
+            replicate_stat: mean
+            uncertainty: halo
+          encodings:
+            size_by: log_r
+            alpha_by: batch
+          output:
+            format:
+            - pdf
+            dpi: 300
+            figsize:
+            - 7
+            - 6
+          state_map_ref: induction_logic
+      include:
+      - raw_kinetics
+      - logic_symmetry
+    notebook:
+      template: notebook/eda
+resources:
+  sample_map:
+    kind: file
+    path: ./inputs/metadata.csv
+annotations:
+  collections:
+    group_ab:
+      column: design_id
+      items:
+        Group A:
+        - g1
+        - g2
+        Group B:
+        - g3
+  orders:
+    induction_stress_2x2:
+      column: treatment
+      values:
+      - -IPTG/-stress
+      - +IPTG/-stress
+      - -IPTG/+stress
+      - +IPTG/+stress
+  ordered_state_spaces:
+    induction_logic:
+      column: treatment
+      state_order:
+      - '00'
+      - '10'
+      - '01'
+      - '11'
+      values:
+        '00': -IPTG/-stress
+        '10': +IPTG/-stress
+        '01': -IPTG/+stress
+        '11': +IPTG/+stress
+      case_sensitive: true

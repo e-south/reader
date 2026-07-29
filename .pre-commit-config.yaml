@@ -1,0 +1,113 @@
+# .pre-commit-config.yaml
+minimum_pre_commit_version: "3.7.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=10240"]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=auto"]
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: uv-lock
+        name: uv-lock (check)
+        entry: uv lock --check
+        language: system
+        files: ^(uv\.lock|pyproject\.toml|uv\.toml)$
+        pass_filenames: false
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.9.1
+    hooks:
+      - id: check-github-workflows
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - "--baseline"
+          - ".secrets.baseline"
+          - "--exclude-files"
+          - >-
+            (?x)^(
+              \\.secrets\\.baseline$|
+              \\.venv/|
+              \\.mypy_cache/|
+              \\.ruff_cache/|
+              \\.pytest_cache/|
+              \\.cache/|
+              \\.matplotlib_cache/|
+              \\.nox/|
+              \\.git/|
+              dist/|
+              build/|
+              __pycache__/|
+              docs/_build/|
+              (.+/)?__marimo__/|
+              (.+/)?\\.ipynb_checkpoints/|
+              (.+/)?outputs/|
+              (.+/)?raw/|
+              (.+/)?raw_data/|
+              (.+/)?batch_results/|
+              (.+/)?results/|
+              archived/|
+              scratch/|
+              _scratch/|
+              \.tmp/|
+              prototypes/|
+              datasets/|
+              batches/|
+              .*\\.zip$|
+              .*\\.DS_Store$
+            )
+        exclude: >-
+          (?x)^(
+            \\.secrets\\.baseline$|
+            \\.venv/|
+            \\.mypy_cache/|
+            \\.ruff_cache/|
+            \\.pytest_cache/|
+            \\.cache/|
+            \\.matplotlib_cache/|
+            \\.nox/|
+            \\.git/|
+            dist/|
+            build/|
+            __pycache__/|
+            docs/_build/|
+            (.+/)?__marimo__/|
+            (.+/)?\\.ipynb_checkpoints/|
+            (.+/)?outputs/|
+            (.+/)?raw/|
+            (.+/)?raw_data/|
+            (.+/)?batch_results/|
+            (.+/)?results/|
+            archived/|
+            scratch/|
+            _scratch/|
+            \.tmp/|
+            prototypes/|
+            datasets/|
+            batches/|
+            .*\\.zip$|
+            .*\\.DS_Store$
+          )
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
+    hooks:
+      # Run lint (with autofix) before formatting
+      - id: ruff-check
+        args: [ --fix ]
+      - id: ruff-format

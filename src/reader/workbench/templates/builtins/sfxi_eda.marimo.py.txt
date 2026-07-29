@@ -1,0 +1,806 @@
+import marimo
+
+__generated_with = "0.23.14"
+app = marimo.App(width="medium")
+
+
+@app.cell(hide_code=True)
+def _():
+    from pathlib import Path
+
+    import marimo as mo
+
+    try:
+        import polars as pl
+    except Exception:
+        pl = None
+    from reader.workbench.notebooks.context import load_notebook_workbench_context
+    from reader.domains.plate_reader.analysis.timepoints import (
+        infer_acquisition_transition_time_h,
+    )
+    from reader.workbench.notebooks.components import (
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
+    )
+    from reader.workbench.records import discover_dataframe_records
+
+    return (
+        Path,
+        mo,
+        pl,
+        load_notebook_workbench_context,
+        build_design_treatment_summary_rows,
+        build_notebook_overview,
+        collect_notebook_deliverables,
+        render_notebook_deliverables_panel,
+        render_notebook_overview_panel,
+        discover_dataframe_records,
+        infer_acquisition_transition_time_h,
+    )
+
+
+@app.cell(hide_code=True)
+def _(Path, build_notebook_overview, load_notebook_workbench_context):
+    notebook_context = load_notebook_workbench_context(Path(__file__).resolve())
+    decl = notebook_context.decl
+    exp_dir = notebook_context.experiment_root
+    outputs_dir = notebook_context.outputs_dir
+    exp_meta = {
+        "id": decl.experiment.id,
+        "title": decl.experiment.title or "",
+    }
+    notebooks_cfg = decl.experiment_semantics.layout.notebooks_subdir
+    notebooks_dir = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
+    pipeline_step_ids = [step.id for step in notebook_context.workbench.pipeline]
+    notebook_overview = build_notebook_overview(
+        experiment_id=exp_meta["id"],
+        experiment_title=exp_meta["title"],
+        protocol_id=decl.experiment_semantics.protocol.id,
+        experiment_root=exp_dir,
+        outputs_dir=outputs_dir,
+        notebooks_dir=notebooks_dir,
+        pipeline_step_ids=pipeline_step_ids,
+    )
+    return (
+        decl,
+        notebook_overview,
+        outputs_dir,
+        notebooks_dir,
+        pipeline_step_ids,
+    )
+
+
+@app.cell(hide_code=True)
+def _(collect_notebook_deliverables, notebooks_dir, outputs_dir):
+    deliverables = collect_notebook_deliverables(outputs_dir, notebooks_dir=notebooks_dir)
+    return deliverables
+
+
+@app.cell(hide_code=True)
+def _(discover_dataframe_records, outputs_dir):
+    record_info, record_labels, record_note, record_warning = discover_dataframe_records(
+        outputs_dir,
+        allow_scan=__ALLOW_RECORD_SCAN__,
+    )
+    return record_info, record_labels, record_note, record_warning
+
+
+@app.cell(hide_code=True)
+def _(mo, pipeline_step_ids, record_info, record_labels, record_note, record_warning):
+    if record_warning:
+        mo.md(record_warning)
+    if not record_labels:
+        note = record_note or "No datasets found. Run `uv run reader run` first."
+        mo.md(note)
+        record_dropdown = None
+    else:
+        _default_label = None
+        _preferred_records = (
+            "promote_to_tidy_plus_map/df",
+            "ratio_yfp_od600/df",
+            "ratio_yfp_cfp/df",
+        )
+        for _record_id in _preferred_records:
+            _matches = [label for label, info in record_info.items() if info.get("record_id") == _record_id]
+            if _matches:
+                _default_label = sorted(_matches)[0]
+                break
+        if pipeline_step_ids:
+            if _default_label is None:
+                for _step_id in reversed(pipeline_step_ids):
+                    _matches = [label for label, info in record_info.items() if info.get("step_id") == _step_id]
+                    if _matches:
+                        _default_label = sorted(_matches)[0]
+                        break
+        if _default_label is None:
+            _latest_label = None
+            _latest_mtime = None
+            for _label in record_labels:
+                _path = record_info[_label]["path"]
+                try:
+                    _mtime = _path.stat().st_mtime
+                except Exception:
+                    continue
+                if _latest_mtime is None or _mtime > _latest_mtime:
+                    _latest_mtime = _mtime
+                    _latest_label = _label
+            _default_label = _latest_label or record_labels[0]
+        _record_names = {
+            "promote_to_tidy_plus_map/df": "Annotated plate-reader data",
+            "ratio_yfp_od600/df": "YFP / OD600 ratios",
+            "ratio_yfp_cfp/df": "YFP / CFP ratios",
+            "ratio_cfp_od600/df": "CFP / OD600 ratios",
+            "sfxi_vec8/vec8": "Published SFXI 8-vector",
+        }
+        _record_options = {}
+        for _label in record_labels:
+            _record_id = str(record_info[_label].get("record_id") or _label)
+            _display = _record_names.get(_record_id, _record_id.replace("_", " ").replace("/", " · "))
+            if _display in _record_options:
+                _display = f"{_display} · {_label}"
+            _record_options[_display] = _label
+        _default_option = next(
+            _display for _display, _label in _record_options.items() if _label == _default_label
+        )
+        record_dropdown = mo.ui.dropdown(
+            options=_record_options,
+            value=_default_option,
+            label="Source data",
+            full_width=True,
+        )
+    return record_dropdown
+
+
+@app.cell(hide_code=True)
+def _(record_dropdown, record_info):
+    if record_dropdown is None:
+        selected_label = None
+        record_path = None
+    else:
+        selected_label = record_dropdown.value
+        record_path = record_info.get(selected_label, {}).get("path")
+    return selected_label, record_path
+
+
+@app.cell(hide_code=True)
+def _(pl, record_path):
+    df = None
+    df_error = None
+    _pl_error = None
+
+    if record_path is not None:
+        if pl is None:
+            df_error = "Polars is required to read parquet. Install the notebooks group."
+        else:
+            try:
+                df = pl.read_parquet(record_path)
+            except Exception as exc:
+                _pl_error = str(exc)
+        if df is None and df_error is None:
+            _suffix = _pl_error or "unknown error"
+            df_error = f"Failed to read parquet with polars ({_suffix})."
+    return df, df_error
+
+
+@app.cell(hide_code=True)
+def _(df_error, mo, selected_label):
+    if df_error:
+        mo.stop(
+            True,
+            mo.callout(
+                mo.md(f"Could not load source data `{selected_label}`: {df_error}"),
+                kind="danger",
+            ),
+        )
+
+
+@app.cell(hide_code=True)
+def _(build_design_treatment_summary_rows, df):
+    design_treatment_rows, design_treatment_note = build_design_treatment_summary_rows(df)
+    return design_treatment_rows, design_treatment_note
+
+
+@app.cell(hide_code=True)
+def _(design_treatment_note, design_treatment_rows, mo, notebook_overview, render_notebook_overview_panel):
+    eda_overview_panel = render_notebook_overview_panel(
+        mo,
+        notebook_overview,
+        design_treatment_rows=design_treatment_rows,
+        design_treatment_note=design_treatment_note,
+        include_heading=False,
+    )
+    return eda_overview_panel
+
+
+@app.cell(hide_code=True)
+def _(df, df_error, mo, pl, selected_label):
+    _columns = list(df.columns) if hasattr(df, "columns") else []
+    _elements = []
+    if df_error:
+        _elements.append(mo.md(f"Failed to load `{selected_label}`: {df_error}"))
+    elif df is None:
+        _elements.append(mo.md("Select a dataset to explore."))
+    elif len(_columns) > 40:
+        _display_cols = _columns[:40]
+        df_table = df
+        if pl is not None and df.__class__.__module__.startswith("polars"):
+            df_table = df.select(_display_cols)
+        _elements.append(mo.md(f"Showing first 40 columns of {len(_columns)}."))
+        _elements.append(mo.ui.table(df_table, page_size=10))
+    else:
+        _elements.append(mo.ui.table(df, page_size=10))
+    eda_table_panel = mo.vstack(_elements)
+    return eda_table_panel
+
+
+@app.cell(hide_code=True)
+def _(deliverables, mo, render_notebook_deliverables_panel):
+    deliverables_panel = render_notebook_deliverables_panel(mo, deliverables)
+    return deliverables_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, notebook_overview):
+    mo.md(
+        f"""
+        # {notebook_overview.experiment_title}
+
+        Review one design's normalizer trace, response ratio, and SFXI vec8 at the selected acquisition time.
+        """
+    )
+
+
+@app.cell(hide_code=True)
+def _():
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+    try:
+        import numpy as np
+    except Exception:
+        np = None
+
+    altair_err = None
+    try:
+        import altair as alt
+
+        alt.data_transformers.disable_max_rows()
+    except Exception as exc:
+        alt = None
+        altair_err = exc
+
+    from reader.domains.logic.sfxi.api import load_sfxi_config
+    from reader.domains.logic.sfxi.run import build_vec8_from_tidy
+    from reader.domains.logic.sfxi.selection import cornerize_and_aggregate, REQUIRED_COLS
+    from reader.workbench.notebooks.dual_reporter_triptych import (
+        build_dual_reporter_triptych_chart,
+        build_triptych_data,
+        summarize_design_context,
+    )
+    from reader.workbench.graph import resolve_workbench
+
+    return (
+        pd,
+        np,
+        alt,
+        altair_err,
+        build_dual_reporter_triptych_chart,
+        build_triptych_data,
+        summarize_design_context,
+        load_sfxi_config,
+        build_vec8_from_tidy,
+        cornerize_and_aggregate,
+        resolve_workbench,
+        REQUIRED_COLS,
+    )
+
+
+@app.cell(hide_code=True)
+def _(decl, mo, resolve_workbench):
+    from reader.runtime import builtin_runtime as _builtin_runtime
+
+    sfxi_step = None
+    registry = _builtin_runtime().plugins
+    for step in resolve_workbench(decl).pipeline:
+        plugin = str(getattr(step, "plugin", ""))
+        if not plugin:
+            continue
+        descriptor = registry.resolve_descriptor(plugin)
+        if descriptor.domain == "logic" and descriptor.family == "summary_transform" and "sfxi" in descriptor.tags:
+            sfxi_step = step
+    if sfxi_step is None:
+        mo.stop(
+            True,
+            mo.md(
+                "No SFXI-capable transform step found in this experiment. "
+                "Add an SFXI transform to `config.yaml` or see `docs/lib/sfxi_vec8_in_reader.md`."
+            ),
+        )
+    return sfxi_step
+
+
+@app.cell(hide_code=True)
+def _(decl, mo, sfxi_step):
+    from reader.runtime import builtin_runtime as _builtin_runtime
+
+    bound_protocol = _builtin_runtime().bind_protocol(decl.experiment_semantics.protocol)
+    sfxi_step_cfg = bound_protocol.effective_plugin_config(
+        plugin_id=sfxi_step.plugin,
+        step_with=dict(getattr(sfxi_step, "with_", {}) or {}),
+    )
+    sfxi_step_id = getattr(sfxi_step, "id", "")
+    if not sfxi_step_cfg:
+        mo.stop(True, mo.md(f"Step `{sfxi_step_id}` has no SFXI config (`with`)."))
+    state_map_ref = sfxi_step_cfg.get("state_map_ref")
+    if isinstance(state_map_ref, str):
+        try:
+            state_space = decl.experiment_semantics.annotations.resolve_ordered_state_space(ref=state_map_ref)
+            if state_space.state_ids != ("00", "10", "01", "11"):
+                raise ValueError("SFXI notebook requires state order 00, 10, 01, 11")
+        except Exception as exc:
+            mo.stop(True, mo.md(f"SFXI config error in `{sfxi_step_id}`: `{exc}`"))
+        sfxi_step_cfg = dict(sfxi_step_cfg)
+        sfxi_step_cfg["treatment_map"] = dict(state_space.source_values)
+        sfxi_step_cfg["treatment_case_sensitive"] = bool(state_space.case_sensitive)
+    return sfxi_step_cfg, sfxi_step_id
+
+
+@app.cell(hide_code=True)
+def _(load_sfxi_config, mo, sfxi_step_cfg, sfxi_step_id):
+    try:
+        sfxi_cfg = load_sfxi_config(sfxi_step_cfg)
+    except Exception as exc:
+        mo.stop(True, mo.md(f"SFXI config error in `{sfxi_step_id}`: `{exc}`"))
+    return sfxi_cfg
+
+
+@app.cell(hide_code=True)
+def _(REQUIRED_COLS, df, mo, sfxi_cfg):
+    _cols = list(df.columns) if hasattr(df, "columns") else []
+    required = list(REQUIRED_COLS)
+    if sfxi_cfg.time_column not in required:
+        required.append(sfxi_cfg.time_column)
+    for _c in sfxi_cfg.design_by:
+        if _c not in required:
+            required.append(_c)
+    missing = [c for c in required if c not in _cols]
+    if missing:
+        mo.stop(
+            True,
+            mo.md(
+                "Selected dataset is not SFXI-compatible. "
+                f"Missing column(s): {', '.join(missing)}. "
+                "Choose the annotated plate-reader artifact (validator/to_tidy_plus_map) and see `docs/lib/sfxi_vec8_in_reader.md`."
+            ),
+        )
+    return required
+
+
+@app.cell(hide_code=True)
+def _(df, mo, pd, pl):
+    if pd is None:
+        mo.stop(True, mo.md("Pandas is required for SFXI computations."))
+    if pl is not None and df.__class__.__module__.startswith("polars"):
+        tidy_pd = df.to_pandas()
+    else:
+        tidy_pd = df
+    return tidy_pd
+
+
+@app.cell(hide_code=True)
+def _(mo, pd, sfxi_cfg, tidy_pd):
+    label_col = sfxi_cfg.design_by[0]
+    time_col = sfxi_cfg.time_column
+
+    design_vals = sorted({str(_v) for _v in tidy_pd[label_col].dropna().unique().tolist()})
+    if not design_vals:
+        mo.stop(True, mo.md("No design values found for SFXI selection."))
+
+    if pd.to_numeric(tidy_pd[time_col], errors="coerce").dropna().empty:
+        mo.stop(True, mo.md("No numeric time values found for SFXI selection."))
+    return label_col, time_col, design_vals
+
+
+@app.cell(hide_code=True)
+def _(infer_acquisition_transition_time_h, tidy_pd, time_col):
+    acquisition_transition_time_h = infer_acquisition_transition_time_h(tidy_pd, time_col=time_col)
+    return acquisition_transition_time_h
+
+
+@app.cell(hide_code=True)
+def _(mo, np, pd, sfxi_cfg, tidy_pd, time_col):
+    case_sensitive = bool(sfxi_cfg.treatment_case_sensitive)
+    treatment_map = sfxi_cfg.treatment_map
+
+    def _choose_treatment_column(df):
+        candidates = [c for c in ("treatment", "treatment_alias") if c in df.columns]
+        if not candidates:
+            return None
+
+        def _score(col):
+            s = df[col].astype(str)
+            if case_sensitive:
+                want = {str(v) for v in treatment_map.values()}
+                return int(s.isin(list(want)).sum())
+            want = {str(v).strip().casefold() for v in treatment_map.values()}
+            s = s.str.strip().str.casefold()
+            return int(s.isin(list(want)).sum())
+
+        scores = {c: _score(c) for c in candidates}
+        return max(scores, key=lambda c: (scores[c], c == "treatment"))
+
+    def _times_for_channel(channel):
+        work = tidy_pd[tidy_pd["channel"] == channel].copy()
+        if work.empty:
+            return [], None
+        treatment_col = _choose_treatment_column(work)
+        if treatment_col is None:
+            return [], None
+        if case_sensitive:
+            mapped = {str(v) for v in treatment_map.values()}
+            work = work[work[treatment_col].astype(str).isin(mapped)].copy()
+        else:
+            mapped = {str(v).strip().casefold() for v in treatment_map.values()}
+            norm = work[treatment_col].astype(str).str.strip().str.casefold()
+            work = work[norm.isin(mapped)].copy()
+        if work.empty:
+            return [], treatment_col
+        times = pd.to_numeric(work[time_col], errors="coerce").dropna()
+        time_vals = sorted({float(_v) for _v in times.tolist()})
+        return time_vals, treatment_col
+
+    logic_times, logic_treatment_col = _times_for_channel(sfxi_cfg.response.logic_channel)
+    intensity_times, intensity_treatment_col = _times_for_channel(sfxi_cfg.response.intensity_channel)
+
+    if logic_treatment_col is None or intensity_treatment_col is None:
+        mo.stop(True, mo.md("SFXI selection requires `treatment` or `treatment_alias` columns."))
+    if not logic_times:
+        mo.stop(
+            True,
+            mo.md("No time values found for the logic channel after filtering to the configured treatments."),
+        )
+    if not intensity_times:
+        mo.stop(
+            True,
+            mo.md("No time values found for the intensity channel after filtering to the configured treatments."),
+        )
+
+    def _round_times(times):
+        if np is not None:
+            return [float(v) for v in np.round(np.array(times, dtype=float), 12)]
+        return [round(float(v), 12) for v in times]
+
+    common_times = sorted(set(_round_times(logic_times)) & set(_round_times(intensity_times)))
+    if not common_times:
+        mo.stop(
+            True,
+            mo.md(
+                "No common time points found between the logic and intensity channels for the configured "
+                "treatments. Check for missing values, adjust `treatment_map`, or choose a different dataset."
+            ),
+        )
+
+    treatment_col = logic_treatment_col
+    sfxi_condition_order = ["00", "10", "01", "11"]
+    def _condition_key(value):
+        text = str(value)
+        if case_sensitive:
+            return text
+        return text.strip().casefold()
+
+    sfxi_condition_map = {
+        _condition_key(sfxi_cfg.treatment_map[_corner]): _corner
+        for _corner in ("00", "10", "01", "11")
+    }
+    return common_times, sfxi_condition_map, sfxi_condition_order, treatment_col
+
+
+@app.cell(hide_code=True)
+def _(common_times, design_vals, label_col, mo, record_dropdown, sfxi_cfg):
+    design_select = mo.ui.dropdown(
+        options=design_vals,
+        value=design_vals[0],
+        label=f"Design ({label_col})",
+        full_width=True,
+    )
+    _target_time = sfxi_cfg.target_time_h
+    if _target_time is None:
+        _default_time = common_times[-1]
+    else:
+        _default_time = min(common_times, key=lambda _time: abs(float(_time) - float(_target_time)))
+    _time_options = {}
+    for _time in common_times:
+        _time_label = f"{float(_time):.2f} h"
+        if _time_label in _time_options:
+            _time_label = f"{float(_time):.3f} h"
+        _time_options[_time_label] = float(_time)
+    _default_time_label = next(
+        _label for _label, _time in _time_options.items() if _time == float(_default_time)
+    )
+    time_select = mo.ui.dropdown(
+        options=_time_options,
+        value=_default_time_label,
+        label="Acquisition time",
+        full_width=True,
+    )
+    _controls = [design_select, time_select]
+    _widths = [1.35, 1.0]
+    if record_dropdown is not None:
+        _controls.insert(0, record_dropdown)
+        _widths.insert(0, 1.25)
+    mo.hstack(
+        _controls,
+        widths=_widths,
+        gap=0.75,
+        align="end",
+        wrap=True,
+    )
+    return design_select, time_select
+
+
+@app.cell(hide_code=True)
+def _(time_select):
+    time_selected_h = float(time_select.value)
+    return time_selected_h
+
+
+@app.cell(hide_code=True)
+def _(
+    cornerize_and_aggregate,
+    design_select,
+    label_col,
+    mo,
+    sfxi_cfg,
+    time_selected_h,
+    tidy_pd,
+):
+    design_val = design_select.value
+    design_mask = tidy_pd[label_col].astype(str) == str(design_val)
+    subset_pd = tidy_pd[design_mask].copy()
+    if subset_pd.empty:
+        mo.stop(True, mo.md("No rows for the selected design."))
+    selection_pd = tidy_pd.copy()
+
+    target_time = float(time_selected_h)
+    try:
+        sel_logic = cornerize_and_aggregate(
+            selection_pd,
+            design_by=[label_col],
+            treatment_map=sfxi_cfg.treatment_map,
+            case_sensitive=sfxi_cfg.treatment_case_sensitive,
+            time_column=sfxi_cfg.time_column,
+            channel=sfxi_cfg.response.logic_channel,
+            target_time_h=target_time,
+            time_mode="exact",
+            time_tolerance_h=sfxi_cfg.time_tolerance_h,
+            require_all_corners_per_design=sfxi_cfg.require_all_corners_per_design,
+        )
+        sel_int = cornerize_and_aggregate(
+            selection_pd,
+            design_by=[label_col],
+            treatment_map=sfxi_cfg.treatment_map,
+            case_sensitive=sfxi_cfg.treatment_case_sensitive,
+            time_column=sfxi_cfg.time_column,
+            channel=sfxi_cfg.response.intensity_channel,
+            target_time_h=target_time,
+            time_mode="exact",
+            time_tolerance_h=sfxi_cfg.time_tolerance_h,
+            require_all_corners_per_design=sfxi_cfg.require_all_corners_per_design,
+        )
+    except Exception as exc:
+        mo.stop(True, mo.md(f"Snapshot selection failed: `{exc}`"))
+
+    chosen_time = target_time
+    return subset_pd, sel_logic, sel_int, chosen_time
+
+
+@app.cell(hide_code=True)
+def _(design_select, label_col, mo, subset_pd, summarize_design_context):
+    _rows = summarize_design_context(
+        subset_pd,
+        primary_col=label_col,
+        primary_value=design_select.value,
+        preferred_columns=("design_id_alias", "design_id", "id", "sequence", "strain", "medium"),
+    )
+    _label_names = {
+        "design_id": "Design ID",
+        "design_id_alias": "Design alias",
+        "id": "Record ID",
+        "sequence": "Sequence",
+        "strain": "Strain",
+        "medium": "Medium",
+    }
+    _lines = [f"**{_label_names.get(_label, _label)}:** `{_value}`" for _label, _value in _rows]
+    triptych_context = mo.md("### Selected design\n" + "  \n".join(_lines))
+    return triptych_context
+
+
+@app.cell(hide_code=True)
+def _(mo, time_selected_h):
+    snapshot_selection_panel = mo.md(
+        f"**Observed acquisition time: {float(time_selected_h):.3f} h**"
+    )
+    return snapshot_selection_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, sfxi_cfg):
+    _lines = [
+        f"**{_state}** — {sfxi_cfg.treatment_map[_state]}"
+        for _state in ("00", "10", "01", "11")
+    ]
+    sfxi_state_key_panel = mo.md("### SFXI state key\n" + "  \n".join(_lines))
+    return sfxi_state_key_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, sfxi_cfg, sfxi_condition_map, sfxi_condition_order, subset_pd, treatment_col):
+    sfxi_triptych_treatment_col = "sfxi_condition"
+    sfxi_triptych_rows = subset_pd.copy()
+    _raw_treatment = sfxi_triptych_rows[treatment_col].astype(str)
+    if sfxi_cfg.treatment_case_sensitive:
+        _treatment_key = _raw_treatment
+    else:
+        _treatment_key = _raw_treatment.str.strip().str.casefold()
+    sfxi_triptych_rows[sfxi_triptych_treatment_col] = _treatment_key.map(sfxi_condition_map)
+    sfxi_triptych_rows = sfxi_triptych_rows[
+        sfxi_triptych_rows[sfxi_triptych_treatment_col].isin(sfxi_condition_order)
+    ].copy()
+    if sfxi_triptych_rows.empty:
+        mo.stop(
+            True,
+            mo.md(
+                "No rows for the selected design match the configured SFXI 00/10/01/11 treatment map. "
+                "Check `annotations.ordered_state_spaces` and the selected dataset."
+            ),
+        )
+    return sfxi_triptych_rows, sfxi_triptych_treatment_col
+
+
+@app.cell(hide_code=True)
+def _(
+    build_triptych_data,
+    mo,
+    sfxi_cfg,
+    sfxi_condition_order,
+    sfxi_triptych_rows,
+    sfxi_triptych_treatment_col,
+    time_col,
+    time_selected_h,
+):
+    try:
+        triptych_data = build_triptych_data(
+            sfxi_triptych_rows,
+            time_col=time_col,
+            treatment_col=sfxi_triptych_treatment_col,
+            growth_channel="OD600",
+            ratio_channel=sfxi_cfg.response.logic_channel,
+            snapshot_channel=sfxi_cfg.response.logic_channel,
+            snapshot_time=float(time_selected_h),
+            treatment_order=sfxi_condition_order,
+        )
+    except Exception as exc:
+        mo.stop(True, mo.md(f"Dual-reporter triptych build failed: `{exc}`"))
+    return triptych_data
+
+
+@app.cell(hide_code=True)
+def _(
+    alt,
+    altair_err,
+    build_dual_reporter_triptych_chart,
+    acquisition_transition_time_h,
+    mo,
+    pd,
+    time_col,
+    sfxi_triptych_treatment_col,
+    triptych_data,
+):
+    if alt is None:
+        mo.stop(True, mo.md(f"Altair is required for plotting: `{altair_err}`"))
+
+    try:
+        _chart = build_dual_reporter_triptych_chart(
+            alt=alt,
+            pd_module=pd,
+            data=triptych_data,
+            time_col=time_col,
+            treatment_col=sfxi_triptych_treatment_col,
+            treatment_title="SFXI state",
+            acquisition_transition_time_h=acquisition_transition_time_h,
+        )
+    except Exception as exc:
+        mo.stop(True, mo.md(f"Dual-reporter triptych render failed: `{exc}`"))
+    _chart_view = mo.ui.altair_chart(_chart, chart_selection=False, legend_selection=False)
+    _plot_key = mo.md(
+        f"*Time series: mean with {triptych_data.trajectory_ci:g}% bootstrap CI. "
+        "Snapshot: observed wells, mean line, and sample-SD whiskers.*"
+    )
+    _chart_panel = mo.vstack([_chart_view, _plot_key], gap=0.2).style(
+        {"min-height": "520px", "width": "100%", "max-width": "100%"}
+    )
+    mo.output.replace(_chart_panel)
+
+
+@app.cell(hide_code=True)
+def _(build_vec8_from_tidy, mo, sfxi_step_cfg, time_selected_h, tidy_pd):
+    cfg_payload = dict(sfxi_step_cfg)
+    cfg_payload["target_time_h"] = float(time_selected_h)
+    cfg_payload["time_mode"] = "exact"
+    try:
+        vec8_result = build_vec8_from_tidy(tidy_pd, cfg_payload)
+    except Exception as exc:
+        mo.stop(True, mo.md(f"8-vector computation failed: `{exc}`"))
+    return vec8_result
+
+
+@app.cell(hide_code=True)
+def _(mo, vec8_result):
+    sfxi_handoff_panel = mo.vstack(
+        [
+            mo.md(
+                "The review-time values are not persisted. The manifest-backed `sfxi_vec8/vec8` record is the "
+                "durable handoff; generate its workbook with "
+                "`uv run reader export <config-or-experiment> --only logic_summary_workbook`."
+            ),
+            mo.ui.table(vec8_result.vec8, page_size=10),
+        ]
+    )
+    return sfxi_handoff_panel
+
+
+@app.cell(hide_code=True)
+def _(mo, vec8_result):
+    _ref = vec8_result.log.get("reference", {}) if hasattr(vec8_result, "log") else {}
+    _lines = [
+        f"**reference.design_id:** `{_ref.get('design_id')}`",
+        f"**reference.design_id_resolved:** `{_ref.get('design_id_resolved')}`",
+        f"**reference.stat:** `{_ref.get('stat')}`",
+    ]
+    reference_anchor_panel = mo.md("\n".join(_lines))
+    return reference_anchor_panel
+
+
+@app.cell(hide_code=True)
+def _(
+    deliverables_panel,
+    eda_overview_panel,
+    eda_table_panel,
+    mo,
+    record_note,
+    record_warning,
+    reference_anchor_panel,
+    sfxi_handoff_panel,
+    snapshot_selection_panel,
+    sfxi_state_key_panel,
+    triptych_context,
+):
+    _source_items = []
+    if record_warning:
+        _source_items.append(mo.md(record_warning))
+    elif record_note:
+        _source_items.append(mo.md(record_note))
+    _source_items.extend([eda_table_panel, deliverables_panel])
+    sfxi_details = mo.accordion(
+        {
+            "Selected design and snapshot": mo.vstack(
+                [triptych_context, snapshot_selection_panel, sfxi_state_key_panel, reference_anchor_panel],
+                gap=0.5,
+            ),
+            "SFXI 8-vector handoff": sfxi_handoff_panel,
+            "Experiment provenance": eda_overview_panel,
+            "Source data and outputs": mo.vstack(_source_items, gap=0.5),
+        },
+        multiple=False,
+        lazy=True,
+    )
+    sfxi_details
+    return sfxi_details
+
+
+if __name__ == "__main__":
+    app.run()

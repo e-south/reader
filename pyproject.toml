@@ -1,0 +1,136 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reader-workbench"
+version = "1.0.0"
+description = "Validated, traceable analysis workflows for experimental instrument data"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Eric J. South" }]
+keywords = ["data-analysis", "data-pipelines", "scientific-computing", "workbench"]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
+
+
+dependencies = [
+  "pandas>=2.1",
+  "pydantic>=2.6",
+  "pyyaml>=6.0.2",
+  "typer>=0.12.0",
+  "click>=8.3.3",
+  "rich>=13.7",
+  "pyarrow>=23.0.1",
+  "openpyxl>=3.1",
+  "seaborn>=0.13",
+  "pillow>=12.3.0",
+  "polars>=1.36.1",
+  "flowio>=1.4.0",
+]
+
+[project.scripts]
+reader = "reader.workbench.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/e-south/reader/tree/main/docs"
+Issues = "https://github.com/e-south/reader/issues"
+Repository = "https://github.com/e-south/reader"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["reader*"]
+exclude = ["reader.tests", "reader.tests.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=7.0",
+  "pip-audit>=2.10.1,<3",
+  "twine>=7,<8",
+  "ruff>=0.4",
+  "pre-commit>=3.7",
+]
+
+notebooks = [
+  "altair>=6.0.0",
+  "duckdb>=1.4.3",
+  "marimo>=0.23.0,<0.24",
+]
+
+[tool.uv]
+required-version = ">=0.9.18,<0.10"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src"]
+extend-exclude = [".venv", "build", "dist", ".eggs", "*.egg-info"]
+
+[tool.ruff.lint]
+select = ["E","F","W","I","UP","B","SIM","C4","PLC","PLE"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101","PLR2004","B011"]
+"**/*.ipynb" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = [
+  "src/reader/tests",
+  "tests"
+]
+
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*", "*Tests"]
+python_functions = ["test_*"]
+
+addopts = [
+  "--strict-config",
+  "--strict-markers",
+  "-ra",
+  "-m",
+  "not active_experiments",
+]
+
+markers = [
+  "active_experiments: local data-backed end-to-end matrix selected explicitly because raw experiment inputs are not shipped in a clean checkout",
+  "integration: cross-surface integration coverage",
+  "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
+  "smoke: representative real-experiment runtime coverage kept in the default test lane",
+]
+
+norecursedirs = [
+  ".venv", "build", "dist", ".eggs", "*.egg-info",
+  "outputs", "raw_data", "_scratch", ".tmp"
+]
+
+[tool.coverage.run]
+branch = true
+source = ["reader"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

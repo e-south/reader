@@ -1,0 +1,59 @@
+# Operating-system and editor state
+.DS_Store
+.AppleDouble
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python environments, caches, and build products
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.whl
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.matplotlib_cache/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Notebook and local tool state
+.ipynb_checkpoints/
+**/__marimo__/
+/.artifacts/
+/.tmp/
+
+# Logs and transient files
+*.log
+*.out
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# Local workbench data. The synthetic template is the only public experiment.
+/experiments/*
+!/experiments/template/
+!/experiments/template/**
+/experiments/**/outputs/
+
+# Secrets and credentials
+.env
+.env.*
+*.key
+*.pem
+*.p12
