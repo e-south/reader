@@ -9,7 +9,7 @@ import pytest
 from reader.contracts import builtin_contract_catalog
 from reader.errors import RecordError
 from reader.workbench.graph import FileRef, ProvenanceInput, RecordRef
-from reader.workbench.records import ArtifactEvidence, RecordStore, verify_record_store
+from reader.workbench.records import ArtifactEvidence, RecordStore, RecordVerificationScope, verify_record_store
 from reader.workbench.records.identity import current_build_identity
 
 
@@ -114,6 +114,37 @@ def test_verifier_marks_records_from_another_reader_build_unverifiable(tmp_path:
     assert report["records"][0]["issues"][0]["code"] == "build.identity_mismatch"
 
 
+def test_verifier_scopes_records_to_the_current_workbench_declaration(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    for record_id, config_digest in (
+        ("current/df", "sha256:current-config"),
+        ("retired/df", "sha256:retired-config"),
+    ):
+        store.persist_dataframe(
+            producer_id=record_id.split("/", 1)[0],
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=_tidy_df(),
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+            producer_config_digest="sha256:producer-config",
+        )
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:current-config",
+        scope=RecordVerificationScope(record_ids=frozenset({"current/df"})),
+    )
+
+    assert report["status"] == "ok"
+    assert report["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+    assert [record["record_id"] for record in report["records"]] == ["current/df"]
+
+
 def test_verifier_rejects_retired_record_schemas_as_invalid_catalogs(tmp_path: Path) -> None:
     store, _record = _write_record(tmp_path)
     catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
@@ -160,6 +191,26 @@ def test_verifier_reports_corrupt_dataframe_bytes(tmp_path: Path) -> None:
     assert report["status"] == "failed"
     assert report["summary"] == {"checked": 1, "failed": 1, "unverifiable": 0}
     assert report["records"][0]["issues"][0]["code"] == "artifact.size_mismatch"
+
+
+def test_verifier_reports_artifact_io_failures_as_structured_issues(tmp_path: Path, monkeypatch) -> None:
+    store, _record = _write_record(tmp_path)
+
+    def _unreadable(_path: Path) -> str:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("reader.workbench.records.verification.sha256_file", _unreadable)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["summary"] == {"checked": 1, "failed": 1, "unverifiable": 0}
+    assert report["records"][0]["issues"][0]["code"] == "artifact.io_error"
+    assert "permission denied" in report["records"][0]["issues"][0]["reason"]
 
 
 def test_verifier_detects_source_file_drift_and_records_discovery_policy(tmp_path: Path) -> None:

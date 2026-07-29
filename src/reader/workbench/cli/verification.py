@@ -28,6 +28,7 @@ def verify(
         job_path = infer_job_path(job)
         _spec, decl = load_job_models(job_path)
         runtime = _load("reader.runtime").builtin_runtime()
+        workbench = _load("reader.workbench.graph").resolve_workbench(decl)
         layout = decl.experiment_semantics.layout
         store = runtime.record_store(
             layout.outputs_dir,
@@ -40,6 +41,10 @@ def verify(
             store,
             experiment_root=decl.experiment.root,
             expected_config_digest=decl.config_digest,
+            scope=_load("reader.workbench.inspection.runtime").workbench_record_verification_scope(
+                workbench,
+                runtime=runtime,
+            ),
         )
     except ReaderError as exc:
         report = {

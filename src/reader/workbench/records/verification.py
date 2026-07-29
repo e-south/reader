@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from reader.errors import RecordError
@@ -16,6 +17,19 @@ from .identity import BuildIdentity, current_build_identity
 _UNVERIFIABLE_CODES = frozenset({"build.identity_mismatch", "config.digest_mismatch"})
 
 
+@dataclass(frozen=True)
+class RecordVerificationScope:
+    """Current record identities owned by one compiled workbench declaration."""
+
+    record_ids: frozenset[str] = field(default_factory=frozenset)
+    notebook_templates: frozenset[str] = field(default_factory=frozenset)
+
+    def includes(self, record: DataFrameArtifactRecord | FileBundleRecord) -> bool:
+        if record.record_id in self.record_ids:
+            return True
+        return record.producer.kind == "notebook" and record.producer.template in self.notebook_templates
+
+
 def _issue(*, code: str, field: str, reason: str, remediation: str, retryable: bool = False) -> dict[str, object]:
     return {
         "code": code,
@@ -26,6 +40,15 @@ def _issue(*, code: str, field: str, reason: str, remediation: str, retryable: b
     }
 
 
+def _file_io_issue(*, path: Path, field: str, code_prefix: str, error: OSError) -> dict[str, object]:
+    return _issue(
+        code=f"{code_prefix}.io_error",
+        field=field,
+        reason=f"Recorded artifact could not be read: {path}: {error}",
+        remediation="Restore a readable artifact or regenerate it from source inputs.",
+    )
+
+
 def _verify_file(
     path: Path,
     *,
@@ -34,25 +57,28 @@ def _verify_file(
     field: str,
     code_prefix: str = "artifact",
 ) -> list[dict[str, object]]:
-    if not path.exists():
-        return [
-            _issue(
-                code=f"{code_prefix}.missing",
-                field=field,
-                reason=f"Recorded artifact is missing: {path}",
-                remediation="Regenerate the record from its source inputs.",
-            )
-        ]
-    if not path.is_file():
-        return [
-            _issue(
-                code=f"{code_prefix}.not_file",
-                field=field,
-                reason=f"Recorded artifact is not a regular file: {path}",
-                remediation="Remove the conflicting path and regenerate the record.",
-            )
-        ]
-    actual_size = path.stat().st_size
+    try:
+        if not path.exists():
+            return [
+                _issue(
+                    code=f"{code_prefix}.missing",
+                    field=field,
+                    reason=f"Recorded artifact is missing: {path}",
+                    remediation="Regenerate the record from its source inputs.",
+                )
+            ]
+        if not path.is_file():
+            return [
+                _issue(
+                    code=f"{code_prefix}.not_file",
+                    field=field,
+                    reason=f"Recorded artifact is not a regular file: {path}",
+                    remediation="Remove the conflicting path and regenerate the record.",
+                )
+            ]
+        actual_size = path.stat().st_size
+    except OSError as exc:
+        return [_file_io_issue(path=path, field=field, code_prefix=code_prefix, error=exc)]
     if actual_size != expected_size:
         return [
             _issue(
@@ -62,7 +88,10 @@ def _verify_file(
                 remediation="Restore the recorded artifact or regenerate it from source inputs.",
             )
         ]
-    actual_digest = sha256_file(path)
+    try:
+        actual_digest = sha256_file(path)
+    except OSError as exc:
+        return [_file_io_issue(path=path, field=field, code_prefix=code_prefix, error=exc)]
     if actual_digest != expected_digest:
         return [
             _issue(
@@ -97,6 +126,7 @@ def verify_record_store(
     experiment_root: Path,
     expected_config_digest: str,
     expected_build_identity: BuildIdentity | None = None,
+    scope: RecordVerificationScope | None = None,
 ) -> dict[str, object]:
     current_build = expected_build_identity or current_build_identity()
     if not store.catalog_exists():
@@ -116,6 +146,8 @@ def verify_record_store(
         }
     try:
         records = store.iter_latest_records()
+        if scope is not None:
+            records = tuple(record for record in records if scope.includes(record))
     except RecordError as exc:
         return {
             "schema": "reader.verify/v1",

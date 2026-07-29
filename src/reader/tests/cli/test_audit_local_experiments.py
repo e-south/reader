@@ -121,7 +121,11 @@ def test_audit_verification_uses_composed_runtime_record_store(tmp_path: Path, m
         experiment=SimpleNamespace(root=tmp_path),
         config_digest="sha256:audit-test",
     )
-    monkeypatch.setattr(audit_module, "resolve_workbench", lambda _decl: SimpleNamespace(plots=(), exports=()))
+    monkeypatch.setattr(
+        audit_module,
+        "resolve_workbench",
+        lambda _decl: SimpleNamespace(plots=(), exports=(), notebooks=(), plugin_steps=lambda: ()),
+    )
     monkeypatch.setattr(audit_module, "verify_record_store", lambda *_args, **_kwargs: {"status": "ok"})
 
     result = audit_module.verify_outputs(decl, RuntimeProbe())

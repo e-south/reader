@@ -37,6 +37,18 @@ missing-file, exact-upstream-revision, or invalid-schema failure is `blocked`.
 ## Invalid catalog recovery
 
 Reader reads and writes record schema v5 only. An older record payload is an
-invalid catalog, not a degraded compatibility mode. Re-run the owning
-experiment surface from staged source inputs to produce current evidence.
-Reader does not fabricate provenance by hashing files left by an older run.
+invalid catalog, not a degraded compatibility mode. Replace the generated
+catalog and perform a complete pipeline rerun from staged source inputs:
+
+```bash
+uv run reader run <config|dir|index> --reset-records
+```
+
+`--reset-records` cannot be combined with `--dry-run`, `--from`, `--until`, or
+`--only`. It does not decode retired records or fabricate provenance by hashing
+files left by an older run; the complete rerun writes current evidence.
+
+Verification is scoped to records owned by the current compiled workbench.
+Records from removed pipeline, plot, or export surfaces do not make the current
+declaration unverifiable. Notebook bundles remain in scope while their template
+is still declared.

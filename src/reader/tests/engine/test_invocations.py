@@ -57,6 +57,50 @@ class _SyntheticIngest(Plugin):
         return {"df": pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})}
 
 
+def _synthetic_decl_and_runtime(tmp_path: Path) -> tuple[WorkbenchDecl, ReaderRuntime]:
+    decl = WorkbenchDecl(
+        experiment=ExperimentDecl(id="synthetic", title="synthetic", lifecycle="active", root=tmp_path),
+        experiment_semantics=ExperimentSemantics(
+            protocol=ProtocolBinding(id="workbench/generic"),
+            protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
+            annotations=AnnotationSemantics(),
+            resources=ResourceCatalog(),
+            layout=OutputLayout(
+                outputs_dir=tmp_path / "outputs",
+                plots_subdir="plots",
+                exports_subdir="exports",
+                notebooks_subdir="notebooks",
+            ),
+        ),
+        plotting_palette=None,
+        pipeline=PipelineDecl(
+            steps=(PluginStepDecl(id="ingest", plugin="ingest/synthetic"),),
+        ),
+        plots=SurfaceDecl(),
+        exports=SurfaceDecl(),
+        notebooks=NotebookDecl(),
+    )
+    registry = Registry(contracts=builtin_contract_catalog())
+    registry.register(
+        build_plugin_asset(
+            plugin_id="ingest/synthetic",
+            semantics=PluginSemantics(
+                domain="generic",
+                family="synthetic_ingest",
+                summary="Synthetic ingest plugin for execution-result tests.",
+            ),
+            plugin_cls=_SyntheticIngest,
+        )
+    )
+    runtime = ReaderRuntime(
+        contracts=builtin_contract_catalog(),
+        protocols=builtin_protocol_catalog(),
+        plugins=registry,
+        assets=AssetCatalog([]),
+    )
+    return decl, runtime
+
+
 def _events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
@@ -333,46 +377,7 @@ def test_declared_input_projection_rejects_paths_outside_experiment_root(tmp_pat
 
 def test_run_spec_returns_exact_produced_record_revisions(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
-    decl = WorkbenchDecl(
-        experiment=ExperimentDecl(id="synthetic", title="synthetic", lifecycle="active", root=tmp_path),
-        experiment_semantics=ExperimentSemantics(
-            protocol=ProtocolBinding(id="workbench/generic"),
-            protocol_program=ProtocolSemanticProgram(protocol="workbench/generic"),
-            annotations=AnnotationSemantics(),
-            resources=ResourceCatalog(),
-            layout=OutputLayout(
-                outputs_dir=outputs,
-                plots_subdir="plots",
-                exports_subdir="exports",
-                notebooks_subdir="notebooks",
-            ),
-        ),
-        plotting_palette=None,
-        pipeline=PipelineDecl(
-            steps=(PluginStepDecl(id="ingest", plugin="ingest/synthetic"),),
-        ),
-        plots=SurfaceDecl(),
-        exports=SurfaceDecl(),
-        notebooks=NotebookDecl(),
-    )
-    registry = Registry(contracts=builtin_contract_catalog())
-    registry.register(
-        build_plugin_asset(
-            plugin_id="ingest/synthetic",
-            semantics=PluginSemantics(
-                domain="generic",
-                family="synthetic_ingest",
-                summary="Synthetic ingest plugin for execution-result tests.",
-            ),
-            plugin_cls=_SyntheticIngest,
-        )
-    )
-    runtime = ReaderRuntime(
-        contracts=builtin_contract_catalog(),
-        protocols=builtin_protocol_catalog(),
-        plugins=registry,
-        assets=AssetCatalog([]),
-    )
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
 
     result = run_spec(
         decl,
@@ -400,6 +405,39 @@ def test_run_spec_returns_exact_produced_record_revisions(tmp_path: Path) -> Non
     result_event = _events(result.ledger_path)[1]
     assert result_event["invocation_id"] == result.invocation_id
     assert result_event["produced_record_revisions"] == [revision.to_dict()]
+
+
+def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    records_path = tmp_path / "outputs" / "manifests" / "records.json"
+    records_path.parent.mkdir(parents=True)
+    retired_record = {"schema_version": 4, "record_id": "legacy/df"}
+    records_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "latest": {"legacy/df": retired_record},
+                "history": {"legacy/df": [retired_record]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_spec(
+        decl,
+        reset_records=True,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    catalog = json.loads(records_path.read_text(encoding="utf-8"))
+    assert result.status == "succeeded"
+    assert set(catalog["latest"]) == {"ingest/df"}
+    assert catalog["latest"]["ingest/df"]["schema_version"] == 5
 
 
 def test_run_spec_rejects_symlinked_outputs_before_log_or_manifest_write(tmp_path: Path) -> None:

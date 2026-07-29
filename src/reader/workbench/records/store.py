@@ -95,6 +95,12 @@ class RecordStore:
     def catalog_exists(self) -> bool:
         return self.records_path.exists()
 
+    def reset_catalog(self) -> None:
+        """Replace the generated record catalog with an empty current-schema catalog."""
+
+        self.ensure_layout()
+        self._write_catalog(_empty_catalog())
+
     def _read_catalog(self) -> dict[str, Any]:
         if not self.records_path.exists():
             raise RecordError("records.json is missing")

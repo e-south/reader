@@ -17,6 +17,7 @@ from reader.workbench.engine import run_spec
 from reader.workbench.engine.validation import validation_summary
 from reader.workbench.experiments import discover_experiment_configs
 from reader.workbench.graph import resolve_workbench
+from reader.workbench.inspection.runtime import workbench_record_verification_scope
 from reader.workbench.records import verify_record_store
 
 
@@ -129,6 +130,7 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
         store,
         experiment_root=decl.experiment.root,
         expected_config_digest=decl.config_digest,
+        scope=workbench_record_verification_scope(workbench, runtime=runtime),
     )
     if verification["status"] != "ok":
         issues = list(verification.get("issues") or [])

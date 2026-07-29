@@ -13,6 +13,7 @@ from reader.workbench.graph import resolve_workbench
 from reader.workbench.records import verify_record_store
 
 from .common import summarize_outputs_dir
+from .runtime import workbench_record_verification_scope
 
 READINESS_STATES = frozenset(
     {
@@ -145,6 +146,7 @@ def experiment_readiness_payload(
         runtime=runtime,
     )
     layout = decl.experiment_semantics.layout
+    workbench = resolve_workbench(decl)
     outputs_dir = layout.outputs_dir
     store = runtime.record_store(
         outputs_dir,
@@ -165,6 +167,7 @@ def experiment_readiness_payload(
                     store,
                     experiment_root=decl.experiment.root,
                     expected_config_digest=decl.config_digest,
+                    scope=workbench_record_verification_scope(workbench, runtime=runtime),
                 )
         except RecordError as exc:
             record_catalog_error = str(exc)
@@ -177,7 +180,6 @@ def experiment_readiness_payload(
     uncataloged_outputs_present = (
         any(generated[key] for key in ("records", "plots", "exports")) and not records_available
     )
-    workbench = resolve_workbench(decl)
     can_run = summary["status"] == "ok"
     file_issues = int(summary["files"].get("issues") or 0)
     dependency_issues = int(summary["dependencies"].get("issues") or 0)

@@ -38,6 +38,7 @@ def run_spec(
     *,
     resume_from: str | None = None,
     until: str | None = None,
+    reset_records: bool = False,
     dry_run: bool = False,
     log_level: str = "INFO",
     verbose: bool = True,
@@ -78,6 +79,12 @@ def run_spec(
         pipeline_steps = []
     else:
         pipeline_steps = slice_pipeline_steps(pipeline_steps, resume_from=resume_from, until=until)
+
+    if reset_records:
+        if dry_run:
+            raise ConfigError("reset_records cannot be used for a dry run")
+        if not include_pipeline or pipeline_steps != list(workbench.pipeline):
+            raise ConfigError("reset_records requires a complete pipeline run without --from, --until, or --only")
 
     if not include_plots:
         plot_steps = []
@@ -144,6 +151,8 @@ def run_spec(
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
     )
+    if reset_records:
+        store.reset_catalog()
     ctx = build_run_context(
         decl=decl,
         runtime=runtime,
@@ -287,6 +296,7 @@ def run_job(
     *,
     resume_from: str | None = None,
     until: str | None = None,
+    reset_records: bool = False,
     dry_run: bool = False,
     log_level: str = "INFO",
     verbose: bool = True,
@@ -304,6 +314,7 @@ def run_job(
         decl,
         resume_from=resume_from,
         until=until,
+        reset_records=reset_records,
         dry_run=dry_run,
         log_level=log_level,
         verbose=verbose,

@@ -114,6 +114,43 @@ def test_run_only_shows_next_steps(tmp_path: Path, monkeypatch) -> None:
     assert kwargs["show_next_steps"] is True
 
 
+def test_run_reset_records_routes_explicit_full_catalog_rebuild(tmp_path: Path, monkeypatch) -> None:
+    cfg = write_config(tmp_path, _run_config())
+    captured: dict[str, object] = {}
+
+    def _fake_run_job(*args, **kwargs):
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("reader.workbench.engine.run_job", _fake_run_job)
+
+    result = CliRunner().invoke(app, ["run", str(cfg), "--reset-records"])
+
+    assert result.exit_code == 0
+    assert dict(captured["kwargs"])["reset_records"] is True
+
+
+@pytest.mark.parametrize(
+    "extra_args, expected",
+    [
+        (["--dry-run"], "cannot be combined with --dry-run"),
+        (["--only", "ingest"], "requires a complete run"),
+        (["--from", "ingest"], "requires a complete run"),
+        (["--until", "ingest"], "requires a complete run"),
+    ],
+)
+def test_run_reset_records_rejects_dry_or_partial_execution(
+    tmp_path: Path,
+    extra_args: list[str],
+    expected: str,
+) -> None:
+    cfg = write_config(tmp_path, _run_config())
+
+    result = CliRunner().invoke(app, ["run", str(cfg), "--reset-records", *extra_args])
+
+    assert result.exit_code != 0
+    assert expected in _plain(result.output)
+
+
 def test_resolve_pipeline_step_id_hint_includes_target_config(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _run_config())
     decl = load_decl(cfg)

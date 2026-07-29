@@ -6,6 +6,7 @@ from reader.runtime import ReaderRuntime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.graph import OutputRef, input_ref_display, output_ref_to_dict, resolve_workbench
+from reader.workbench.records import RecordVerificationScope
 
 
 def plot_output_summaries(bound_protocol) -> dict[str, str]:
@@ -127,6 +128,16 @@ def record_producer_map(steps, *, runtime: ReaderRuntime) -> dict[str, dict[str,
                 "surface": _output_surface_payload(port),
             }
     return producers
+
+
+def workbench_record_verification_scope(workbench, *, runtime: ReaderRuntime) -> RecordVerificationScope:
+    record_ids = set(record_producer_map(workbench.plugin_steps(), runtime=runtime))
+    record_ids.update(f"plot:{step.id}" for step in workbench.plots)
+    record_ids.update(f"export:{step.id}" for step in workbench.exports)
+    return RecordVerificationScope(
+        record_ids=frozenset(record_ids),
+        notebook_templates=frozenset(step.template for step in workbench.notebooks),
+    )
 
 
 def pipeline_step_payload(step, *, runtime: ReaderRuntime, record_producers=None) -> dict[str, object]:

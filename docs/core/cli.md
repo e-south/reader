@@ -286,6 +286,7 @@ Run the pipeline section only (produces dataframe records + `outputs/manifests/r
 ```bash
 uv run reader run CONFIG|DIR|INDEX
 uv run reader run CONFIG|DIR|INDEX --dry-run --format json
+uv run reader run CONFIG|DIR|INDEX --reset-records
 ```
 
 Slice the pipeline:
@@ -297,6 +298,8 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 ```
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
+Use `--reset-records` only to replace an incompatible generated catalog before
+a complete pipeline rerun. It cannot be combined with a slice or dry run.
 
 Inspect the emitted records catalog:
 
@@ -322,6 +325,7 @@ Useful flags:
 - `--from <step_id>` / `--until <step_id>` (pipeline only)
 - `--only <step_id>` (single pipeline step)
 - `--dry-run`
+- `--reset-records` (complete pipeline rerun only)
 - `--log-level <level>`
 - `--compact` (use the compact progress view instead of per-step logs)
 

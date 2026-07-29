@@ -521,6 +521,11 @@ def run(
         help="Stop after this step (inclusive). Use an exact id as declared in the config.",
     ),
     only: str | None = typer.Option(None, "--only", metavar="STEP_ID", help="Run exactly one pipeline step by id."),
+    reset_records: bool = typer.Option(
+        False,
+        "--reset-records",
+        help="Replace the generated records catalog before a complete pipeline rerun.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan only: validate and print the plan without executing steps."
     ),
@@ -538,6 +543,10 @@ def run(
     job_path = infer_job_path(job)
     if only and (from_step or until):
         raise typer.BadParameter("--only cannot be combined with --from/--until")
+    if reset_records and (only or from_step or until):
+        raise typer.BadParameter("--reset-records requires a complete run without --only, --from, or --until")
+    if reset_records and dry_run:
+        raise typer.BadParameter("--reset-records cannot be combined with --dry-run")
 
     try:
         spec, decl = load_job_models(job_path)
@@ -611,6 +620,7 @@ def run(
             job_path,
             resume_from=from_step,
             until=until,
+            reset_records=reset_records,
             dry_run=dry_run,
             log_level=log_level,
             verbose=not compact,

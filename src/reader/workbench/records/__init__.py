@@ -14,7 +14,7 @@ from .model import (
     record_to_dict,
 )
 from .store import RecordStore
-from .verification import verify_record_store
+from .verification import RecordVerificationScope, verify_record_store
 
 __all__ = [
     "ArtifactEvidence",
@@ -26,6 +26,7 @@ __all__ = [
     "RecordInputEvidence",
     "RecordRecipeSource",
     "RecordStore",
+    "RecordVerificationScope",
     "WorkbenchRecord",
     "capture_artifact_evidence",
     "current_build_identity",

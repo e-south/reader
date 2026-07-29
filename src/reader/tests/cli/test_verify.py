@@ -4,17 +4,30 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
-from reader.tests.support import cli_error_data, cli_success_data
+from reader.tests.support import base_reader_config, cli_error_data, cli_success_data, write_config
 from reader.workbench.cli import app
 from reader.workbench.config import ReaderSpec, reader_spec_digest
 from reader.workbench.records import RecordStore
 
 
 def _write_config(tmp_path) -> tuple[object, ReaderSpec]:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
-        encoding="utf-8",
+    config = write_config(
+        tmp_path,
+        base_reader_config(
+            experiment_id="exp",
+            protocol_id="plate_reader/dual_reporter_screen",
+            protocol_analysis={"include_fold_change": False},
+            resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+            annotations={
+                "labels": {
+                    "design_id": {
+                        "source": "design_id",
+                        "output": "design_id_alias",
+                        "values": {},
+                    }
+                }
+            },
+        ),
     )
     return config, ReaderSpec.load(config)
 
@@ -47,6 +60,30 @@ def test_verify_json_reports_verified_v5_records(tmp_path) -> None:
     assert result.exit_code == 0
     payload = cli_success_data(result.output)
     assert payload["schema"] == "reader.verify/v1"
+    assert payload["status"] == "ok"
+    assert payload["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
+
+
+def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) -> None:
+    config, spec = _write_config(tmp_path)
+    _write_record(tmp_path, spec)
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    store.persist_dataframe(
+        producer_id="retired",
+        producer_plugin="transform/identity",
+        out_name="df",
+        record_id="retired/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:retired-config",
+        producer_config_digest="sha256:retired-producer",
+    )
+
+    result = CliRunner().invoke(app, ["verify", str(config), "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = cli_success_data(result.output)
     assert payload["status"] == "ok"
     assert payload["summary"] == {"checked": 1, "failed": 0, "unverifiable": 0}
 
