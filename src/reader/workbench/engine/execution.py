@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from .contracts import (
     collect_file_output_descriptions,
     collect_file_output_paths,
 )
+from .file_outputs import FileOutputTransaction
 from .inputs import _resolve_inputs, resolve_missing_file_inputs
 
 
@@ -212,42 +214,33 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
         else:
             plug_inputs[key] = value
 
-    try:
-        outputs = plugin.run(ctx, plug_inputs, cfg)
-    except ReaderError:
-        raise
-    except Exception as err:
-        raise ExecutionError(f"{phase} {step.id} crashed: {err}") from err
+    transaction_context = (
+        FileOutputTransaction(context=ctx, step_id=step.id) if phase in {"plots", "exports"} else nullcontext()
+    )
+    with transaction_context as file_transaction:
+        plugin_context = file_transaction.context if file_transaction is not None else ctx
+        try:
+            outputs = plugin.run(plugin_context, plug_inputs, cfg)
+        except ReaderError:
+            raise
+        except Exception as err:
+            raise ExecutionError(f"{phase} {step.id} crashed: {err}") from err
 
-    resolved_output_ports = _resolve_runtime_output_ports(
-        plugin,
-        inputs=inputs,
-        outputs=outputs,
-        cfg=cfg,
-        contracts=registry.contracts,
-        where=step.id,
-    )
-    _assert_output_ports(
-        resolved_output_ports,
-        outputs,
-        contracts=registry.contracts,
-        where=step.id,
-    )
-    _persist_dataframe_outputs(
-        store=store,
-        ctx=ctx,
-        step=step,
-        cfg=cfg,
-        input_evidence=input_evidence,
-        outputs=outputs,
-        resolved_output_ports=resolved_output_ports,
-        output_labels=output_labels,
-        phase=phase,
-    )
-    if phase in {"plots", "exports"}:
-        protocol_figure_description = _protocol_figure_description(ctx=ctx, step=step) if phase == "plots" else None
-        description = protocol_figure_description or descriptor.summary
-        _persist_file_bundle_record(
+        resolved_output_ports = _resolve_runtime_output_ports(
+            plugin,
+            inputs=inputs,
+            outputs=outputs,
+            cfg=cfg,
+            contracts=registry.contracts,
+            where=step.id,
+        )
+        _assert_output_ports(
+            resolved_output_ports,
+            outputs,
+            contracts=registry.contracts,
+            where=step.id,
+        )
+        _persist_dataframe_outputs(
             store=store,
             ctx=ctx,
             step=step,
@@ -255,10 +248,30 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
             input_evidence=input_evidence,
             outputs=outputs,
             resolved_output_ports=resolved_output_ports,
+            output_labels=output_labels,
             phase=phase,
-            description=description,
-            protocol_figure_description=protocol_figure_description,
         )
+        if phase in {"plots", "exports"}:
+            outputs = file_transaction.promote(
+                outputs=outputs,
+                output_ports=resolved_output_ports,
+                where=f"{phase}:{step.id}",
+            )
+            protocol_figure_description = _protocol_figure_description(ctx=ctx, step=step) if phase == "plots" else None
+            description = protocol_figure_description or descriptor.summary
+            _persist_file_bundle_record(
+                store=store,
+                ctx=ctx,
+                step=step,
+                cfg=cfg,
+                input_evidence=input_evidence,
+                outputs=outputs,
+                resolved_output_ports=resolved_output_ports,
+                phase=phase,
+                description=description,
+                protocol_figure_description=protocol_figure_description,
+            )
+            file_transaction.commit()
 
 
 def run_steps(

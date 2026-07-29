@@ -15,8 +15,8 @@ from reader.workbench.context import RunContext
 from reader.workbench.engine import execute_step
 from reader.workbench.engine.execution import _runtime_provenance_inputs
 from reader.workbench.graph import FileRef, PluginStep, ProvenanceInput, RecordRef, ResourceRef
-from reader.workbench.ports import dataframe_input, dataframe_output, file_path_input
-from reader.workbench.records import RecordStore
+from reader.workbench.ports import dataframe_input, dataframe_output, file_path_input, file_path_output
+from reader.workbench.records import RecordStore, verify_record_store
 from reader.workbench.records.model import record_revision_digest
 from reader.workbench.registry import Plugin, PluginConfig, Registry
 
@@ -248,3 +248,123 @@ def test_persistence_rechecks_snapshot_before_catalog_commit(tmp_path: Path, mon
         )
 
     assert store.latest_dataframe("ingest/df") is None
+
+
+def test_failed_file_output_rerun_restores_last_successful_bundle(tmp_path: Path) -> None:
+    raw = tmp_path / "inputs" / "raw.txt"
+    raw.parent.mkdir()
+    raw.write_text("1", encoding="utf-8")
+
+    class MutatingExportPlugin(Plugin):
+        ConfigModel = PluginConfig
+
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_path_input("raw")}
+
+        @classmethod
+        def output_ports(cls):
+            return {"artifact": file_path_output("artifact")}
+
+        def run(self, ctx, inputs, cfg):
+            del cfg
+            payload = inputs["raw"].read_text(encoding="utf-8")
+            output = ctx.exports_dir / "report.txt"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(payload, encoding="utf-8")
+            if payload == "2":
+                inputs["raw"].write_text("3", encoding="utf-8")
+            return {"artifact": output}
+
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    step = PluginStep(
+        kind="export",
+        id="report",
+        plugin="export/mutating_file",
+        reads={"raw": FileRef(path=raw)},
+    )
+    registry = _registry("export/mutating_file", MutatingExportPlugin)
+    context = _context(tmp_path)
+
+    execute_step(step=step, phase="exports", store=store, ctx=context, registry=registry)
+    first = store.read_record("export:report")
+    output = context.exports_dir / "report.txt"
+    assert output.read_text(encoding="utf-8") == "1"
+
+    raw.write_text("2", encoding="utf-8")
+    with pytest.raises(RecordError, match="changed after input evidence was captured"):
+        execute_step(step=step, phase="exports", store=store, ctx=context, registry=registry)
+
+    assert output.read_text(encoding="utf-8") == "1"
+    assert store.read_record("export:report") == first
+    raw.write_text("1", encoding="utf-8")
+    verification = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest=context.config_digest,
+    )
+    assert verification["status"] == "ok"
+    staging = context.outputs_dir / ".staging"
+    assert not staging.exists() or list(staging.iterdir()) == []
+
+
+def test_failed_file_output_catalog_write_restores_last_successful_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = tmp_path / "inputs" / "raw.txt"
+    raw.parent.mkdir()
+    raw.write_text("1", encoding="utf-8")
+
+    class ExportPlugin(Plugin):
+        ConfigModel = PluginConfig
+
+        @classmethod
+        def input_ports(cls):
+            return {"raw": file_path_input("raw")}
+
+        @classmethod
+        def output_ports(cls):
+            return {"artifact": file_path_output("artifact")}
+
+        def run(self, ctx, inputs, cfg):
+            del cfg
+            output = ctx.exports_dir / "report.txt"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(inputs["raw"].read_text(encoding="utf-8"), encoding="utf-8")
+            return {"artifact": output}
+
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    step = PluginStep(
+        kind="export",
+        id="report",
+        plugin="export/file",
+        reads={"raw": FileRef(path=raw)},
+    )
+    registry = _registry("export/file", ExportPlugin)
+    context = _context(tmp_path)
+
+    execute_step(step=step, phase="exports", store=store, ctx=context, registry=registry)
+    first = store.read_record("export:report")
+    output = context.exports_dir / "report.txt"
+
+    raw.write_text("2", encoding="utf-8")
+
+    def _fail_catalog(_catalog):
+        raise RecordError("catalog failed")
+
+    monkeypatch.setattr(store, "_write_catalog", _fail_catalog)
+    with pytest.raises(RecordError, match="catalog failed"):
+        execute_step(step=step, phase="exports", store=store, ctx=context, registry=registry)
+
+    assert output.read_text(encoding="utf-8") == "1"
+    assert store.read_record("export:report") == first
+    staging = context.outputs_dir / ".staging"
+    assert not staging.exists() or list(staging.iterdir()) == []
