@@ -234,6 +234,15 @@ def test_invocation_ledger_confines_outputs_to_experiment_root(tmp_path: Path) -
         InvocationLedger(experiment_root=tmp_path / "experiment", outputs_dir=tmp_path / "outside")
 
 
+def test_invocation_ledger_reset_without_manifest_is_a_noop(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+
+    ledger.reset()
+
+    assert not outputs.exists()
+
+
 @pytest.mark.parametrize("target_scope", ["inside", "outside"])
 def test_invocation_ledger_reset_rejects_symlinked_manifest_parent(
     tmp_path: Path,
@@ -256,6 +265,99 @@ def test_invocation_ledger_reset_rejects_symlinked_manifest_parent(
         ledger.reset()
 
     assert target_ledger.read_text(encoding="utf-8") == "redirected evidence\n"
+
+
+def test_invocation_ledger_reset_rejects_symlinked_ledger(tmp_path: Path) -> None:
+    manifests = tmp_path / "outputs" / "manifests"
+    manifests.mkdir(parents=True)
+    target = tmp_path / "outside.jsonl"
+    target.write_text("outside evidence\n", encoding="utf-8")
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=manifests.parent)
+    try:
+        ledger.path.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(ConfigError, match="ledger must not be a symlink"):
+        ledger.reset()
+
+    assert target.read_text(encoding="utf-8") == "outside evidence\n"
+
+
+def test_invocation_ledger_reset_rejects_parent_swap_after_construction(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    outputs = experiment / "outputs"
+    outputs.mkdir(parents=True)
+    ledger = InvocationLedger(experiment_root=experiment, outputs_dir=outputs)
+    outside = tmp_path / "outside"
+    manifests = outside / "manifests"
+    manifests.mkdir(parents=True)
+    target = manifests / "invocations.jsonl"
+    target.write_text("outside evidence\n", encoding="utf-8")
+    outputs.rmdir()
+    try:
+        outputs.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(ConfigError, match="manifest directory must stay under the experiment root"):
+        ledger.reset()
+
+    assert target.read_text(encoding="utf-8") == "outside evidence\n"
+
+
+def test_invocation_ledger_rechecks_manifest_parent_after_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    original_mkdir = Path.mkdir
+
+    def _swap_parent(path: Path, *args, **kwargs) -> None:
+        if path == ledger.path.parent:
+            path.symlink_to(outside, target_is_directory=True)
+            return
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", _swap_parent)
+
+    with pytest.raises(ConfigError, match="manifest directory must not be a symlink"):
+        ledger.append_attempt(
+            config_digest="sha256:config",
+            build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+            operation="run",
+            selected_step_ids={"pipeline": [], "plots": [], "exports": []},
+            declared_inputs=[],
+        )
+
+    assert list(outside.iterdir()) == []
+
+
+def test_invocation_ledger_reset_wraps_unlink_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifests = tmp_path / "outputs" / "manifests"
+    manifests.mkdir(parents=True)
+    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=manifests.parent)
+    ledger.path.write_text("evidence\n", encoding="utf-8")
+    original_unlink = Path.unlink
+
+    def _fail_unlink(path: Path, *args, **kwargs) -> None:
+        if path == ledger.path:
+            raise OSError("unlink failed")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _fail_unlink)
+
+    with pytest.raises(ExecutionError, match="Could not reset invocation ledger"):
+        ledger.reset()
+
+    assert ledger.path.read_text(encoding="utf-8") == "evidence\n"
 
 
 def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
