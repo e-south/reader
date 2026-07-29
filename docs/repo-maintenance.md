@@ -74,10 +74,11 @@ Reader keeps continuous verification and publication distinct:
   permissioned. The final `Checks` job is the only required branch-protection
   context.
 - `Release` in [.github/workflows/release.yaml](../.github/workflows/release.yaml)
-  runs only for a published GitHub release. An unprivileged job builds the
-  distributions, then a `pypi` environment job publishes them through OIDC.
-  PyPI must trust `e-south/reader`, workflow `release.yaml`, and environment
-  `pypi` before the first release.
+  runs only for a published GitHub release whose `v<version>` tag exactly
+  matches `pyproject.toml`. An unprivileged job builds the distributions, then
+  a `pypi` environment job publishes them through OIDC. PyPI must trust
+  `e-south/reader`, workflow `release.yaml`, and environment `pypi` before the
+  first release.
 
 Local commands:
 
