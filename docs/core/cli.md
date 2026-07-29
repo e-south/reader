@@ -144,7 +144,7 @@ uv run reader notebook --list-templates
 Scaffold a new experiment from a protocol:
 
 ```bash
-uv run reader init ./experiments/20260317_new_assay --protocol <protocol-id>
+uv run reader init ./experiments/my_experiment --protocol <protocol-id>
 ```
 
 Use `plate_reader/dual_reporter_screen` for dual-reporter panels. Use
@@ -428,14 +428,14 @@ Create a record-backed aggregate experiment, declare its source records, and
 run the ordinary lifecycle:
 
 ```bash
-uv run reader init experiments/2026/20260708_sfxi_vec8_collection \
+uv run reader init experiments/vec8_collection \
   --protocol logic/sfxi_vec8_collection \
   --title "SFXI vec8 cross-experiment aggregate"
 # Edit config.yaml: add record resources and list their ids under
 # protocol.inputs.record_resources.
-uv run reader validate experiments/2026/20260708_sfxi_vec8_collection
-uv run reader run experiments/2026/20260708_sfxi_vec8_collection
-uv run reader verify experiments/2026/20260708_sfxi_vec8_collection
+uv run reader validate experiments/vec8_collection
+uv run reader run experiments/vec8_collection
+uv run reader verify experiments/vec8_collection
 ```
 
 Each resource must name a Reader experiment and its `sfxi_vec8/vec8` record.
@@ -463,12 +463,6 @@ Choose a template explicitly:
 
 ```bash
 uv run reader notebook CONFIG|DIR|INDEX --template notebook/eda
-```
-
-Allow explicit record scanning when the canonical catalog is missing:
-
-```bash
-uv run reader notebook CONFIG|DIR|INDEX --scan-records
 ```
 
 Name the notebook explicitly:

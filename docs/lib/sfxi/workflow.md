@@ -16,53 +16,51 @@ use [Plate-reader metric outputs](../plate_reader/metric_outputs.md).
 
 ## Configure the protocol
 
-The following fragment matches the `logic/sfxi_screen` authoring
-surface. The treatment labels and `J23105` reference are taken from
-`experiments/2026/20260707_sfxi_sensor-panel-m9-glu-secg/config.yaml`; use the
-values that are present in the target experiment's metadata.
+`logic/sfxi_screen` is the concrete dual-reporter plate-reader adapter. It
+materializes `YFP/CFP` for logic shape and `YFP/OD600` for anchored intensity,
+then passes those channels to the generic SFXI transform. State labels and the
+reference identity remain experiment-authored.
 
 ```yaml
 schema: reader/v8
 protocol:
   id: logic/sfxi_screen
   inputs:
-    response:
-      logic_channel: YFP/CFP
-      intensity_channel: YFP/OD600
     design_by: [design_id]
-    state_map_ref: induction_logic
+    state_map_ref: logic_states
     reference:
-      design_id: J23105
+      design_id: reference
       stat: mean
     target_time_h: 12.0
     time_mode: nearest
-    time_tolerance_h: 0.51
+    time_tolerance_h: 0.5
   analysis:
     include_vec8: true
     include_export: true
-    sfxi_objective:
+    sfxi_vec8:
       intensity_log2_offset_delta: 0.0
 
 annotations:
   ordered_state_spaces:
-    induction_logic:
-      column: treatment_alias
+    logic_states:
+      column: condition
       state_order: ["00", "10", "01", "11"]
       values:
-        "00": EtOH 0%, 0 nM cipro
-        "10": EtOH 3%, 0 nM cipro
-        "01": EtOH 0%, 100 nM cipro
-        "11": EtOH 3%, 100 nM cipro
+        "00": baseline
+        "10": input_a
+        "01": input_b
+        "11": input_a_and_b
       case_sensitive: true
 ```
 
 The experiment still needs its `experiment`, `resources`, ingest, and metadata
-sections. Keep the ordered state space in `annotations`; do not add a hand-authored
+sections. Its ingest channel list must include `OD600`, `CFP`, and `YFP`. Keep
+the ordered state space in `annotations`; do not add a hand-authored
 `transform/sfxi` step or duplicate `treatment_map` in protocol inputs.
 
-`analysis.sfxi_objective.intensity_log2_offset_delta` is compiled into vec8
-generation and the setpoint scorer. Keeping it in one semantic field prevents
-the two paths from using different intensity inverses.
+`analysis.sfxi_vec8.intensity_log2_offset_delta` is compiled into vec8
+generation and persisted in the typed record. Downstream consumers can verify
+that field before applying any objective that inverts the intensity transform.
 
 ## Preflight without writing
 

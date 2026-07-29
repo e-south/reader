@@ -2,7 +2,7 @@
 doc_id: reader-security
 surface: security-contract
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-07-29
 summary: Trust boundaries, path safety, dependency posture, and safe defaults for Reader operations.
 ---
 
@@ -37,14 +37,15 @@ External plugins and notebooks are executable Python. They are an extension surf
 
 - YAML uses a SafeLoader-based parser that rejects duplicate mapping keys.
 - Only `reader/v8` is accepted.
-- removed config keys are rejected explicitly
-- protocol, experiment, paths, resources, and annotations are shape-checked before model validation
+- Removed config keys are rejected explicitly.
+- Protocol, experiment, paths, resources, and annotations are shape-checked
+  before model validation.
 
 ### Schema strictness
 
-- plugin configs use pydantic models with `extra = "forbid"`
-- unsupported public keys fail fast
-- CLI JSON modes reject unsupported combinations explicitly
+- Plugin configs use Pydantic models with `extra = "forbid"`.
+- Unsupported public keys fail fast.
+- CLI JSON modes reject unsupported combinations explicitly.
 
 ### Filesystem safety
 
@@ -73,6 +74,8 @@ External plugins and notebooks are executable Python. They are an extension surf
   `reader verify` checks against current files
 - input evidence is captured before execution and rechecked before catalog
   commit so a mid-run source change refuses persistence
+- invocation verification rejects missing, duplicate, orphaned, or malformed
+  terminal lifecycle events
 - record readers accept schema v5 only; older payloads make the catalog invalid
   and require regeneration from the owning experiment
 
@@ -123,6 +126,19 @@ can bypass them. Repository tests therefore verify that tracked experiment
 content remains confined to the synthetic template and that public package
 metadata does not expose a personal email address.
 
+As verified on 2026-07-29, current branches, tags, and release artifacts contain
+no tracked private experiment files or personal email address. GitHub secret
+scanning and push protection are enabled, and the repository has no open secret
+alerts.
+
+Historical GitHub pull-request refs still retain superseded experiment
+material, local paths, and a personal commit identity. Treat that material as
+exposed. Rewriting a branch or deleting files from the current tree does not
+remove pull-request refs, cached views, existing clones, or other copies.
+Completing server-side remediation requires GitHub Support to dereference the
+affected pull requests and garbage-collect the unreachable objects; any copies
+already obtained by third parties remain outside Reader's control.
+
 ## Security Review Checklist
 
 Use this checklist for security-sensitive changes.
@@ -138,7 +154,11 @@ If the answer is yes to any of those, the change deserves an explicit security r
 
 ## Current Open Security Debt
 
-The main open risk is semantic drift. Reader limits it by compiling protocol
+Historical pull-request refs remain the concrete public-data debt. Until GitHub
+confirms dereferencing and garbage collection, the repository must not claim
+that all publicly reachable history has been purged.
+
+The main architectural risk is semantic drift. Reader limits it by compiling protocol
 semantics and execution bindings into one inspectable program. Nodes that are
 not executed must remain explicitly domain-defined or unavailable; they must
 not acquire behavior through an unreported plugin branch.

@@ -10,20 +10,20 @@ summary: Reader marimo notebook workflow, template selection, component ownershi
 
 Once you run a pipeline you can generate [marimo notebooks](https://marimo.io/) to explore outputs.
 
-### Contents
+## Contents
 
 1. [General usage](#general-usage)
 2. [Using reader templates](#using-reader-templates)
 
 ---
 
-### General usage
+## General usage
 
 Use Reader's launcher for generated experiment notebooks. It owns the output
 path, runtime cache, loopback server, and stale-session checks:
 
 ```bash
-uv sync --locked --group notebooks
+uv sync --locked --extra notebooks
 uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
 ```
 
@@ -40,7 +40,7 @@ Marimo API, use the [official Marimo documentation](https://docs.marimo.io/).
 
 ---
 
-### Using reader templates
+## Using Reader templates
 
 Templates let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
 Use `uv run reader notebook` for broad exploration across dataframe records.
@@ -60,14 +60,14 @@ uv run reader notebook experiments/my_experiment/config.yaml --mode run --headle
 
 What the scaffolded notebook includes:
 
-* dataframe record discovery via `outputs/manifests/records.json`
+* dataframe record discovery through `reader.api.records`
 * a dataset dropdown labeled “Dataset (dataframe record)” (defaults to the most downstream step when possible)
-* a canonical dataframe selection variable backed by the chosen parquet file (polars required to read parquet)
+* a canonical dataframe selection loaded through `reader.api.read_dataframe`, with artifact-digest and dataframe-contract validation before display
 * a compact experiment overview with experiment id, protocol, pipeline steps, paths, and `design_id` / `treatment` vocabulary when those columns exist
 * a progressive-disclosure deliverables panel for manifest-backed records, plots, exports, and generated notebooks
 * persisted per-path plot descriptions drawn from protocol figure or explicit producer semantics, with experiment-specific limits added beside the visual when needed
 * a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
-* load-status messaging when no records exist yet or parquet loading fails
+* load-status messaging when no cataloged dataframe records exist yet or validation fails
 
 The default `notebook/eda` and `notebook/basic` templates are intentionally minimal record explorers.
 They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
@@ -85,13 +85,20 @@ The selected template must be listed in the protocol's allowed notebook
 templates. This keeps template choice semantic without letting template
 capabilities silently override the experiment contract.
 
-Generated notebooks keep shared review pieces in
-`reader.workbench.notebooks.components`:
+Generated notebooks consume shared review pieces through the stable
+`reader.api.notebooks` surface:
 
 * `overview` owns frontmatter, path summaries, pipeline rows, and the
   design/treatment vocabulary table.
 * `deliverables` owns manifest-backed records plus plot, export, and generated
-  notebook file bundles.
+  notebook file bundles, while retaining a generic artifact bucket for other
+  contract-registered file-bundle producers.
+* `records` projects public catalog entries into stable selectors without
+  exposing artifact paths to notebook table loaders.
+* `load_notebook_context()` exposes domain-neutral compiled-step metadata and
+  ordered-state-space projections; `resolve_effective_step_config()` resolves
+  the selected step's protocol-bound settings. Assay templates own any
+  domain-specific selection and adaptation.
 * assay-specific templates can add domain review sections above or beside
   those panels, but should avoid duplicating component-owned tables.
 
@@ -118,7 +125,7 @@ Notes:
   - open the printed URL in the in-app browser
   - or run `uv run marimo check <notebook.py>` for a static validation pass
 * Static HTML export is useful as an execution/shareability smoke check, but it is not an interaction check. Validate dropdowns, sliders, export buttons, and chart rerenders from a live `marimo run` app.
-* Record discovery is catalog-first. If `outputs/manifests/records.json` is missing, the scaffolded notebook will show no datasets unless you regenerate records with `uv run reader run` or opt in with `uv run reader notebook --scan-records`.
+* Dataset selection uses the canonical record catalog. If `outputs/manifests/records.json` is missing, run `uv run reader run` before opening the notebook.
 * Common templates include `notebook/eda`, `notebook/basic`, `notebook/dual_reporter_triptych`, `notebook/cytometry`, and `notebook/sfxi_eda`.
 * Template behavior is contract-driven:
   - plot filtering is only available for templates that declare plot-filter support

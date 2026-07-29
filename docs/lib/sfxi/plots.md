@@ -44,18 +44,26 @@ uv run reader plot <config-or-experiment> --only sfxi_vec8_heatmap
 itself an experiment-owned unit of work.
 
 ```bash
-uv run reader init experiments/2026/20260708_vec8_aggregate \
+uv run reader init experiments/vec8_aggregate \
   --protocol logic/sfxi_vec8_collection \
   --title "Vec8 aggregate"
 # Declare record resources and protocol.inputs.record_resources in config.yaml.
-uv run reader validate experiments/2026/20260708_vec8_aggregate
-uv run reader run experiments/2026/20260708_vec8_aggregate
+uv run reader validate experiments/vec8_aggregate
+uv run reader run experiments/vec8_aggregate
+uv run reader verify experiments/vec8_aggregate
+uv run reader plot experiments/vec8_aggregate
+uv run reader export experiments/vec8_aggregate
+uv run reader notebook experiments/vec8_aggregate --mode none
 ```
 
-Reader writes the collection record, heatmap, CSV, notebook, and digest-bearing
-manifest below that experiment's `outputs/` directory. It rejects unknown
-experiments, missing or changed records, incompatible contracts, duplicate
-source ids, missing columns, negative offsets, and incomplete vectors.
+`reader run` writes the collection record and digest-bearing manifest. The
+explicit plot, export, and notebook commands materialize their own requested
+surfaces below the same experiment's `outputs/` directory. Reader rejects
+unknown experiments, missing or changed records, incompatible contracts,
+duplicate upstream `(experiment, record)` identities, missing columns,
+negative offsets, and incomplete vectors. The collection table keeps the
+consumer-local alias (`source_resource_id`) separate from the upstream
+`source_experiment_id` and `source_record_id`.
 
 ## Related references
 

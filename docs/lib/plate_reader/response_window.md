@@ -41,8 +41,9 @@ quality thresholds. A normal run produces manifest-backed records for:
 - replicate aggregation, uncertainty, and censor bounds; and
 - design summaries, traces, and event intervals.
 
-The standard plot and CSV export plugins consume those records. The standard
-EDA notebook discovers their registered deliverables from `RecordStore`.
+The standard plot and CSV export plugins consume those records. Python callers
+discover the manifest-backed record catalog with `reader.api.records()` and
+load dataframe contents with `reader.api.read_dataframe()`.
 
 Channel labels are source metadata. The response-window contract does not turn
 a named channel into a downstream biological or campaign claim.
@@ -55,7 +56,8 @@ The domain analysis then rejects misaligned experiment order, ambiguous state
 mappings, invalid event bounds or reductions, and insufficient trace support.
 It does not infer identity or semantics from experiment names.
 
-Python callers use `open_experiment` and the ordinary `reader.api` operations.
+Open an experiment with `reader.open_experiment()` before using those public
+`reader.api` operations.
 
 ## Related references
 

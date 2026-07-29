@@ -8,7 +8,7 @@ summary: Contract, computation, and output reference for Reader crosstalk-pair r
 
 # Crosstalk pairs
 
-### Contents
+## Contents
 
 - [Inputs](#inputs)
 - [Time selection](#time-selection)
@@ -21,7 +21,10 @@ summary: Contract, computation, and output reference for Reader crosstalk-pair r
 - [Export to the experiment exports directory](#export-to-the-experiment-exports-directory)
 - [See also](#see-also)
 
-This document describes the low-level crosstalk pairing utilities in `reader.domains.logic.crosstalk.pairs`. Use this when you want bespoke control or to embed the logic outside the pipeline plugin.
+This document describes the crosstalk-pair transform compiled by
+`plate_reader/dual_reporter_screen`. Reader owns the generic pairwise math;
+integrations configure it through `reader/v8` and consume its typed record
+through `reader.api` rather than importing implementation modules.
 
 The library computes:
 - Per-design selectivity summary (top-1 vs top-2 treatment response).
@@ -29,7 +32,7 @@ The library computes:
 
 ---
 
-### Inputs
+## Inputs
 
 You supply a fold-change table (typically `fold_change.v1`) with at least:
 - `design_col` (default `design_id`)
@@ -43,7 +46,7 @@ If you pass `target`, the table must include a `target` column.
 
 ---
 
-### Time selection
+## Time selection
 
 Use `time_mode` to control how times are selected:
 - `single`: require exactly one time in the table.
@@ -57,7 +60,7 @@ Time selection is strict to avoid mismatches across pipeline steps.
 
 ---
 
-### Mapping modes
+## Mapping modes
 
 Choose how each design maps to its "self" treatment:
 - `explicit`: pass `design_treatment_map` (recommended when you have ground truth).
@@ -72,7 +75,7 @@ Notes:
 
 ---
 
-### Filters and scoring
+## Filters and scoring
 
 Pairs are evaluated using these criteria:
 - `min_self`: minimum self response for each design.
@@ -96,78 +99,52 @@ Scores:
 
 ---
 
-### Outputs
+## Outputs
 
-`compute_crosstalk_pairs` returns a `CrosstalkResult`:
+The transform writes `crosstalk_pairs/table`, containing:
 - `pairs`: pairwise table with `design_a`, `design_b`, self/cross values,
   self-vs-other metrics, and pass/fail flags.
 - `designs`: per-design summary table with top1/top2 and selectivity info.
-- `times_used`: list of times actually evaluated.
-- `target_used`, `value_column`, `value_scale`.
+- the evaluated time, target, value column, and scale on each relevant row.
 
 ---
 
-### Example config
+## Example config
 
-```python
-from reader.domains.logic.crosstalk.pairs import compute_crosstalk_pairs
-
-result = compute_crosstalk_pairs(
-    df,
-    design_col="design_id",
-    treatment_col="treatment",
-    value_col="log2FC",
-    value_scale="log2",
-    time_mode="exact",
-    time=12.0,
-    mapping_mode="explicit",
-    design_treatment_map={
-        "design_a": "treatment_1",
-        "design_b": "treatment_2",
-    },
-    min_self=1.0,
-    max_cross=0.5,
-    min_selectivity_delta=1.0,
-    require_self_is_top1=True,
-)
-
-pairs = result.pairs
-per_design = result.designs
+```yaml
+protocol:
+  id: plate_reader/dual_reporter_screen
+  analysis:
+    include_fold_change: true
+    crosstalk_pairs:
+      enabled: true
+      export: true
+      time_mode: exact
+      time: 12.0
+      mapping_mode: explicit
+      design_treatment_map:
+        design_a: treatment_1
+        design_b: treatment_2
+      min_self: 1.0
+      max_cross: 0.5
+      min_selectivity_delta: 1.0
+      require_self_is_top1: true
 ```
 
 ---
 
-### Pipeline run example (pairwise)
+## Pipeline run example (pairwise)
 
 Run the step directly (starting from fold-change):
 
 ```bash
-uv run reader run experiments/2025/20250620_sensor_panel_crosstalk/config.yaml --from fold_change__yfp_over_cfp --until crosstalk_pairs
+uv run reader run experiments/my_experiment --until crosstalk_pairs
+uv run reader verify experiments/my_experiment
 ```
-
-Artifact location:
-
-```
-experiments/2025/20250620_sensor_panel_crosstalk/outputs/artifacts/crosstalk_pairs.crosstalk_pairs/table.parquet
-```
-
-Quick readout from that run:
-- Evaluated time: 12.0 (only time in table; time_mode=all)
-- Designs: 6 -> candidate pairs: 15 -> passing pairs: 2 (only_passing: true)
-- Table shape: 2 rows x 37 columns
-
-Example row (interpreted):
-
-1) pDual-10-soxSp <-> pDual-10-spyp
-   - **Self** (log2FC): 6.11 / 4.46 (~69x / ~22x)
-   - **Cross:** 0.392 / -0.052 (~1.31x / ~0.96x)
-   - **pair_score** = 4.07 -> pair_ratio ~= 16.8x separation
-
-Interpretation: both designs show strong response to their own treatments and minimal response to each other's treatments.
 
 ---
 
-### Groups of 3 (triads) from passing pairs
+## Groups of 3 (triads) from passing pairs
 
 There is no built-in `crosstalk_groups` step yet, but you can lift triads from the pair table.
 This example finds groups of 3 where **all three pairwise edges pass**:
@@ -175,10 +152,13 @@ This example finds groups of 3 where **all three pairwise edges pass**:
 ```bash
 uv run python - <<'PY'
 from itertools import combinations
-import pandas as pd
+from reader.api import open_experiment, read_dataframe, verify
 
-path = "experiments/2025/20250620_sensor_panel_crosstalk/outputs/artifacts/crosstalk_pairs.crosstalk_pairs/table.parquet"
-df = pd.read_parquet(path)
+experiment = open_experiment("experiments/my_experiment")
+verification = verify(experiment)
+if verification.status != "ok":
+    raise RuntimeError(f"Reader verification failed: {verification.issues}")
+df = read_dataframe(experiment, "crosstalk_pairs/table").dataframe
 
 if "passes_filters" in df.columns:
     df = df[df["passes_filters"]]
@@ -197,7 +177,7 @@ PY
 
 ---
 
-### Export to the experiment exports directory
+## Export to the experiment exports directory
 
 Bind the export through protocol outputs (relative to `outputs/exports/`):
 
@@ -219,9 +199,10 @@ protocol:
 Then run:
 
 ```bash
-uv run reader export experiments/2025/20250620_sensor_panel_crosstalk/config.yaml
+uv run reader export experiments/my_experiment
 ```
 
-### See also
+## See also
 
-- Pipeline usage: `docs/core/plugins.md` (transform/crosstalk_pairs)
+- [Pipeline configuration](../core/pipeline.md)
+- [Python API](../core/python_api.md)

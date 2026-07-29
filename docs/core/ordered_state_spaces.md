@@ -15,14 +15,14 @@ metric or biological objective.
 ```yaml
 annotations:
   ordered_state_spaces:
-    stress_states:
+    four_state_conditions:
       column: treatment
       state_order: ["00", "10", "01", "11"]
       values:
-        "00": no stress
-        "10": ethanol
-        "01": ciprofloxacin
-        "11": ethanol plus ciprofloxacin
+        "00": baseline
+        "10": condition A
+        "01": condition B
+        "11": conditions A and B
       case_sensitive: true
 ```
 
