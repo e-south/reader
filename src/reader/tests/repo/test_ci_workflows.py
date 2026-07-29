@@ -35,9 +35,14 @@ def test_checks_is_the_only_continuous_workflow() -> None:
 
 
 def test_release_is_published_release_only() -> None:
-    triggers = _triggers(_workflow("release.yaml"))
+    workflow = _workflow("release.yaml")
+    triggers = _triggers(workflow)
 
     assert triggers == {"release": {"types": ["published"]}}
+    verify_step = next(
+        step for step in workflow["jobs"]["build"]["steps"] if step.get("name") == "Verify release version"
+    )
+    assert 'test "${GITHUB_REF_NAME}" = "v${project_version}"' in verify_step["run"]
 
 
 def test_hidden_test_results_are_uploaded_or_fail_explicitly() -> None:

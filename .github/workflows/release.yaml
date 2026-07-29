@@ -23,7 +23,7 @@ jobs:
       - name: Verify release version
         run: |
           project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          test "${GITHUB_REF_NAME#v}" = "${project_version}"
+          test "${GITHUB_REF_NAME}" = "v${project_version}"
       - name: Verify lockfile
         run: uv lock --check
       - name: Build distributions
