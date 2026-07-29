@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+import reader as reader_package
+from reader.api import (
+    InspectionResult,
+    PlanResult,
+    PluginCatalogResult,
+    PluginDescriptorResult,
+    RecordCatalogResult,
+    RunResult,
+    SurfaceCatalogResult,
+    ValidationResult,
+    VerificationResult,
+    describe_plugin,
+    inspect,
+    open_experiment,
+    plan,
+    plots,
+    plugins,
+    records,
+    run,
+    validate,
+    verify,
+)
+from reader.errors import ConfigError, RegistryError
+from reader.tests.support.configs import base_reader_config, write_config
+
+
+def _generic_experiment(tmp_path: Path) -> Path:
+    experiment_dir = tmp_path / "example"
+    experiment_dir.mkdir()
+    return write_config(experiment_dir, base_reader_config(experiment_id="example"))
+
+
+def test_package_root_exposes_only_the_primary_experiment_entrypoint() -> None:
+    assert reader_package.Experiment.__module__ == "reader.api.models"
+    assert reader_package.open_experiment.__module__ == "reader.api.facade"
+
+
+def test_open_experiment_accepts_config_or_directory_without_creating_outputs(tmp_path: Path) -> None:
+    config_path = _generic_experiment(tmp_path)
+
+    from_config = open_experiment(config_path)
+    from_directory = open_experiment(config_path.parent)
+
+    assert from_config.config_path == config_path.resolve()
+    assert from_directory.identity == from_config.identity
+    assert from_config.identity.id == "example"
+    assert from_config.identity.protocol == "workbench/generic"
+    assert not (config_path.parent / "outputs").exists()
+
+
+def test_experiment_read_surfaces_return_typed_results(tmp_path: Path) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    inspection = inspect(experiment)
+    validation = validate(experiment, check_files=False)
+    execution_plan = plan(experiment)
+    plot_catalog = plots(experiment)
+    record_catalog = records(experiment)
+    verification = verify(experiment)
+
+    assert isinstance(inspection, InspectionResult)
+    assert inspection.experiment == experiment.identity
+    assert inspection.implementation["readiness"]["state"] == "runnable"
+    assert isinstance(validation, ValidationResult)
+    assert validation.status == "ok"
+    assert validation.check_files is False
+    assert isinstance(execution_plan, PlanResult)
+    assert execution_plan.plan["protocol"] == "workbench/generic"
+    assert isinstance(plot_catalog, SurfaceCatalogResult)
+    assert plot_catalog.kind == "plot"
+    assert plot_catalog.entries == ()
+    assert isinstance(record_catalog, RecordCatalogResult)
+    assert record_catalog.catalog_exists is False
+    assert record_catalog.entries == ()
+    assert isinstance(verification, VerificationResult)
+    assert verification.status == "failed"
+    assert verification.issues[0]["code"] == "catalog.missing"
+    assert not (config_path.parent / "outputs").exists()
+
+
+def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: Path, capsys) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    result = run(experiment, log_level="ERROR")
+
+    assert isinstance(result, RunResult)
+    assert result.experiment == experiment.identity
+    assert result.invocation_id
+    assert result.operation == "run"
+    assert result.status == "succeeded"
+    assert result.dry_run is False
+    assert result.selected_steps.pipeline == ()
+    assert result.selected_steps.plots == ()
+    assert result.selected_steps.exports == ()
+    assert result.produced_record_revisions == ()
+    assert result.ledger_path == str(config_path.parent / "outputs" / "manifests" / "invocations.jsonl")
+    assert result.to_dict()["selected_steps"] == {"pipeline": [], "plots": [], "exports": []}
+    assert capsys.readouterr() == ("", "")
+
+    events = [json.loads(line) for line in Path(result.ledger_path).read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["attempt", "result"]
+    assert events[1]["invocation_id"] == result.invocation_id
+    assert events[1]["produced_record_revisions"] == []
+
+
+def test_run_dry_run_returns_plan_without_writing_outputs(tmp_path: Path) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    result = run(experiment, dry_run=True)
+
+    assert isinstance(result, RunResult)
+    assert result.invocation_id is None
+    assert result.operation == "run"
+    assert result.status == "planned"
+    assert result.dry_run is True
+    assert result.ledger_path is None
+    assert result.produced_record_revisions == ()
+    assert not (config_path.parent / "outputs").exists()
+
+
+@pytest.mark.parametrize("selector", ["from_step", "until_step", "only"])
+def test_run_rejects_empty_step_selectors_without_writing_outputs(tmp_path: Path, selector: str) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    with pytest.raises(ConfigError, match=f"{selector} must be a non-empty step id"):
+        run(experiment, dry_run=True, **{selector: "  "})
+
+    assert not (config_path.parent / "outputs").exists()
+
+
+def test_plugin_catalog_and_descriptor_expose_machine_readable_contracts() -> None:
+    catalog = plugins(category="ingest", domain="cytometry")
+    descriptor = describe_plugin("ingest/flow_cytometer")
+
+    assert isinstance(catalog, PluginCatalogResult)
+    assert [item.plugin for item in catalog.plugins] == ["ingest/flow_cytometer"]
+    assert isinstance(descriptor, PluginDescriptorResult)
+    assert descriptor.plugin.plugin == "ingest/flow_cytometer"
+    assert descriptor.config_schema["additionalProperties"] is False
+    assert {port.name: port.kind for port in descriptor.input_ports} == {"raw": "file_set"}
+    assert {port.name: port.kind for port in descriptor.output_ports} == {
+        "channels": "dataframe",
+        "df": "dataframe",
+    }
+    dataframe_port = next(port for port in descriptor.output_ports if port.name == "df")
+    assert dataframe_port.contract == "tidy.v1"
+    assert dataframe_port.contract_surface is not None
+    assert dataframe_port.contract_surface["minimum"] == "tidy.v1"
+
+
+def test_plugin_catalog_can_be_limited_to_a_protocol_default_plan() -> None:
+    catalog = plugins(category="transform", protocol="plate_reader/single_reporter_screen")
+
+    assert catalog.plugins
+    assert all(item.category == "transform" for item in catalog.plugins)
+    assert {item.plugin for item in catalog.plugins} >= {
+        "transform/blank_correction",
+        "transform/ratio",
+        "transform/sample_map",
+    }
+
+
+def test_describe_plugin_rejects_unknown_plugin() -> None:
+    with pytest.raises(RegistryError, match="Unknown plugin"):
+        describe_plugin("transform/not_registered")

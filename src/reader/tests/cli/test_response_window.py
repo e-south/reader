@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -12,6 +11,7 @@ from reader.response_window import (
     ResponseWindowPreflight,
 )
 from reader.response_window_review import PromoterEvidenceBundle
+from reader.tests.support import cli_success_data
 from reader.workbench import cli
 
 response_window_cli = importlib.import_module("reader.workbench.cli.response_window")
@@ -35,7 +35,7 @@ def test_response_window_preflight_emits_machine_readable_readiness(monkeypatch,
     )
 
     assert invocation.exit_code == 0
-    payload = json.loads(invocation.output)
+    payload = cli_success_data(invocation.output)
     assert payload["ready"] is True
     assert payload["study_id"] == "stress_ethanol_cipro_growth"
     assert payload["experiments"][0]["event_time_uncertainty_h"] == 0.25
@@ -52,7 +52,7 @@ def test_response_window_verify_emits_bundle_contract(monkeypatch, tmp_path: Pat
     )
 
     assert invocation.exit_code == 0
-    payload = json.loads(invocation.output)
+    payload = cli_success_data(invocation.output)
     assert payload["schema_version"] == "reader.response_window.bundle.v5"
     assert payload["study_id"] == "stress_ethanol_cipro_growth"
     assert payload["counts"] == {"experiments": 1, "plots": 5}
@@ -74,8 +74,8 @@ def test_response_window_build_rejects_invalid_format_before_publication(monkeyp
             "response-window",
             "build",
             "request.yaml",
-            "--out-dir",
-            str(destination),
+            "--output-experiment",
+            "target",
             "--format",
             "jsno",
         ],
@@ -84,6 +84,34 @@ def test_response_window_build_rejects_invalid_format_before_publication(monkeyp
     assert invocation.exit_code != 0
     assert "format must be one of" in invocation.output
     assert not destination.exists()
+
+
+def test_response_window_build_publishes_to_output_experiment(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "experiments" / "2026" / "20260717_response_window" / "outputs"
+    observed: dict[str, Path] = {}
+
+    def _publish(**kwargs):
+        observed["out_dir"] = kwargs["out_dir"]
+        return _bundle(kwargs["out_dir"])
+
+    monkeypatch.setattr(response_window_cli, "resolve_output_experiment", lambda _target: destination)
+    monkeypatch.setattr(response_window_cli, "build_response_window_bundle", _publish)
+
+    invocation = CliRunner().invoke(
+        cli.app,
+        [
+            "response-window",
+            "build",
+            "request.yaml",
+            "--output-experiment",
+            "target",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert invocation.exit_code == 0, invocation.output
+    assert observed == {"out_dir": destination}
 
 
 def test_response_window_review_verifies_before_launch(monkeypatch, tmp_path: Path) -> None:
@@ -120,6 +148,7 @@ def test_response_window_review_verifies_before_launch(monkeypatch, tmp_path: Pa
 def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, tmp_path: Path) -> None:
     bundle = _promoter_bundle(tmp_path)
     monkeypatch.setattr(response_window_cli, "build_promoter_evidence_bundle", lambda **_kwargs: bundle)
+    monkeypatch.setattr(response_window_cli, "resolve_output_experiment", lambda _target: tmp_path / "outputs")
 
     invocation = CliRunner().invoke(
         cli.app,
@@ -128,8 +157,8 @@ def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, t
             "promoter-evidence",
             "response-bundle",
             "candidate-bindings",
-            "--out-dir",
-            "evidence",
+            "--output-experiment",
+            "target",
             "--experiment-id",
             "experiment",
             "--design-id",
@@ -142,7 +171,7 @@ def test_promoter_evidence_cli_emits_selection_and_artifact_paths(monkeypatch, t
     )
 
     assert invocation.exit_code == 0
-    payload = json.loads(invocation.output)
+    payload = cli_success_data(invocation.output)
     assert payload["schema_version"] == "reader.response_window.promoter_evidence_bundle.v5"
     assert payload["selection"]["candidate_id"] == "candidate"
     assert payload["png"] == str(bundle.png_path)
@@ -166,8 +195,8 @@ def test_promoter_evidence_rejects_invalid_format_before_publication(monkeypatch
             "promoter-evidence",
             "response-bundle",
             "candidate-bindings",
-            "--out-dir",
-            str(destination),
+            "--output-experiment",
+            "target",
             "--experiment-id",
             "experiment",
             "--design-id",

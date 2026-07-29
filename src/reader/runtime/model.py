@@ -31,6 +31,7 @@ class ReaderRuntime:
         *,
         plots_subdir: str | None = "plots",
         exports_subdir: str | None = "exports",
+        experiment_root: Path | None = None,
         create: bool = True,
     ) -> RecordStore:
         return import_module("reader.workbench.records.store").RecordStore(
@@ -38,5 +39,6 @@ class ReaderRuntime:
             contracts=self.contracts,
             plots_subdir=plots_subdir,
             exports_subdir=exports_subdir,
+            experiment_root=experiment_root,
             create=create,
         )

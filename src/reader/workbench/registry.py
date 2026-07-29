@@ -96,6 +96,12 @@ class Plugin(ABC):
         return ()
 
     @classmethod
+    def validate_semantic_references(cls, *, experiment: Any, cfg: PluginConfig) -> None:
+        """Validate experiment annotation references owned by this plugin's config."""
+
+        del experiment, cfg
+
+    @classmethod
     def resolve_missing_file_inputs(
         cls,
         *,

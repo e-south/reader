@@ -11,12 +11,11 @@ import reader.domains.logic.sfxi.vec8_aggregate.writer as aggregate_writer
 from reader.contracts import builtin_contract_catalog
 from reader.domains.logic.sfxi.vec8_aggregate import (
     VEC8_CHANNELS,
-    load_sfxi_vec8_sources,
-    write_sfxi_vec8_aggregate,
 )
 from reader.domains.logic.sfxi.vec8_aggregate.render import render_sfxi_vec8_heatmap
 from reader.errors import SFXIError
-from reader.tests.support import base_reader_config, write_config
+from reader.runtime.sfxi_vec8_aggregate import load_sfxi_vec8_sources, write_sfxi_vec8_aggregate
+from reader.tests.support import base_reader_config, cli_success_data, write_config
 from reader.workbench.cli import app
 from reader.workbench.records import RecordStore
 
@@ -70,6 +69,19 @@ def _write_experiment_with_vec8(
         config_digest=f"sha256:{experiment_id}",
     )
     return cfg_path
+
+
+def _write_output_experiment(tmp_path: Path, *, experiment_id: str = "20260708_sfxi_vec8_aggregate") -> Path:
+    root = tmp_path / "experiments" / "2026" / experiment_id
+    root.mkdir(parents=True, exist_ok=True)
+    return write_config(
+        root,
+        base_reader_config(
+            experiment_id=experiment_id,
+            lifecycle="draft",
+            protocol_id="workbench/generic",
+        ),
+    )
 
 
 def test_load_sfxi_vec8_sources_reads_experiment_record_tables(tmp_path: Path) -> None:
@@ -458,12 +470,16 @@ def test_direct_table_sources_reject_duplicate_source_ids(tmp_path: Path) -> Non
 
 def test_cli_aggregate_sfxi_vec8_wraps_stale_record_artifact_errors(tmp_path: Path) -> None:
     cfg_path = _write_experiment_with_vec8(tmp_path, experiment_id="20260706_sfxi", design_prefix="eth", v11=1.0)
+    output_config = _write_output_experiment(tmp_path)
     store = RecordStore(cfg_path.parent / "outputs", contracts=builtin_contract_catalog(), create=False)
     record = store.latest_dataframe("sfxi_vec8/vec8")
     assert record is not None
     record.path.unlink()
 
-    result = CliRunner().invoke(app, ["aggregate-sfxi-vec8", str(cfg_path), "--out-dir", str(tmp_path / "aggregate")])
+    result = CliRunner().invoke(
+        app,
+        ["aggregate-sfxi-vec8", str(cfg_path), "--output-experiment", str(output_config)],
+    )
 
     assert result.exit_code == 1
     assert "could not load 'sfxi_vec8/vec8' dataframe artifact" in result.output
@@ -471,12 +487,16 @@ def test_cli_aggregate_sfxi_vec8_wraps_stale_record_artifact_errors(tmp_path: Pa
 
 def test_cli_aggregate_sfxi_vec8_wraps_mutated_record_artifact_errors(tmp_path: Path) -> None:
     cfg_path = _write_experiment_with_vec8(tmp_path, experiment_id="20260706_sfxi", design_prefix="eth", v11=1.0)
+    output_config = _write_output_experiment(tmp_path)
     store = RecordStore(cfg_path.parent / "outputs", contracts=builtin_contract_catalog(), create=False)
     record = store.latest_dataframe("sfxi_vec8/vec8")
     assert record is not None
     _vec8_df(design_prefix="eth", v11=9.9).to_parquet(record.path, index=False)
 
-    result = CliRunner().invoke(app, ["aggregate-sfxi-vec8", str(cfg_path), "--out-dir", str(tmp_path / "aggregate")])
+    result = CliRunner().invoke(
+        app,
+        ["aggregate-sfxi-vec8", str(cfg_path), "--output-experiment", str(output_config)],
+    )
 
     assert result.exit_code == 1
     assert "could not load 'sfxi_vec8/vec8' dataframe artifact" in result.output
@@ -516,7 +536,8 @@ def test_writer_rejects_non_file_existing_targets_before_overwrite(tmp_path: Pat
 def test_cli_aggregate_sfxi_vec8_writes_json_summary(tmp_path: Path) -> None:
     exp_a = _write_experiment_with_vec8(tmp_path, experiment_id="20260706_sfxi", design_prefix="eth", v11=1.0)
     exp_b = _write_experiment_with_vec8(tmp_path, experiment_id="20260707_sfxi", design_prefix="and", v11=0.5)
-    out_dir = tmp_path / "aggregate"
+    output_config = _write_output_experiment(tmp_path)
+    out_dir = output_config.parent / "outputs"
 
     result = CliRunner().invoke(
         app,
@@ -524,30 +545,71 @@ def test_cli_aggregate_sfxi_vec8_writes_json_summary(tmp_path: Path) -> None:
             "aggregate-sfxi-vec8",
             str(exp_a),
             str(exp_b),
-            "--out-dir",
-            str(out_dir),
+            "--output-experiment",
+            str(output_config),
             "--format",
             "json",
         ],
     )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"] == {"sources": 2, "rows": 4, "channels": 8}
-    assert Path(payload["artifacts"]["heatmap"]).exists()
-    assert Path(payload["artifacts"]["tidy"]).exists()
-    assert Path(payload["artifacts"]["manifest"]).exists()
+    for artifact_id in ("heatmap", "tidy", "manifest"):
+        artifact = Path(payload["artifacts"][artifact_id])
+        assert artifact.is_relative_to(out_dir)
+        assert artifact.exists()
+
+
+def test_cli_aggregate_sfxi_vec8_requires_explicit_output_experiment(tmp_path: Path, monkeypatch) -> None:
+    config = _write_experiment_with_vec8(
+        tmp_path,
+        experiment_id="20260706_sfxi",
+        design_prefix="eth",
+        v11=1.0,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["aggregate-sfxi-vec8", str(config)])
+
+    assert result.exit_code == 2
+    assert "--output-experiment" in result.output
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_cli_aggregate_sfxi_vec8_rejects_output_config_outside_experiments(tmp_path: Path) -> None:
+    source = _write_experiment_with_vec8(
+        tmp_path,
+        experiment_id="20260706_sfxi",
+        design_prefix="eth",
+        v11=1.0,
+    )
+    output_root = tmp_path / "standalone_output"
+    output_root.mkdir()
+    output_config = write_config(
+        output_root,
+        base_reader_config(experiment_id="standalone_output", lifecycle="draft"),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["aggregate-sfxi-vec8", str(source), "--output-experiment", str(output_config)],
+    )
+
+    assert result.exit_code == 2
+    assert "must live under" in result.output
+    assert not (output_root / "outputs").exists()
 
 
 def test_cli_aggregate_sfxi_vec8_requires_overwrite_for_existing_bundle(tmp_path: Path) -> None:
     exp_a = _write_experiment_with_vec8(tmp_path, experiment_id="20260706_sfxi", design_prefix="eth", v11=1.0)
-    out_dir = tmp_path / "aggregate"
+    output_config = _write_output_experiment(tmp_path)
     runner = CliRunner()
     command = [
         "aggregate-sfxi-vec8",
         str(exp_a),
-        "--out-dir",
-        str(out_dir),
+        "--output-experiment",
+        str(output_config),
         "--format",
         "json",
     ]

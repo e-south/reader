@@ -14,7 +14,6 @@ from __future__ import annotations
 import importlib.util
 from collections.abc import Mapping
 from contextlib import suppress
-from pathlib import Path
 from typing import Literal
 
 import pandas as pd
@@ -24,7 +23,7 @@ from reader.domains.cytometry.io.fcs import parse_fcs_file
 from reader.errors import ParseError
 from reader.plugins.ingest._discovery import discover_auto_input_files
 from reader.plugins.ingest.discovery_policy import DEFAULT_EXCLUDE
-from reader.workbench.ports import dataframe_output, file_path_input
+from reader.workbench.ports import dataframe_output, file_set_input
 from reader.workbench.registry import Plugin, PluginConfig, PreflightIssue
 
 DEFAULT_FCS_INCLUDE = ("*.fcs", "*.FCS")
@@ -56,7 +55,7 @@ class FlowCytometerIngest(Plugin):
 
     @classmethod
     def input_ports(cls):
-        return {"raw": file_path_input("raw", optional=True)}
+        return {"raw": file_set_input("raw", optional=True)}
 
     @classmethod
     def output_ports(cls):
@@ -91,9 +90,12 @@ class FlowCytometerIngest(Plugin):
                 issues.append(PreflightIssue(kind="file", message=str(err)))
         return tuple(issues)
 
-    def _discover(self, ctx, cfg: FlowCytometerCfg) -> list[Path]:
-        return discover_auto_input_files(
-            exp_dir=ctx.exp_dir,
+    @classmethod
+    def resolve_missing_file_inputs(cls, *, exp_dir, cfg: FlowCytometerCfg, inputs):
+        if "raw" in inputs:
+            return {}
+        files = discover_auto_input_files(
+            exp_dir=exp_dir,
             auto_roots=cfg.auto_roots,
             auto_include=cfg.auto_include,
             auto_exclude=cfg.auto_exclude,
@@ -102,9 +104,10 @@ class FlowCytometerIngest(Plugin):
             discovery_label=".fcs files",
             singular_label=".fcs file",
         )
+        return {"raw": tuple(files)}
 
     def run(self, ctx, inputs, cfg: FlowCytometerCfg):
-        files = [inputs["raw"]] if "raw" in inputs else self._discover(ctx, cfg)
+        files = tuple(inputs["raw"])
         channel_map = {str(k): str(v) for k, v in (cfg.channel_map or {}).items()}
         drop_channels = {str(c) for c in (cfg.drop_channels or [])}
 

@@ -6,23 +6,28 @@ from typing import Any
 
 import pandas as pd
 
-from reader.errors import RecordError, SFXIError
-from reader.workbench.config import ReaderSpec
-from reader.workbench.paths import resolve_path_within_root
+from reader.errors import SFXIError
 
 from .checks import finite_numeric_column, require_vec8_columns
-from .constants import DIRECT_TABLE_SUFFIXES, METADATA_COLUMNS, SFXI_VEC8_RECORD_ID, VEC8_CHANNELS
+from .constants import DIRECT_TABLE_SUFFIXES, METADATA_COLUMNS, VEC8_CHANNELS
 from .model import LoadedSFXIVec8Source, SFXIVec8Aggregate, SFXIVec8Source
 
 
-def load_sfxi_vec8_sources(sources: list[str | Path] | tuple[str | Path, ...]) -> SFXIVec8Aggregate:
+def aggregate_sfxi_vec8_sources(
+    sources: list[LoadedSFXIVec8Source] | tuple[LoadedSFXIVec8Source, ...],
+) -> SFXIVec8Aggregate:
+    """Validate and combine already-resolved vec8 sources.
+
+    Resolving experiment configurations and record catalogs is a runtime concern.
+    This domain operation accepts explicit source data and owns only SFXI vec8
+    validation and normalization.
+    """
     if not sources:
         raise SFXIError("SFXI vec8 aggregate requires at least one source.")
 
     frames: list[pd.DataFrame] = []
     source_records: list[SFXIVec8Source] = []
-    for source_index, raw_source in enumerate(sources):
-        loaded = _load_source(Path(raw_source).expanduser())
+    for source_index, loaded in enumerate(sources):
         normalized = _normalize_vec8_frame(loaded, source_index=source_index)
         frames.append(normalized)
         source_records.append(
@@ -44,71 +49,18 @@ def load_sfxi_vec8_sources(sources: list[str | Path] | tuple[str | Path, ...]) -
     return SFXIVec8Aggregate(frame=frame, sources=tuple(source_records))
 
 
-def _load_source(path: Path) -> LoadedSFXIVec8Source:
+def load_sfxi_vec8_table(path: str | Path) -> LoadedSFXIVec8Source:
+    """Load one explicit vec8 table without consulting workbench state."""
+
+    path = Path(path).expanduser()
     resolved = path.resolve()
-    if resolved.is_dir():
-        config_path = resolved / "config.yaml"
-        if config_path.exists():
-            return _load_experiment_config(config_path)
-        records_path = resolved / "manifests" / "records.json"
-        if records_path.exists():
-            return _load_outputs_dir(resolved, source_id=resolved.parent.name, source_path=resolved)
-        raise SFXIError(
-            "SFXI vec8 aggregate directory sources must be experiment directories, outputs directories, "
-            f"or table files: {resolved}"
-        )
     if not resolved.exists():
         raise SFXIError(f"SFXI vec8 aggregate source does not exist: {resolved}")
-    if resolved.name == "config.yaml" or resolved.suffix.lower() in {".yaml", ".yml"}:
-        return _load_experiment_config(resolved)
+    if not resolved.is_file():
+        raise SFXIError(f"SFXI vec8 aggregate table source must be a file: {resolved}")
     if resolved.suffix.lower() in DIRECT_TABLE_SUFFIXES:
         return _load_direct_table(resolved)
-    raise SFXIError(f"Unsupported SFXI vec8 aggregate source: {resolved}")
-
-
-def _load_experiment_config(config_path: Path) -> LoadedSFXIVec8Source:
-    spec = ReaderSpec.load(config_path)
-    root = config_path.parent.resolve()
-    try:
-        outputs_dir = resolve_path_within_root(spec.paths.outputs, root=root)
-    except ValueError as exc:
-        raise SFXIError(f"SFXI vec8 aggregate could not resolve paths.outputs for {config_path}.") from exc
-    return _load_outputs_dir(outputs_dir, source_id=spec.experiment.id, source_path=config_path.resolve())
-
-
-def _load_outputs_dir(
-    outputs_dir: Path,
-    *,
-    source_id: str,
-    source_path: Path,
-) -> LoadedSFXIVec8Source:
-    from reader.runtime import builtin_runtime  # noqa: PLC0415
-
-    store = builtin_runtime().record_store(outputs_dir, create=False)
-    if not store.catalog_exists():
-        raise SFXIError(
-            f"SFXI vec8 aggregate could not find {SFXI_VEC8_RECORD_ID!r} because records catalog is missing under "
-            f"{outputs_dir}. "
-            "Run `uv run reader run <config>` first or pass an explicit vec8 table file."
-        )
-    try:
-        record = store.latest_dataframe(SFXI_VEC8_RECORD_ID)
-    except RecordError as exc:
-        raise SFXIError(f"SFXI vec8 aggregate could not read records catalog: {store.records_path}") from exc
-    if record is None:
-        raise SFXIError(
-            f"SFXI vec8 aggregate could not find {SFXI_VEC8_RECORD_ID!r} under {outputs_dir}. "
-            "Run `uv run reader run <config>` first or pass an explicit vec8 table file."
-        )
-    return LoadedSFXIVec8Source(
-        source_id=source_id,
-        source_path=source_path.resolve(),
-        table_path=record.path.resolve(),
-        source_kind="record",
-        frame=_load_record_frame(record, outputs_dir=outputs_dir),
-        record_id=SFXI_VEC8_RECORD_ID,
-        record_metadata=_record_metadata(record),
-    )
+    raise SFXIError(f"Unsupported SFXI vec8 table format: {resolved}")
 
 
 def _load_direct_table(path: Path) -> LoadedSFXIVec8Source:
@@ -119,16 +71,6 @@ def _load_direct_table(path: Path) -> LoadedSFXIVec8Source:
         source_kind="table",
         frame=_read_table(path),
     )
-
-
-def _load_record_frame(record: Any, *, outputs_dir: Path) -> pd.DataFrame:
-    try:
-        return record.load_dataframe()
-    except Exception as exc:
-        raise SFXIError(
-            f"SFXI vec8 aggregate could not load {SFXI_VEC8_RECORD_ID!r} dataframe artifact under {outputs_dir}: "
-            f"{record.path}"
-        ) from exc
 
 
 def _direct_table_source_id(path: Path) -> str:
@@ -208,19 +150,6 @@ def _require_unique_source_ids(sources: list[SFXIVec8Source]) -> None:
     duplicates = sorted(values[values.duplicated(keep=False)].dropna().unique().tolist())
     if duplicates:
         raise SFXIError("SFXI vec8 aggregate source_id values must be unique: " + ", ".join(map(str, duplicates)))
-
-
-def _record_metadata(record: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "contract_id": record.contract_id,
-        "content_digest": record.content_digest,
-        "config_digest": record.config_digest,
-        "created_at": record.created_at,
-        "producer": record.producer.to_dict(),
-    }
-    if getattr(record, "code_digest", ""):
-        payload["code_digest"] = record.code_digest
-    return payload
 
 
 def _nonempty_string_column(series: pd.Series, *, column: str, source: Path) -> pd.Series:

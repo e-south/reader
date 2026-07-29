@@ -22,3 +22,19 @@ def test_cytometry_template_exports_polars_statistics_through_public_api() -> No
 
     assert "cyto_stats_sample.write_csv(_stats_target)" in template
     assert "cyto_stats_sample.to_csv(_stats_target, index=False)" not in template
+
+
+def test_cytometry_template_publishes_one_confined_manifest_backed_bundle() -> None:
+    template = resolve_notebook_template_descriptor("notebook/cytometry").load_body()
+
+    assert "publish_notebook_artifact_bundle" in template
+    assert template.count("NotebookArtifactSpec(") == 3
+    assert 'upstream_records={"events": selected_record_id}' in template
+    assert 'relative_path="cytometry_eda.pdf"' in template
+    assert 'relative_path="cytometry_stats.csv"' in template
+    assert 'relative_path="cytometry_gates.json"' in template
+    assert "cyto_plot_export_path" not in template
+    assert "cyto_stats_export_path" not in template
+    assert "cyto_gate_export_path" not in template
+    assert ".expanduser()" not in template
+    assert ".parent.mkdir(" not in template

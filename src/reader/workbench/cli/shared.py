@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import subprocess  # noqa: F401
 import sys  # noqa: F401
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import typer
@@ -14,6 +14,15 @@ from rich.theme import Theme
 from rich.traceback import install as rich_tracebacks
 
 from reader.errors import ReaderError
+
+from .automation import (
+    emit_document,
+    error_envelope,
+    json_requested,
+    reader_error_details,
+    success_envelope,
+)
+from .pagination import Page, PageRequestError, page_collection
 
 THEME = Theme(
     {
@@ -117,11 +126,25 @@ def table(title: str) -> Table:
 
 
 def abort(msg: str, *, code: int = 1) -> None:
+    if json_requested():
+        emit_document(
+            error_envelope(
+                code="command_rejected",
+                field="command",
+                reason=msg,
+                remediation="Correct the reported command state, then retry.",
+                retryable=False,
+            )
+        )
+        raise typer.Exit(code=code)
     console.print(Panel.fit(f"[error]✗ {msg}[/error]", border_style="error", box=box.ROUNDED))
     raise typer.Exit(code=code)
 
 
 def handle_reader_error(err: ReaderError) -> None:
+    if json_requested():
+        emit_document(error_envelope(**reader_error_details(err)))
+        raise typer.Exit(code=1)
     abort(str(err))
 
 
@@ -137,6 +160,64 @@ def normalize_output_format(
     if fmt not in allowed:
         raise typer.BadParameter(f"format must be one of: {', '.join(allowed)}")
     return fmt
+
+
+def normalize_semantic_section(
+    value: str | None,
+    *,
+    allowed: Sequence[str],
+    format: str,
+) -> str | None:
+    if not isinstance(value, str):
+        return None
+    section = value.strip().lower()
+    if format != "json":
+        raise typer.BadParameter("--section requires --format json", param_hint="--section")
+    if section not in allowed:
+        raise typer.BadParameter(
+            f"section must be one of: {', '.join(allowed)}",
+            param_hint="--section",
+        )
+    return section
+
+
+def normalize_paging_options(
+    limit: int | object,
+    continuation: str | object,
+) -> tuple[int | None, str | None]:
+    normalized_limit = limit if type(limit) is int else None
+    normalized_continuation = continuation.strip() if isinstance(continuation, str) else None
+    return normalized_limit, normalized_continuation or None
+
+
+def page_json_collection[T](
+    items: Sequence[T],
+    *,
+    key: Callable[[T], str],
+    surface: str,
+    selection: Mapping[str, object],
+    limit: int | None,
+    continuation: str | None,
+) -> Page[T]:
+    try:
+        return page_collection(
+            items,
+            key=key,
+            surface=surface,
+            selection=selection,
+            limit=limit,
+            continuation=continuation,
+        )
+    except PageRequestError as exc:
+        option = f"--{exc.field.replace('_', '-')}"
+        raise typer.BadParameter(str(exc), param_hint=option) from exc
+
+
+def require_json_paging(*, format: str, limit: int | None, continuation: str | None) -> None:
+    if format == "json" or (limit is None and continuation is None):
+        return
+    option = "--continuation" if continuation is not None else "--limit"
+    raise typer.BadParameter(f"{option} requires --format json", param_hint=option)
 
 
 def normalize_flag(value: bool | object, *, default: bool = False) -> bool:
@@ -190,5 +271,37 @@ def json_friendly(value):
     return value
 
 
-def emit_json(payload: object) -> None:
-    typer.echo(json.dumps(json_friendly(payload), indent=2, sort_keys=True))
+def emit_json(
+    payload: object,
+    *,
+    projection: str = "full",
+    truncated: bool = False,
+    continuation: str | None = None,
+) -> None:
+    emit_document(
+        success_envelope(
+            json_friendly(payload),
+            projection=projection,
+            truncated=truncated,
+            continuation=continuation,
+        )
+    )
+
+
+def emit_json_error(
+    *,
+    code: str,
+    field: str,
+    reason: str,
+    remediation: str,
+    retryable: bool = False,
+) -> None:
+    emit_document(
+        error_envelope(
+            code=code,
+            field=field,
+            reason=reason,
+            remediation=remediation,
+            retryable=retryable,
+        )
+    )

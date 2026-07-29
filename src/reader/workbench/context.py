@@ -32,3 +32,4 @@ class RunContext:
     palette_book: PaletteBook | None
     experiment: ExperimentSemantics | None = None
     protocol: BoundProtocol | None = None
+    config_digest: str = ""

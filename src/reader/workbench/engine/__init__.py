@@ -10,9 +10,10 @@ from .contracts import (
 )
 from .execution import execute_step, run_steps
 from .inputs import _resolve_inputs
+from .invocations import ExecutionResult, ProducedRecordRevision, SelectedSteps
 from .planning import build_next_steps, explain
 from .runtime import run_job, run_spec
-from .setup import build_run_context, configure_logger, resolve_palette_book, slice_pipeline_steps
+from .setup import build_run_context, configure_logger, normalize_log_level, resolve_palette_book, slice_pipeline_steps
 from .validation import validate, validation_summary
 
 __all__ = [
@@ -24,13 +25,17 @@ __all__ = [
     "build_run_context",
     "build_next_steps",
     "configure_logger",
+    "ExecutionResult",
     "execute_step",
     "explain",
     "load_plugin_catalog",
+    "normalize_log_level",
+    "ProducedRecordRevision",
     "resolve_palette_book",
     "run_job",
     "run_steps",
     "run_spec",
+    "SelectedSteps",
     "slice_pipeline_steps",
     "validate",
     "validation_summary",

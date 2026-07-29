@@ -15,6 +15,7 @@ class NotebookDeliverables:
     record_rows: tuple[dict[str, Any], ...]
     plot_rows: tuple[dict[str, Any], ...]
     export_rows: tuple[dict[str, Any], ...]
+    notebook_artifact_rows: tuple[dict[str, Any], ...]
     notebook_rows: tuple[dict[str, Any], ...]
     issue_rows: tuple[dict[str, Any], ...]
 
@@ -24,6 +25,11 @@ def render_notebook_deliverables_panel(mo: Any, deliverables: NotebookDeliverabl
         "Summary": _render_table(mo, deliverables.summary_rows, "No deliverable summary is available."),
         "Plots": _render_table(mo, deliverables.plot_rows, "No plot files are registered yet."),
         "Exports": _render_table(mo, deliverables.export_rows, "No export files are registered yet."),
+        "Notebook artifacts": _render_table(
+            mo,
+            deliverables.notebook_artifact_rows,
+            "No notebook artifact files are registered yet.",
+        ),
         "Records": _render_table(mo, deliverables.record_rows, "No dataframe records are registered yet."),
         "Notebooks": _render_table(mo, deliverables.notebook_rows, "No generated notebooks were found."),
     }
@@ -44,6 +50,7 @@ def collect_notebook_deliverables(outputs_dir: Path, *, notebooks_dir: Path | No
     record_rows: list[dict[str, Any]] = []
     plot_rows: list[dict[str, Any]] = []
     export_rows: list[dict[str, Any]] = []
+    notebook_artifact_rows: list[dict[str, Any]] = []
 
     runtime = builtin_runtime()
     try:
@@ -61,12 +68,15 @@ def collect_notebook_deliverables(outputs_dir: Path, *, notebooks_dir: Path | No
                 plot_rows.extend(_file_rows(record, outputs_dir=outputs))
             elif record.producer.kind == "export":
                 export_rows.extend(_file_rows(record, outputs_dir=outputs))
+            elif record.producer.kind == "notebook":
+                notebook_artifact_rows.extend(_file_rows(record, outputs_dir=outputs))
 
     notebook_rows = _notebook_rows(notebooks, outputs_dir=outputs)
     summary_rows = (
         {"Deliverable": "Dataframe records", "Count": len(record_rows)},
         {"Deliverable": "Plot files", "Count": len(plot_rows)},
         {"Deliverable": "Export files", "Count": len(export_rows)},
+        {"Deliverable": "Notebook artifact files", "Count": len(notebook_artifact_rows)},
         {"Deliverable": "Generated notebooks", "Count": len(notebook_rows)},
     )
     return NotebookDeliverables(
@@ -74,6 +84,7 @@ def collect_notebook_deliverables(outputs_dir: Path, *, notebooks_dir: Path | No
         record_rows=tuple(record_rows),
         plot_rows=tuple(plot_rows),
         export_rows=tuple(export_rows),
+        notebook_artifact_rows=tuple(notebook_artifact_rows),
         notebook_rows=tuple(notebook_rows),
         issue_rows=tuple(issue_rows),
     )
@@ -103,7 +114,9 @@ def _file_rows(record: FileBundleRecord, *, outputs_dir: Path) -> list[dict[str,
     rows = []
     for path in record.files:
         description = (
-            descriptions_by_path.get(path, bundle_description) if record.producer.kind == "plot" else bundle_description
+            descriptions_by_path.get(path, bundle_description)
+            if record.producer.kind in {"plot", "notebook"}
+            else bundle_description
         )
         rows.append(
             {

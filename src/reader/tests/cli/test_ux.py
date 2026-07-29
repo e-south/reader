@@ -9,7 +9,6 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -22,7 +21,14 @@ from typer.testing import CliRunner
 from reader.contracts import builtin_contract_catalog
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
 from reader.runtime import ReaderRuntime
-from reader.tests.support import base_reader_config, build_decl, default_notebook_name, write_config
+from reader.tests.support import (
+    base_reader_config,
+    build_decl,
+    cli_error_data,
+    cli_success_data,
+    default_notebook_name,
+    write_config,
+)
 from reader.workbench import PluginSemantics, cli
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
 from reader.workbench.config import ReaderSpec
@@ -100,7 +106,7 @@ def test_ls_excludes_template_dirs_by_default(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert [item["name"] for item in payload["experiments"]] == ["real_exp"]
 
 
@@ -145,7 +151,7 @@ def test_ls_preserves_shared_numeric_indexes_when_scaffolds_are_hidden(tmp_path:
     result = runner.invoke(cli.app, ["ls", "--root", str(exp_root), "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert [item["name"] for item in payload["experiments"]] == ["real_exp"]
     assert [item["index"] for item in payload["experiments"]] == [2]
 
@@ -248,7 +254,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
         ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["catalog"]["kind"] == "experiments"
     assert payload["catalog"]["root"] == str(exp_root.resolve())
     assert payload["selection"]["details"] is True
@@ -256,7 +262,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert payload["selection"]["include_scaffolds"] is False
     assert payload["summary"]["experiments"] == 2
     assert payload["summary"]["by_lifecycle"] == {"active": 1, "unknown": 1}
-    assert payload["summary"]["by_readiness"] == {"config_error": 1, "records_ready": 1}
+    assert payload["summary"]["by_readiness"] == {"catalog_ready": 1, "config_error": 1}
     assert payload["summary"]["by_status"] == {"config_error": 1, "ok": 1}
     assert payload["summary"]["by_protocol"] == {"plate_reader/dual_reporter_screen": 1}
     assert payload["summary"]["outputs"] == {"with_outputs": 1, "without_outputs": 1}
@@ -268,8 +274,9 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
     assert by_name["good_exp"]["selected"]["plot_profile"] == "none"
     assert by_name["good_exp"]["lifecycle"] == "active"
     assert by_name["good_exp"]["status"] == "ok"
-    assert by_name["good_exp"]["readiness"]["state"] == "records_ready"
-    assert by_name["good_exp"]["readiness"]["capabilities"]["plot"] is True
+    assert by_name["good_exp"]["readiness"]["state"] == "catalog_ready"
+    assert by_name["good_exp"]["readiness"]["capabilities"]["plot"] is False
+    assert by_name["good_exp"]["readiness"]["capabilities"]["verify"] is True
     assert by_name["broken_exp"]["status"] == "config_error"
     assert by_name["broken_exp"]["readiness"]["state"] == "config_error"
     assert "protocol" in by_name["broken_exp"]["error"]
@@ -304,7 +311,7 @@ def test_ls_json_surfaces_uncataloged_outputs(tmp_path: Path) -> None:
         ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"]["by_readiness"] == {"uncataloged_outputs_present": 1}
     entry = payload["experiments"][0]
     assert entry["readiness"]["state"] == "uncataloged_outputs_present"
@@ -328,7 +335,7 @@ def test_ls_json_does_not_treat_notebook_only_scaffolds_as_uncataloged_outputs(t
         ["ls", "--root", str(exp_root), "--details", "--readiness", "--format", "json"],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"]["by_readiness"] == {"runnable": 1}
     entry = payload["experiments"][0]
     assert entry["readiness"]["state"] == "runnable"
@@ -353,11 +360,12 @@ def test_ls_json_does_not_treat_empty_record_catalog_as_records_ready(tmp_path: 
     )
 
     assert result.exit_code == 0
-    readiness = json.loads(result.output)["experiments"][0]["readiness"]
+    readiness = cli_success_data(result.output)["experiments"][0]["readiness"]
     assert readiness["state"] == "runnable"
     assert readiness["records"] == {
         "catalog": True,
         "available": False,
+        "verification": None,
         "uncataloged_outputs_present": False,
     }
     assert readiness["capabilities"]["records"] is False
@@ -401,7 +409,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
         ],
     )
     assert by_protocol.exit_code == 0
-    protocol_payload = json.loads(by_protocol.output)
+    protocol_payload = cli_success_data(by_protocol.output)
     assert protocol_payload["summary"]["experiments"] == 1
     assert protocol_payload["selection"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert protocol_payload["experiments"][0]["name"] == "good_plate"
@@ -411,7 +419,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
         ["ls", "--root", str(exp_root), "--details", "--status", "config_error", "--format", "json"],
     )
     assert by_status.exit_code == 0
-    status_payload = json.loads(by_status.output)
+    status_payload = cli_success_data(by_status.output)
     assert status_payload["summary"]["experiments"] == 1
     assert status_payload["selection"]["status"] == "config_error"
     assert status_payload["experiments"][0]["name"] == "broken_exp"
@@ -421,7 +429,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
         ["ls", "--root", str(exp_root), "--details", "--protocol", "logic/sfxi_screen", "--format", "json"],
     )
     assert no_matches.exit_code == 0
-    empty_payload = json.loads(no_matches.output)
+    empty_payload = cli_success_data(no_matches.output)
     assert empty_payload["summary"]["experiments"] == 0
     assert empty_payload["selection"]["protocol"] == "logic/sfxi_screen"
     assert empty_payload["experiments"] == []
@@ -442,7 +450,7 @@ def test_ls_can_filter_by_lifecycle_and_surface_draft_readiness(tmp_path: Path) 
         ["ls", "--root", str(exp_root), "--details", "--readiness", "--lifecycle", "draft", "--format", "json"],
     )
     assert by_lifecycle.exit_code == 0
-    payload = json.loads(by_lifecycle.output)
+    payload = cli_success_data(by_lifecycle.output)
     assert payload["summary"]["experiments"] == 1
     assert payload["selection"]["lifecycle"] == "draft"
     assert payload["summary"]["by_lifecycle"] == {"draft": 1}
@@ -495,7 +503,7 @@ def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["steps", str(cfg), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
@@ -524,7 +532,7 @@ def test_config_json_surfaces_authoring_semantics_and_implementation(tmp_path: P
     runner = CliRunner()
     result = runner.invoke(cli.app, ["config", str(cfg), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["schema"] == "reader/v8"
@@ -548,7 +556,7 @@ def test_explain_json_surfaces_compiled_plan(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["explain", str(cfg), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
@@ -571,7 +579,7 @@ def test_validate_json_surfaces_preflight_summary(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["validate", str(cfg), "--no-files", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["selection"]["check_files"] is False
     assert payload["summary"]["status"] == "ok"
@@ -597,7 +605,7 @@ def test_validate_json_surfaces_file_check_selection(monkeypatch, tmp_path: Path
     runner = CliRunner()
     result = runner.invoke(cli.app, ["validate", str(cfg), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["selection"]["check_files"] is True
     assert payload["summary"]["status"] == "ok"
     assert payload["validation"]["files"]["checked"] is True
@@ -614,11 +622,9 @@ def test_validate_json_surfaces_runtime_readiness_errors(tmp_path: Path) -> None
     runner = CliRunner()
     result = runner.invoke(cli.app, ["validate", str(cfg), "--format", "json"])
     assert result.exit_code == 1
-    payload = json.loads(result.output)
-    assert payload["summary"]["status"] == "error"
-    assert payload["validation"]["files"]["mode"] == "error"
-    assert payload["validation"]["dependencies"]["summary"] == "ok"
-    assert any("No raw .xlsx files discovered" in item for item in payload["validation"]["errors"])
+    error = cli_error_data(result.output)
+    assert error["code"] == "validation_failed"
+    assert "No raw .xlsx files discovered" in error["reason"]
 
 
 class _PluginCfg(PluginConfig):
@@ -897,7 +903,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Experiment overview" in result.output
     assert "Readiness" in result.output
-    assert "records ready" in result.output
+    assert "catalog ready" in result.output
     assert "Config values" in result.output
     assert "Semantic Program" in result.output
     assert "fold_change.report_times" in result.output
@@ -933,7 +939,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["experiment"]["lifecycle"] == "active"
@@ -946,9 +952,10 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     assert payload["authoring"]["inputs"]["fold_change"]["report_times"] == [14.0]
     assert "sample_map" in payload["implementation"]["plan"]["resources"]
     assert payload["implementation"]["inputs"]["counts"]["files"] == 2
-    assert payload["implementation"]["readiness"]["state"] == "records_ready"
+    assert payload["implementation"]["readiness"]["state"] == "catalog_ready"
     assert payload["implementation"]["readiness"]["capabilities"]["run"] is True
-    assert payload["implementation"]["readiness"]["capabilities"]["plot"] is True
+    assert payload["implementation"]["readiness"]["capabilities"]["plot"] is False
+    assert payload["implementation"]["readiness"]["records"]["verification"] == "unverifiable"
     assert payload["implementation"]["readiness"]["records"]["catalog"] is True
     assert payload["implementation"]["generated"]["records"][0]["record_id"] == "ingest/df"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
@@ -981,7 +988,7 @@ def test_protocols_command_can_emit_json() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["protocols", "plate_reader/dual_reporter_screen", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     metrics = {item["id"]: item for item in payload["semantics"]["program"]["metrics"]}
     assert payload["protocol"] == "plate_reader/dual_reporter_screen"
@@ -1011,7 +1018,7 @@ def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> No
     runner = CliRunner()
     result = runner.invoke(cli.app, ["protocols", "logic/sfxi_screen", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     assert payload["protocol"] == "logic/sfxi_screen"
     assert payload["semantics"]["program"]["summary"]["total"] == 3
@@ -1028,7 +1035,7 @@ def test_protocols_command_json_surfaces_retron_sponge_semantics() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["protocols", "plate_reader/retron_sponge_screen", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
@@ -1099,7 +1106,7 @@ def test_inspect_json_surfaces_active_single_reporter_semantic_profile(tmp_path:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
@@ -1157,7 +1164,7 @@ def test_inspect_json_surfaces_active_single_reporter_retron_sponge_profile(tmp_
     runner = CliRunner()
     result = runner.invoke(cli.app, ["inspect", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
     program = payload["semantics"]["program"]
     metrics = {item["id"]: item for item in program["metrics"]}
@@ -1338,7 +1345,7 @@ def test_plugins_command_can_emit_json() -> None:
         ["plugins", "--protocol", "plate_reader/dual_reporter_screen", "--category", "transform", "--format", "json"],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["selection"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["selection"]["category"] == "transform"
     assert payload["summary"]["plugins"] >= 1
@@ -1376,7 +1383,7 @@ def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["records", str(cfg_path), "--all", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["catalog"]["path"].endswith("outputs/manifests/records.json")
     assert payload["selection"]["include_history"] is True
@@ -1410,7 +1417,7 @@ def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -
     runner = CliRunner()
     result = runner.invoke(cli.app, ["records", str(cfg_path), "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["id"] == "exp"
     assert payload["selection"]["include_history"] is False
     assert payload["summary"]["records"] == 1

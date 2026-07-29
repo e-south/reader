@@ -1,4 +1,4 @@
-"""Assay-neutral navigation contracts for notebook review collections."""
+"""Assay-neutral identity and navigation contracts for review collections."""
 
 from __future__ import annotations
 

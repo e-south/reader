@@ -85,3 +85,4 @@ class WorkbenchDecl:
     plots: SurfaceDecl
     exports: SurfaceDecl
     notebooks: NotebookDecl
+    config_digest: str = ""

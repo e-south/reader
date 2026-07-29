@@ -191,8 +191,8 @@ def _with_value_provenance(frame: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
         if not affected.eq(bounds.ne("exact")).all():
             raise ValueError("ratio: clipping and overflow provenance disagrees with value_bound_kind")
         if "overflow" in result.columns:
-            legacy_overflow = _strict_boolean(result["overflow"], field="overflow")
-            if not legacy_overflow.eq(instrument_overflow).all():
+            observed_overflow = _strict_boolean(result["overflow"], field="overflow")
+            if not observed_overflow.eq(instrument_overflow).all():
                 raise ValueError("ratio: overflow disagrees with explicit instrument-overflow provenance")
     else:
         policy_clipped = pd.Series(False, index=result.index, dtype=bool)

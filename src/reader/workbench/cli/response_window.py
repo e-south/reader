@@ -12,8 +12,9 @@ from rich.panel import Panel
 
 from reader.errors import ReaderError
 
+from .helpers import resolve_output_experiment
 from .notebooks import _launch_marimo
-from .shared import app, console, emit_json, normalize_output_format, table
+from .shared import app, console, emit_json, emit_json_error, normalize_output_format, table
 
 if TYPE_CHECKING:
     from reader.response_window import ResponseWindowBundle, ResponseWindowPreflight
@@ -64,7 +65,15 @@ def preflight(
         raise typer.BadParameter(str(exc)) from exc
     fmt = normalize_output_format(output_format)
     if fmt == "json":
-        emit_json(result.to_payload())
+        if result.ready:
+            emit_json(result.to_payload())
+        else:
+            emit_json_error(
+                code="preflight_failed",
+                field="request",
+                reason="Response-window preflight did not satisfy all readiness checks.",
+                remediation="Correct the failed source, reduction, aggregation, or QC checks, then run preflight again.",
+            )
     else:
         _render_preflight(result)
     if not result.ready:
@@ -74,7 +83,14 @@ def preflight(
 @response_window_app.command("build", help="Materialize an atomic, verified response-window bundle.")
 def build(
     request: Annotated[Path, typer.Argument(help="Path to a reader.response_window.request.v3 YAML file.")],
-    out_dir: Annotated[Path, typer.Option("--out-dir", help="Generated bundle destination.")],
+    output_experiment: Annotated[
+        str,
+        typer.Option(
+            "--output-experiment",
+            metavar="CONFIG|DIR|INDEX",
+            help="Experiment that owns the generated response-window bundle.",
+        ),
+    ],
     reader_root: Annotated[Path, typer.Option("--reader-root", help="Reader repository root.")] = Path("."),
     overwrite: Annotated[bool, typer.Option("--overwrite", help="Atomically replace an existing bundle.")] = False,
     output_format: Annotated[
@@ -84,6 +100,7 @@ def build(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
+        out_dir = resolve_output_experiment(output_experiment)
         bundle = build_response_window_bundle(
             reader_root=reader_root,
             request_path=request,
@@ -145,7 +162,14 @@ def promoter_evidence(
         Path,
         typer.Argument(help="Verified study-issued promoter candidate-binding directory."),
     ],
-    out_dir: Annotated[Path, typer.Option("--out-dir", help="Promoter-evidence bundle destination.")],
+    output_experiment: Annotated[
+        str,
+        typer.Option(
+            "--output-experiment",
+            metavar="CONFIG|DIR|INDEX",
+            help="Experiment that owns the promoter-evidence bundle.",
+        ),
+    ],
     experiment_id: Annotated[str, typer.Option("--experiment-id", help="Exact Reader experiment ID.")],
     design_id: Annotated[str, typer.Option("--design-id", help="Exact Reader design alias.")],
     reduction_id: Annotated[str, typer.Option("--reduction-id", help="Exact response-window reduction ID.")],
@@ -164,6 +188,7 @@ def promoter_evidence(
 ) -> None:
     output_format = normalize_output_format(output_format)
     try:
+        out_dir = resolve_output_experiment(output_experiment)
         bundle = build_promoter_evidence_bundle(
             response_bundle_root=response_bundle_root,
             bindings_root=bindings_root,

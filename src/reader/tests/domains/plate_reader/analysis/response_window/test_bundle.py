@@ -10,7 +10,6 @@ import pytest
 import yaml
 
 from reader.domains.plate_reader.analysis.response_window import bundle as bundle_module
-from reader.domains.plate_reader.analysis.response_window.notebook import write_review_notebook
 from reader.domains.plate_reader.analysis.response_window.provenance import sha256_file
 from reader.errors import ContractError
 from reader.response_window import (
@@ -21,6 +20,7 @@ from reader.response_window import (
 )
 from reader.runtime import builtin_runtime
 from reader.tests.domains.plate_reader.analysis.response_window.test_response_window_contracts import _payload
+from reader.workbench.notebooks.response_window import write_review_notebook
 
 
 def test_response_window_bundle_declares_censor_aware_record_contracts() -> None:
@@ -378,6 +378,7 @@ def test_bundle_build_removes_staging_directory_on_interrupt(tmp_path: Path, mon
             out_dir=tmp_path / "latest",
             contracts=builtin_runtime().contracts,
             source_loader=lambda *_args: pytest.fail("source loader should not run"),
+            notebook_writer=write_review_notebook,
         )
 
     assert list(tmp_path.glob(".latest.staging-*")) == []
@@ -412,6 +413,7 @@ def test_bundle_build_does_not_replace_destination_created_while_staging(
             out_dir=destination,
             contracts=builtin_runtime().contracts,
             source_loader=lambda *_args: pytest.fail("source loader should not run"),
+            notebook_writer=write_review_notebook,
         )
 
     assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
@@ -451,6 +453,7 @@ def test_bundle_build_does_not_delete_destination_when_publish_rename_fails(
             out_dir=destination,
             contracts=builtin_runtime().contracts,
             source_loader=lambda *_args: pytest.fail("source loader should not run"),
+            notebook_writer=write_review_notebook,
         )
 
     assert (destination / "owner.txt").read_text(encoding="utf-8") == "concurrent output"
@@ -489,6 +492,7 @@ def test_bundle_build_rejects_non_directory_or_symlink_destination_before_stagin
             out_dir=destination,
             contracts=builtin_runtime().contracts,
             source_loader=lambda *_args: pytest.fail("source loader should not run"),
+            notebook_writer=write_review_notebook,
             overwrite=True,
         )
 

@@ -23,7 +23,7 @@ from .metrics import logic_asym
 
 @dataclass(frozen=True)
 class OverlayStyle:
-    # mode: "dot" (legacy) or "tiles" (4-square horizontal strip for 00/10/01/11)
+    # mode: "dot" or "tiles" (4-square horizontal strip for 00/10/01/11)
     mode: str = "dot"
 
     # shared appearance
@@ -33,7 +33,7 @@ class OverlayStyle:
     show_labels: bool = True
     label_offset: float = 0.02
     label_line_height: float = 0.018
-    label_fontsize: int = 12  # NEW: overlay label font
+    label_fontsize: int = 12
 
     # dot-specific
     size: float = 40.0

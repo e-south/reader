@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from reader.notebook_presentation import experiment_display_title
+from reader.workbench.notebooks.presentation import experiment_display_title
 
 
 @dataclass(frozen=True)

@@ -8,17 +8,29 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from reader.errors import ConfigError
+from reader.errors import ConfigError, ExecutionError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl, load_workbench_decl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
+from reader.workbench.paths import resolve_confined_sink_root
+from reader.workbench.records import current_build_identity
 
 from ._shared import collect_categories
 from .execution import run_steps
+from .invocations import (
+    ExecutionResult,
+    InvocationLedger,
+    ProducedRecordRevision,
+    SelectedSteps,
+    capture_revision_snapshot,
+    declared_input_projection,
+    produced_record_revisions,
+)
 from .planning import build_next_steps, explain
-from .setup import build_run_context, configure_logger, resolve_palette_book, slice_pipeline_steps
+from .setup import build_run_context, configure_logger, normalize_log_level, resolve_palette_book, slice_pipeline_steps
+from .validation import validation_summary
 
 
 def run_spec(
@@ -38,17 +50,19 @@ def run_spec(
     job_label: str | None = None,
     show_next_steps: bool = False,
     runtime: ReaderRuntime | None = None,
-) -> None:
+) -> ExecutionResult:
     os.environ.setdefault("ARROW_LOG_LEVEL", "FATAL")
     runtime = runtime or builtin_runtime()
     layout = decl.experiment_semantics.layout
-    out_dir = layout.outputs_dir.resolve()
+    try:
+        out_dir = resolve_confined_sink_root(layout.outputs_dir, root=decl.experiment.root, label="outputs")
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     if out_dir.exists() and not out_dir.is_dir():
         raise ConfigError(f"paths.outputs points to a file: {out_dir}")
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     console = console or Console()
-    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
+    normalize_log_level(log_level)
 
     workbench = resolve_workbench(decl)
     pipeline_steps = list(workbench.pipeline)
@@ -71,28 +85,33 @@ def run_spec(
         export_steps = []
 
     all_steps = pipeline_steps + plot_steps + export_steps
-    if plot_steps:
-        ensure_mpl_cache_dir()
-
-    plots_cfg = layout.plots_subdir
-    exports_cfg = layout.exports_subdir
-    store = runtime.record_store(
-        out_dir,
-        plots_subdir=(plots_cfg if plots_cfg not in ("", ".", "./") else None),
-        exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
-    )
-    ctx = build_run_context(
-        decl=decl,
-        runtime=runtime,
-        out_dir=out_dir,
-        store=store,
-        logger=logger,
-        palette_book=resolve_palette_book(decl=decl, steps=all_steps, dry_run=dry_run),
-    )
     categories = collect_categories(list(workbench.plugin_steps()))
     registry = runtime.plugins if categories else None
+    selected_steps = SelectedSteps(
+        pipeline=tuple(step.id for step in pipeline_steps),
+        plots=tuple(step.id for step in plot_steps),
+        exports=tuple(step.id for step in export_steps),
+    )
+    requested_operations = [
+        operation
+        for operation, enabled in (
+            ("run", include_pipeline),
+            ("plot", include_plots),
+            ("export", include_exports),
+        )
+        if enabled
+    ]
+    operation = requested_operations[0] if len(requested_operations) == 1 else "mixed"
 
     if dry_run:
+        validation_summary(
+            decl,
+            check_files=False,
+            exp_root=decl.experiment.root,
+            runtime=runtime,
+            plot_specs_override=plot_steps,
+            export_specs_override=export_steps,
+        )
         console.print(Panel.fit("DRY RUN — printing plan", border_style="yellow", box=box.ROUNDED))
         explain(
             decl,
@@ -102,76 +121,165 @@ def run_spec(
             export_specs=export_steps,
             runtime=runtime,
         )
-        return
-
-    ctx.logger.info(
-        "run • pipeline=%d step(s)%s • plots=%d spec(s) • exports=%d spec(s)",
-        len(pipeline_steps),
-        " (skipped)" if not include_pipeline else "",
-        len(plot_steps),
-        len(export_steps),
-    )
-    if not verbose:
-        console.print(
-            f"[accent]run[/accent] • pipeline={len(pipeline_steps)} step(s){' (skipped)' if not include_pipeline else ''} "
-            f"• plots={len(plot_steps)} spec(s) • exports={len(export_steps)} spec(s)"
+        return ExecutionResult(
+            invocation_id=None,
+            operation=operation,
+            status="planned",
+            dry_run=True,
+            selected_steps=selected_steps,
+            produced_record_revisions=(),
+            ledger_path=None,
         )
 
-    if pipeline_steps and registry is None:
-        raise ConfigError("pipeline execution requires plugin workbench steps")
-    if plot_steps and registry is None:
-        raise ConfigError("plot execution requires plugin workbench specs")
-    if export_steps and registry is None:
-        raise ConfigError("export execution requires plugin workbench specs")
-
-    run_steps(
-        items=pipeline_steps,
-        phase="pipeline",
-        verbose=verbose,
-        console=console,
-        ctx=ctx,
-        store=store,
-        registry=registry,
-    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
     if plot_steps:
-        run_steps(
-            items=plot_steps,
-            phase="plots",
-            verbose=verbose,
-            console=console,
-            ctx=ctx,
-            store=store,
-            registry=registry,
-        )
-    if export_steps:
-        run_steps(
-            items=export_steps,
-            phase="exports",
-            verbose=verbose,
-            console=console,
-            ctx=ctx,
-            store=store,
-            registry=registry,
-        )
+        ensure_mpl_cache_dir()
 
-    if show_next_steps:
-        next_steps = build_next_steps(decl, job_label=job_label, runtime=runtime)
-        table = Table(show_header=True, header_style="bold", box=box.ROUNDED, expand=False)
-        table.add_column("Command", style="accent")
-        table.add_column("What it does")
-        for command, description in next_steps:
-            table.add_row(command, description)
-        console.print(
-            Panel(
-                table,
-                border_style="green",
-                box=box.ROUNDED,
-                title=f"Records generated in [path]{out_dir}[/path]",
-                title_align="left",
-            )
+    plots_cfg = layout.plots_subdir
+    exports_cfg = layout.exports_subdir
+    store = runtime.record_store(
+        out_dir,
+        plots_subdir=(plots_cfg if plots_cfg not in ("", ".", "./") else None),
+        exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
+        experiment_root=decl.experiment.root,
+    )
+    ctx = build_run_context(
+        decl=decl,
+        runtime=runtime,
+        out_dir=out_dir,
+        store=store,
+        logger=logger,
+        palette_book=resolve_palette_book(decl=decl, steps=all_steps, dry_run=False),
+    )
+    ledger = InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=out_dir)
+    steps_by_phase = {
+        "pipeline": pipeline_steps,
+        "plots": plot_steps,
+        "exports": export_steps,
+    }
+    attempt = ledger.append_attempt(
+        config_digest=ctx.config_digest,
+        build_identity=current_build_identity(),
+        operation=operation,
+        selected_step_ids=selected_steps.to_dict(),
+        declared_inputs=declared_input_projection(
+            steps_by_phase=steps_by_phase,
+            experiment_root=decl.experiment.root,
+        ),
+    )
+    before_revisions: dict[str, dict] = {}
+
+    try:
+        before_revisions = capture_revision_snapshot(store)
+        ctx.logger.info(
+            "run • pipeline=%d step(s)%s • plots=%d spec(s) • exports=%d spec(s)",
+            len(pipeline_steps),
+            " (skipped)" if not include_pipeline else "",
+            len(plot_steps),
+            len(export_steps),
         )
-        return
-    console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
+        if not verbose:
+            console.print(
+                f"[accent]run[/accent] • pipeline={len(pipeline_steps)} step(s){' (skipped)' if not include_pipeline else ''} "
+                f"• plots={len(plot_steps)} spec(s) • exports={len(export_steps)} spec(s)"
+            )
+
+        if pipeline_steps and registry is None:
+            raise ConfigError("pipeline execution requires plugin workbench steps")
+        if plot_steps and registry is None:
+            raise ConfigError("plot execution requires plugin workbench specs")
+        if export_steps and registry is None:
+            raise ConfigError("export execution requires plugin workbench specs")
+
+        run_steps(
+            items=pipeline_steps,
+            phase="pipeline",
+            verbose=verbose,
+            console=console,
+            ctx=ctx,
+            store=store,
+            registry=registry,
+        )
+        if plot_steps:
+            run_steps(
+                items=plot_steps,
+                phase="plots",
+                verbose=verbose,
+                console=console,
+                ctx=ctx,
+                store=store,
+                registry=registry,
+            )
+        if export_steps:
+            run_steps(
+                items=export_steps,
+                phase="exports",
+                verbose=verbose,
+                console=console,
+                ctx=ctx,
+                store=store,
+                registry=registry,
+            )
+
+        if show_next_steps:
+            next_steps = build_next_steps(decl, job_label=job_label, runtime=runtime)
+            table = Table(show_header=True, header_style="bold", box=box.ROUNDED, expand=False)
+            table.add_column("Command", style="accent")
+            table.add_column("What it does")
+            for command, description in next_steps:
+                table.add_row(command, description)
+            console.print(
+                Panel(
+                    table,
+                    border_style="green",
+                    box=box.ROUNDED,
+                    title=f"Records generated in [path]{out_dir}[/path]",
+                    title_align="left",
+                )
+            )
+        else:
+            console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
+        revision_payloads = produced_record_revisions(
+            before=before_revisions,
+            after=capture_revision_snapshot(store),
+        )
+        ledger.append_result(
+            attempt,
+            exit_status=0,
+            produced_record_revisions=revision_payloads,
+        )
+        return ExecutionResult(
+            invocation_id=attempt.invocation_id,
+            operation=operation,
+            status="succeeded",
+            dry_run=False,
+            selected_steps=selected_steps,
+            produced_record_revisions=tuple(
+                ProducedRecordRevision.from_payload(revision) for revision in revision_payloads
+            ),
+            ledger_path=ledger.path,
+        )
+    except BaseException as failure:
+        try:
+            revisions = produced_record_revisions(
+                before=before_revisions,
+                after=capture_revision_snapshot(store),
+            )
+        except BaseException:
+            revisions = []
+        try:
+            ledger.append_result(
+                attempt,
+                exit_status=130 if isinstance(failure, KeyboardInterrupt) else 1,
+                produced_record_revisions=revisions,
+                failure=failure,
+            )
+        except BaseException as ledger_failure:
+            raise ExecutionError(
+                f"Execution failed and Reader could not persist its invocation result: {ledger_failure}"
+            ) from failure
+        raise
 
 
 def run_job(
@@ -189,10 +297,10 @@ def run_job(
     job_label: str | None = None,
     show_next_steps: bool = False,
     runtime: ReaderRuntime | None = None,
-) -> None:
+) -> ExecutionResult:
     runtime = runtime or builtin_runtime()
     decl = load_workbench_decl(spec_path, protocols=runtime.protocols)
-    run_spec(
+    return run_spec(
         decl,
         resume_from=resume_from,
         until=until,

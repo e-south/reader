@@ -11,6 +11,7 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
+from reader.tests.support import cli_success_data
 from reader.workbench.cli import app
 from reader.workbench.graph import ProvenanceInput, RecordRef
 from reader.workbench.records import PathDescription, RecordStore
@@ -85,7 +86,7 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         producer_id="qc",
         producer_plugin="plot/time_series",
         record_id="plot:qc",
-        inputs=[ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))],
+        inputs=store.capture_inputs([ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))]),
         config_digest="sha256:plot",
         files=[plot_path, summary_path],
         description="Render grouped time-series plots from tidy plate-reader traces.",
@@ -103,7 +104,7 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
 
     json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
     assert json_result.exit_code == 0
-    payload = json.loads(json_result.output)
+    payload = cli_success_data(json_result.output)
     bundle = next(record for record in payload["records"] if record["record_id"] == "plot:qc")
     assert bundle["description"] == "Render grouped time-series plots from tidy plate-reader traces."
     assert bundle["path_descriptions"] == [
@@ -113,7 +114,7 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     assert "detail" not in bundle
 
 
-def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
+def test_records_rejects_retired_record_schemas(tmp_path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
         "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
@@ -121,7 +122,6 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
     )
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    external_plot = tmp_path / "published" / "qc.png"
     record = {
         "schema_version": 3,
         "record_id": "plot:qc",
@@ -130,7 +130,7 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
         "created_at": "2026-07-10T00:00:00+00:00",
         "inputs": [],
         "config_digest": "sha256:qc",
-        "files": [str(external_plot)],
+        "files": ["plots/qc.png"],
     }
     store.records_path.write_text(
         json.dumps(
@@ -147,13 +147,10 @@ def test_records_lists_descriptorless_v3_file_bundle(tmp_path) -> None:
     text_result = runner.invoke(app, ["records", str(config)])
     json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
 
-    assert text_result.exit_code == 0
-    assert "plot:qc" in text_result.output
-    assert json_result.exit_code == 0
-    payload = json.loads(json_result.output)
-    assert payload["records"][0]["schema_version"] == 3
-    assert payload["records"][0]["files"] == [str(external_plot)]
-    assert payload["records"][0]["description"] == "Description unavailable in this record."
+    assert text_result.exit_code == 1
+    assert "schema_version must be 5" in text_result.output
+    assert json_result.exit_code == 1
+    assert "schema_version must be 5" in json_result.output
 
 
 def test_records_all_shows_revision_counts(tmp_path) -> None:

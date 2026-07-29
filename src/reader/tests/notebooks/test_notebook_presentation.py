@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from reader.errors import ConfigError
-from reader.notebook_presentation import (
+from reader.workbench.notebooks.presentation import (
     experiment_display_title,
     experiment_display_title_from_config,
     experiment_selector_options,
@@ -125,7 +125,9 @@ def test_experiment_selector_options_reject_normalized_duplicate_ids() -> None:
 
 
 def test_notebook_presentation_does_not_embed_study_or_metric_vocabulary() -> None:
-    source = (Path(__file__).resolve().parents[2] / "notebook_presentation.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "workbench" / "notebooks" / "presentation.py").read_text(
+        encoding="utf-8"
+    )
 
     for forbidden in ("sfxi", "rmf", "secg"):
         assert f'"{forbidden}"' not in source.lower()

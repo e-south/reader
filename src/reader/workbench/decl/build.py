@@ -4,7 +4,7 @@ from pathlib import Path
 
 from reader.errors import ConfigError
 from reader.protocols.model import ProtocolBinding, ProtocolCatalog
-from reader.workbench.config import ProtocolBindingSpec, ReaderSpec, ResourceSpec
+from reader.workbench.config import ProtocolBindingSpec, ReaderSpec, ResourceSpec, reader_spec_digest
 from reader.workbench.experiment import (
     AnnotationCollections,
     AnnotationCollectionSpec,
@@ -13,6 +13,7 @@ from reader.workbench.experiment import (
     AnnotationOrders,
     AnnotationOrderSpec,
     AnnotationSemantics,
+    ExperimentEvidence,
     ExperimentSemantics,
     OrderedStateSpaces,
     OrderedStateSpaceSpec,
@@ -97,6 +98,16 @@ def build_workbench_decl(
         resources=resources,
         layout=layout,
         protocol_program=compiled.semantic_program,
+        evidence=(
+            ExperimentEvidence(
+                data_class=spec.evidence.data_class,
+                data_class_reason=spec.evidence.data_class_reason,
+                replicate_kind=spec.evidence.replicate_kind,
+                replicate_identity_field=spec.evidence.replicate_identity_field,
+            )
+            if spec.evidence is not None
+            else None
+        ),
     )
 
     return WorkbenchDecl(
@@ -107,6 +118,7 @@ def build_workbench_decl(
         plots=SurfaceDecl(specs=tuple(compiled.plots)),
         exports=SurfaceDecl(specs=tuple(compiled.exports)),
         notebooks=NotebookDecl(specs=tuple(compiled.notebooks)),
+        config_digest=reader_spec_digest(spec),
     )
 
 

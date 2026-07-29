@@ -9,6 +9,7 @@ from reader.runtime import ReaderRuntime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.engine.setup import slice_pipeline_steps
+from reader.workbench.engine.validation import validation_summary
 from reader.workbench.graph import resolve_workbench
 
 from .common import (
@@ -28,6 +29,17 @@ from .runtime import (
     record_producer_map,
 )
 from .semantics import semantic_program_payload
+
+EXPERIMENT_INSPECT_SECTIONS = (
+    "identity",
+    "authoring",
+    "semantics",
+    "plan",
+    "compiled",
+    "inputs",
+    "generated",
+    "readiness",
+)
 
 
 def experiment_authoring_payload(
@@ -83,12 +95,35 @@ def experiment_surface_payload(
     }
 
 
+def experiment_inspect_section_payload(
+    payload: dict[str, object],
+    *,
+    section: str,
+) -> dict[str, object]:
+    """Project an inspect document through a stable semantic section name."""
+
+    if section not in EXPERIMENT_INSPECT_SECTIONS:
+        raise ValueError(f"Unknown experiment inspect section {section!r}")
+    projected = {"experiment": deepcopy(payload["experiment"])}
+    if section == "identity":
+        return projected
+    if section in {"authoring", "semantics"}:
+        projected[section] = deepcopy(payload[section])
+        return projected
+    implementation = payload["implementation"]
+    if not isinstance(implementation, dict) or section not in implementation:
+        raise ValueError(f"Experiment inspect payload does not contain section {section!r}")
+    projected[section] = deepcopy(implementation[section])
+    return projected
+
+
 def experiment_identity_payload(
     *,
     job_path: Path,
     decl: WorkbenchDecl,
     protocol_id: str | None = None,
 ) -> dict[str, object]:
+    evidence = decl.experiment_semantics.evidence
     return {
         "id": decl.experiment.id,
         "title": decl.experiment.title,
@@ -96,6 +131,7 @@ def experiment_identity_payload(
         "protocol": protocol_id or decl.experiment_semantics.protocol.id,
         "config": str(job_path),
         "root": str(decl.experiment.root),
+        "evidence": evidence.to_payload() if evidence is not None else None,
     }
 
 
@@ -180,6 +216,7 @@ def experiment_run_dry_run_payload(
     until: str | None,
     only: str | None = None,
 ) -> dict[str, object]:
+    validation_summary(decl, check_files=False, exp_root=decl.experiment.root, runtime=runtime)
     workbench = resolve_workbench(decl)
     pipeline_steps = slice_pipeline_steps(
         list(workbench.pipeline),

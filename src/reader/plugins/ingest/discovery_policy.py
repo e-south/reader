@@ -14,23 +14,16 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from reader.errors import ParseError
-from reader.workbench.paths import resolve_path_within_root
-
-DEFAULT_ROOTS = ("./inputs", "./raw", "./raw_data")
-DEFAULT_INCLUDE = ("*.xlsx", "*.XLSX")
-DEFAULT_EXCLUDE = (
-    "~$*",
-    "._*",
-    "#*#",
-    "*.tmp",
-    "*.temp",
-    "*.bak",
-    "metadata.*",
-    "metadata_filtered.*",
-    "sample_map.*",
-    "sample_metadata.*",
-    "plate_map.*",
+from reader.workbench.input_discovery import (
+    DEFAULT_INPUT_EXCLUDE as DEFAULT_EXCLUDE,
 )
+from reader.workbench.input_discovery import (
+    DEFAULT_INPUT_ROOTS as DEFAULT_ROOTS,
+)
+from reader.workbench.input_discovery import (
+    DEFAULT_WORKBOOK_INCLUDE as DEFAULT_INCLUDE,
+)
+from reader.workbench.paths import resolve_path_within_root
 
 
 def _iter_candidates(root: Path, patterns: Sequence[str], recursive: bool) -> Iterable[Path]:

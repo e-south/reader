@@ -201,7 +201,7 @@ def draw_scatter(
                             zorder=0.35,
                         )
         else:
-            # Legacy: circles at the ideal coordinates
+            # Draw one circle at each ideal coordinate.
             for (L, A), g in ol.groupby(["L", "A"], sort=False):
                 ax.scatter(
                     [L],

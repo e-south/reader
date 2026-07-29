@@ -10,15 +10,14 @@ from tempfile import TemporaryDirectory
 
 from reader.errors import SFXIError
 
-from .model import SFXIVec8AggregateArtifacts
+from .model import SFXIVec8Aggregate, SFXIVec8AggregateArtifacts
 from .render import render_sfxi_vec8_heatmap
 from .reshape import sfxi_vec8_tidy_rows
-from .sources import load_sfxi_vec8_sources
 
 
 def write_sfxi_vec8_aggregate(
     *,
-    sources: list[str | Path] | tuple[str | Path, ...],
+    aggregate: SFXIVec8Aggregate,
     out_dir: Path,
     title: str | None = None,
     filename: str = "sfxi_vec8_heatmap",
@@ -26,7 +25,6 @@ def write_sfxi_vec8_aggregate(
     overwrite: bool = False,
 ) -> SFXIVec8AggregateArtifacts:
     dpi_value = _positive_dpi(dpi)
-    aggregate = load_sfxi_vec8_sources(sources)
     out_dir = out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = _safe_filename_stem(filename)
@@ -94,7 +92,7 @@ def _check_overwrite(paths: tuple[Path, ...], *, overwrite: bool) -> None:
         rendered = ", ".join(str(path) for path in existing)
         raise SFXIError(
             "SFXI vec8 aggregate output already exists. "
-            f"Pass overwrite=True or choose a different --out-dir/--filename: {rendered}"
+            f"Pass overwrite=True, choose a different output experiment, or change --filename: {rendered}"
         )
 
 

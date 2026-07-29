@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reader.domains.plate_reader.analysis.response_window import notebook as response_window_notebook
+from reader.workbench.notebooks import response_window as response_window_notebook
 
 
 def test_review_notebook_uses_one_progressive_control_surface(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +15,6 @@ from reader.contracts import ContractCatalog
 
 from .contracts import ResponseWindowRequest, load_response_window_request
 from .materialize import materialize_experiment
-from .notebook import write_review_notebook
 from .provenance import sha256_file
 from .publication import bundle_publication
 from .reporting import write_review_artifacts
@@ -37,6 +37,7 @@ def build_response_window_bundle(
     out_dir: Path,
     contracts: ContractCatalog,
     source_loader: ExperimentSourceLoader,
+    notebook_writer: Callable[[Path], Path],
     overwrite: bool = False,
 ) -> ResponseWindowBundle:
     """Materialize verified records and review artifacts for one request."""
@@ -54,6 +55,7 @@ def build_response_window_bundle(
             staging=publication.staging,
             contracts=contracts,
             source_loader=source_loader,
+            notebook_writer=notebook_writer,
         )
         return publication.publish(lambda root: verify_response_window_bundle(root, contracts=contracts))
 
@@ -65,6 +67,7 @@ def _build_staged_bundle(
     staging: Path,
     contracts: ContractCatalog,
     source_loader: ExperimentSourceLoader,
+    notebook_writer: Callable[[Path], Path],
 ) -> ResponseWindowBundle:
     well_frames: list[pd.DataFrame] = []
     design_frames: list[pd.DataFrame] = []
@@ -140,7 +143,7 @@ def _build_staged_bundle(
         display=display,
         out_dir=staging,
     )
-    write_review_notebook(staging)
+    notebook_writer(staging)
     request_artifact = staging / "request.yaml"
     shutil.copy2(request_path, request_artifact)
 

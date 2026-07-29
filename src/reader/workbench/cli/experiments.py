@@ -8,12 +8,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from reader.errors import ReaderError
-from reader.workbench.commands import reader_command
 
 from . import shared
 from ._lazy import load as _load
 from .helpers import (
-    append_journal,
     ensure_active_lifecycle,
     find_nearest_experiments_dir,
     format_job_arg,
@@ -26,6 +24,7 @@ from .shared import (
     app,
     checkmark,
     emit_json,
+    emit_json_error,
     handle_reader_error,
     normalize_flag,
     normalize_lifecycle_filter,
@@ -79,11 +78,25 @@ def ls(
         metavar="FMT",
         help="Output format: table | json (default: table).",
     ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        metavar="N",
+        help="Maximum experiments per JSON page (default: 25; maximum: 100).",
+    ),
+    continuation: str | None = typer.Option(
+        None,
+        "--continuation",
+        metavar="TOKEN",
+        help="Opaque continuation token from a previous JSON page.",
+    ),
 ):
     include_scaffolds = normalize_flag(include_scaffolds)
     details = normalize_flag(details)
     readiness = normalize_flag(readiness)
     fmt = normalize_output_format(format)
+    limit, continuation = shared.normalize_paging_options(limit, continuation)
+    shared.require_json_paging(format=fmt, limit=limit, continuation=continuation)
     protocol_filter = protocol.strip() if isinstance(protocol, str) and protocol.strip() else None
     status_filter = normalize_status_filter(status)
     lifecycle_filter = normalize_lifecycle_filter(lifecycle)
@@ -101,20 +114,44 @@ def ls(
     inspection_inventory = _load("reader.workbench.inspection.inventory")
     inspection_readiness = _load("reader.workbench.inspection.readiness")
     inspection_runtime = _load("reader.workbench.inspection.runtime")
+
+    def emit_inventory_json(experiments: list[dict[str, object]]) -> None:
+        payload = inspection_inventory.inventory_surface_payload(
+            root=root_path,
+            include_scaffolds=include_scaffolds,
+            details=details,
+            readiness=readiness,
+            protocol=protocol_filter,
+            status=status_filter,
+            lifecycle=lifecycle_filter,
+            experiments=experiments,
+        )
+        page = shared.page_json_collection(
+            experiments,
+            key=lambda item: str(item["config"]),
+            surface="experiments",
+            selection={
+                "root": str(root_path),
+                "include_scaffolds": include_scaffolds,
+                "details": details,
+                "readiness": readiness,
+                "protocol": protocol_filter,
+                "status": status_filter,
+                "lifecycle": lifecycle_filter,
+            },
+            limit=limit,
+            continuation=continuation,
+        )
+        payload["experiments"] = list(page.items)
+        emit_json(
+            payload,
+            truncated=page.truncated,
+            continuation=page.continuation,
+        )
+
     if not jobs:
         if fmt == "json":
-            emit_json(
-                inspection_inventory.inventory_surface_payload(
-                    root=root_path,
-                    include_scaffolds=include_scaffolds,
-                    details=details,
-                    readiness=readiness,
-                    protocol=protocol_filter,
-                    status=status_filter,
-                    lifecycle=lifecycle_filter,
-                    experiments=[],
-                )
-            )
+            emit_inventory_json([])
             return
         shared.console.print(
             Panel.fit(f"No experiments found under [path]{root_path}[/path].", border_style="warn", box=box.ROUNDED)
@@ -193,18 +230,7 @@ def ls(
 
     if not entries:
         if fmt == "json":
-            emit_json(
-                inspection_inventory.inventory_surface_payload(
-                    root=root_path,
-                    include_scaffolds=include_scaffolds,
-                    details=details,
-                    readiness=readiness,
-                    protocol=protocol_filter,
-                    status=status_filter,
-                    lifecycle=lifecycle_filter,
-                    experiments=[],
-                )
-            )
+            emit_inventory_json([])
             return
         filters = []
         if protocol_filter:
@@ -224,18 +250,7 @@ def ls(
         return
 
     if fmt == "json":
-        emit_json(
-            inspection_inventory.inventory_surface_payload(
-                root=root_path,
-                include_scaffolds=include_scaffolds,
-                details=details,
-                readiness=readiness,
-                protocol=protocol_filter,
-                status=status_filter,
-                lifecycle=lifecycle_filter,
-                experiments=entries,
-            )
-        )
+        emit_inventory_json(entries)
         return
 
     inventory_summary = inspection_inventory.inventory_summary_payload(entries)
@@ -326,6 +341,12 @@ def inspect(
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
     ),
+    section: str | None = typer.Option(
+        None,
+        "--section",
+        metavar="NAME",
+        help=("JSON projection: identity | authoring | semantics | plan | compiled | inputs | generated | readiness."),
+    ),
 ):
     try:
         job_path = infer_job_path(job)
@@ -334,11 +355,25 @@ def inspect(
         handle_reader_error(err)
     fmt = normalize_output_format(format)
     runtime = _load("reader.runtime").builtin_runtime()
-    payload = _load("reader.workbench.inspection.experiments").experiment_inspect_payload(
+    inspection_experiments = _load("reader.workbench.inspection.experiments")
+    selected_section = shared.normalize_semantic_section(
+        section,
+        allowed=inspection_experiments.EXPERIMENT_INSPECT_SECTIONS,
+        format=fmt,
+    )
+    payload = inspection_experiments.experiment_inspect_payload(
         job_path=job_path, spec=spec, decl=decl, runtime=runtime
     )
     if fmt == "json":
-        emit_json(payload)
+        if selected_section is not None:
+            payload = inspection_experiments.experiment_inspect_section_payload(
+                payload,
+                section=selected_section,
+            )
+        emit_json(
+            payload,
+            projection=f"section:{selected_section}" if selected_section is not None else "full",
+        )
         return
     semantic_program = decl.experiment_semantics.protocol_program
     for renderable in _load("reader.workbench.inspection.reports").experiment_inspect_renderables(
@@ -397,6 +432,15 @@ def validate(
             summary = _load("reader.workbench.engine").validation_summary(
                 decl, check_files=not no_files, exp_root=decl.experiment.root, runtime=runtime
             )
+            if summary["status"] != "ok":
+                errors = list(summary.get("errors") or [])
+                emit_json_error(
+                    code="validation_failed",
+                    field="experiment",
+                    reason="; ".join(str(error) for error in errors) or "Experiment validation failed.",
+                    remediation="Correct the reported configuration, binding, dependency, or input issue, then validate again.",
+                )
+                raise typer.Exit(code=1)
             emit_json(
                 _load("reader.workbench.inspection.validation").validation_surface_payload(
                     experiment=_load("reader.workbench.inspection.experiments").experiment_identity_payload(
@@ -406,8 +450,6 @@ def validate(
                     summary=summary,
                 )
             )
-            if summary["status"] != "ok":
-                raise typer.Exit(code=1)
             return
         summary = _load("reader.workbench.engine").validate(
             decl,
@@ -494,7 +536,6 @@ def run(
     compact: bool = typer.Option(False, "--compact", help="Use concise progress output instead of per-step logs."),
 ):
     job_path = infer_job_path(job)
-    parts = [reader_command("run", job_path)]
     if only and (from_step or until):
         raise typer.BadParameter("--only cannot be combined with --from/--until")
 
@@ -505,23 +546,16 @@ def run(
     fmt = normalize_output_format(format)
     if fmt == "json" and not dry_run:
         raise typer.BadParameter("--format json is only supported with --dry-run")
+    try:
+        _load("reader.workbench.engine").normalize_log_level(log_level)
+    except ReaderError as err:
+        handle_reader_error(err)
     if not dry_run:
         ensure_active_lifecycle(decl, job_path, command_name="run")
 
     if only:
         resolve_pipeline_step_id(decl, only, job_path=job_path)
-        parts += ["--only", only]
-        if dry_run:
-            parts += ["--dry-run"]
-        if fmt == "json":
-            parts += ["--format", "json"]
-        if log_level and log_level != "INFO":
-            parts += ["--log-level", log_level]
-        if compact:
-            parts += ["--compact"]
         try:
-            if not dry_run:
-                append_journal(job_path, " ".join(parts))
             runtime = _load("reader.runtime").builtin_runtime()
             if dry_run and fmt == "json":
                 emit_json(
@@ -557,21 +591,9 @@ def run(
 
     if from_step:
         resolve_pipeline_step_id(decl, from_step, job_path=job_path)
-        parts += ["--from", from_step]
     if until:
         resolve_pipeline_step_id(decl, until, job_path=job_path)
-        parts += ["--until", until]
-    if dry_run:
-        parts += ["--dry-run"]
-    if fmt == "json":
-        parts += ["--format", "json"]
-    if log_level and log_level != "INFO":
-        parts += ["--log-level", log_level]
-    if compact:
-        parts += ["--compact"]
     try:
-        if not dry_run:
-            append_journal(job_path, " ".join(parts))
         runtime = _load("reader.runtime").builtin_runtime()
         if dry_run and fmt == "json":
             emit_json(

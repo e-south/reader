@@ -237,6 +237,35 @@ def test_load_rejects_unknown_protocol_outputs_key(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_single_reporter_protocol_compiles_opt_in_subject_comparison(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_subject_comparison",
+        protocol_id="plate_reader/single_reporter_screen",
+        protocol_analysis={"reporter_channel": "RFP", "normalizer_channel": "OD600"},
+        protocol_outputs={
+            "plots": {
+                "profile": "none",
+                "include": ["subject_comparison"],
+                "views": {
+                    "subject_comparison": {
+                        "ts_style": "assay_subject_id_alias",
+                        "snap_x": "assay_subject_id_alias",
+                        "snap_hue": "treatment_alias",
+                        "snap_time": 14.0,
+                    }
+                },
+            }
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+    plot = next(step for step in resolve_workbench(decl).plots if step.id == "subject_comparison")
+
+    assert plot.plugin == "plot/ts_and_snap"
+    assert plot.with_["ts_channel"] == "OD600"
+    assert plot.with_["snap_channel"] == "RFP/OD600"
+
+
 def test_load_normalizes_annotations_and_resources(tmp_path: Path) -> None:
     data = _base_config()
     data["resources"] = {"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}}

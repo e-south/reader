@@ -40,6 +40,12 @@ def protocols(
         metavar="FMT",
         help="Output format: table | json (default: table).",
     ),
+    section: str | None = typer.Option(
+        None,
+        "--section",
+        metavar="NAME",
+        help="Named-protocol JSON projection: identity | authoring | semantics | defaults | compiled.",
+    ),
 ):
     runtime = _load("reader.runtime").builtin_runtime()
     inspection_protocols = _load("reader.workbench.inspection.protocols")
@@ -47,12 +53,28 @@ def protocols(
     inspection_semantics = _load("reader.workbench.inspection.semantics")
     try:
         fmt = normalize_output_format(format)
+        selected_section = shared.normalize_semantic_section(
+            section,
+            allowed=inspection_protocols.PROTOCOL_DESCRIPTOR_SECTIONS,
+            format=fmt,
+        )
         if example_config and not name:
             raise typer.BadParameter("--example-config requires a protocol name.")
+        if selected_section is not None and not name:
+            raise typer.BadParameter("--section requires a protocol name", param_hint="--section")
         if name:
             descriptor = runtime.protocols.resolve(name)
             if fmt == "json":
-                emit_json(inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime))
+                payload = inspection_protocols.protocol_descriptor_payload(descriptor, runtime=runtime)
+                if selected_section is not None:
+                    payload = inspection_protocols.protocol_descriptor_section_payload(
+                        payload,
+                        section=selected_section,
+                    )
+                emit_json(
+                    payload,
+                    projection=f"section:{selected_section}" if selected_section is not None else "full",
+                )
                 return
             bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
             semantic_program = compiled_plan.semantic_program
@@ -64,6 +86,11 @@ def protocols(
             summary.add_row("Summary", descriptor.summary)
             if descriptor.tags:
                 summary.add_row("Tags", ", ".join(descriptor.tags))
+            if descriptor.resources:
+                summary.add_row(
+                    "Input resources",
+                    ", ".join(f"{item.id} → {item.path}" for item in descriptor.resources),
+                )
             if descriptor.semantic_profiles:
                 summary.add_row("Profiles", ", ".join(profile.id for profile in descriptor.semantic_profiles))
             if descriptor.factors:
@@ -281,6 +308,8 @@ def init(
     summary.add_row("Config", str(config_path))
     summary.add_row("Inputs dir", str(target_dir / "inputs"))
     summary.add_row("Notebook dir", str(target_dir / "notebooks"))
+    for resource in descriptor.resources:
+        summary.add_row(f"Resource: {resource.id}", str((target_dir / resource.path).resolve()))
     shared.console.print(Panel(summary, title="Experiment scaffolded", border_style="accent", box=box.ROUNDED))
     shared.console.print(
         Panel(

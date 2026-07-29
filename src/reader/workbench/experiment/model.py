@@ -7,7 +7,24 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from reader.protocols.model import ProtocolBinding, ProtocolSemanticProgram
 
-ResourceKind = Literal["file", "directory"]
+ResourceKind = Literal["file"]
+ReplicateKind = Literal["biological", "technical", "mixed", "not_applicable"]
+
+
+@dataclass(frozen=True)
+class ExperimentEvidence:
+    data_class: str
+    data_class_reason: str
+    replicate_kind: ReplicateKind
+    replicate_identity_field: str | None = None
+
+    def to_payload(self) -> dict[str, str | None]:
+        return {
+            "data_class": self.data_class,
+            "data_class_reason": self.data_class_reason,
+            "replicate_kind": self.replicate_kind,
+            "replicate_identity_field": self.replicate_identity_field,
+        }
 
 
 @dataclass(frozen=True)
@@ -308,6 +325,7 @@ class ExperimentSemantics:
     resources: ResourceCatalog
     layout: OutputLayout
     protocol_program: ProtocolSemanticProgram
+    evidence: ExperimentEvidence | None = None
 
     def __post_init__(self) -> None:
         if self.protocol_program.protocol != self.protocol.id:

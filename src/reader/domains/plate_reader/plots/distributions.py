@@ -54,7 +54,7 @@ def plot_distributions(
     blanks: pd.DataFrame,
     output_dir: Path | None,
     channels: list[str],
-    # modern grouping knobs
+    # grouping
     group_on: str | None = "design_id",
     pool_sets: list[dict[str, list[str]]] | None = None,
     pool_match: GroupMatch = "exact",
@@ -68,9 +68,9 @@ def plot_distributions(
     palette_book: PaletteBook | None = None,
 ) -> list[PlotFigure]:
     """
-    Distribution histograms with modern semantics:
+    Distribution histograms:
       • Auto‑alias columns: prefers '<group_on>_alias' transparently.
-      • `group_on` + `pool_sets` replace legacy 'groupby_col' & 'groups'.
+      • `group_on` selects partitions; `pool_sets` names explicit collections.
       • Default: panel_by='channel' (one subplot per channel) and a separate
         output file for each `group_on` value (e.g., per design_id).
     """

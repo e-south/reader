@@ -9,7 +9,6 @@ Shared plotting helpers for plate-reader renderers.
 
 from __future__ import annotations
 
-import logging
 import math
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
@@ -18,36 +17,14 @@ from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.utils import save_figure
 
+from ._data import alias_column, require_columns, warn_if_empty
+
 if TYPE_CHECKING:
     from reader.plotting.style import PaletteBook
-
-
-def require_columns(df: pd.DataFrame, cols: Iterable[str], *, where: str) -> None:
-    missing = [c for c in cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"{where}: missing required columns: {missing}")
-
-
-def warn_if_empty(df: pd.DataFrame, *, where: str, detail: str | None = None) -> bool:
-    if df.empty:
-        msg = f"[warn]{where}[/warn] • no rows to plot"
-        if detail:
-            msg += f" ({detail})"
-        logging.getLogger("reader").info(msg)
-        return True
-    return False
-
-
-def alias_column(df: pd.DataFrame, name: str | None, suffix: str = "_alias") -> str | None:
-    if name is None:
-        return None
-    candidate = f"{str(name)}{suffix}"
-    return candidate if candidate in df.columns else name
 
 
 def pretty_name(name: str, suffix: str = "_alias") -> str:

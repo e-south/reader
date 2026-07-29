@@ -14,15 +14,21 @@ from reader.runtime import ReaderRuntime
 from reader.workbench.context import RunContext
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.records import RecordStore
+from reader.workbench.records.identity import digest_json
 
 from ._shared import needs_plot_palette
 
 
-def configure_logger(*, out_dir: Path, log_level: str, verbose: bool, console: Console) -> logging.Logger:
+def normalize_log_level(log_level: str) -> str:
     level_name = str(log_level).upper()
     valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
     if level_name not in valid_levels:
         raise ConfigError(f"Invalid log level {log_level!r}. Choose one of: {sorted(valid_levels)}")
+    return level_name
+
+
+def configure_logger(*, out_dir: Path, log_level: str, verbose: bool, console: Console) -> logging.Logger:
+    level_name = normalize_log_level(log_level)
 
     logger = logging.getLogger("reader")
     for handler in list(logger.handlers):
@@ -92,6 +98,14 @@ def build_run_context(
     logger: logging.Logger,
     palette_book: Any,
 ) -> RunContext:
+    config_digest = decl.config_digest or digest_json(
+        {
+            "synthetic_workbench": {
+                "experiment_id": decl.experiment.id,
+                "root": str(decl.experiment.root),
+            }
+        }
+    )
     return RunContext(
         exp_dir=decl.experiment.root,
         outputs_dir=out_dir,
@@ -103,6 +117,7 @@ def build_run_context(
         palette_book=palette_book,
         experiment=decl.experiment_semantics,
         protocol=runtime.bind_protocol(decl.experiment_semantics.protocol),
+        config_digest=config_digest,
     )
 
 

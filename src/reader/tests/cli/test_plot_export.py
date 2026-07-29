@@ -10,7 +10,6 @@ Author(s): Eric J. South
 from __future__ import annotations
 
 import importlib
-import json
 import re
 from pathlib import Path
 
@@ -18,7 +17,14 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from reader.tests.support import base_reader_config, default_notebook_name, load_decl, write_config
+from reader.tests.support import (
+    base_reader_config,
+    cli_error_data,
+    cli_success_data,
+    default_notebook_name,
+    load_decl,
+    write_config,
+)
 from reader.workbench import FileRef, RecordRef, resolve_workbench
 from reader.workbench.cli import app
 from reader.workbench.experiment import ResourceCatalog
@@ -156,7 +162,7 @@ def test_plot_list_json(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["catalog"] == {"kind": "plot", "protocol": "plate_reader/dual_reporter_screen"}
     assert payload["selection"] == {"only": [], "exclude": []}
@@ -175,7 +181,7 @@ def test_plot_list_json_empty(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg_path), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["selection"] == {"only": [], "exclude": []}
     assert payload["summary"]["plots"] == 0
     assert payload["summary"]["by_plugin"] == {}
@@ -187,7 +193,7 @@ def test_plot_list_json_surfaces_source_contract_metadata(tmp_path: Path) -> Non
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"]["plots"] == 1
     assert payload["summary"]["by_family"] == {"geometry_plot": 1}
     read = payload["plots"][0]["reads"][0]
@@ -204,7 +210,7 @@ def test_logic_sfxi_plot_list_surfaces_setpoint_scatter(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["summary"]["plots"] == 1
     assert payload["summary"]["by_plugin"] == {"plot/sfxi_setpoint_scatter": 1}
     assert payload["plots"][0]["id"] == "sfxi_setpoint_scatter"
@@ -249,9 +255,9 @@ def test_logic_sfxi_validate_reports_missing_dnadesign_public_api(tmp_path: Path
     result = runner.invoke(app, ["validate", str(cfg), "--format", "json"])
 
     assert result.exit_code == 1
-    payload = json.loads(result.output)
-    assert payload["summary"]["status"] == "error"
-    assert any("uv sync --locked --group dnadesign" in message for message in payload["validation"]["errors"])
+    error = cli_error_data(result.output)
+    assert error["code"] == "validation_failed"
+    assert "uv sync --locked --group dnadesign" in error["reason"]
 
 
 def test_retron_plot_list_json(tmp_path: Path) -> None:
@@ -259,7 +265,7 @@ def test_retron_plot_list_json(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     plot_ids = [item["id"] for item in payload["plots"]]
     assert payload["experiment"]["protocol"] == "plate_reader/retron_sponge_screen"
     assert plot_ids == ["matched_control_kinetics", "library_heatmaps"]
@@ -299,7 +305,7 @@ def test_dual_reporter_nondefault_plot_profiles_surface_live_cli_specs(
     result = runner.invoke(app, ["plot", str(cfg), "--list", "--format", "json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["summary"]["plots"] == len(expected_ids)
     assert payload["summary"]["by_plugin"] == expected_plugins
@@ -358,6 +364,45 @@ def test_plot_dry_run_does_not_require_records(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "DRY RUN" in result.output
     assert "raw_kinetics" in result.output
+
+
+def test_plot_dry_run_rejects_file_override_outside_experiment(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    cfg = write_config(experiment, _base_config())
+    outside = tmp_path / "outside.csv"
+    outside.write_text("value\n1\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["plot", str(cfg), "--only", "raw_kinetics", "--dry-run", "--input", f"df={{file: {outside}}}"],
+    )
+
+    assert result.exit_code != 0
+    assert "stay under the experiment root" in _plain(result.output)
+
+
+def test_plot_dry_run_rejects_file_override_for_dataframe_port(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, _base_config())
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir()
+    (inputs_dir / "override.csv").write_text("value\n1\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "plot",
+            str(cfg),
+            "--only",
+            "raw_kinetics",
+            "--dry-run",
+            "--input",
+            "df={file: ./inputs/override.csv}",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "expects a dataframe record" in _plain(result.output)
 
 
 def test_plot_dry_run_allows_non_active_lifecycle(tmp_path: Path) -> None:
@@ -553,7 +598,7 @@ def test_export_list_json(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/dual_reporter_screen"
     assert payload["catalog"] == {"kind": "export", "protocol": "plate_reader/dual_reporter_screen"}
     assert payload["selection"] == {"only": [], "exclude": []}
@@ -571,7 +616,7 @@ def test_export_list_json_empty(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg_path), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["selection"] == {"only": [], "exclude": []}
     assert payload["summary"]["exports"] == 0
     assert payload["summary"]["by_family"] == {}
@@ -583,7 +628,7 @@ def test_retron_export_list_json(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["export", str(cfg), "--list", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = cli_success_data(result.output)
     assert payload["experiment"]["protocol"] == "plate_reader/retron_sponge_screen"
     exports = {item["id"]: item for item in payload["exports"]}
     assert set(exports) == {"semantic_summary_table", "semantic_trace_table"}

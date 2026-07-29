@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_bool_dtype
 
-from reader.notebook_review import (
+from reader.domains.review import (
     ReviewCollectionIndex,
     ReviewEntity,
     ReviewEntityKind,

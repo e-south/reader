@@ -19,11 +19,9 @@ from reader.contracts import builtin_contract_catalog
 from reader.errors import ContractError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
 from reader.workbench.records import (
-    FileBundleRecord,
     PathDescription,
     RecordStore,
     discover_dataframe_records,
-    record_to_dict,
 )
 
 
@@ -36,6 +34,52 @@ def test_records_catalog_invalid_json_raises(tmp_path) -> None:
     store = RecordStore(outputs, contracts=builtin_contract_catalog(), create=False)
     with pytest.raises(RecordError):
         store.iter_latest_records()
+
+
+@pytest.mark.parametrize("sink", ["outputs", "artifacts", "manifests", "plots", "exports"])
+def test_record_store_rejects_symlinked_sink_roots_before_writes(tmp_path: Path, sink: str) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outputs = experiment / "outputs"
+    if sink == "outputs":
+        link = outputs
+    else:
+        outputs.mkdir()
+        link = outputs / sink
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(RecordError, match=rf"{sink}.*symlink|symlink.*{sink}"):
+        RecordStore(
+            outputs,
+            contracts=builtin_contract_catalog(),
+            plots_subdir="plots",
+            exports_subdir="exports",
+            experiment_root=experiment,
+        )
+
+    assert list(outside.iterdir()) == []
+
+
+def test_record_store_creates_normal_confined_sink_roots(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    outputs = experiment / "outputs"
+
+    store = RecordStore(
+        outputs,
+        contracts=builtin_contract_catalog(),
+        plots_subdir="plots",
+        exports_subdir="exports",
+        experiment_root=experiment,
+    )
+
+    assert store.root == outputs
+    assert all(path.is_dir() for path in (store.artifacts_dir, store.manifests_dir, store.plots_dir, store.exports_dir))
 
 
 def test_records_catalog_missing_keys_raises(tmp_path) -> None:
@@ -79,12 +123,12 @@ def test_record_payload_unknown_schema_version_raises(tmp_path) -> None:
     catalog["latest"]["ingest/df"]["schema_version"] = 999
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
-    with pytest.raises(RecordError, match="record payload schema_version must be 3"):
+    with pytest.raises(RecordError, match="record payload schema_version must be 5"):
         store.read_record("ingest/df")
 
 
-@pytest.mark.parametrize("schema_version", [None, "4", 5, []])
-def test_file_bundle_record_rejects_unknown_or_malformed_schema_version(tmp_path, schema_version) -> None:
+@pytest.mark.parametrize("schema_version", [None, "4", 3, 4, 6, []])
+def test_file_bundle_record_rejects_noncurrent_or_malformed_schema_version(tmp_path, schema_version) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     payload = {
@@ -99,7 +143,7 @@ def test_file_bundle_record_rejects_unknown_or_malformed_schema_version(tmp_path
     }
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
-    with pytest.raises(RecordError, match="file-bundle record payload schema_version must be one of"):
+    with pytest.raises(RecordError, match="record payload schema_version must be 5"):
         store.read_record("plot:qc")
 
 
@@ -121,7 +165,27 @@ def test_record_payload_rejects_ambiguous_provenance_input(tmp_path) -> None:
     ]
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
-    with pytest.raises(RecordError, match="invalid provenance input.*exactly one reference shape"):
+    with pytest.raises(RecordError, match="invalid provenance input.*unknown kind"):
+        store.read_record("ingest/df")
+
+
+def test_schema_v5_record_payload_rejects_unknown_fields(tmp_path) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    catalog["latest"]["ingest/df"]["unexpected"] = True
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    with pytest.raises(RecordError, match="unknown or missing fields.*unexpected"):
         store.read_record("ingest/df")
 
 
@@ -148,7 +212,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
         producer_id="qc_plot",
         producer_plugin="plot/time_series",
         record_id="plot:qc_plot",
-        inputs=[ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))],
+        inputs=store.capture_inputs([ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))]),
         config_digest="sha256:plot",
         files=[plot_path],
         description="Render grouped time-series plots from tidy plate-reader traces.",
@@ -169,7 +233,14 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
         "Grouped time-series traces for the configured channels and treatment groups."
     )
     persisted = json.loads(store.records_path.read_text(encoding="utf-8"))
-    assert persisted["latest"]["plot:qc_plot"]["schema_version"] == 4
+    assert persisted["latest"]["plot:qc_plot"]["schema_version"] == 5
+    assert persisted["latest"]["plot:qc_plot"]["file_evidence"] == [
+        {
+            "content_digest": "sha256:8f8cbb7dcf46e0bc7d53265749a6c17d116093a6ba95e442764060c76fd4a86c",
+            "path": "plots/trace.png",
+            "size_bytes": 3,
+        }
+    ]
     assert persisted["latest"]["plot:qc_plot"]["description"] == bundle.description
     assert persisted["latest"]["plot:qc_plot"]["path_descriptions"] == [
         {
@@ -334,58 +405,6 @@ def test_plot_file_bundle_rejects_invalid_path_description_coverage(tmp_path, de
                 PathDescription(path=outputs / path, description=description) for path, description in descriptions
             ),
         )
-
-
-def test_v3_file_bundle_without_descriptions_remains_readable(tmp_path) -> None:
-    outputs = tmp_path / "outputs"
-    store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    payload = {
-        "schema_version": 3,
-        "record_id": "plot:unannotated",
-        "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "unannotated", "plugin": "plot/time_series"},
-        "created_at": "2026-07-10T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:unannotated",
-        "files": ["plots/unannotated.png"],
-    }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:unannotated": payload},
-        "history": {"plot:unannotated": [payload]},
-    }
-    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
-
-    record = store.read_record("plot:unannotated")
-
-    assert isinstance(record, FileBundleRecord)
-    assert record.schema_version == 3
-    assert record.description is None
-    assert record.path_descriptions == ()
-
-
-def test_v4_file_bundle_without_description_is_rejected(tmp_path) -> None:
-    outputs = tmp_path / "outputs"
-    store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    payload = {
-        "schema_version": 4,
-        "record_id": "plot:unannotated",
-        "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "unannotated", "plugin": "plot/time_series"},
-        "created_at": "2026-07-10T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:unannotated",
-        "files": ["plots/unannotated.png"],
-    }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:unannotated": payload},
-        "history": {"plot:unannotated": [payload]},
-    }
-    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
-
-    with pytest.raises(RecordError, match="must include a non-empty description"):
-        store.read_record("plot:unannotated")
 
 
 def test_dataframe_record_load_rejects_content_digest_mismatch(tmp_path) -> None:
@@ -594,91 +613,52 @@ def test_dataframe_record_rejects_reserved_contract_ids(tmp_path, contract_id: s
 def test_catalog_rejects_dataframe_paths_outside_outputs(tmp_path, raw_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    payload = {
-        "schema_version": 3,
-        "record_id": "ingest/df",
-        "kind": "dataframe_artifact",
-        "producer": {"kind": "pipeline", "id": "ingest", "plugin": "ingest/synergy_h1"},
-        "created_at": "2026-07-11T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:test",
-        "contract_id": "tidy.v1",
-        "path": raw_path,
-        "content_digest": "sha256:test",
-        "code_digest": "",
-    }
-    catalog = {"schema_version": 3, "latest": {"ingest/df": payload}, "history": {"ingest/df": [payload]}}
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    payload = catalog["latest"]["ingest/df"]
+    payload["path"] = raw_path
+    catalog["history"]["ingest/df"] = [payload]
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     with pytest.raises(RecordError, match="must resolve within the outputs directory|must be relative"):
         store.read_dataframe("ingest/df")
 
 
-@pytest.mark.parametrize(
-    ("schema_version", "raw_path"),
-    [
-        (3, "../outside.png"),
-        (4, "../outside.png"),
-        (4, "/tmp/outside.png"),
-    ],
-)
-def test_catalog_rejects_unconfined_file_bundle_paths(tmp_path, schema_version, raw_path) -> None:
+@pytest.mark.parametrize("raw_path", ["../outside.png", "/tmp/outside.png"])
+def test_catalog_rejects_unconfined_file_bundle_paths(tmp_path, raw_path) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    payload = {
-        "schema_version": schema_version,
-        "record_id": "plot:qc_plot",
-        "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "qc_plot", "plugin": "plot/time_series"},
-        "created_at": "2026-07-11T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:test",
-        "files": [raw_path],
-        "description": "Time-series plot.",
-        "path_descriptions": [{"path": raw_path, "description": "Time-series plot."}],
-    }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:qc_plot": payload},
-        "history": {"plot:qc_plot": [payload]},
-    }
+    plot_path = outputs / "plots" / "trace.png"
+    plot_path.write_text("png", encoding="utf-8")
+    store.append_file_bundle(
+        producer_kind="plot",
+        producer_id="qc_plot",
+        producer_plugin="plot/time_series",
+        record_id="plot:qc_plot",
+        inputs=[],
+        config_digest="sha256:test",
+        files=[plot_path],
+        description="Time-series plot.",
+        path_descriptions=(PathDescription(path=plot_path, description="Time-series plot."),),
+    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    payload = catalog["latest"]["plot:qc_plot"]
+    payload["files"] = [raw_path]
+    payload["path_descriptions"] = [{"path": raw_path, "description": "Time-series plot."}]
+    catalog["history"]["plot:qc_plot"] = [payload]
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     with pytest.raises(RecordError, match="must resolve within the outputs directory|must be relative"):
         store.read_record("plot:qc_plot")
-
-
-def test_catalog_preserves_schema_v3_absolute_file_bundle_paths(tmp_path) -> None:
-    outputs = tmp_path / "outputs"
-    store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    external_plot = tmp_path / "published" / "trace.png"
-    external_plot.parent.mkdir()
-    external_plot.write_text("png", encoding="utf-8")
-    payload = {
-        "schema_version": 3,
-        "record_id": "plot:qc_plot",
-        "kind": "file_bundle",
-        "producer": {"kind": "plot", "id": "qc_plot", "plugin": "plot/time_series"},
-        "created_at": "2026-07-11T00:00:00+00:00",
-        "inputs": [],
-        "config_digest": "sha256:test",
-        "files": [str(external_plot)],
-        "description": "Time-series plot.",
-        "path_descriptions": [{"path": str(external_plot), "description": "Time-series plot."}],
-    }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:qc_plot": payload},
-        "history": {"plot:qc_plot": [payload]},
-    }
-    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
-
-    record = store.read_record("plot:qc_plot")
-    assert record.files == (external_plot,)
-    assert record.description_for(external_plot) == "Time-series plot."
-    encoded = record_to_dict(record, outputs_dir=outputs)
-    assert encoded["files"] == [str(external_plot)]
-    assert encoded["path_descriptions"] == [{"path": str(external_plot), "description": "Time-series plot."}]
 
 
 def test_file_bundle_rejects_path_that_resolves_outside_outputs(tmp_path) -> None:
@@ -738,6 +718,30 @@ def test_record_store_revision_counts_bulk_read(tmp_path) -> None:
     counts = store.revision_counts(["ingest/df", "missing/df"])
 
     assert counts == {"ingest/df": 2, "missing/df": 0}
+
+
+@pytest.mark.parametrize("corruption", ["empty_history", "divergent_final"])
+def test_revision_counts_rejects_malformed_latest_history_lineage(tmp_path, corruption) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    if corruption == "empty_history":
+        catalog["history"]["ingest/df"] = []
+    else:
+        catalog["history"]["ingest/df"][-1]["config_digest"] = "sha256:divergent-history"
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    with pytest.raises(RecordError, match="history"):
+        store.revision_counts(["ingest/df"])
 
 
 def test_discover_dataframe_records_is_catalog_only_by_default(tmp_path) -> None:

@@ -71,6 +71,18 @@ def _raise_dependency_preflight_errors(*, selected, runtime, bound_protocol, exp
         raise typer.BadParameter("\n".join(errors))
 
 
+def _validate_dry_run_selection(*, decl, selected, runtime, label: str) -> None:
+    validation = _load("reader.workbench.engine.validation")
+    validation.validation_summary(
+        decl,
+        check_files=False,
+        exp_root=decl.experiment.root,
+        runtime=runtime,
+        plot_specs_override=(selected if label == "plot" else []),
+        export_specs_override=(selected if label == "export" else []),
+    )
+
+
 def validate_plot_job_for_execution(
     job_path: Path,
     *,
@@ -103,6 +115,7 @@ def validate_plot_job_for_execution(
         resources=decl.experiment_semantics.resources,
     )
     if dry_run:
+        _validate_dry_run_selection(decl=decl, selected=selected, runtime=runtime, label="plot")
         _raise_dependency_preflight_errors(
             selected=selected,
             runtime=runtime,
@@ -173,7 +186,6 @@ def run_plot_job(
     sets: list[str] | None,
     ensure_active_lifecycle_fn: Callable,
     require_dataframe_records_fn: Callable,
-    append_journal_fn: Callable,
 ) -> None:
     _, decl = load_job_models(job_path)
     if not list_only and not dry_run:
@@ -185,8 +197,8 @@ def run_plot_job(
     inspection_runtime = _load("reader.workbench.inspection.runtime")
     fmt = normalize_output_format(format)
     if not list_only:
-        if fmt == "json":
-            raise typer.BadParameter("--format json is only supported with --list")
+        if fmt == "json" and not dry_run:
+            raise typer.BadParameter("--format json is only supported with --list or --dry-run")
         if not dry_run:
             require_dataframe_records_fn(decl, job_path, runtime=runtime)
     plot_specs = list(workbench.plots)
@@ -242,7 +254,7 @@ def run_plot_job(
         raise typer.BadParameter("No plots selected. Adjust --only/--exclude or use --list to inspect valid ids.")
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    overrides, selected = apply_surface_overrides(
+    _, selected = apply_surface_overrides(
         selected,
         inputs=inputs,
         sets=sets,
@@ -250,6 +262,8 @@ def run_plot_job(
         resources=resources,
     )
     if dry_run:
+        _load("reader.workbench.engine").normalize_log_level(log_level)
+        _validate_dry_run_selection(decl=decl, selected=selected, runtime=runtime, label="plot")
         _raise_dependency_preflight_errors(
             selected=selected,
             runtime=runtime,
@@ -257,23 +271,20 @@ def run_plot_job(
             exp_root=experiment_root,
             label="plot",
         )
-    if not dry_run:
-        append_journal_fn(
-            job_path,
-            " ".join(
-                overrides.build_surface_command(
-                    "reader plot",
-                    job_path,
-                    only=only,
-                    exclude=exclude,
-                    list_only=False,
-                    dry_run=dry_run,
-                    log_level=log_level,
-                    inputs=inputs,
-                    sets=sets,
-                )
-            ),
-        )
+        if fmt == "json":
+            payload = inspection_catalogs.workbench_surface_specs_payload(
+                job_path=job_path,
+                decl=decl,
+                runtime=runtime,
+                bound_protocol=bound_protocol,
+                selected=selected,
+                kind="plot",
+                only=only or [],
+                exclude=exclude or [],
+            )
+            payload["dry_run"] = True
+            emit_json(payload)
+            return
     _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,
@@ -311,7 +322,6 @@ def run_export_job(
     sets: list[str] | None,
     ensure_active_lifecycle_fn: Callable,
     require_dataframe_records_fn: Callable,
-    append_journal_fn: Callable,
 ) -> None:
     _, decl = load_job_models(job_path)
     if not list_only and not dry_run:
@@ -373,36 +383,43 @@ def run_export_job(
         return
     if not selected:
         raise typer.BadParameter("No exports selected. Adjust --only/--exclude or use --list to inspect valid ids.")
-    if fmt == "json":
-        raise typer.BadParameter("--format json is only supported with --list")
+    if fmt == "json" and not dry_run:
+        raise typer.BadParameter("--format json is only supported with --list or --dry-run")
     if not dry_run:
         require_dataframe_records_fn(decl, job_path, runtime=runtime)
     experiment_root = decl.experiment.root
     resources = decl.experiment_semantics.resources
-    overrides, selected = apply_surface_overrides(
+    _, selected = apply_surface_overrides(
         selected,
         inputs=inputs,
         sets=sets,
         experiment_root=experiment_root,
         resources=resources,
     )
-    if not dry_run:
-        append_journal_fn(
-            job_path,
-            " ".join(
-                overrides.build_surface_command(
-                    "reader export",
-                    job_path,
-                    only=only,
-                    exclude=exclude,
-                    list_only=False,
-                    dry_run=dry_run,
-                    log_level=log_level,
-                    inputs=inputs,
-                    sets=sets,
-                )
-            ),
+    if dry_run:
+        _load("reader.workbench.engine").normalize_log_level(log_level)
+        _validate_dry_run_selection(decl=decl, selected=selected, runtime=runtime, label="export")
+        _raise_dependency_preflight_errors(
+            selected=selected,
+            runtime=runtime,
+            bound_protocol=bound_protocol,
+            exp_root=experiment_root,
+            label="export",
         )
+        if fmt == "json":
+            payload = inspection_catalogs.workbench_surface_specs_payload(
+                job_path=job_path,
+                decl=decl,
+                runtime=runtime,
+                bound_protocol=bound_protocol,
+                selected=selected,
+                kind="export",
+                only=only or [],
+                exclude=exclude or [],
+            )
+            payload["dry_run"] = True
+            emit_json(payload)
+            return
     _load("reader.workbench.engine").run_spec(
         decl,
         dry_run=dry_run,

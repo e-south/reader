@@ -11,13 +11,13 @@ from reader.errors import ReaderError
 from . import _records_view, _surface_execution, shared
 from ._lazy import load as _load
 from .helpers import (
-    append_journal,
     ensure_active_lifecycle,
     find_nearest_experiments_dir,
     find_year_jobs,
     infer_job_path,
     load_job_models,
     require_dataframe_records,
+    resolve_output_experiment,
 )
 from .shared import (
     EXPORT_EXCLUDE_OPTION,
@@ -46,11 +46,11 @@ SFXI_AGGREGATE_SOURCES_ARGUMENT = typer.Argument(
     metavar="SOURCE...",
     help="Experiment config, experiment directory, outputs directory, or vec8 table file.",
 )
-SFXI_AGGREGATE_OUT_DIR_OPTION = typer.Option(
-    Path("outputs/reviews/sfxi_vec8_aggregate"),
-    "--out-dir",
-    metavar="DIR",
-    help="Directory for the aggregate heatmap, tidy CSV, and manifest.",
+SFXI_AGGREGATE_OUTPUT_EXPERIMENT_OPTION = typer.Option(
+    ...,
+    "--output-experiment",
+    metavar="CONFIG|DIR|INDEX",
+    help="Experiment that owns the aggregate heatmap, tidy CSV, and manifest.",
 )
 SFXI_AGGREGATE_FILENAME_OPTION = typer.Option(
     "sfxi_vec8_heatmap",
@@ -170,7 +170,6 @@ def _run_plot_job(
         sets=sets,
         ensure_active_lifecycle_fn=ensure_active_lifecycle,
         require_dataframe_records_fn=require_dataframe_records,
-        append_journal_fn=append_journal,
     )
 
 
@@ -200,7 +199,6 @@ def _run_export_job(
         sets=sets,
         ensure_active_lifecycle_fn=ensure_active_lifecycle,
         require_dataframe_records_fn=require_dataframe_records,
-        append_journal_fn=append_journal,
     )
 
 
@@ -382,7 +380,7 @@ def export(
 @app.command("aggregate-sfxi-vec8", help="Render an aggregate SFXI vec8 heatmap from experiment records or vec8 files.")
 def aggregate_sfxi_vec8(
     sources: list[Path] = SFXI_AGGREGATE_SOURCES_ARGUMENT,
-    out_dir: Path = SFXI_AGGREGATE_OUT_DIR_OPTION,
+    output_experiment: str = SFXI_AGGREGATE_OUTPUT_EXPERIMENT_OPTION,
     filename: str = SFXI_AGGREGATE_FILENAME_OPTION,
     title: str | None = SFXI_AGGREGATE_TITLE_OPTION,
     dpi: int = SFXI_AGGREGATE_DPI_OPTION,
@@ -391,7 +389,8 @@ def aggregate_sfxi_vec8(
 ) -> None:
     fmt = normalize_output_format(format)
     try:
-        aggregate_module = _load("reader.domains.logic.sfxi.vec8_aggregate")
+        out_dir = resolve_output_experiment(output_experiment)
+        aggregate_module = _load("reader.runtime.sfxi_vec8_aggregate")
         artifacts = aggregate_module.write_sfxi_vec8_aggregate(
             sources=sources,
             out_dir=out_dir,
@@ -429,10 +428,28 @@ def records(
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
     ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        metavar="N",
+        help="Maximum records per JSON page (default: 25; maximum: 100).",
+    ),
+    continuation: str | None = typer.Option(
+        None,
+        "--continuation",
+        metavar="TOKEN",
+        help="Opaque continuation token from a previous JSON page.",
+    ),
 ):
     try:
         job_path = infer_job_path(job)
-        _records_view.render_records(job_path=job_path, all_revisions=all, format=format)
+        _records_view.render_records(
+            job_path=job_path,
+            all_revisions=all,
+            format=format,
+            limit=limit,
+            continuation=continuation,
+        )
     except ReaderError as err:
         handle_reader_error(err)
 
@@ -508,9 +525,23 @@ def plugins(
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
     ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        metavar="N",
+        help="Maximum plugins per JSON page (default: 25; maximum: 100).",
+    ),
+    continuation: str | None = typer.Option(
+        None,
+        "--continuation",
+        metavar="TOKEN",
+        help="Opaque continuation token from a previous JSON page.",
+    ),
 ):
     protocol = protocol if isinstance(protocol, str) else None
     fmt = normalize_output_format(format)
+    limit, continuation = shared.normalize_paging_options(limit, continuation)
+    shared.require_json_paging(format=fmt, limit=limit, continuation=continuation)
     try:
         runtime = _load("reader.runtime").builtin_runtime()
         descriptors = runtime.plugins.catalog().filter(category=category, domain=domain, family=family)
@@ -522,15 +553,23 @@ def plugins(
     except ReaderError as err:
         handle_reader_error(err)
     if fmt == "json":
-        emit_json(
-            _load("reader.workbench.inspection.catalogs").plugin_registry_payload(
-                descriptors=descriptors,
-                category=category,
-                domain=domain,
-                family=family,
-                protocol=protocol,
-            )
+        payload = _load("reader.workbench.inspection.catalogs").plugin_registry_payload(
+            descriptors=descriptors,
+            category=category,
+            domain=domain,
+            family=family,
+            protocol=protocol,
         )
+        page = shared.page_json_collection(
+            payload["plugins"],
+            key=lambda item: str(item["plugin"]),
+            surface="plugins",
+            selection=payload["selection"],
+            limit=limit,
+            continuation=continuation,
+        )
+        payload["plugins"] = list(page.items)
+        emit_json(payload, truncated=page.truncated, continuation=page.continuation)
         return
     listing = table("Plugins")
     listing.add_column("category", style="accent")

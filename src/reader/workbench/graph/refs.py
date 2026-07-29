@@ -33,6 +33,7 @@ class OutputRef:
 class ProvenanceInput:
     label: str
     ref: InputRef
+    discovery_policy: str | None = None
 
 
 def input_ref_display(ref: InputRef) -> str:

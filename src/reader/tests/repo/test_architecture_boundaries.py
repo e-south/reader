@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+READER_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+DOMAIN_ROOT = READER_ROOT / "domains"
+FORBIDDEN_DOMAIN_DEPENDENCIES = (
+    "reader.api",
+    "reader.maintenance",
+    "reader.plugins",
+    "reader.protocols",
+    "reader.runtime",
+    "reader.workbench",
+)
+
+
+def test_domains_do_not_depend_on_orchestration_packages() -> None:
+    violations: list[str] = []
+    for path in sorted(DOMAIN_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            names = _imported_modules(node)
+            for name in names:
+                if any(name == prefix or name.startswith(prefix + ".") for prefix in FORBIDDEN_DOMAIN_DEPENDENCIES):
+                    violations.append(f"{path.relative_to(READER_ROOT)}:{node.lineno} imports {name}")
+
+    assert violations == [], "Domain packages must not depend on orchestration:\n" + "\n".join(violations)
+
+
+def test_repository_has_no_parallel_work_product_roots() -> None:
+    stray = [name for name in ("outputs", "tmp") if (REPO_ROOT / name).exists()]
+
+    assert stray == [], (
+        "Reader work products belong to experiments/<year>/<experiment>/outputs; "
+        f"local scratch belongs in .tmp. Stray repository roots: {stray}"
+    )
+
+
+def _imported_modules(node: ast.AST) -> tuple[str, ...]:
+    if isinstance(node, ast.Import):
+        return tuple(alias.name for alias in node.names)
+    if isinstance(node, ast.ImportFrom) and node.module:
+        return (node.module,)
+    return ()
