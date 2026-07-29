@@ -35,7 +35,7 @@ def test_main_push_runs_default_ci_without_duplicate_integration_job() -> None:
 def test_hidden_test_artifact_bundles_are_uploaded_or_fail_explicitly() -> None:
     for workflow_name, job_name in (("ci.yaml", "default-tests"), ("integration.yaml", "integration")):
         steps = _workflow(workflow_name)["jobs"][job_name]["steps"]
-        upload = next(step for step in steps if step.get("uses") == "actions/upload-artifact@v4")
+        upload = next(step for step in steps if step.get("uses") == "actions/upload-artifact@v7")
 
         assert upload["with"]["path"] == ".artifacts/"
         assert upload["with"]["include-hidden-files"] is True
