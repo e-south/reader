@@ -60,6 +60,15 @@ def test_parallel_jobs_use_one_uv_cache_writer() -> None:
     assert "save-cache" not in setup_steps["tests"]["with"]
 
 
+def test_dependency_audit_covers_runtime_and_notebook_surfaces() -> None:
+    steps = _workflow("checks.yaml")["jobs"]["package"]["steps"]
+    audit = next(step for step in steps if step.get("name") == "Audit operational dependencies")
+
+    assert "--no-dev --group notebooks --no-emit-project" in audit["run"]
+    assert "--no-deps" in audit["run"]
+    assert "--disable-pip" in audit["run"]
+
+
 def test_release_oidc_is_limited_to_publish_job() -> None:
     jobs = _workflow("release.yaml")["jobs"]
 
