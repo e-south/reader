@@ -27,10 +27,12 @@ class _Promotion:
 class FileOutputTransaction:
     """Stage one plot/export step and restore prior files unless it commits."""
 
-    def __init__(self, *, context: RunContext, step_id: str) -> None:
+    def __init__(self, *, context: RunContext, step_id: str, phase: str) -> None:
         self._final_context = context
         staging_parent = _confined_staging_parent(context.outputs_dir)
         prefix = _SAFE_PREFIX.sub("_", step_id).strip("._") or "file-output"
+        self._phase = phase
+        self._revision_name = prefix
         self._staging_root = Path(mkdtemp(prefix=f"{prefix}__", dir=staging_parent))
         self.context = replace(
             context,
@@ -45,6 +47,7 @@ class FileOutputTransaction:
         self.context.exports_dir.mkdir(parents=True, exist_ok=True)
         self.context.records_path.parent.mkdir(parents=True, exist_ok=True)
         self._promotions: list[_Promotion] = []
+        self._revision_dir: Path | None = None
         self._committed = False
 
     def __enter__(self) -> FileOutputTransaction:
@@ -71,6 +74,11 @@ class FileOutputTransaction:
         if not staged_paths:
             raise ExecutionError(f"{where}: must emit at least one explicit file output")
         path_map, promotion_paths = self._path_maps(staged_paths, where=where)
+        record_path_map = self._publish_record_revision(
+            path_map=path_map,
+            promotion_paths=promotion_paths,
+            where=where,
+        )
         rollback_root = self._staging_root / ".rollback"
         final_root = self._final_context.outputs_dir.resolve(strict=True)
         for final_path in promotion_paths.values():
@@ -102,7 +110,7 @@ class FileOutputTransaction:
             staged_path.replace(final_path)
 
         return {
-            name: _remap_output_value(value, path_map=path_map)
+            name: _remap_output_value(value, path_map=record_path_map)
             if output_ports[name].kind in {"file_path", "file_bundle"}
             else value
             for name, value in outputs.items()
@@ -145,6 +153,35 @@ class FileOutputTransaction:
             final_paths.add(final_path)
         return path_map, promotion_paths
 
+    def _publish_record_revision(
+        self,
+        *,
+        path_map: dict[Path, Path],
+        promotion_paths: dict[Path, Path],
+        where: str,
+    ) -> dict[Path, Path]:
+        """Publish one immutable copy of the declared bundle for record history."""
+
+        final_root = self._final_context.outputs_dir.resolve(strict=True)
+        revision_parent = final_root / "artifacts" / "file_bundles" / self._phase
+        _assert_confined_destination(revision_parent, final_root=final_root, where=where)
+        revision_parent.mkdir(parents=True, exist_ok=True)
+        _assert_confined_destination(revision_parent, final_root=final_root, where=where)
+        revision_dir = _next_revision_dir(revision_parent / self._revision_name)
+
+        staged_revision = self._staging_root / ".record-revision"
+        staged_revision.mkdir()
+        snapshot_by_final: dict[Path, Path] = {}
+        for staged_path, final_path in promotion_paths.items():
+            relative_path = final_path.relative_to(final_root)
+            snapshot = staged_revision / relative_path
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged_path, snapshot)
+            snapshot_by_final[final_path] = revision_dir / relative_path
+        self._revision_dir = revision_dir
+        staged_revision.replace(revision_dir)
+        return {raw_path: snapshot_by_final[final_path] for raw_path, final_path in path_map.items()}
+
     def _rollback(self) -> None:
         for promotion in reversed(self._promotions):
             if promotion.previous_exists:
@@ -156,6 +193,23 @@ class FileOutputTransaction:
             else:
                 promotion.final_path.unlink(missing_ok=True)
         self._promotions.clear()
+        if self._revision_dir is not None:
+            revision_parent = self._revision_dir.parent
+            shutil.rmtree(self._revision_dir, ignore_errors=True)
+            self._revision_dir = None
+            with suppress(OSError):
+                revision_parent.rmdir()
+            with suppress(OSError):
+                revision_parent.parent.rmdir()
+
+
+def _next_revision_dir(base: Path) -> Path:
+    revision = 1
+    while True:
+        candidate = base if revision == 1 else base.with_name(f"{base.name}__r{revision}")
+        if not candidate.exists() and not candidate.is_symlink():
+            return candidate
+        revision += 1
 
 
 def _confined_staging_parent(outputs_dir: Path) -> Path:

@@ -296,22 +296,22 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
     assert plot_record.description == (
         "Quality-control measurements and diagnostics defined by the selected experiment domain."
     )
-    assert plot_record.description_for(plot_path) == (
+    assert plot_record.description_for(plot_record.files[0]) == (
         "Quality-control measurements and diagnostics defined by the selected experiment domain."
     )
     assert latest["export:export_dummy"].description == "Test export plugin."
     custom_record = latest["plot:custom_pair"]
     assert custom_record.description == "Render two test plot files."
-    assert custom_record.description_for(outputs / "plots" / "custom_kinetics.pdf") == (
-        "Reporter kinetics over assay time."
-    )
-    assert custom_record.description_for(outputs / "plots" / "custom_summary.pdf") == ("Endpoint summary by treatment.")
+    custom_paths = {path.name: path for path in custom_record.files}
+    assert custom_record.description_for(custom_paths["custom_kinetics.pdf"]) == ("Reporter kinetics over assay time.")
+    assert custom_record.description_for(custom_paths["custom_summary.pdf"]) == ("Endpoint summary by treatment.")
     generic_pair_record = latest["plot:generic_pair"]
     assert generic_pair_record.description == "Render one test plot in multiple formats."
-    assert generic_pair_record.description_for(outputs / "plots" / "generic_pair.pdf") == (
+    generic_paths = {path.name: path for path in generic_pair_record.files}
+    assert generic_pair_record.description_for(generic_paths["generic_pair.pdf"]) == (
         "Render one test plot in multiple formats."
     )
-    assert generic_pair_record.description_for(outputs / "plots" / "generic_pair.png") == (
+    assert generic_pair_record.description_for(generic_paths["generic_pair.png"]) == (
         "Render one test plot in multiple formats."
     )
     assert plot_path.exists()

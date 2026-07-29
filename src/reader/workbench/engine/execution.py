@@ -215,7 +215,9 @@ def execute_step(*, step: Any, phase: str, store: RecordStore, ctx: RunContext, 
             plug_inputs[key] = value
 
     transaction_context = (
-        FileOutputTransaction(context=ctx, step_id=step.id) if phase in {"plots", "exports"} else nullcontext()
+        FileOutputTransaction(context=ctx, step_id=step.id, phase=phase)
+        if phase in {"plots", "exports"}
+        else nullcontext()
     )
     with transaction_context as file_transaction:
         plugin_context = file_transaction.context if file_transaction is not None else ctx

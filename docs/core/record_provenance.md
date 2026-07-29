@@ -19,6 +19,13 @@ binds together:
 - the exact upstream record revision consumed by downstream steps; and
 - each generated file’s output-relative path, byte size, and SHA-256.
 
+Plot and export plugins still update their configured current files under
+`outputs/plots/` or `outputs/exports/`. Each file-bundle record points to an
+immutable revision under `outputs/artifacts/file_bundles/<phase>/<step>/`
+(`__r2`, `__r3`, and so on for later revisions). A rerun can therefore advance
+the current presentation files without invalidating any earlier catalog
+history entry.
+
 Run the verifier after producing or moving outputs:
 
 ```bash
