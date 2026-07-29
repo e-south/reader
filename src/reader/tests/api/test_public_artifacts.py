@@ -35,9 +35,15 @@ class _Fixture:
 
 
 class _TrackingLock:
-    def __init__(self, *, failure: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure: BaseException | None = None,
+        release_failure: BaseException | None = None,
+    ) -> None:
         self.depth = 0
         self.failure = failure
+        self.release_failure = release_failure
 
     def acquire(self, *_args, **_kwargs):
         if self.failure is not None:
@@ -47,6 +53,8 @@ class _TrackingLock:
 
     def release(self, *_args, **_kwargs) -> None:
         self.depth -= 1
+        if self.depth == 0 and self.release_failure is not None:
+            raise self.release_failure
 
     def __enter__(self):
         return self.acquire()
@@ -284,6 +292,53 @@ def test_publish_artifact_bundle_wraps_writer_lease_acquisition_failure_before_a
         )
 
     assert calls == []
+
+
+def test_publish_artifact_bundle_classifies_writer_lease_release_failure_after_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _upstream_record(fixture)
+    lease = _TrackingLock(release_failure=OSError("synthetic release failure"))
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+
+    with pytest.raises(RecordError, match="completed.*verify before continuing"):
+        _publish(
+            fixture,
+            artifacts=(_artifact("cytometry_eda.pdf", "pdf"),),
+        )
+
+    assert fixture.store.latest_record("notebook:cytometry_eda") is not None
+    assert lease.depth == 0
+
+
+def test_publish_artifact_bundle_preserves_writer_error_when_lease_release_also_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _upstream_record(fixture)
+    lease = _TrackingLock(release_failure=OSError("synthetic release failure"))
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+
+    def _fail_writer(_path: Path) -> None:
+        raise ValueError("artifact writer failure remains primary")
+
+    with pytest.raises(ValueError, match="artifact writer failure remains primary") as raised:
+        _publish(
+            fixture,
+            artifacts=(
+                ArtifactSpec(
+                    relative_path="cytometry_eda.pdf",
+                    description="Synthetic artifact.",
+                    writer=_fail_writer,
+                ),
+            ),
+        )
+
+    assert any("also could not release the experiment writer lease" in note for note in raised.value.__notes__)
+    assert lease.depth == 0
 
 
 @pytest.mark.parametrize("relative_path", ["/tmp/escape.pdf", "../escape.pdf", "."])

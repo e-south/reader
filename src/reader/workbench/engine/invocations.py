@@ -11,13 +11,12 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from filelock import Timeout
-
 from reader.errors import ConfigError, ExecutionError
 from reader.workbench.graph import FileRef, RecordCollectionRef, RecordRef, ResourceRef
 from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records import record_revision_digest
 from reader.workbench.records.identity import BuildIdentity
+from reader.workbench.records.locking import provenance_lock_scope
 
 INVOCATION_SCHEMA = "reader.invocation/v2"
 _FAILURE_REASON_LIMIT = 500
@@ -244,14 +243,16 @@ class InvocationLedger:
         if self._writer_lock is None:
             self._append_locked(event)
             return
-        try:
-            self._writer_lock.acquire()
-        except (Timeout, OSError, NotImplementedError) as exc:
-            raise ExecutionError("Could not acquire the invocation writer lease") from exc
-        try:
+        with provenance_lock_scope(
+            self._writer_lock,
+            acquire_error=ExecutionError("Could not acquire the invocation writer lease"),
+            release_error=ExecutionError(
+                "The invocation event may have been committed, but Reader could not release the writer lease. "
+                "Inspect the active ledger and run reader verify before retrying."
+            ),
+            release_note="Reader also could not release the invocation writer lease",
+        ):
             self._append_locked(event)
-        finally:
-            self._writer_lock.release()
 
     def _append_locked(self, event: dict[str, Any]) -> None:
         self._assert_active_epoch()

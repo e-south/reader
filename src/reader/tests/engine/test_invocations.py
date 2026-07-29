@@ -63,9 +63,15 @@ class _SyntheticIngest(Plugin):
 
 
 class _TrackingLock:
-    def __init__(self, *, failure: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure: BaseException | None = None,
+        release_failure: BaseException | None = None,
+    ) -> None:
         self.depth = 0
         self.failure = failure
+        self.release_failure = release_failure
 
     def acquire(self, *_args, **_kwargs):
         if self.failure is not None:
@@ -75,6 +81,8 @@ class _TrackingLock:
 
     def release(self, *_args, **_kwargs) -> None:
         self.depth -= 1
+        if self.depth == 0 and self.release_failure is not None:
+            raise self.release_failure
 
     def __enter__(self):
         return self.acquire()
@@ -681,6 +689,58 @@ def test_run_spec_wraps_writer_lease_acquisition_failure_before_plugin_execution
         )
 
     assert calls == []
+
+
+def test_run_spec_classifies_writer_lease_release_failure_after_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    lease = _TrackingLock(release_failure=OSError("synthetic release failure"))
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+
+    with pytest.raises(ExecutionError, match="completed.*verify before continuing"):
+        run_spec(
+            decl,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert (tmp_path / "outputs" / "manifests" / "records.json").is_file()
+    assert lease.depth == 0
+
+
+def test_run_spec_preserves_operation_error_when_writer_lease_release_also_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    lease = _TrackingLock(release_failure=OSError("synthetic release failure"))
+
+    def _fail_plugin(self, ctx, inputs, cfg):
+        del self, ctx, inputs, cfg
+        raise ValueError("plugin failure remains primary")
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+    monkeypatch.setattr(_SyntheticIngest, "run", _fail_plugin)
+
+    with pytest.raises(ExecutionError, match="plugin failure remains primary") as raised:
+        run_spec(
+            decl,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert any("also could not release the experiment writer lease" in note for note in raised.value.__notes__)
+    assert lease.depth == 0
 
 
 def test_run_spec_preserves_committed_records_when_success_result_cannot_be_confirmed(

@@ -13,10 +13,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pandas as pd
-from filelock import Timeout
 
 from reader.contracts import ContractCatalog, ContractId
-from reader.errors import RecordError
+from reader.errors import ProvenanceEpochChangedError, RecordError
 from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef, SourceRecordRef
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.paths import resolve_confined_sink_root
@@ -35,7 +34,7 @@ from reader.workbench.records.model import (
 
 from .evidence import RecordInputEvidence, capture_artifact_evidence
 from .identity import BuildIdentity, current_build_identity, digest_json
-from .locking import ProvenanceFileLock
+from .locking import ProvenanceFileLock, provenance_lock_scope
 from .model import record_revision_digest
 
 RECORD_CATALOG_SCHEMA_VERSION = 4
@@ -180,7 +179,7 @@ class RecordStore:
 
         active_epoch_id = self.provenance_epoch_id()
         if active_epoch_id != expected_epoch_id:
-            raise RecordError(
+            raise ProvenanceEpochChangedError(
                 "The record catalog provenance epoch changed during this operation; "
                 "discard the stale result and start a new Reader invocation."
             )
@@ -201,26 +200,13 @@ class RecordStore:
     def _catalog_lock_scope(self, *, operation: str) -> Iterator[None]:
         """Normalize lock failures without swallowing errors from the protected operation."""
 
-        try:
-            self._catalog_lock.acquire()
-        except (Timeout, OSError, NotImplementedError) as exc:
-            raise RecordError(f"Could not {operation}: the record catalog provenance lock is unavailable") from exc
-        body_error: BaseException | None = None
-        try:
+        with provenance_lock_scope(
+            self._catalog_lock,
+            acquire_error=RecordError(f"Could not {operation}: the record catalog provenance lock is unavailable"),
+            release_error=RecordError(f"Could not {operation}: the record catalog provenance lock could not release"),
+            release_note="Reader also could not release the record catalog lock",
+        ):
             yield
-        except BaseException as exc:
-            body_error = exc
-            raise
-        finally:
-            try:
-                self._catalog_lock.release()
-            except (Timeout, OSError, NotImplementedError) as exc:
-                if body_error is not None:
-                    body_error.add_note(f"Reader also could not release the record catalog lock: {exc}")
-                else:
-                    raise RecordError(
-                        f"Could not {operation}: the record catalog provenance lock could not release"
-                    ) from exc
 
     def assert_catalog_snapshot(self, *, provenance_epoch_id: str, catalog_digest: str) -> None:
         """Fail unless the catalog still matches a previously read snapshot."""
@@ -282,7 +268,7 @@ class RecordStore:
             self._bound_provenance_epoch_id is not None
             and data["provenance_epoch_id"] != self._bound_provenance_epoch_id
         ):
-            raise RecordError(
+            raise ProvenanceEpochChangedError(
                 "The record catalog provenance epoch changed during this operation; "
                 "discard the stale result and start a new Reader invocation."
             )

@@ -12,7 +12,7 @@ from uuid import UUID
 
 from filelock import Timeout
 
-from reader.errors import RecordError
+from reader.errors import ProvenanceEpochChangedError, RecordError
 from reader.workbench.graph import RecordRef, SourceRecordRef
 from reader.workbench.records.model import (
     DataFrameArtifactRecord,
@@ -23,6 +23,7 @@ from reader.workbench.records.model import (
 )
 
 from .identity import BuildIdentity, current_build_identity, digest_json
+from .locking import provenance_lock_scope
 
 _UNVERIFIABLE_CODES = frozenset({"build.identity_mismatch", "config.digest_mismatch"})
 
@@ -495,6 +496,8 @@ def _verify_invocation_ledger(
                 continue
             try:
                 history = store.record_history(revision["record_id"])
+            except ProvenanceEpochChangedError:
+                raise
             except RecordError:
                 continue
             revision_number = revision["revision"]
@@ -600,14 +603,41 @@ def _ledger_snapshot(path: Path, *, manifests_dir: Path) -> tuple[object, ...] |
 
 
 def _concurrent_change_issue(*, phase: str) -> dict[str, object]:
-    action = "establish" if phase == "start" else "confirm"
+    if phase == "inspection":
+        reason = "The active provenance epoch changed during verification."
+    else:
+        action = "establish" if phase == "start" else "confirm"
+        reason = f"Reader could not {action} a stable provenance snapshot at the {phase} of verification."
     return _issue(
         code="verification.concurrent_change",
         field="outputs/manifests",
-        reason=f"Reader could not {action} a stable provenance snapshot at the {phase} of verification.",
+        reason=reason,
         remediation="Retry verification after the active writer finishes.",
         retryable=True,
     )
+
+
+def _missing_catalog_report() -> dict[str, object]:
+    return {
+        "schema": "reader.verify/v1",
+        "status": "failed",
+        "summary": {
+            "checked": 0,
+            "failed": 1,
+            "unverifiable": 0,
+            "invocations_checked": 0,
+            "invocation_failures": 0,
+        },
+        "issues": [
+            _issue(
+                code="catalog.missing",
+                field="outputs/manifests/records.json",
+                reason="The experiment has no records catalog.",
+                remediation="Run the experiment to produce schema-v5 records, then verify again.",
+            ),
+        ],
+        "records": [],
+    }
 
 
 def verify_record_store(
@@ -620,30 +650,20 @@ def verify_record_store(
 ) -> dict[str, object]:
     current_build = expected_build_identity or current_build_identity()
     if not store.catalog_exists():
-        return {
-            "schema": "reader.verify/v1",
-            "status": "failed",
-            "summary": {
-                "checked": 0,
-                "failed": 1,
-                "unverifiable": 0,
-                "invocations_checked": 0,
-                "invocation_failures": 0,
-            },
-            "issues": [
-                _issue(
-                    code="catalog.missing",
-                    field="outputs/manifests/records.json",
-                    reason="The experiment has no records catalog.",
-                    remediation="Run the experiment to produce schema-v5 records, then verify again.",
-                ),
-            ],
-            "records": [],
-        }
+        return _missing_catalog_report()
+    epoch_observed = False
     try:
-        provenance_epoch_id = store.provenance_epoch_id()
-        store.bind_provenance_epoch(provenance_epoch_id)
-        with store.provenance_lock:
+        with provenance_lock_scope(
+            store.provenance_lock,
+            acquire_error=OSError("Could not acquire the verification snapshot lease"),
+            release_error=OSError("Could not release the verification snapshot lease"),
+            release_note="Reader also could not release the verification snapshot lease",
+        ):
+            if not store.catalog_exists():
+                return _missing_catalog_report()
+            provenance_epoch_id = store.provenance_epoch_id()
+            epoch_observed = True
+            store.bind_provenance_epoch(provenance_epoch_id)
             starting_catalog_digest = digest_json(store._read_catalog())
             invocation_ledger_path = store.invocation_ledger_path()
             starting_ledger_snapshot = _ledger_snapshot(
@@ -666,6 +686,20 @@ def verify_record_store(
             "records": [],
         }
     except RecordError as exc:
+        if epoch_observed:
+            return {
+                "schema": "reader.verify/v1",
+                "status": "failed",
+                "summary": {
+                    "checked": 0,
+                    "failed": 0,
+                    "unverifiable": 0,
+                    "invocations_checked": 0,
+                    "invocation_failures": 1,
+                },
+                "issues": [_concurrent_change_issue(phase="start")],
+                "records": [],
+            }
         return {
             "schema": "reader.verify/v1",
             "status": "failed",
@@ -686,12 +720,28 @@ def verify_record_store(
             ],
             "records": [],
         }
-    invocation_issues, invocations_checked = _verify_invocation_ledger(
-        invocation_ledger_path,
-        expected_epoch_id=provenance_epoch_id,
-        store=store,
-        required=bool(catalog_records),
-    )
+    try:
+        invocation_issues, invocations_checked = _verify_invocation_ledger(
+            invocation_ledger_path,
+            expected_epoch_id=provenance_epoch_id,
+            store=store,
+            required=bool(catalog_records),
+        )
+    except ProvenanceEpochChangedError:
+        return {
+            "schema": "reader.verify/v1",
+            "status": "failed",
+            "summary": {
+                "checked": 0,
+                "failed": 0,
+                "unverifiable": 0,
+                "invocations_checked": 0,
+                "invocation_failures": 1,
+            },
+            "issues": [_concurrent_change_issue(phase="inspection")],
+            "records": [],
+        }
+    latest_records_by_id = {record.record_id: record for record in catalog_records}
     records = catalog_records
     if scope is not None:
         records = tuple(record for record in records if scope.includes(record))
@@ -737,7 +787,7 @@ def verify_record_store(
             )
         for item in record.inputs:
             if isinstance(item.ref, RecordRef):
-                upstream = store.latest_record(item.ref.record_id)
+                upstream = latest_records_by_id.get(item.ref.record_id)
                 if upstream is None:
                     issues.append(
                         _issue(
@@ -893,7 +943,12 @@ def verify_record_store(
         )
     stability_issues: list[dict[str, object]] = []
     try:
-        with store.provenance_lock:
+        with provenance_lock_scope(
+            store.provenance_lock,
+            acquire_error=OSError("Could not acquire the verification snapshot lease"),
+            release_error=OSError("Could not release the verification snapshot lease"),
+            release_note="Reader also could not release the verification snapshot lease",
+        ):
             ending_catalog_digest = digest_json(store._read_catalog())
             ending_ledger_snapshot = _ledger_snapshot(
                 invocation_ledger_path,

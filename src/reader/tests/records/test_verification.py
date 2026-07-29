@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from filelock import Timeout
 
+import reader.workbench.records.verification as verification_module
 from reader.contracts import builtin_contract_catalog
 from reader.errors import RecordError
 from reader.workbench.engine.invocations import InvocationLedger
@@ -94,15 +95,23 @@ class _SnapshotLock:
         self._failure = failure
         self._failure_entry = failure_entry
         self.entries = 0
+        self.depth = 0
 
-    def __enter__(self):
+    def acquire(self):
         self.entries += 1
         if self.entries == self._failure_entry:
             raise self._failure
+        self.depth += 1
         return self
 
-    def __exit__(self, _exc_type, _exc_value, _traceback) -> bool:
-        return False
+    def release(self) -> None:
+        self.depth -= 1
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
+        self.release()
 
 
 @pytest.mark.parametrize(
@@ -177,6 +186,72 @@ def test_verifier_reports_end_snapshot_lock_failure_as_retryable_concurrent_chan
             "code": "verification.concurrent_change",
             "field": "outputs/manifests",
             "reason": "Reader could not confirm a stable provenance snapshot at the end of verification.",
+            "remediation": "Retry verification after the active writer finishes.",
+            "retryable": True,
+        }
+    ]
+
+
+def test_verifier_binds_and_reads_the_epoch_inside_the_snapshot_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _ledger_path, _events = _write_valid_invocation(tmp_path)
+    lock = _SnapshotLock(failure=AssertionError("unused"), failure_entry=99)
+    original_provenance_epoch_id = store.provenance_epoch_id
+    observed_depths: list[int] = []
+
+    def _guarded_provenance_epoch_id() -> str:
+        observed_depths.append(lock.depth)
+        if lock.depth < 1:
+            raise AssertionError("verification read the provenance epoch before acquiring its snapshot lease")
+        return original_provenance_epoch_id()
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lock))
+    monkeypatch.setattr(store, "provenance_epoch_id", _guarded_provenance_epoch_id)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "ok"
+    assert observed_depths
+    assert all(depth >= 1 for depth in observed_depths)
+
+
+def test_verifier_reports_an_epoch_reset_after_the_start_snapshot_as_concurrent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _ledger_path, _events = _write_valid_invocation(tmp_path)
+    concurrent_store = RecordStore(
+        store.root,
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+    original_verify_ledger = verification_module._verify_invocation_ledger
+
+    def _reset_then_verify_ledger(*args, **kwargs):
+        concurrent_store.reset_catalog()
+        return original_verify_ledger(*args, **kwargs)
+
+    monkeypatch.setattr(verification_module, "_verify_invocation_ledger", _reset_then_verify_ledger)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["summary"]["invocation_failures"] == 1
+    assert report["issues"] == [
+        {
+            "code": "verification.concurrent_change",
+            "field": "outputs/manifests",
+            "reason": "The active provenance epoch changed during verification.",
             "remediation": "Retry verification after the active writer finishes.",
             "retryable": True,
         }

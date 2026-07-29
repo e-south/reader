@@ -14,6 +14,7 @@ from filelock import Timeout
 from reader.contracts import builtin_contract_catalog
 from reader.errors import RecordError
 from reader.workbench.records import RecordStore
+from reader.workbench.records.locking import provenance_lock_scope
 
 
 def _catalog_payload() -> dict[str, object]:
@@ -92,6 +93,45 @@ def test_catalog_snapshot_does_not_mask_a_protected_body_error(
         store.catalog_snapshot()
 
     assert not store.provenance_lock.is_locked
+
+
+class _ReleaseFailingLock:
+    def acquire(self) -> None:
+        return None
+
+    def release(self) -> None:
+        raise OSError("synthetic release failure")
+
+
+def test_provenance_lock_scope_preserves_body_error_when_release_also_fails() -> None:
+    body_error = ValueError("protected operation failed")
+
+    with (
+        pytest.raises(ValueError, match="protected operation failed") as raised,
+        provenance_lock_scope(
+            _ReleaseFailingLock(),
+            acquire_error=RecordError("acquire failed"),
+            release_error=RecordError("release failed"),
+            release_note="Reader also could not release the test lease",
+        ),
+    ):
+        raise body_error
+
+    assert raised.value is body_error
+    assert raised.value.__notes__ == ["Reader also could not release the test lease (OSError)."]
+
+
+def test_provenance_lock_scope_classifies_release_failure_after_success() -> None:
+    with (
+        pytest.raises(RecordError, match="release failed"),
+        provenance_lock_scope(
+            _ReleaseFailingLock(),
+            acquire_error=RecordError("acquire failed"),
+            release_error=RecordError("release failed"),
+            release_note="Reader also could not release the test lease",
+        ),
+    ):
+        pass
 
 
 def test_provenance_lock_is_reentrant_and_contends_across_instances(tmp_path: Path) -> None:

@@ -8,8 +8,6 @@ from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
-from filelock import Timeout
-
 from reader.errors import InvocationFinalizationError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecordRef
 from reader.workbench.paths import resolve_confined_sink_root, resolve_path_within_root
@@ -21,6 +19,7 @@ from reader.workbench.records import (
     RecordStore,
     digest_json,
 )
+from reader.workbench.records.locking import provenance_lock_scope
 
 from .invocations import (
     InvocationLedger,
@@ -79,12 +78,15 @@ def publish_artifact_bundle(
 ) -> ArtifactPublication:
     """Publish a confined bundle through RecordStore and the invocation ledger."""
 
-    writer_lease = store.provenance_lock
-    try:
-        writer_lease.acquire()
-    except (Timeout, OSError, NotImplementedError) as exc:
-        raise RecordError("Could not acquire the experiment writer lease") from exc
-    try:
+    with provenance_lock_scope(
+        store.provenance_lock,
+        acquire_error=RecordError("Could not acquire the experiment writer lease"),
+        release_error=RecordError(
+            "Artifact publication completed, but Reader could not release the experiment writer lease. "
+            "Do not retry blindly; run reader verify before continuing."
+        ),
+        release_note="Reader also could not release the experiment writer lease",
+    ):
         return _publish_artifact_bundle_locked(
             store=store,
             ledger=ledger,
@@ -98,8 +100,6 @@ def publish_artifact_bundle(
             description=description,
             artifacts=artifacts,
         )
-    finally:
-        writer_lease.release()
 
 
 def _publish_artifact_bundle_locked(

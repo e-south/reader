@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from filelock import Timeout
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -18,6 +17,7 @@ from reader.workbench.decl import WorkbenchDecl, load_workbench_decl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
 from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records import current_build_identity
+from reader.workbench.records.locking import provenance_lock_scope
 
 from ._shared import collect_categories
 from .execution import run_steps
@@ -179,12 +179,15 @@ def run_spec(
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
     )
-    writer_lease = store.provenance_lock
-    try:
-        writer_lease.acquire()
-    except (Timeout, OSError, NotImplementedError) as exc:
-        raise ExecutionError("Could not acquire the experiment writer lease") from exc
-    try:
+    with provenance_lock_scope(
+        store.provenance_lock,
+        acquire_error=ExecutionError("Could not acquire the experiment writer lease"),
+        release_error=ExecutionError(
+            "Execution completed, but Reader could not release the experiment writer lease. "
+            "Do not retry blindly; run reader verify before continuing."
+        ),
+        release_note="Reader also could not release the experiment writer lease",
+    ):
         return _run_spec_locked(
             decl=decl,
             runtime=runtime,
@@ -205,8 +208,6 @@ def run_spec(
             show_next_steps=show_next_steps,
             job_label=job_label,
         )
-    finally:
-        writer_lease.release()
 
 
 def _run_spec_locked(

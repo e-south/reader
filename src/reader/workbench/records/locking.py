@@ -5,9 +5,12 @@ from __future__ import annotations
 import errno
 import os
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
-from filelock import BaseFileLock
+from filelock import BaseFileLock, Timeout
 
 if os.name == "posix":
     import fcntl
@@ -146,6 +149,36 @@ class ProvenanceFileLock(BaseFileLock):
             fcntl.flock(descriptor, fcntl.LOCK_UN)
         else:  # pragma: win32 cover
             msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+
+
+@contextmanager
+def provenance_lock_scope(
+    lock: Any,
+    *,
+    acquire_error: Exception,
+    release_error: Exception,
+    release_note: str,
+) -> Iterator[None]:
+    """Hold a provenance lock without masking a protected operation failure."""
+
+    try:
+        lock.acquire()
+    except (Timeout, OSError, NotImplementedError) as exc:
+        raise acquire_error from exc
+    body_error: BaseException | None = None
+    try:
+        yield
+    except BaseException as exc:
+        body_error = exc
+        raise
+    finally:
+        try:
+            lock.release()
+        except (Timeout, OSError, NotImplementedError) as exc:
+            if body_error is not None:
+                body_error.add_note(f"{release_note} ({type(exc).__name__}).")
+            else:
+                raise release_error from exc
 
 
 def _same_inode(left: os.stat_result, right: os.stat_result) -> bool:
