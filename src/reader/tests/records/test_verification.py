@@ -153,6 +153,95 @@ def test_verifier_reports_start_snapshot_lock_failure_as_retryable_concurrent_ch
     ]
 
 
+def test_verifier_reports_missing_catalog_without_mutating_an_existing_manifest_directory(
+    tmp_path: Path,
+) -> None:
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+        create=False,
+    )
+    store.manifests_dir.mkdir(parents=True)
+    sentinel = store.manifests_dir / "sentinel.txt"
+    sentinel.write_bytes(b"unchanged\n")
+    before = {path.name: path.read_bytes() for path in store.manifests_dir.iterdir()}
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    after = {path.name: path.read_bytes() for path in store.manifests_dir.iterdir()}
+    assert report["status"] == "failed"
+    assert report["issues"][0]["code"] == "catalog.missing"
+    assert after == before
+    assert not store.provenance_lock_exists()
+
+
+def test_verifier_rechecks_catalog_presence_under_an_existing_snapshot_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+        create=False,
+    )
+    store.manifests_dir.mkdir(parents=True)
+    (store.manifests_dir / ".records.lock").write_bytes(b"")
+    lock = _SnapshotLock(failure=AssertionError("unused"), failure_entry=99)
+    original_catalog_exists = store.catalog_exists
+    observed_depths: list[int] = []
+
+    def _guarded_catalog_exists() -> bool:
+        observed_depths.append(lock.depth)
+        return original_catalog_exists()
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lock))
+    monkeypatch.setattr(store, "catalog_exists", _guarded_catalog_exists)
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["issues"][0]["code"] == "catalog.missing"
+    assert observed_depths == [0, 1]
+    assert lock.entries == 1
+    assert lock.depth == 0
+
+
+def test_verifier_does_not_treat_a_broken_lock_symlink_as_absent(tmp_path: Path) -> None:
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+        create=False,
+    )
+    store.manifests_dir.mkdir(parents=True)
+    lock_path = store.manifests_dir / ".records.lock"
+    try:
+        lock_path.symlink_to(store.manifests_dir / "missing-lock-target")
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    report = verify_record_store(
+        store,
+        experiment_root=tmp_path,
+        expected_config_digest="sha256:experiment-config",
+    )
+
+    assert report["status"] == "failed"
+    assert report["issues"][0]["code"] == "verification.concurrent_change"
+    assert report["issues"][0]["retryable"] is True
+    assert lock_path.is_symlink()
+
+
 @pytest.mark.parametrize(
     "lock_failure",
     [Timeout("provenance lease"), OSError("lock unavailable"), NotImplementedError("lock unsupported")],

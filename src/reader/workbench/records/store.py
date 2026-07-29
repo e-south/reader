@@ -135,6 +135,11 @@ class RecordStore:
     def catalog_exists(self) -> bool:
         return self.records_path.exists() or self.records_path.is_symlink()
 
+    def provenance_lock_exists(self) -> bool:
+        """Return whether the non-followed writer coordination entry already exists."""
+
+        return self._catalog_lock_path.exists() or self._catalog_lock_path.is_symlink()
+
     def reset_catalog(self) -> str:
         """Atomically begin a fresh catalog and invocation provenance epoch."""
 

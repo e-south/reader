@@ -649,7 +649,10 @@ def verify_record_store(
     scope: RecordVerificationScope | None = None,
 ) -> dict[str, object]:
     current_build = expected_build_identity or current_build_identity()
-    if not store.catalog_exists():
+    # Observe the catalog first and the non-followed lock entry second. If both
+    # are absent, this is the non-mutating first-run linearization point. A
+    # writer starting between the checks exposes its lock entry and is awaited.
+    if not store.catalog_exists() and not store.provenance_lock_exists():
         return _missing_catalog_report()
     epoch_observed = False
     try:
