@@ -198,6 +198,39 @@ def test_paired_row_uses_one_treatment_color_map() -> None:
     plt.close(figures[0].fig)
 
 
+def test_snapshot_only_group_uses_snapshot_hue_palette_without_time_series_rows() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A1", "B1"],
+            "time": [0.0, 0.0, 0.0],
+            "channel": ["OD600", "RFP/OD600", "RFP/OD600"],
+            "value": [0.1, 1.0, 2.0],
+            "group": ["complete", "complete", "snapshot-only"],
+            "treatment": ["A", "A", "B"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=frame,
+        output_dir=None,
+        group_on="group",
+        pool_sets=[{"complete": ["complete"]}, {"snapshot-only": ["snapshot-only"]}],
+        ts_channel="OD600",
+        ts_hue="treatment",
+        snap_x="position",
+        snap_channel="RFP/OD600",
+        snap_hue="treatment",
+        snap_time=0.0,
+    )
+
+    assert len(figures) == 2
+    snapshot_only_ts, snapshot_only_snap = figures[1].fig.axes
+    assert len(snapshot_only_ts.lines) == 0
+    assert len(snapshot_only_snap.patches) == 1
+    for figure in figures:
+        plt.close(figure.fig)
+
+
 def test_composite_figure_config_rejects_unknown_keys() -> None:
     with pytest.raises(ValidationError, match="axis_lable_size"):
         TSAndSnapCfg.model_validate(

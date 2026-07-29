@@ -198,7 +198,7 @@ def plot_ts_and_snap(
             else []
         )
         marker_map = marker_map_for_levels(hue_levels_ts)
-        colors = colors_for(len(hue_levels_ts), palette_book)
+        colors = colors_for(max(1, len(hue_levels_ts)), palette_book)
         color_map = shared_color_map or {h: colors[i % len(colors)] for i, h in enumerate(hue_levels_ts)}
 
         # If snapshot uses the same hue column, reuse colors; otherwise compute locally on demand
@@ -206,10 +206,10 @@ def plot_ts_and_snap(
             hue_levels_snap: list[str],
             *,
             color_map=color_map,
-            colors=colors,
         ) -> dict[str, str]:
             if snap_hue_col and snap_hue_col == ts_hue_col:
-                return {h: color_map.get(h, colors[i % len(colors)]) for i, h in enumerate(hue_levels_snap)}
+                fallback_colors = colors_for(len(hue_levels_snap), palette_book)
+                return {h: color_map.get(h, fallback_colors[i]) for i, h in enumerate(hue_levels_snap)}
             snap_colors = colors_for(len(hue_levels_snap), palette_book)
             return {h: snap_colors[i % len(snap_colors)] for i, h in enumerate(hue_levels_snap)}
 
@@ -352,7 +352,7 @@ def plot_ts_and_snap(
             hue_col=ts_hue_col,
             configured=order_hue,
         )
-        figure_colors = colors_for(len(figure_hue_levels), palette_book)
+        figure_colors = colors_for(max(1, len(figure_hue_levels)), palette_book)
         figure_color_map = {
             hue: figure_colors[index % len(figure_colors)] for index, hue in enumerate(figure_hue_levels)
         }
@@ -382,7 +382,7 @@ def plot_ts_and_snap(
                 configured=order_hue,
                 name="order_hue",
             )
-            figure_colors = colors_for(len(hue_levels), palette_book)
+            figure_colors = colors_for(max(1, len(hue_levels)), palette_book)
             with use_style(rc=fig_kwargs.get("rc"), color_cycle=figure_colors):
                 fig, axes = plt.subplots(1, 2, **_figure_kwargs(pair_count=1))
                 ax_ts, ax_snap = axes
