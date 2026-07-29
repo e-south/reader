@@ -9,6 +9,7 @@ Author(s): Eric J. South
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +21,13 @@ from reader.contracts import builtin_contract_catalog
 from reader.errors import ExecutionError
 from reader.plotting.sinks import PlotFigure
 from reader.plugins.plot._shared import FigurePlotPlugin, save_rendered_figures
-from reader.protocols import ProtocolBinding, ProtocolSemanticProgram, builtin_protocol_catalog
+from reader.protocols import (
+    ProtocolBinding,
+    ProtocolCatalog,
+    ProtocolFigureSpec,
+    ProtocolSemanticProgram,
+    builtin_protocol_catalog,
+)
 from reader.runtime import ReaderRuntime
 from reader.workbench import PluginSemantics, resolve_workbench
 from reader.workbench.assets import AssetCatalog, build_plugin_asset
@@ -246,9 +253,27 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
             plugin_cls=_DummyExport,
         )
     )
+    generic_protocol = builtin_protocol_catalog().resolve("workbench/generic")
+    protocols = ProtocolCatalog(
+        [
+            replace(
+                generic_protocol,
+                figures=(
+                    ProtocolFigureSpec(
+                        id="generic_qc",
+                        kind="qc",
+                        summary=(
+                            "Quality-control measurements and diagnostics defined by the selected experiment domain."
+                        ),
+                        primary=True,
+                    ),
+                ),
+            )
+        ]
+    )
     runtime = ReaderRuntime(
         contracts=builtin_contract_catalog(),
-        protocols=builtin_protocol_catalog(),
+        protocols=protocols,
         plugins=reg,
         assets=AssetCatalog([]),
     )

@@ -123,7 +123,7 @@ markers = [
 
 norecursedirs = [
   ".venv", "build", "dist", ".eggs", "*.egg-info",
-  "outputs", "plots", "raw_data", "_scratch", ".tmp"
+  "outputs", "raw_data", "_scratch", ".tmp"
 ]
 
 [tool.coverage.run]
