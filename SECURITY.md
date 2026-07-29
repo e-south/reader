@@ -54,6 +54,9 @@ External plugins and notebooks are executable Python. They are an extension surf
 - absolute subdirectory paths are rejected
 - generated runtime outputs are confined to each experiment's `outputs/`
 - notebook artifact staging and publication reject path and symlink escapes
+- provenance catalogs, lock files, and active invocation ledgers reject
+  symlinks, nonregular files, and multiply linked files before reading or
+  mutation
 
 ### Execution boundaries
 
@@ -74,6 +77,8 @@ External plugins and notebooks are executable Python. They are an extension surf
   `reader verify` checks against current files
 - input evidence is captured before execution and rechecked before catalog
   commit so a mid-run source change refuses persistence
+- each mutating operation holds one experiment writer lease through artifact,
+  catalog, and terminal invocation publication
 - invocation verification rejects missing, duplicate, orphaned, or malformed
   terminal lifecycle events
 - record readers accept schema v5 only; older payloads make the catalog invalid
@@ -126,10 +131,11 @@ can bypass them. Repository tests therefore verify that tracked experiment
 content remains confined to the synthetic template and that public package
 metadata does not expose a personal email address.
 
-As verified on 2026-07-29, current branches, tags, and release artifacts contain
-no tracked private experiment files or personal email address. GitHub secret
-scanning and push protection are enabled, and the repository has no open secret
-alerts.
+As verified on 2026-07-29, the checked-out public tree and distributions built
+from it contain no tracked private experiment files or personal email address.
+GitHub secret scanning and push protection are enabled, and the repository has
+no open secret alerts. This check does not prove the contents of every remote
+branch, tag, cached view, clone, or superseded artifact.
 
 Historical GitHub pull-request refs still retain superseded experiment
 material, local paths, and a personal commit identity. Treat that material as

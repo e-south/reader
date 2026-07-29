@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,88 @@ def test_json_failures_are_one_document_on_stdout(
     assert payload["error"]["reason"]
     assert payload["error"]["remediation"]
     assert payload["error"]["retryable"] is False
+
+
+def test_main_adapts_typer_owned_parameter_errors(monkeypatch, capsys) -> None:
+    cli_main = import_module("reader.workbench.cli.main")
+    typer_click_exception = type(
+        "ClickException",
+        (Exception,),
+        {"__module__": "typer._click.exceptions"},
+    )
+
+    class BadParameter(typer_click_exception):
+        __module__ = "typer._click.exceptions"
+        exit_code = 2
+        param = None
+        param_hint = "--limit"
+
+        def format_message(self) -> str:
+            return "Invalid value for --limit: limit must be between 1 and 100"
+
+        def show(self) -> None:
+            return None
+
+    error = BadParameter("limit must be between 1 and 100")
+
+    class Command:
+        def main(self, **_kwargs) -> None:
+            raise error
+
+    monkeypatch.setattr(cli_main.typer.main, "get_command", lambda _app: Command())
+
+    exit_code = cli_main.main(["plugins", "--limit", "0", "--format", "json"])
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    payload = _assert_envelope(
+        subprocess.CompletedProcess([], exit_code, captured.out, captured.err),
+        ok=False,
+        command="plugins",
+    )
+    assert exit_code == 2
+    assert payload["error"]["code"] == "invalid_parameter"
+    assert payload["error"]["field"] == "limit"
+
+
+@pytest.mark.parametrize(
+    ("args", "code", "field"),
+    [
+        (("plugins", "--limit", "0", "--format", "json"), "invalid_parameter", "limit"),
+        (("plugins", "--unknown", "value", "--format", "json"), "usage_error", "arguments"),
+    ],
+)
+def test_main_cli_framework_errors_are_stable_across_supported_typer(
+    args: tuple[str, ...],
+    code: str,
+    field: str,
+    capsys,
+) -> None:
+    cli_main = import_module("reader.workbench.cli.main")
+
+    exit_code = cli_main.main(args)
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    payload = _assert_envelope(
+        subprocess.CompletedProcess([], exit_code, captured.out, captured.err),
+        ok=False,
+        command="plugins",
+    )
+    assert exit_code == 2
+    assert payload["error"]["code"] == code
+    assert payload["error"]["field"] == field
+
+
+def test_main_cli_framework_exit_is_stable_across_supported_typer(capsys) -> None:
+    cli_main = import_module("reader.workbench.cli.main")
+
+    exit_code = cli_main.main(["--version"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip()
+    assert captured.err == ""
 
 
 def test_json_reader_failure_is_structured_and_has_no_side_effects(tmp_path: Path) -> None:

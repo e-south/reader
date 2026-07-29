@@ -42,8 +42,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
 - [CLI reference](./core/cli.md): full command reference.
 - [Python API](./core/python_api.md): typed inspection, planning, record, and
   verification entrypoints for integrations.
-- [Record provenance](./core/record_provenance.md): schema-v5 evidence,
-  verification states, and the single-schema validity gate.
+- [Record provenance](./core/record_provenance.md): catalog-v4 epochs,
+  record-schema-v5 evidence, and verification states.
 - [Configuring `reader/v8`](./core/pipeline.md): config schema and protocol-owned settings.
 - [Ordered state spaces](./core/ordered_state_spaces.md): metric-neutral state
   identity and exact metadata-value binding.

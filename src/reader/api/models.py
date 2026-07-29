@@ -192,6 +192,7 @@ class DataFrameRecordResult(ApiResult):
 class RunResult(ApiResult):
     experiment: ExperimentIdentity
     invocation_id: str | None
+    provenance_epoch_id: str | None
     operation: Literal["run", "plot", "export", "mixed"]
     status: Literal["planned", "succeeded"]
     dry_run: bool

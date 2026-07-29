@@ -44,18 +44,20 @@ declarations, runtime composition, and record stores remain API internals.
 - `plan(experiment)` returns the resolved protocol plan without execution.
 - `plots(experiment, only=(), exclude=())` returns selected plot contracts.
 - `records(experiment, include_history=False)` reads the record catalog without
-  creating one when it is absent.
+  creating one when it is absent. Catalog metadata reports the catalog schema,
+  active provenance epoch, and active invocation-ledger path.
 - `read_dataframe(experiment, record_id)` loads the latest dataframe revision,
   verifies its content digest, and returns a defensive dataframe copy together
   with its contract, content digest, revision number, and revision digest. Its
   `to_dict()` projection contains only JSON-ready identity and dataframe-shape
   metadata; dataframe values remain available through `.dataframe` in Python.
-- `verify(experiment)` checks current schema-v5 source, config, Reader-build,
-  exact-upstream-revision, generated-artifact, and invocation-lifecycle
-  evidence without changing outputs.
+- `verify(experiment)` checks the catalog-schema-v4 envelope,
+  record-schema-v5 source, config, Reader-build, exact-upstream-revision, and
+  generated-artifact evidence together with the active invocation-schema-v2
+  lifecycle. It does not change outputs.
 - `run(experiment)` executes pipeline steps through the same engine path as the
-  CLI and returns the invocation id, selected steps, exact produced record
-  revisions, and invocation-ledger path.
+  CLI and returns the invocation id, provenance epoch, selected steps, exact
+  produced record revisions, and active invocation-ledger path.
 - `notebook(experiment, name=None, template=None, overwrite=False)` generates a
   protocol-compatible Marimo workbench under the experiment's configured
   output directory. The shared EDA surface uses one deliverable selector, one
@@ -63,10 +65,16 @@ declarations, runtime composition, and record stores remain API internals.
 
 Use `run(experiment, dry_run=True)` to validate and select the effective
 pipeline without creating `outputs/`; its result has status `planned` and no
-invocation or ledger path. `from_step`, `until_step`, and `only` provide the
-same pipeline slicing semantics as the corresponding CLI options. Plot and
-export mutation remain behind `reader plot` and `reader export` while their
-typed public results are defined.
+invocation, provenance epoch, or ledger path. `from_step`, `until_step`, and
+`only` provide the same pipeline slicing semantics as the corresponding CLI
+options.
+
+Use `run(experiment, reset_records=True)` only to replace an invalid generated
+catalog before a complete pipeline rerun. Reset cannot be combined with a dry
+run or any partial selector. It creates a fresh catalog epoch and active ledger;
+prior epoch ledgers remain inactive forensic residue. Plot and export mutation
+remain behind `reader plot` and `reader export` while their typed public results
+are defined.
 
 ## Notebook components and artifact publication
 

@@ -125,16 +125,10 @@ def test_records_rejects_retired_record_schemas(tmp_path) -> None:
         "config_digest": "sha256:qc",
         "files": ["plots/qc.png"],
     }
-    store.records_path.write_text(
-        json.dumps(
-            {
-                "schema_version": 3,
-                "latest": {"plot:qc": record},
-                "history": {"plot:qc": [record]},
-            }
-        ),
-        encoding="utf-8",
-    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    catalog["latest"] = {"plot:qc": record}
+    catalog["history"] = {"plot:qc": [record]}
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     runner = CliRunner()
     text_result = runner.invoke(app, ["records", str(config)])

@@ -230,8 +230,8 @@ def experiment_readiness_payload(
         summary_text = "blocked (invalid records catalog)"
         next_steps = [
             {
-                "command": reader_command("records", job_path, "--format", "json"),
-                "description": "Inspect and repair the invalid records catalog before using persisted outputs.",
+                "command": reader_command("run", job_path, "--reset-records"),
+                "description": "Replace the invalid catalog and perform one complete pipeline rerun.",
             }
         ]
     elif records_available and verification_report and verification_report["status"] == "failed":

@@ -19,6 +19,7 @@ from reader.tests.support import (
     cli_error_data,
     cli_success_data,
     default_notebook_name,
+    record_successful_invocation,
     write_config,
 )
 from reader.workbench import PluginSemantics, cli
@@ -174,7 +175,7 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
 
     outputs = exp_dir / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -183,6 +184,13 @@ def test_ls_details_shows_protocol_and_output_counts(monkeypatch, tmp_path: Path
         contract_id="tidy.v1",
         inputs=[],
         config_digest="sha256:test",
+    )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest="sha256:test",
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
     )
     plots_dir = outputs / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -229,7 +237,7 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
 
     outputs = good_dir / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -238,6 +246,13 @@ def test_ls_json_surfaces_counts_and_config_errors(tmp_path: Path) -> None:
         contract_id="tidy.v1",
         inputs=[],
         config_digest="sha256:test",
+    )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest="sha256:test",
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
     )
 
     runner = CliRunner()
@@ -839,7 +854,7 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
     _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -848,6 +863,13 @@ def test_inspect_command_surfaces_pipeline_and_outputs(tmp_path: Path) -> None:
         contract_id="tidy.v1",
         inputs=[],
         config_digest="sha256:test",
+    )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest="sha256:test",
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
     )
     plot_dir = outputs / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
@@ -880,7 +902,7 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
     _write_openable_workbook(inputs_dir / "20250101_sensor_panel.xlsx")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
-    store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -889,6 +911,13 @@ def test_inspect_command_can_emit_json(tmp_path: Path) -> None:
         contract_id="tidy.v1",
         inputs=[],
         config_digest="sha256:test",
+    )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest="sha256:test",
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
     )
 
     runner = CliRunner()

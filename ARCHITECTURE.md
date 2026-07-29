@@ -45,9 +45,10 @@ experiments/
 ```
 
 `config.yaml` is the authored source of truth. `outputs/` is generated state.
-`records.json` under `outputs/manifests/` is the canonical catalog for emitted
-records and file bundles. `invocations.jsonl` records execution attempts and
-terminal outcomes.
+Catalog-schema-v4 `records.json` under `outputs/manifests/` is the canonical
+catalog for emitted records and file bundles. It owns the active provenance
+epoch. Attempt and terminal events use invocation schema v2 and live in the
+matching `outputs/manifests/invocations/<epoch>.jsonl` ledger.
 
 ## Component Map
 
@@ -216,8 +217,8 @@ These are the invariants the codebase should preserve.
   aggregate is itself an experiment and owns its generated bundles under that
   experiment's `outputs/` directory.
 - Records and artifacts must be traceable through `outputs/manifests/records.json`.
-- Execution attempts and outcomes belong in `outputs/manifests/invocations.jsonl`,
-  not an authored journal.
+- Execution attempts and outcomes belong in the catalog-selected
+  `outputs/manifests/invocations/<epoch>.jsonl`, not an authored journal.
 - Discovery, validation, and dry-run surfaces must remain available without executing the full pipeline.
 
 ## Current Architecture Pressure

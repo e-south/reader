@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from filelock import Timeout
 
 from reader.api import ArtifactBundleResult, ArtifactSpec, Experiment, open_experiment, publish_artifact_bundle
 from reader.errors import ExecutionError, InvocationFinalizationError, RecordError
@@ -13,7 +14,8 @@ from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
 from reader.workbench.engine.invocations import InvocationLedger
-from reader.workbench.records import FileBundleRecord, RecordStore, verify_record_store
+from reader.workbench.records import FileBundleRecord, RecordStore, record_revision_digest, verify_record_store
+from reader.workbench.records.identity import current_build_identity
 
 
 @dataclass(frozen=True)
@@ -29,7 +31,28 @@ class _Fixture:
 
     @property
     def ledger_path(self) -> Path:
-        return self.outputs_dir / "manifests" / "invocations.jsonl"
+        return self.store.invocation_ledger_path()
+
+
+class _TrackingLock:
+    def __init__(self, *, failure: BaseException | None = None) -> None:
+        self.depth = 0
+        self.failure = failure
+
+    def acquire(self, *_args, **_kwargs):
+        if self.failure is not None:
+            raise self.failure
+        self.depth += 1
+        return self
+
+    def release(self, *_args, **_kwargs) -> None:
+        self.depth -= 1
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, *_args) -> None:
+        self.release()
 
 
 def _fixture(tmp_path: Path, *, exports_subdir: str = "exports") -> _Fixture:
@@ -73,7 +96,7 @@ def _fixture(tmp_path: Path, *, exports_subdir: str = "exports") -> _Fixture:
 
 
 def _upstream_record(fixture: _Fixture) -> None:
-    fixture.store.persist_dataframe(
+    record = fixture.store.persist_dataframe(
         producer_id="merge_metadata",
         producer_plugin="transform/sample_metadata",
         out_name="df",
@@ -89,6 +112,25 @@ def _upstream_record(fixture: _Fixture) -> None:
         contract_id="tidy.v1",
         inputs=[],
         config_digest=fixture.declaration.config_digest,
+    )
+    ledger = InvocationLedger.for_store(store=fixture.store)
+    attempt = ledger.append_attempt(
+        config_digest=fixture.declaration.config_digest,
+        build_identity=current_build_identity(),
+        operation="run",
+        selected_step_ids={"pipeline": ["merge_metadata"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    ledger.append_result(
+        attempt,
+        exit_status=0,
+        produced_record_revisions=[
+            {
+                "record_id": record.record_id,
+                "revision": 1,
+                "revision_digest": record_revision_digest(record, outputs_dir=fixture.store.root),
+            }
+        ],
     )
 
 
@@ -119,7 +161,11 @@ def _publish(
 
 
 def _ledger_events(fixture: _Fixture) -> list[dict[str, object]]:
-    return [json.loads(line) for line in fixture.ledger_path.read_text(encoding="utf-8").splitlines()]
+    return [
+        event
+        for line in fixture.ledger_path.read_text(encoding="utf-8").splitlines()
+        if (event := json.loads(line))["operation"] == "export"
+    ]
 
 
 def test_publish_artifact_bundle_writes_verified_record_and_attempt_result_ledger(tmp_path: Path) -> None:
@@ -137,6 +183,7 @@ def test_publish_artifact_bundle_writes_verified_record_and_attempt_result_ledge
 
     assert isinstance(result, ArtifactBundleResult)
     assert result.experiment == fixture.experiment.identity
+    assert result.provenance_epoch_id == fixture.store.provenance_epoch_id()
     assert result.record.record_id == "notebook:cytometry_eda"
     assert result.record.revision == 1
     assert result.record.revision_digest.startswith("sha256:")
@@ -178,6 +225,67 @@ def test_publish_artifact_bundle_writes_verified_record_and_attempt_result_ledge
     assert result.ledger_path == str(fixture.ledger_path)
 
 
+def test_publish_artifact_bundle_holds_one_writer_lease_across_artifact_writers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _upstream_record(fixture)
+    lease = _TrackingLock()
+    observed_depths: list[int] = []
+
+    def _write_under_observation(path: Path) -> None:
+        observed_depths.append(lease.depth)
+        path.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+
+    _publish(
+        fixture,
+        artifacts=(
+            ArtifactSpec(
+                relative_path="cytometry_eda.pdf",
+                description="Artifact cytometry_eda.pdf.",
+                writer=_write_under_observation,
+            ),
+        ),
+    )
+
+    assert observed_depths == [1]
+    assert lease.depth == 0
+
+
+@pytest.mark.parametrize(
+    "lock_failure",
+    [Timeout("provenance lease"), OSError("lock unavailable"), NotImplementedError("lock unsupported")],
+)
+def test_publish_artifact_bundle_wraps_writer_lease_acquisition_failure_before_artifact_writers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lock_failure: BaseException,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _upstream_record(fixture)
+    lease = _TrackingLock(failure=lock_failure)
+    calls: list[str] = []
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+
+    with pytest.raises(RecordError, match="writer lease"):
+        _publish(
+            fixture,
+            artifacts=(
+                ArtifactSpec(
+                    relative_path="cytometry_eda.pdf",
+                    description="Artifact cytometry_eda.pdf.",
+                    writer=lambda _path: calls.append("write"),
+                ),
+            ),
+        )
+
+    assert calls == []
+
+
 @pytest.mark.parametrize("relative_path", ["/tmp/escape.pdf", "../escape.pdf", "."])
 def test_publish_artifact_bundle_rejects_unconfined_paths_before_writers(
     tmp_path: Path,
@@ -201,7 +309,7 @@ def test_publish_artifact_bundle_rejects_unconfined_paths_before_writers(
 
     assert calls == []
     assert not (fixture.outputs_dir / "exports" / "cytometry_eda").exists()
-    assert not fixture.ledger_path.exists()
+    assert _ledger_events(fixture) == []
 
 
 def test_publish_artifact_bundle_rejects_symlinked_staging_parent_before_writers(tmp_path: Path) -> None:
@@ -402,7 +510,7 @@ def test_publish_artifact_bundle_requires_existing_upstream_record_before_attemp
         )
 
     assert not (fixture.outputs_dir / "exports" / "cytometry_eda").exists()
-    assert not fixture.ledger_path.exists()
+    assert _ledger_events(fixture) == []
 
 
 def test_publish_artifact_bundle_rejects_dataframe_record_id_before_attempt_or_writer(tmp_path: Path) -> None:
@@ -442,7 +550,7 @@ def test_publish_artifact_bundle_rejects_dataframe_record_id_before_attempt_or_w
     assert calls == []
     assert fixture.store.record_history("summary/df") == (fixture.store.read_record("summary/df"),)
     assert not (fixture.outputs_dir / "exports" / "cytometry_eda").exists()
-    assert not fixture.ledger_path.exists()
+    assert _ledger_events(fixture) == []
 
 
 def test_publish_artifact_bundle_rejects_self_reference_before_attempt_or_writer(tmp_path: Path) -> None:
@@ -460,7 +568,7 @@ def test_publish_artifact_bundle_rejects_self_reference_before_attempt_or_writer
     assert calls == []
     assert fixture.store.latest_record("notebook:cytometry_eda") is None
     assert not (fixture.outputs_dir / "exports" / "cytometry_eda").exists()
-    assert not fixture.ledger_path.exists()
+    assert _ledger_events(fixture) == []
 
 
 def test_changed_artifact_bundle_uses_immutable_revision_directory(tmp_path: Path) -> None:
@@ -507,7 +615,7 @@ def test_success_result_failure_preserves_committed_artifact_without_false_termi
         expected_config_digest=fixture.declaration.config_digest,
     )
     assert verification["status"] == "failed"
-    assert verification["summary"]["invocation_failures"] == 1
+    assert verification["summary"]["invocation_failures"] == 2
     assert verification["issues"][0]["code"] == "invocation.finalization_unconfirmed"
 
 

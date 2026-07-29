@@ -9,6 +9,7 @@ import pytest
 from reader.contracts import builtin_contract_catalog
 from reader.errors import ExecutionError, RecordError
 from reader.protocols import ProtocolBinding, builtin_protocol_catalog
+from reader.tests.support import record_successful_invocation
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.context import RunContext
@@ -293,6 +294,13 @@ def test_failed_file_output_rerun_restores_last_successful_bundle(tmp_path: Path
 
     execute_step(step=step, phase="exports", store=store, ctx=context, registry=registry)
     first = store.read_record("export:report")
+    record_successful_invocation(
+        store,
+        records=[first],
+        config_digest=context.config_digest,
+        operation="export",
+        selected_step_ids={"pipeline": [], "plots": [], "exports": ["report"]},
+    )
     output = context.exports_dir / "report.txt"
     assert output.read_text(encoding="utf-8") == "1"
 
@@ -358,7 +366,7 @@ def test_failed_file_output_catalog_write_restores_last_successful_bundle(
 
     raw.write_text("2", encoding="utf-8")
 
-    def _fail_catalog(_catalog):
+    def _fail_catalog(_catalog, **_kwargs):
         raise RecordError("catalog failed")
 
     monkeypatch.setattr(store, "_write_catalog", _fail_catalog)

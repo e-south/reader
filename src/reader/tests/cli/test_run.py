@@ -209,7 +209,9 @@ def test_failed_run_records_invocation_without_mutating_journals(tmp_path: Path)
     assert journal.read_bytes() == before
     assert "journal.md" not in {path.name for path in tmp_path.iterdir()}
 
-    invocation_path = tmp_path / "outputs" / "manifests" / "invocations.jsonl"
+    manifests = tmp_path / "outputs" / "manifests"
+    catalog = json.loads((manifests / "records.json").read_text(encoding="utf-8"))
+    invocation_path = manifests / "invocations" / f"{catalog['provenance_epoch_id']}.jsonl"
     events = [json.loads(line) for line in invocation_path.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["attempt", "result"]
     assert events[0]["invocation_id"] == events[1]["invocation_id"]
@@ -226,7 +228,7 @@ def test_failed_run_records_invocation_without_mutating_journals(tmp_path: Path)
     assert str(tmp_path) not in events[1]["failure"]["reason"]
 
 
-def test_corrupt_existing_catalog_still_records_terminal_invocation(tmp_path: Path) -> None:
+def test_corrupt_existing_catalog_fails_before_creating_an_orphan_invocation(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _run_config())
     manifests = tmp_path / "outputs" / "manifests"
     manifests.mkdir(parents=True)
@@ -235,7 +237,5 @@ def test_corrupt_existing_catalog_still_records_terminal_invocation(tmp_path: Pa
     result = CliRunner().invoke(app, ["run", str(cfg)])
 
     assert result.exit_code == 1
-    events = [json.loads(line) for line in (manifests / "invocations.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [event["event"] for event in events] == ["attempt", "result"]
-    assert events[1]["status"] == "failed"
-    assert events[1]["produced_record_revisions"] == []
+    assert "records.json is not valid JSON" in result.output
+    assert not (manifests / "invocations").exists()

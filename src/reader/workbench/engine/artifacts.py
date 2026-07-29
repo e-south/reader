@@ -8,6 +8,8 @@ from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
+from filelock import Timeout
+
 from reader.errors import InvocationFinalizationError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecordRef
 from reader.workbench.paths import resolve_confined_sink_root, resolve_path_within_root
@@ -55,6 +57,7 @@ class ArtifactWrite:
 class ArtifactPublication:
     record: FileBundleRecord
     invocation_id: str
+    provenance_epoch_id: str
     ledger_path: Path
     revision: int
     revision_digest: str
@@ -75,6 +78,45 @@ def publish_artifact_bundle(
     artifacts: Sequence[ArtifactWrite],
 ) -> ArtifactPublication:
     """Publish a confined bundle through RecordStore and the invocation ledger."""
+
+    writer_lease = store.provenance_lock
+    try:
+        writer_lease.acquire()
+    except (Timeout, OSError, NotImplementedError) as exc:
+        raise RecordError("Could not acquire the experiment writer lease") from exc
+    try:
+        return _publish_artifact_bundle_locked(
+            store=store,
+            ledger=ledger,
+            config_digest=config_digest,
+            build_identity=build_identity,
+            producer_id=producer_id,
+            producer_template=producer_template,
+            record_id=record_id,
+            upstream_records=upstream_records,
+            producer_config=producer_config,
+            description=description,
+            artifacts=artifacts,
+        )
+    finally:
+        writer_lease.release()
+
+
+def _publish_artifact_bundle_locked(
+    *,
+    store: RecordStore,
+    ledger: InvocationLedger,
+    config_digest: str,
+    build_identity: BuildIdentity,
+    producer_id: str,
+    producer_template: str,
+    record_id: str,
+    upstream_records: Mapping[str, str],
+    producer_config: Mapping[str, Any],
+    description: str,
+    artifacts: Sequence[ArtifactWrite],
+) -> ArtifactPublication:
+    """Publish one bundle while the caller holds the experiment writer lease."""
 
     normalized_producer_id = str(producer_id).strip()
     if not _SAFE_PRODUCER_ID.fullmatch(normalized_producer_id) or normalized_producer_id in {".", ".."}:
@@ -98,6 +140,11 @@ def publish_artifact_bundle(
         raise RecordError("Artifact bundles require at least one upstream record")
     if not store.catalog_exists():
         raise RecordError("Artifact publication requires an existing canonical record catalog")
+    if ledger.outputs_dir != store.root.resolve(
+        strict=False
+    ) or ledger.experiment_root != store.experiment_root.resolve(strict=False):
+        raise RecordError("Artifact publication ledger must belong to the same experiment record store")
+    store.bind_provenance_epoch(ledger.provenance_epoch_id)
 
     normalized_upstream_records = _normalized_upstream_records(upstream_records)
     if normalized_record_id in normalized_upstream_records.values():
@@ -211,6 +258,7 @@ def publish_artifact_bundle(
     return ArtifactPublication(
         record=record,
         invocation_id=attempt.invocation_id,
+        provenance_epoch_id=attempt.provenance_epoch_id,
         ledger_path=ledger.path,
         revision=int(produced["revision"]),
         revision_digest=str(produced["revision_digest"]),

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import stat
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
+
+from filelock import Timeout
 
 from reader.errors import RecordError
 from reader.workbench.graph import RecordRef, SourceRecordRef
@@ -16,7 +22,7 @@ from reader.workbench.records.model import (
     verify_record_artifact_integrity,
 )
 
-from .identity import BuildIdentity, current_build_identity
+from .identity import BuildIdentity, current_build_identity, digest_json
 
 _UNVERIFIABLE_CODES = frozenset({"build.identity_mismatch", "config.digest_mismatch"})
 
@@ -128,6 +134,7 @@ _INVOCATION_EVENT_FIELDS = frozenset(
     {
         "schema",
         "invocation_id",
+        "provenance_epoch_id",
         "timestamp",
         "config_digest",
         "build_identity",
@@ -142,6 +149,7 @@ _INVOCATION_EVENT_FIELDS = frozenset(
     }
 )
 _INVOCATION_IDENTITY_FIELDS = (
+    "provenance_epoch_id",
     "config_digest",
     "build_identity",
     "operation",
@@ -218,13 +226,17 @@ def _valid_revision(value: object) -> bool:
     )
 
 
-def _invocation_event_problem(event: dict[str, object]) -> str | None:
+def _invocation_event_problem(event: dict[str, object], *, expected_epoch_id: str) -> str | None:
     if set(event) != _INVOCATION_EVENT_FIELDS:
-        return "The invocation event fields do not match reader.invocation/v1."
-    if event["schema"] != "reader.invocation/v1":
-        return "The invocation event schema is not reader.invocation/v1."
+        return "The invocation event fields do not match reader.invocation/v2."
+    if event["schema"] != "reader.invocation/v2":
+        return "The invocation event schema is not reader.invocation/v2."
     if not _valid_invocation_id(event["invocation_id"]):
         return "The invocation id is not a canonical UUID4."
+    if not _valid_invocation_id(event["provenance_epoch_id"]):
+        return "The invocation provenance_epoch_id is not a canonical UUID4."
+    if event["provenance_epoch_id"] != expected_epoch_id:
+        return "The invocation event belongs to a different provenance epoch."
     if not _valid_invocation_timestamp(event["timestamp"]):
         return "The invocation timestamp is not an ISO-8601 UTC timestamp."
     if not _valid_invocation_digest(event["config_digest"]):
@@ -277,29 +289,94 @@ def _invocation_event_problem(event: dict[str, object]) -> str | None:
     return None
 
 
-def _verify_invocation_ledger(path: Path, *, store=None) -> tuple[list[dict[str, object]], int]:
+def _verify_invocation_ledger(
+    path: Path,
+    *,
+    expected_epoch_id: str,
+    store=None,
+    required: bool,
+) -> tuple[list[dict[str, object]], int]:
+    ledger_field = f"outputs/{path.relative_to(store.root).as_posix()}" if store is not None else str(path)
+    manifests_dir = store.manifests_dir if store is not None else path.parent.parent
+    if manifests_dir.is_symlink() or path.parent.is_symlink() or path.is_symlink():
+        return [
+            _issue(
+                code="invocation.ledger_unconfined",
+                field=ledger_field,
+                reason="The active invocation ledger or one of its parent directories is a symlink.",
+                remediation="Restore a regular, experiment-owned invocation ledger before handoff.",
+            )
+        ], 0
     if not path.exists():
+        if required:
+            return [
+                _issue(
+                    code="invocation.ledger_missing",
+                    field=ledger_field,
+                    reason="The active provenance epoch has records but no invocation ledger.",
+                    remediation="Restore the active ledger or rerun the complete experiment with --reset-records.",
+                )
+            ], 0
         return [], 0
+    descriptor = -1
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(path, flags)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            return [
+                _issue(
+                    code="invocation.ledger_unreadable",
+                    field=ledger_field,
+                    reason="The active invocation ledger is not a regular file.",
+                    remediation="Restore a regular invocation ledger before handoff.",
+                )
+            ], 0
+        if metadata.st_nlink != 1:
+            return [
+                _issue(
+                    code="invocation.ledger_unconfined",
+                    field=ledger_field,
+                    reason="The active invocation ledger must have exactly one hard link.",
+                    remediation="Restore an experiment-owned invocation ledger before handoff.",
+                )
+            ], 0
+        with os.fdopen(descriptor, mode="r", encoding="utf-8") as stream:
+            descriptor = -1
+            lines = stream.read().splitlines()
     except (OSError, UnicodeError) as exc:
         return [
             _issue(
                 code="invocation.ledger_unreadable",
-                field="outputs/manifests/invocations.jsonl",
+                field=ledger_field,
                 reason=f"The invocation ledger could not be read: {type(exc).__name__}.",
                 remediation="Restore a readable ledger before handing off the experiment.",
+            )
+        ], 0
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    if not lines:
+        return [
+            _issue(
+                code="invocation.ledger_empty",
+                field=ledger_field,
+                reason="The active invocation ledger contains no events.",
+                remediation="Restore the active ledger or rerun the complete experiment with --reset-records.",
             )
         ], 0
 
     issues: list[dict[str, object]] = []
     events_by_invocation: dict[str, list[tuple[int, dict[str, object]]]] = {}
+    valid_event_lines: set[int] = set()
     for line_number, line in enumerate(lines, start=1):
         if not line.strip():
             issues.append(
                 _issue(
                     code="invocation.ledger_invalid",
-                    field=f"outputs/manifests/invocations.jsonl:{line_number}",
+                    field=f"{ledger_field}:{line_number}",
                     reason="The invocation ledger contains a blank event line.",
                     remediation="Restore the ledger from a known-good copy before handoff.",
                 )
@@ -311,7 +388,7 @@ def _verify_invocation_ledger(path: Path, *, store=None) -> tuple[list[dict[str,
             issues.append(
                 _issue(
                     code="invocation.ledger_invalid",
-                    field=f"outputs/manifests/invocations.jsonl:{line_number}",
+                    field=f"{ledger_field}:{line_number}",
                     reason="The invocation ledger contains an invalid JSON event.",
                     remediation="Restore the ledger from a known-good copy before handoff.",
                 )
@@ -321,22 +398,24 @@ def _verify_invocation_ledger(path: Path, *, store=None) -> tuple[list[dict[str,
             issues.append(
                 _issue(
                     code="invocation.event_invalid",
-                    field=f"outputs/manifests/invocations.jsonl:{line_number}",
-                    reason="The invocation event does not match reader.invocation/v1.",
+                    field=f"{ledger_field}:{line_number}",
+                    reason="The invocation event does not match reader.invocation/v2.",
                     remediation="Restore a valid invocation event before handoff.",
                 )
             )
             continue
-        problem = _invocation_event_problem(event)
+        problem = _invocation_event_problem(event, expected_epoch_id=expected_epoch_id)
         if problem is not None:
             issues.append(
                 _issue(
                     code="invocation.event_invalid",
-                    field=f"outputs/manifests/invocations.jsonl:{line_number}",
+                    field=f"{ledger_field}:{line_number}",
                     reason=problem,
                     remediation="Restore a valid invocation event before handoff.",
                 )
             )
+        else:
+            valid_event_lines.add(line_number)
         invocation_id = event.get("invocation_id")
         if not isinstance(invocation_id, str) or not invocation_id:
             continue
@@ -405,7 +484,11 @@ def _verify_invocation_ledger(path: Path, *, store=None) -> tuple[list[dict[str,
                     remediation="Restore a result written from the matching invocation attempt.",
                 )
             )
-        if store is None or not isinstance(result.get("produced_record_revisions"), list):
+        if (
+            store is None
+            or result_line not in valid_event_lines
+            or not isinstance(result.get("produced_record_revisions"), list)
+        ):
             continue
         for revision in result["produced_record_revisions"]:
             if not _valid_revision(revision):
@@ -438,7 +521,93 @@ def _verify_invocation_ledger(path: Path, *, store=None) -> tuple[list[dict[str,
                         remediation="Restore the matching records catalog history or invocation ledger.",
                     )
                 )
+    if store is not None:
+        claims: dict[tuple[str, int, str], int] = {}
+        for positioned_events in events_by_invocation.values():
+            for line_number, event in positioned_events:
+                if line_number not in valid_event_lines or event.get("event") != "result":
+                    continue
+                revisions = event.get("produced_record_revisions")
+                if not isinstance(revisions, list):
+                    continue
+                for revision in revisions:
+                    if not _valid_revision(revision):
+                        continue
+                    key = (revision["record_id"], revision["revision"], revision["revision_digest"])
+                    claims[key] = claims.get(key, 0) + 1
+        for record in store.iter_latest_records():
+            for revision_number, revision in enumerate(store.record_history(record.record_id), start=1):
+                key = (
+                    record.record_id,
+                    revision_number,
+                    record_revision_digest(revision, outputs_dir=store.root),
+                )
+                claim_count = claims.get(key, 0)
+                if claim_count == 0:
+                    issues.append(
+                        _issue(
+                            code="invocation.revision_unclaimed",
+                            field=f"records.{record.record_id}.history.{revision_number}",
+                            reason="The catalog revision is not claimed by an active-epoch invocation result.",
+                            remediation="Restore the matching invocation evidence or rerun with --reset-records.",
+                        )
+                    )
+                elif claim_count > 1:
+                    issues.append(
+                        _issue(
+                            code="invocation.revision_claim_conflict",
+                            field=f"records.{record.record_id}.history.{revision_number}",
+                            reason="The catalog revision is claimed by more than one invocation result.",
+                            remediation="Restore an unambiguous active-epoch invocation ledger.",
+                        )
+                    )
     return issues, len(events_by_invocation)
+
+
+def _ledger_snapshot(path: Path, *, manifests_dir: Path) -> tuple[object, ...] | None:
+    if manifests_dir.is_symlink() or path.parent.is_symlink() or path.is_symlink():
+        return ("unconfined",)
+    descriptor = -1
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except (OSError, NotImplementedError) as exc:
+        return ("unreadable", type(exc).__name__)
+    metadata = None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            return ("nonregular", metadata.st_mode, metadata.st_size, metadata.st_mtime_ns)
+        if metadata.st_nlink != 1:
+            return ("unconfined", "hardlink", metadata.st_nlink)
+        digest = hashlib.sha256()
+        with os.fdopen(descriptor, mode="rb") as stream:
+            descriptor = -1
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except (OSError, NotImplementedError) as exc:
+        if metadata is None:
+            return ("unreadable", type(exc).__name__)
+        return ("unreadable", metadata.st_mode, metadata.st_size, metadata.st_mtime_ns, type(exc).__name__)
+    finally:
+        if descriptor >= 0:
+            with suppress(OSError):
+                os.close(descriptor)
+    return ("regular", metadata.st_size, metadata.st_mtime_ns, "sha256:" + digest.hexdigest())
+
+
+def _concurrent_change_issue(*, phase: str) -> dict[str, object]:
+    action = "establish" if phase == "start" else "confirm"
+    return _issue(
+        code="verification.concurrent_change",
+        field="outputs/manifests",
+        reason=f"Reader could not {action} a stable provenance snapshot at the {phase} of verification.",
+        remediation="Retry verification after the active writer finishes.",
+        retryable=True,
+    )
 
 
 def verify_record_store(
@@ -450,10 +619,6 @@ def verify_record_store(
     scope: RecordVerificationScope | None = None,
 ) -> dict[str, object]:
     current_build = expected_build_identity or current_build_identity()
-    invocation_issues, invocations_checked = _verify_invocation_ledger(
-        store.root / "manifests" / "invocations.jsonl",
-        store=store,
-    )
     if not store.catalog_exists():
         return {
             "schema": "reader.verify/v1",
@@ -462,8 +627,8 @@ def verify_record_store(
                 "checked": 0,
                 "failed": 1,
                 "unverifiable": 0,
-                "invocations_checked": invocations_checked,
-                "invocation_failures": len(invocation_issues),
+                "invocations_checked": 0,
+                "invocation_failures": 0,
             },
             "issues": [
                 _issue(
@@ -472,14 +637,34 @@ def verify_record_store(
                     reason="The experiment has no records catalog.",
                     remediation="Run the experiment to produce schema-v5 records, then verify again.",
                 ),
-                *invocation_issues,
             ],
             "records": [],
         }
     try:
-        records = store.iter_latest_records()
-        if scope is not None:
-            records = tuple(record for record in records if scope.includes(record))
+        provenance_epoch_id = store.provenance_epoch_id()
+        store.bind_provenance_epoch(provenance_epoch_id)
+        with store.provenance_lock:
+            starting_catalog_digest = digest_json(store._read_catalog())
+            invocation_ledger_path = store.invocation_ledger_path()
+            starting_ledger_snapshot = _ledger_snapshot(
+                invocation_ledger_path,
+                manifests_dir=store.manifests_dir,
+            )
+        catalog_records = store.iter_latest_records()
+    except (Timeout, OSError, NotImplementedError):
+        return {
+            "schema": "reader.verify/v1",
+            "status": "failed",
+            "summary": {
+                "checked": 0,
+                "failed": 0,
+                "unverifiable": 0,
+                "invocations_checked": 0,
+                "invocation_failures": 1,
+            },
+            "issues": [_concurrent_change_issue(phase="start")],
+            "records": [],
+        }
     except RecordError as exc:
         return {
             "schema": "reader.verify/v1",
@@ -488,8 +673,8 @@ def verify_record_store(
                 "checked": 0,
                 "failed": 1,
                 "unverifiable": 0,
-                "invocations_checked": invocations_checked,
-                "invocation_failures": len(invocation_issues),
+                "invocations_checked": 0,
+                "invocation_failures": 0,
             },
             "issues": [
                 _issue(
@@ -498,10 +683,18 @@ def verify_record_store(
                     reason=str(exc),
                     remediation="Restore a valid records catalog or rerun the experiment from source inputs.",
                 ),
-                *invocation_issues,
             ],
             "records": [],
         }
+    invocation_issues, invocations_checked = _verify_invocation_ledger(
+        invocation_ledger_path,
+        expected_epoch_id=provenance_epoch_id,
+        store=store,
+        required=bool(catalog_records),
+    )
+    records = catalog_records
+    if scope is not None:
+        records = tuple(record for record in records if scope.includes(record))
     results: list[dict[str, object]] = []
     failed = 0
     unverifiable = 0
@@ -698,7 +891,31 @@ def verify_record_store(
                 "issues": issues,
             }
         )
-    status = "failed" if failed or invocation_issues else ("unverifiable" if unverifiable or not records else "ok")
+    stability_issues: list[dict[str, object]] = []
+    try:
+        with store.provenance_lock:
+            ending_catalog_digest = digest_json(store._read_catalog())
+            ending_ledger_snapshot = _ledger_snapshot(
+                invocation_ledger_path,
+                manifests_dir=store.manifests_dir,
+            )
+        if ending_catalog_digest != starting_catalog_digest or ending_ledger_snapshot != starting_ledger_snapshot:
+            stability_issues.append(
+                _issue(
+                    code="verification.concurrent_change",
+                    field="outputs/manifests",
+                    reason="The active catalog or invocation ledger changed during verification.",
+                    remediation="Retry verification after the active writer finishes.",
+                    retryable=True,
+                )
+            )
+    except (Timeout, OSError, NotImplementedError, RecordError):
+        stability_issues.append(_concurrent_change_issue(phase="end"))
+    status = (
+        "failed"
+        if failed or invocation_issues or stability_issues
+        else ("unverifiable" if unverifiable or not records else "ok")
+    )
     catalog_issues = (
         [
             _issue(
@@ -719,8 +936,8 @@ def verify_record_store(
             "failed": failed,
             "unverifiable": unverifiable,
             "invocations_checked": invocations_checked,
-            "invocation_failures": len(invocation_issues),
+            "invocation_failures": len(invocation_issues) + len(stability_issues),
         },
-        "issues": [*catalog_issues, *invocation_issues],
+        "issues": [*catalog_issues, *invocation_issues, *stability_issues],
         "records": results,
     }

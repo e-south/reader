@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import os
 import shutil
 import tempfile
@@ -143,26 +142,6 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
             f"reader verify failed: {first['code']} • {first['reason']}",
         )
 
-    invocation_path = outputs / "manifests" / "invocations.jsonl"
-    if not invocation_path.is_file():
-        return len(expected_plot_ids), len(expected_export_ids), "invocations.jsonl missing"
-    try:
-        events = [json.loads(line) for line in invocation_path.read_text(encoding="utf-8").splitlines()]
-    except (json.JSONDecodeError, OSError) as exc:
-        return len(expected_plot_ids), len(expected_export_ids), f"invocations.jsonl invalid: {exc}"
-    terminal = events[-1] if events else None
-    if (
-        terminal is None
-        or terminal.get("schema") != "reader.invocation/v1"
-        or terminal.get("event") != "result"
-        or terminal.get("status") != "succeeded"
-        or terminal.get("exit_status") != 0
-        or not any(
-            event.get("event") == "attempt" and event.get("invocation_id") == terminal.get("invocation_id")
-            for event in events[:-1]
-        )
-    ):
-        return len(expected_plot_ids), len(expected_export_ids), "invocation ledger lacks a matched successful result"
     return len(expected_plot_ids), len(expected_export_ids), None
 
 

@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 import pytest
+from filelock import Timeout
 from rich.console import Console
 from rich.theme import Theme
 
@@ -60,6 +62,27 @@ class _SyntheticIngest(Plugin):
         return {"df": pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})}
 
 
+class _TrackingLock:
+    def __init__(self, *, failure: BaseException | None = None) -> None:
+        self.depth = 0
+        self.failure = failure
+
+    def acquire(self, *_args, **_kwargs):
+        if self.failure is not None:
+            raise self.failure
+        self.depth += 1
+        return self
+
+    def release(self, *_args, **_kwargs) -> None:
+        self.depth -= 1
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, *_args) -> None:
+        self.release()
+
+
 def _synthetic_decl_and_runtime(tmp_path: Path) -> tuple[WorkbenchDecl, ReaderRuntime]:
     decl = WorkbenchDecl(
         experiment=ExperimentDecl(id="synthetic", title="synthetic", lifecycle="active", root=tmp_path),
@@ -107,9 +130,22 @@ def _events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _direct_ledger(*, experiment_root: Path, outputs_dir: Path) -> InvocationLedger:
+    return InvocationLedger(
+        experiment_root=experiment_root,
+        outputs_dir=outputs_dir,
+        provenance_epoch_id=str(uuid4()),
+    )
+
+
 def test_invocation_ledger_writes_attempt_and_terminal_result(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    epoch_id = str(uuid4())
+    ledger = InvocationLedger(
+        experiment_root=tmp_path,
+        outputs_dir=outputs,
+        provenance_epoch_id=epoch_id,
+    )
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -137,9 +173,11 @@ def test_invocation_ledger_writes_attempt_and_terminal_result(tmp_path: Path) ->
         ],
     )
 
-    events = _events(outputs / "manifests" / "invocations.jsonl")
+    events = _events(outputs / "manifests" / "invocations" / f"{epoch_id}.jsonl")
     assert [event["event"] for event in events] == ["attempt", "result"]
     assert events[0]["invocation_id"] == events[1]["invocation_id"] == attempt.invocation_id
+    assert events[0]["schema"] == events[1]["schema"] == "reader.invocation/v2"
+    assert events[0]["provenance_epoch_id"] == events[1]["provenance_epoch_id"] == epoch_id
     assert events[0]["config_digest"] == "sha256:config"
     assert events[0]["operation"] == "run"
     assert events[0]["build_identity"] == {
@@ -172,7 +210,7 @@ def test_invocation_ledger_restores_previous_boundary_after_short_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -201,7 +239,7 @@ def test_invocation_ledger_restores_previous_boundary_after_fsync_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -231,20 +269,11 @@ def test_invocation_ledger_restores_previous_boundary_after_fsync_failure(
 
 def test_invocation_ledger_confines_outputs_to_experiment_root(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="must stay under the experiment root"):
-        InvocationLedger(experiment_root=tmp_path / "experiment", outputs_dir=tmp_path / "outside")
-
-
-def test_invocation_ledger_reset_without_manifest_is_a_noop(tmp_path: Path) -> None:
-    outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
-
-    ledger.reset()
-
-    assert not outputs.exists()
+        _direct_ledger(experiment_root=tmp_path / "experiment", outputs_dir=tmp_path / "outside")
 
 
 @pytest.mark.parametrize("target_scope", ["inside", "outside"])
-def test_invocation_ledger_reset_rejects_symlinked_manifest_parent(
+def test_invocation_ledger_append_rejects_symlinked_manifest_parent(
     tmp_path: Path,
     target_scope: str,
 ) -> None:
@@ -253,57 +282,71 @@ def test_invocation_ledger_reset_rejects_symlinked_manifest_parent(
     outputs.mkdir(parents=True)
     target = experiment / "redirected-manifests" if target_scope == "inside" else tmp_path / "outside"
     target.mkdir()
-    target_ledger = target / "invocations.jsonl"
-    target_ledger.write_text("redirected evidence\n", encoding="utf-8")
     try:
         (outputs / "manifests").symlink_to(target, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
-    ledger = InvocationLedger(experiment_root=experiment, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=experiment, outputs_dir=outputs)
 
     with pytest.raises(ConfigError, match="manifest directory must not be a symlink"):
-        ledger.reset()
+        ledger.append_attempt(
+            config_digest="sha256:config",
+            build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+            operation="run",
+            selected_step_ids={"pipeline": [], "plots": [], "exports": []},
+            declared_inputs=[],
+        )
 
-    assert target_ledger.read_text(encoding="utf-8") == "redirected evidence\n"
+    assert list(target.iterdir()) == []
 
 
-def test_invocation_ledger_reset_rejects_symlinked_ledger(tmp_path: Path) -> None:
-    manifests = tmp_path / "outputs" / "manifests"
-    manifests.mkdir(parents=True)
+def test_invocation_ledger_append_rejects_symlinked_ledger(tmp_path: Path) -> None:
+    ledger_dir = tmp_path / "outputs" / "manifests" / "invocations"
+    ledger_dir.mkdir(parents=True)
     target = tmp_path / "outside.jsonl"
     target.write_text("outside evidence\n", encoding="utf-8")
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=manifests.parent)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=tmp_path / "outputs")
     try:
         ledger.path.symlink_to(target)
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
 
     with pytest.raises(ConfigError, match="ledger must not be a symlink"):
-        ledger.reset()
+        ledger.append_attempt(
+            config_digest="sha256:config",
+            build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+            operation="run",
+            selected_step_ids={"pipeline": [], "plots": [], "exports": []},
+            declared_inputs=[],
+        )
 
     assert target.read_text(encoding="utf-8") == "outside evidence\n"
 
 
-def test_invocation_ledger_reset_rejects_parent_swap_after_construction(tmp_path: Path) -> None:
+def test_invocation_ledger_append_rejects_parent_swap_after_construction(tmp_path: Path) -> None:
     experiment = tmp_path / "experiment"
     outputs = experiment / "outputs"
     outputs.mkdir(parents=True)
-    ledger = InvocationLedger(experiment_root=experiment, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=experiment, outputs_dir=outputs)
     outside = tmp_path / "outside"
     manifests = outside / "manifests"
     manifests.mkdir(parents=True)
-    target = manifests / "invocations.jsonl"
-    target.write_text("outside evidence\n", encoding="utf-8")
     outputs.rmdir()
     try:
         outputs.symlink_to(outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlinks unavailable: {exc}")
 
-    with pytest.raises(ConfigError, match="manifest directory must stay under the experiment root"):
-        ledger.reset()
+    with pytest.raises(ConfigError, match="outputs sink root must not use symlink"):
+        ledger.append_attempt(
+            config_digest="sha256:config",
+            build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
+            operation="run",
+            selected_step_ids={"pipeline": [], "plots": [], "exports": []},
+            declared_inputs=[],
+        )
 
-    assert target.read_text(encoding="utf-8") == "outside evidence\n"
+    assert list(manifests.iterdir()) == []
 
 
 def test_invocation_ledger_rechecks_manifest_parent_after_creation(
@@ -314,7 +357,7 @@ def test_invocation_ledger_rechecks_manifest_parent_after_creation(
     outputs.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     original_mkdir = Path.mkdir
 
     def _swap_parent(path: Path, *args, **kwargs) -> None:
@@ -325,7 +368,7 @@ def test_invocation_ledger_rechecks_manifest_parent_after_creation(
 
     monkeypatch.setattr(Path, "mkdir", _swap_parent)
 
-    with pytest.raises(ConfigError, match="manifest directory must not be a symlink"):
+    with pytest.raises(ConfigError, match="ledger directory must not be a symlink"):
         ledger.append_attempt(
             config_digest="sha256:config",
             build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -337,32 +380,9 @@ def test_invocation_ledger_rechecks_manifest_parent_after_creation(
     assert list(outside.iterdir()) == []
 
 
-def test_invocation_ledger_reset_wraps_unlink_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    manifests = tmp_path / "outputs" / "manifests"
-    manifests.mkdir(parents=True)
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=manifests.parent)
-    ledger.path.write_text("evidence\n", encoding="utf-8")
-    original_unlink = Path.unlink
-
-    def _fail_unlink(path: Path, *args, **kwargs) -> None:
-        if path == ledger.path:
-            raise OSError("unlink failed")
-        original_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", _fail_unlink)
-
-    with pytest.raises(ExecutionError, match="Could not reset invocation ledger"):
-        ledger.reset()
-
-    assert ledger.path.read_text(encoding="utf-8") == "evidence\n"
-
-
 def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -379,7 +399,7 @@ def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
         failure=RuntimeError(f"failed at {tmp_path}/inputs/raw.xlsx token={secret}"),
     )
 
-    result = _events(outputs / "manifests" / "invocations.jsonl")[1]
+    result = _events(ledger.path)[1]
     failure = result["failure"]
     assert failure["type"] == "RuntimeError"
     assert str(tmp_path) not in failure["reason"]
@@ -390,7 +410,7 @@ def test_invocation_failure_is_sanitized_and_bounded(tmp_path: Path) -> None:
 
 def test_invocation_failure_redacts_common_credentials_without_losing_diagnostics(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -409,7 +429,7 @@ def test_invocation_failure_redacts_common_credentials_without_losing_diagnostic
 
     ledger.append_result(attempt, exit_status=1, produced_record_revisions=[], failure=failure)
 
-    reason = _events(outputs / "manifests" / "invocations.jsonl")[1]["failure"]["reason"]
+    reason = _events(ledger.path)[1]["failure"]["reason"]
     for secret in (
         "hunter2",
         "open sesame",
@@ -435,7 +455,7 @@ def test_invocation_failure_redacts_common_credentials_without_losing_diagnostic
 
 def test_invocation_failure_redacts_provider_credentials_and_preserves_status(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
-    ledger = InvocationLedger(experiment_root=tmp_path, outputs_dir=outputs)
+    ledger = _direct_ledger(experiment_root=tmp_path, outputs_dir=outputs)
     attempt = ledger.append_attempt(
         config_digest="sha256:config",
         build_identity=BuildIdentity(reader_version="1.2.3", source_digest=_SOURCE_DIGEST),
@@ -452,7 +472,7 @@ def test_invocation_failure_redacts_provider_credentials_and_preserves_status(tm
 
     ledger.append_result(attempt, exit_status=1, produced_record_revisions=[], failure=failure)
 
-    reason = _events(outputs / "manifests" / "invocations.jsonl")[1]["failure"]["reason"]
+    reason = _events(ledger.path)[1]["failure"]["reason"]
     for secret in (
         "sk-live",
         "aws-secret",
@@ -585,7 +605,8 @@ def test_run_spec_returns_exact_produced_record_revisions(tmp_path: Path) -> Non
     assert result.selected_steps.pipeline == ("ingest",)
     assert result.selected_steps.plots == ()
     assert result.selected_steps.exports == ()
-    assert result.ledger_path == outputs / "manifests" / "invocations.jsonl"
+    store = runtime.record_store(outputs, experiment_root=tmp_path, create=False)
+    assert result.ledger_path == store.invocation_ledger_path()
     assert len(result.produced_record_revisions) == 1
     revision = result.produced_record_revisions[0]
     assert revision.record_id == "ingest/df"
@@ -595,6 +616,71 @@ def test_run_spec_returns_exact_produced_record_revisions(tmp_path: Path) -> Non
     result_event = _events(result.ledger_path)[1]
     assert result_event["invocation_id"] == result.invocation_id
     assert result_event["produced_record_revisions"] == [revision.to_dict()]
+
+
+def test_run_spec_holds_one_writer_lease_across_plugin_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    lease = _TrackingLock()
+    observed_depths: list[int] = []
+    original_run = _SyntheticIngest.run
+
+    def _run_under_observation(self, ctx, inputs, cfg):
+        observed_depths.append(lease.depth)
+        return original_run(self, ctx, inputs, cfg)
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+    monkeypatch.setattr(_SyntheticIngest, "run", _run_under_observation)
+
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    assert observed_depths == [1]
+    assert lease.depth == 0
+
+
+@pytest.mark.parametrize(
+    "lock_failure",
+    [Timeout("provenance lease"), OSError("lock unavailable"), NotImplementedError("lock unsupported")],
+)
+def test_run_spec_wraps_writer_lease_acquisition_failure_before_plugin_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lock_failure: BaseException,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    lease = _TrackingLock(failure=lock_failure)
+    calls: list[str] = []
+
+    def _unexpected_run(self, ctx, inputs, cfg):
+        del self, ctx, inputs, cfg
+        calls.append("run")
+        return {}
+
+    monkeypatch.setattr(RecordStore, "provenance_lock", property(lambda _store: lease))
+    monkeypatch.setattr(_SyntheticIngest, "run", _unexpected_run)
+
+    with pytest.raises(ExecutionError, match="writer lease"):
+        run_spec(
+            decl,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert calls == []
 
 
 def test_run_spec_preserves_committed_records_when_success_result_cannot_be_confirmed(
@@ -622,7 +708,7 @@ def test_run_spec_preserves_committed_records_when_success_result_cannot_be_conf
 
     store = runtime.record_store(outputs, experiment_root=tmp_path, create=False)
     assert store.latest_dataframe("ingest/df") is not None
-    ledger_path = outputs / "manifests" / "invocations.jsonl"
+    ledger_path = store.invocation_ledger_path()
     assert [event["event"] for event in _events(ledger_path)] == ["attempt"]
     assert raised.value.invocation_id
     assert raised.value.produced_record_revisions[0]["record_id"] == "ingest/df"
@@ -675,7 +761,8 @@ def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
         console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
         runtime=runtime,
     )
-    ledger_path = tmp_path / "outputs" / "manifests" / "invocations.jsonl"
+    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    ledger_path = store.invocation_ledger_path()
     prior_ledger = ledger_path.read_bytes()
 
     def _fail_catalog_reset(_store: RecordStore) -> None:
@@ -712,6 +799,10 @@ def test_run_spec_reset_records_starts_a_new_invocation_epoch(
         console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
         runtime=runtime,
     )
+    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    prior_epoch_id = store.provenance_epoch_id()
+    prior_ledger_path = store.invocation_ledger_path()
+    prior_ledger = prior_ledger_path.read_bytes()
 
     def _changed_run(self, ctx, inputs, cfg):
         del self, ctx, inputs, cfg
@@ -729,11 +820,16 @@ def test_run_spec_reset_records_starts_a_new_invocation_epoch(
         runtime=runtime,
     )
 
-    events = _events(tmp_path / "outputs" / "manifests" / "invocations.jsonl")
+    current_epoch_id = store.provenance_epoch_id()
+    current_ledger_path = store.invocation_ledger_path()
+    events = _events(current_ledger_path)
+    assert current_epoch_id != prior_epoch_id
+    assert current_ledger_path != prior_ledger_path
+    assert prior_ledger_path.read_bytes() == prior_ledger
     assert [event["event"] for event in events] == ["attempt", "result"]
     assert {event["invocation_id"] for event in events} == {result.invocation_id}
+    assert {event["provenance_epoch_id"] for event in events} == {current_epoch_id}
 
-    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
     record = store.latest_record("ingest/df")
     assert record is not None
     report = verify_record_store(
