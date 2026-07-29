@@ -70,7 +70,7 @@ Mutation happens only in the execution commands:
 After execution, verify:
 
 - `outputs/manifests/records.json`
-- `outputs/manifests/invocations.jsonl`
+- the active `outputs/manifests/invocations/<epoch>.jsonl`
 - generated plot and export files
 - `reader records`
 - `reader verify`
@@ -127,13 +127,14 @@ Reliability is incomplete without provenance.
 - generated-file path, size, and SHA-256 evidence
 - optional source-recipe provenance
 
-Reader reads and writes record schema v5 only. `reader verify` checks this
-evidence against current files and configuration. A non-v5 record payload is
-an invalid catalog and must be reproduced from source inputs.
+Reader reads and writes catalog schema v4 containing record-schema-v5 payloads.
+`reader verify` checks this evidence against current files and configuration.
+A non-v4 catalog or non-v5 record payload is invalid and must be reproduced
+from source inputs.
 
 Reader also writes attempt and result events to
-`outputs/manifests/invocations.jsonl`. `JOURNAL.md` is a short authored
-experiment capsule, not execution history.
+`outputs/manifests/invocations/<provenance_epoch_id>.jsonl`. `JOURNAL.md` is a
+short authored experiment capsule, not execution history.
 
 Experiment-scoped reviews resolve inputs from the source record catalog,
 require current dataframe contracts, and verify artifact content digests. A

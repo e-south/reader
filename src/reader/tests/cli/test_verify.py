@@ -4,7 +4,13 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from reader.contracts import builtin_contract_catalog
-from reader.tests.support import base_reader_config, cli_error_data, cli_success_data, write_config
+from reader.tests.support import (
+    base_reader_config,
+    cli_error_data,
+    cli_success_data,
+    record_successful_invocation,
+    write_config,
+)
 from reader.workbench.cli import app
 from reader.workbench.config import ReaderSpec, reader_spec_digest
 from reader.workbench.records import RecordStore
@@ -38,7 +44,7 @@ def _write_record(tmp_path, spec: ReaderSpec):
         contracts=builtin_contract_catalog(),
         experiment_root=tmp_path,
     )
-    return store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -49,6 +55,14 @@ def _write_record(tmp_path, spec: ReaderSpec):
         config_digest=reader_spec_digest(spec),
         producer_config_digest="sha256:producer",
     )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest=reader_spec_digest(spec),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
+    )
+    return record
 
 
 def test_verify_json_reports_verified_v5_records(tmp_path) -> None:
@@ -65,7 +79,7 @@ def test_verify_json_reports_verified_v5_records(tmp_path) -> None:
         "checked": 1,
         "failed": 0,
         "unverifiable": 0,
-        "invocations_checked": 0,
+        "invocations_checked": 1,
         "invocation_failures": 0,
     }
 
@@ -74,7 +88,7 @@ def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) ->
     config, spec = _write_config(tmp_path)
     _write_record(tmp_path, spec)
     store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog(), experiment_root=tmp_path)
-    store.persist_dataframe(
+    retired_record = store.persist_dataframe(
         producer_id="retired",
         producer_plugin="transform/identity",
         out_name="df",
@@ -84,6 +98,13 @@ def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) ->
         inputs=[],
         config_digest="sha256:retired-config",
         producer_config_digest="sha256:retired-producer",
+    )
+    record_successful_invocation(
+        store,
+        records=[retired_record],
+        config_digest="sha256:retired-config",
+        operation="run",
+        selected_step_ids={"pipeline": ["retired"], "plots": [], "exports": []},
     )
 
     result = CliRunner().invoke(app, ["verify", str(config), "--format", "json"])
@@ -95,7 +116,7 @@ def test_verify_ignores_records_owned_by_removed_workbench_surfaces(tmp_path) ->
         "checked": 1,
         "failed": 0,
         "unverifiable": 0,
-        "invocations_checked": 0,
+        "invocations_checked": 2,
         "invocation_failures": 0,
     }
 

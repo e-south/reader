@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable, Mapping
-from contextlib import suppress
+import stat
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+from uuid import UUID, uuid4
 
 import pandas as pd
 
 from reader.contracts import ContractCatalog, ContractId
-from reader.errors import RecordError
+from reader.errors import ProvenanceEpochChangedError, RecordError
 from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef, SourceRecordRef
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.paths import resolve_confined_sink_root
@@ -30,14 +33,40 @@ from reader.workbench.records.model import (
 )
 
 from .evidence import RecordInputEvidence, capture_artifact_evidence
-from .identity import BuildIdentity, current_build_identity
+from .identity import BuildIdentity, current_build_identity, digest_json
+from .locking import ProvenanceFileLock, provenance_lock_scope
 from .model import record_revision_digest
 
-RECORD_CATALOG_SCHEMA_VERSION = 3
+RECORD_CATALOG_SCHEMA_VERSION = 4
+_RECORD_CATALOG_FIELDS = frozenset({"schema_version", "provenance_epoch_id", "latest", "history"})
+
+
+def _is_canonical_uuid4(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = UUID(value)
+    except ValueError:
+        return False
+    return parsed.version == 4 and str(parsed) == value
 
 
 def _empty_catalog() -> dict[str, Any]:
-    return {"schema_version": RECORD_CATALOG_SCHEMA_VERSION, "latest": {}, "history": {}}
+    return {
+        "schema_version": RECORD_CATALOG_SCHEMA_VERSION,
+        "provenance_epoch_id": str(uuid4()),
+        "latest": {},
+        "history": {},
+    }
+
+
+@dataclass(frozen=True)
+class RecordCatalogSnapshot:
+    schema_version: int
+    provenance_epoch_id: str
+    active_invocation_ledger: Path
+    latest_records: tuple[DataFrameArtifactRecord | FileBundleRecord, ...]
+    revision_counts: dict[str, int]
 
 
 class RecordStore:
@@ -56,6 +85,9 @@ class RecordStore:
         self.artifacts_dir = self.root / "artifacts"
         self.manifests_dir = self.root / "manifests"
         self.records_path = self.manifests_dir / "records.json"
+        self._catalog_lock_path = self.manifests_dir / ".records.lock"
+        self._catalog_lock = ProvenanceFileLock(self._catalog_lock_path, timeout=30)
+        self._bound_provenance_epoch_id: str | None = None
         self.experiment_root = Path(experiment_root or self.root.parent).expanduser().absolute()
         if plots_subdir in (None, "", ".", "./"):
             self.plots_dir = self.root
@@ -82,6 +114,13 @@ class RecordStore:
         except ValueError as exc:
             raise RecordError(str(exc)) from exc
 
+    def _validate_catalog_roots(self) -> None:
+        try:
+            resolve_confined_sink_root(self.root, root=self.experiment_root, label="outputs")
+            resolve_confined_sink_root(self.manifests_dir, root=self.root, label="manifests")
+        except ValueError as exc:
+            raise RecordError(str(exc)) from exc
+
     def ensure_layout(self) -> None:
         self._validate_sink_roots()
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -91,26 +130,123 @@ class RecordStore:
         if self.exports_dir != self.root:
             self.exports_dir.mkdir(parents=True, exist_ok=True)
         if not self.records_path.exists():
-            self._write_catalog(_empty_catalog())
+            self._write_catalog(_empty_catalog(), create_only=True)
 
     def catalog_exists(self) -> bool:
-        return self.records_path.exists()
+        return self.records_path.exists() or self.records_path.is_symlink()
 
-    def reset_catalog(self) -> None:
-        """Replace the generated record catalog with an empty current-schema catalog."""
+    def provenance_lock_exists(self) -> bool:
+        """Return whether the non-followed writer coordination entry already exists."""
 
+        return self._catalog_lock_path.exists() or self._catalog_lock_path.is_symlink()
+
+    def reset_catalog(self) -> str:
+        """Atomically begin a fresh catalog and invocation provenance epoch."""
+
+        if self._bound_provenance_epoch_id is not None:
+            raise RecordError("A RecordStore bound to a provenance epoch cannot reset the catalog")
         self.ensure_layout()
-        self._write_catalog(_empty_catalog())
+        catalog = _empty_catalog()
+        self._write_catalog(catalog)
+        return str(catalog["provenance_epoch_id"])
+
+    def provenance_epoch_id(self) -> str:
+        """Return the catalog-owned identity for the active provenance epoch."""
+
+        return str(self._read_catalog()["provenance_epoch_id"])
+
+    def invocation_ledger_path(self) -> Path:
+        """Return the active epoch's deterministic invocation-ledger path."""
+
+        epoch_id = self.provenance_epoch_id()
+        return self.manifests_dir / "invocations" / f"{epoch_id}.jsonl"
+
+    def catalog_snapshot(self) -> RecordCatalogSnapshot:
+        """Read one internally consistent catalog projection for inspection surfaces."""
+
+        with self._catalog_lock_scope(operation="inspect the record catalog"):
+            catalog = self._read_catalog()
+            epoch_id = str(catalog["provenance_epoch_id"])
+            records = tuple(
+                self._materialize(record_id, payload) for record_id, payload in sorted(catalog["latest"].items())
+            )
+            revision_counts = {record_id: len(revisions) for record_id, revisions in sorted(catalog["history"].items())}
+        return RecordCatalogSnapshot(
+            schema_version=RECORD_CATALOG_SCHEMA_VERSION,
+            provenance_epoch_id=epoch_id,
+            active_invocation_ledger=self.manifests_dir / "invocations" / f"{epoch_id}.jsonl",
+            latest_records=records,
+            revision_counts=revision_counts,
+        )
+
+    def assert_provenance_epoch(self, expected_epoch_id: str) -> None:
+        """Fail if another catalog epoch has replaced the caller's active epoch."""
+
+        active_epoch_id = self.provenance_epoch_id()
+        if active_epoch_id != expected_epoch_id:
+            raise ProvenanceEpochChangedError(
+                "The record catalog provenance epoch changed during this operation; "
+                "discard the stale result and start a new Reader invocation."
+            )
+
+    def bind_provenance_epoch(self, expected_epoch_id: str) -> None:
+        """Bind subsequent reads and writes to one invocation's catalog epoch."""
+
+        self.assert_provenance_epoch(expected_epoch_id)
+        self._bound_provenance_epoch_id = expected_epoch_id
+
+    @property
+    def provenance_lock(self) -> ProvenanceFileLock:
+        """Reentrant writer lease shared by operations, catalog commits, and ledger appends."""
+
+        return self._catalog_lock
+
+    @contextmanager
+    def _catalog_lock_scope(self, *, operation: str) -> Iterator[None]:
+        """Normalize lock failures without swallowing errors from the protected operation."""
+
+        with provenance_lock_scope(
+            self._catalog_lock,
+            acquire_error=RecordError(f"Could not {operation}: the record catalog provenance lock is unavailable"),
+            release_error=RecordError(f"Could not {operation}: the record catalog provenance lock could not release"),
+            release_note="Reader also could not release the record catalog lock",
+        ):
+            yield
+
+    def assert_catalog_snapshot(self, *, provenance_epoch_id: str, catalog_digest: str) -> None:
+        """Fail unless the catalog still matches a previously read snapshot."""
+
+        with self._catalog_lock_scope(operation="validate the record catalog snapshot"):
+            self.assert_provenance_epoch(provenance_epoch_id)
+            if digest_json(self._read_catalog()) != catalog_digest:
+                raise RecordError("The record catalog changed concurrently; retry from the current catalog state.")
 
     def _read_catalog(self) -> dict[str, Any]:
+        self._validate_catalog_roots()
+        if self.records_path.is_symlink():
+            raise RecordError("records.json must not be a symlink")
         if not self.records_path.exists():
             raise RecordError("records.json is missing")
+        descriptor = -1
         try:
-            content = self.records_path.read_text(encoding="utf-8")
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            flags |= getattr(os, "O_NONBLOCK", 0)
+            descriptor = os.open(self.records_path, flags)
+            catalog_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(catalog_stat.st_mode) or catalog_stat.st_nlink != 1:
+                raise RecordError("records.json must be a regular file with a single link")
+            with os.fdopen(descriptor, mode="r", encoding="utf-8") as stream:
+                descriptor = -1
+                content = stream.read()
         except UnicodeError as exc:
             raise RecordError(f"records.json is not valid UTF-8: {exc}") from exc
+        except RecordError:
+            raise
         except OSError as exc:
             raise RecordError(f"Could not read records.json: {exc}") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
         try:
             data = json.loads(content)
         except json.JSONDecodeError as exc:
@@ -122,11 +258,25 @@ class RecordStore:
             raise RecordError(
                 f"records.json schema_version must be {RECORD_CATALOG_SCHEMA_VERSION} (got {schema_version!r})"
             )
+        if set(data) != _RECORD_CATALOG_FIELDS:
+            raise RecordError(
+                "records.json must contain exactly schema_version, provenance_epoch_id, latest, and history"
+            )
+        if not _is_canonical_uuid4(data.get("provenance_epoch_id")):
+            raise RecordError("records.json provenance_epoch_id must be a canonical UUID4")
         if "latest" not in data or "history" not in data:
             raise RecordError("records.json must include 'latest' and 'history' objects")
         if not isinstance(data["latest"], dict) or not isinstance(data["history"], dict):
             raise RecordError("records.json 'latest' and 'history' must be JSON objects")
         self._validate_catalog_lineage(data)
+        if (
+            self._bound_provenance_epoch_id is not None
+            and data["provenance_epoch_id"] != self._bound_provenance_epoch_id
+        ):
+            raise ProvenanceEpochChangedError(
+                "The record catalog provenance epoch changed during this operation; "
+                "discard the stale result and start a new Reader invocation."
+            )
         return data
 
     def _validate_catalog_lineage(self, catalog: dict[str, Any]) -> None:
@@ -157,7 +307,15 @@ class RecordStore:
                     f"records.json history for {record_id!r} must end with the exact latest record payload"
                 )
 
-    def _write_catalog(self, payload: dict[str, Any]) -> None:
+    def _write_catalog(
+        self,
+        payload: dict[str, Any],
+        *,
+        expected_provenance_epoch_id: str | None = None,
+        expected_catalog_digest: str | None = None,
+        create_only: bool = False,
+    ) -> None:
+        self._validate_catalog_roots()
         self.manifests_dir.mkdir(parents=True, exist_ok=True)
         staged_path: Path | None = None
         try:
@@ -174,7 +332,19 @@ class RecordStore:
                 staged.flush()
                 os.fsync(staged.fileno())
             try:
-                staged_path.replace(self.records_path)
+                with self._catalog_lock_scope(operation="commit the record catalog"):
+                    self._validate_catalog_roots()
+                    if create_only and self.records_path.exists():
+                        return
+                    if expected_provenance_epoch_id is not None:
+                        self.assert_provenance_epoch(expected_provenance_epoch_id)
+                    if expected_catalog_digest is not None:
+                        current_digest = digest_json(self._read_catalog())
+                        if current_digest != expected_catalog_digest:
+                            raise RecordError(
+                                "The record catalog changed concurrently; retry from the current catalog state."
+                            )
+                    staged_path.replace(self.records_path)
             except OSError as exc:
                 raise RecordError(f"Could not atomically replace records.json: {exc}") from exc
         finally:
@@ -453,6 +623,8 @@ class RecordStore:
         base_name = f"{producer_id}.{producer_plugin.replace('/', '_')}"
         base_step_dir = self.artifacts_dir / base_name
         catalog = self._read_catalog()
+        provenance_epoch_id = str(catalog["provenance_epoch_id"])
+        catalog_digest = digest_json(catalog)
         previous_payload = catalog["latest"].get(record_id)
         previous_record = None
         if previous_payload is not None:
@@ -488,6 +660,10 @@ class RecordStore:
                 and previous_record.path.name == filename
             ):
                 previous_record.verify_content_digest()
+                self.assert_catalog_snapshot(
+                    provenance_epoch_id=provenance_epoch_id,
+                    catalog_digest=catalog_digest,
+                )
                 return previous_record
 
             revision_dir = self._revision_dir(base_step_dir)
@@ -514,7 +690,11 @@ class RecordStore:
             self._assert_captured_inputs_current(record_inputs)
             catalog["latest"][record_id] = payload
             catalog["history"].setdefault(record_id, []).append(payload)
-            self._write_catalog(catalog)
+            self._write_catalog(
+                catalog,
+                expected_provenance_epoch_id=provenance_epoch_id,
+                expected_catalog_digest=catalog_digest,
+            )
             return record
         except Exception:
             if data_path is not None:
@@ -633,6 +813,8 @@ class RecordStore:
         record_inputs = self._require_captured_inputs(inputs)
         self.ensure_layout()
         catalog = self._read_catalog()
+        provenance_epoch_id = str(catalog["provenance_epoch_id"])
+        catalog_digest = digest_json(catalog)
         previous_payload = catalog["latest"].get(record_id)
         if previous_payload is not None:
             previous_record = self._materialize(record_id, previous_payload)
@@ -656,5 +838,9 @@ class RecordStore:
         self._assert_captured_inputs_current(record_inputs)
         catalog["latest"][record_id] = payload
         catalog["history"].setdefault(record_id, []).append(payload)
-        self._write_catalog(catalog)
+        self._write_catalog(
+            catalog,
+            expected_provenance_epoch_id=provenance_epoch_id,
+            expected_catalog_digest=catalog_digest,
+        )
         return record

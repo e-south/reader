@@ -218,7 +218,7 @@ name = "cryptography"
 version = "49.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
+    { name = "cffi", marker = "(platform_machine != 'ARM64' and platform_python_implementation != 'PyPy') or (platform_python_implementation != 'PyPy' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1f/99/d1c90d6041656cc6ee229dc99cd67fd0cd5aec3c5f7d72fffc27cc750054/cryptography-49.0.0.tar.gz", hash = "sha256:f89660a348f4f78a92366240a61404e337586ef7f5909a2fef59ca88ef505493", size = 854345, upload-time = "2026-06-12T20:02:30.512Z" }
 wheels = [
@@ -1220,6 +1220,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "filelock" },
     { name = "flowio" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -1255,6 +1256,7 @@ requires-dist = [
     { name = "altair", marker = "extra == 'notebooks'", specifier = ">=6.0.0" },
     { name = "click", specifier = ">=8.3.3" },
     { name = "duckdb", marker = "extra == 'notebooks'", specifier = ">=1.4.3" },
+    { name = "filelock", specifier = ">=3.20.3,<4" },
     { name = "flowio", specifier = ">=1.4.0" },
     { name = "marimo", marker = "extra == 'notebooks'", specifier = ">=0.23.0,<0.24" },
     { name = "openpyxl", specifier = ">=3.1" },
@@ -1266,7 +1268,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=13.7" },
     { name = "seaborn", specifier = ">=0.13" },
-    { name = "typer", specifier = ">=0.12.0" },
+    { name = "typer", specifier = ">=0.16.0" },
 ]
 provides-extras = ["notebooks"]
 
@@ -1425,8 +1427,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "platform_machine != 'ARM64' or sys_platform != 'win32'" },
+    { name = "jeepney", marker = "platform_machine != 'ARM64' or sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

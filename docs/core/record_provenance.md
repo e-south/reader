@@ -3,13 +3,16 @@ doc_id: reader-record-provenance
 surface: contract-reference
 owner: reader-maintainers
 last_verified: 2026-07-29
-summary: Schema-v5 record evidence, verification semantics, and invalid-catalog recovery.
+summary: Catalog-v4 epochs, schema-v5 record evidence, verification, and recovery.
 ---
 
 # Record provenance and verification
 
-Reader writes schema-v5 dataframe and file-bundle records. A current v5 record
-binds together:
+Reader writes catalog schema v4 with schema-v5 dataframe and file-bundle
+records. The catalog owns one canonical `provenance_epoch_id`; its active
+invocation ledger is
+`outputs/manifests/invocations/<provenance_epoch_id>.jsonl`. A current v5
+record binds together:
 
 - the normalized complete `reader/v8` config digest;
 - the effective producer-config digest;
@@ -37,30 +40,37 @@ uv run reader verify <config|dir|index> --format json
 
 `records_ready` means every current record passed verification against the
 current config, Reader build, sources, exact upstream revisions, and generated
-files. `catalog_ready` means a valid schema-v5 catalog exists but its recorded
+files. `catalog_ready` means a valid catalog-schema-v4 envelope with
+record-schema-v5 payloads exists but its recorded
 config or Reader build differs from the current environment. A digest,
 missing-file, exact-upstream-revision, or invalid-schema failure is `blocked`.
 
 `reader records` is a catalog view. It does not replace `reader verify`.
-Verification also audits `outputs/manifests/invocations.jsonl`: every invocation
-must contain one attempt and at most one terminal result. An attempt without a
-terminal result is reported as `invocation.finalization_unconfirmed`; Reader
-keeps any committed records intact because their catalog and artifact evidence
-remain the authoritative publication boundary.
+Verification also audits the catalog-selected invocation-schema-v2 ledger.
+Every invocation must contain one attempt and at most one terminal result;
+every catalog revision must be claimed exactly once by a terminal result. An
+attempt without a terminal result is reported as
+`invocation.finalization_unconfirmed`; Reader keeps committed records intact
+and reports the incomplete provenance rather than inventing a terminal state.
 
 ## Invalid catalog recovery
 
-Reader reads and writes record schema v5 only. An older record payload is an
-invalid catalog, not a degraded compatibility mode. Replace the generated
-catalog and perform a complete pipeline rerun from staged source inputs:
+Reader reads and writes catalog schema v4 and record schema v5 only. An older
+catalog or record payload is invalid, not a degraded compatibility mode.
+Replace the generated catalog and perform a complete pipeline rerun from
+staged source inputs:
 
 ```bash
 uv run reader run <config|dir|index> --reset-records
 ```
 
 `--reset-records` cannot be combined with `--dry-run`, `--from`, `--until`, or
-`--only`. It does not decode retired records or fabricate provenance by hashing
-files left by an older run; the complete rerun writes current evidence.
+`--only`. The reset atomically replaces the catalog with an empty catalog and a
+fresh epoch. The new active ledger begins separately; prior epoch ledgers are
+retained as forensic residue and are not independently verifiable after their
+catalog was replaced. Reader does not decode retired records or fabricate
+provenance by hashing files left by an older run; the complete rerun writes
+current evidence.
 
 Verification is scoped to records owned by the current compiled workbench.
 Records from removed pipeline, plot, or export surfaces do not make the current

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
 
 from reader.runtime import builtin_runtime
-from reader.tests.support import base_reader_config, write_config
+from reader.tests.support import base_reader_config, record_successful_invocation, write_config
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import build_workbench_decl
 from reader.workbench.inspection.readiness import experiment_readiness_payload
@@ -78,7 +79,7 @@ def test_readiness_does_not_advertise_surfaces_with_missing_record_dependencies(
         exports_subdir=decl.experiment_semantics.layout.exports_subdir,
         experiment_root=decl.experiment.root,
     )
-    store.persist_dataframe(
+    record = store.persist_dataframe(
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
@@ -88,6 +89,13 @@ def test_readiness_does_not_advertise_surfaces_with_missing_record_dependencies(
         inputs=[],
         config_digest=decl.config_digest,
         producer_config_digest="sha256:ingest-config",
+    )
+    record_successful_invocation(
+        store,
+        records=[record],
+        config_digest=decl.config_digest,
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest"], "plots": [], "exports": []},
     )
 
     readiness = experiment_readiness_payload(
@@ -104,3 +112,35 @@ def test_readiness_does_not_advertise_surfaces_with_missing_record_dependencies(
     assert " reader run " in f" {commands[0]} "
     assert not any(" reader plot " in f" {command} " for command in commands)
     assert not any(" reader export " in f" {command} " for command in commands)
+
+
+def test_readiness_routes_invalid_catalog_to_complete_epoch_reset(tmp_path: Path) -> None:
+    config_path = write_config(tmp_path / "config.yaml", base_reader_config(experiment_id="invalid_catalog"))
+    runtime, decl = _runtime_and_declaration(config_path)
+    layout = decl.experiment_semantics.layout
+    store = runtime.record_store(
+        layout.outputs_dir,
+        plots_subdir=layout.plots_subdir,
+        exports_subdir=layout.exports_subdir,
+        experiment_root=decl.experiment.root,
+    )
+    store.records_path.write_text(
+        json.dumps({"schema_version": 3, "latest": {}, "history": {}}),
+        encoding="utf-8",
+    )
+
+    readiness = experiment_readiness_payload(
+        job_path=config_path,
+        decl=decl,
+        runtime=runtime,
+        check_files=False,
+    )
+
+    assert readiness["state"] == "blocked"
+    assert readiness["summary"] == "blocked (invalid records catalog)"
+    assert len(readiness["next_steps"]) == 1
+    next_step = readiness["next_steps"][0]
+    assert " reader run " in f" {next_step['command']} "
+    assert str(config_path) in next_step["command"]
+    assert next_step["command"].endswith(" --reset-records")
+    assert "complete pipeline rerun" in next_step["description"]

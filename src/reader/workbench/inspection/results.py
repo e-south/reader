@@ -114,13 +114,17 @@ def record_catalog_payload(
     runtime=None,
     include_history: bool = False,
 ) -> dict[str, object]:
-    latest_records = store.iter_latest_records()
-    revision_counts = store.revision_counts(record.record_id for record in latest_records) if include_history else None
+    snapshot = store.catalog_snapshot()
+    latest_records = snapshot.latest_records
+    revision_counts = snapshot.revision_counts if include_history else None
     return {
         "experiment": deepcopy(experiment),
         "catalog": {
             "path": str(store.records_path),
             "outputs_root": str(outputs_dir),
+            "schema_version": snapshot.schema_version,
+            "provenance_epoch_id": snapshot.provenance_epoch_id,
+            "active_invocation_ledger": str(snapshot.active_invocation_ledger),
         },
         "selection": {
             "include_history": include_history,

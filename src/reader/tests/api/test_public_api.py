@@ -35,6 +35,9 @@ from reader.runtime import builtin_runtime
 from reader.tests.support.configs import base_reader_config, write_config
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import build_workbench_decl
+from reader.workbench.engine.invocations import InvocationLedger
+from reader.workbench.records import record_revision_digest
+from reader.workbench.records.identity import current_build_identity
 
 
 def _generic_experiment(tmp_path: Path) -> Path:
@@ -88,6 +91,9 @@ def test_experiment_read_surfaces_return_typed_results(tmp_path: Path) -> None:
     assert plot_catalog.entries == ()
     assert isinstance(record_catalog, RecordCatalogResult)
     assert record_catalog.catalog_exists is False
+    assert record_catalog.catalog["schema_version"] is None
+    assert record_catalog.catalog["provenance_epoch_id"] is None
+    assert record_catalog.catalog["active_invocation_ledger"] is None
     assert record_catalog.entries == ()
     assert isinstance(verification, VerificationResult)
     assert verification.status == "failed"
@@ -141,6 +147,23 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
             config_digest=config_digest,
             producer_config_digest=f"sha256:{producer_id}",
         )
+    ledger = InvocationLedger.for_store(store=store)
+    attempt = ledger.append_attempt(
+        config_digest=declaration.config_digest,
+        build_identity=current_build_identity(),
+        operation="run",
+        selected_step_ids={"pipeline": ["ingest", "retired"], "plots": [], "exports": []},
+        declared_inputs=[],
+    )
+    revisions = [
+        {
+            "record_id": record.record_id,
+            "revision": 1,
+            "revision_digest": record_revision_digest(record, outputs_dir=store.root),
+        }
+        for record in store.iter_latest_records()
+    ]
+    ledger.append_result(attempt, exit_status=0, produced_record_revisions=revisions)
 
     result = verify(experiment)
 
@@ -149,7 +172,7 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
         "checked": 1,
         "failed": 0,
         "unverifiable": 0,
-        "invocations_checked": 0,
+        "invocations_checked": 1,
         "invocation_failures": 0,
     }
     assert [record["record_id"] for record in result.records] == ["ingest/df"]
@@ -164,6 +187,7 @@ def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: P
     assert isinstance(result, RunResult)
     assert result.experiment == experiment.identity
     assert result.invocation_id
+    assert result.provenance_epoch_id
     assert result.operation == "run"
     assert result.status == "succeeded"
     assert result.dry_run is False
@@ -171,7 +195,9 @@ def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: P
     assert result.selected_steps.plots == ()
     assert result.selected_steps.exports == ()
     assert result.produced_record_revisions == ()
-    assert result.ledger_path == str(config_path.parent / "outputs" / "manifests" / "invocations.jsonl")
+    assert result.ledger_path == str(
+        config_path.parent / "outputs" / "manifests" / "invocations" / f"{result.provenance_epoch_id}.jsonl"
+    )
     assert result.to_dict()["selected_steps"] == {"pipeline": [], "plots": [], "exports": []}
     assert capsys.readouterr() == ("", "")
 
@@ -179,6 +205,10 @@ def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: P
     assert [event["event"] for event in events] == ["attempt", "result"]
     assert events[1]["invocation_id"] == result.invocation_id
     assert events[1]["produced_record_revisions"] == []
+    catalog = records(experiment)
+    assert catalog.catalog["schema_version"] == 4
+    assert catalog.catalog["provenance_epoch_id"] == result.provenance_epoch_id
+    assert catalog.catalog["active_invocation_ledger"] == result.ledger_path
 
 
 def test_run_dry_run_returns_plan_without_writing_outputs(tmp_path: Path) -> None:
@@ -189,11 +219,55 @@ def test_run_dry_run_returns_plan_without_writing_outputs(tmp_path: Path) -> Non
 
     assert isinstance(result, RunResult)
     assert result.invocation_id is None
+    assert result.provenance_epoch_id is None
     assert result.operation == "run"
     assert result.status == "planned"
     assert result.dry_run is True
     assert result.ledger_path is None
     assert result.produced_record_revisions == ()
+    assert not (config_path.parent / "outputs").exists()
+
+
+def test_run_reset_records_replaces_an_invalid_catalog_through_public_api(tmp_path: Path) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+    records_path = config_path.parent / "outputs" / "manifests" / "records.json"
+    records_path.parent.mkdir(parents=True)
+    records_path.write_text(
+        json.dumps({"schema_version": 3, "latest": {}, "history": {}}),
+        encoding="utf-8",
+    )
+
+    result = run(experiment, reset_records=True)
+
+    assert result.status == "succeeded"
+    assert result.provenance_epoch_id
+    catalog = records(experiment)
+    assert catalog.catalog["schema_version"] == 4
+    assert catalog.catalog["provenance_epoch_id"] == result.provenance_epoch_id
+    assert catalog.catalog["active_invocation_ledger"] == result.ledger_path
+
+
+@pytest.mark.parametrize(
+    "run_options, expected",
+    [
+        ({"dry_run": True}, "reset_records cannot be combined with dry_run"),
+        ({"only": "ingest"}, "reset_records requires a complete run"),
+        ({"from_step": "ingest"}, "reset_records requires a complete run"),
+        ({"until_step": "ingest"}, "reset_records requires a complete run"),
+    ],
+)
+def test_run_reset_records_rejects_dry_or_partial_execution_before_mutation(
+    tmp_path: Path,
+    run_options: dict[str, object],
+    expected: str,
+) -> None:
+    config_path = _generic_experiment(tmp_path)
+    experiment = open_experiment(config_path)
+
+    with pytest.raises(ConfigError, match=expected):
+        run(experiment, reset_records=True, **run_options)
+
     assert not (config_path.parent / "outputs").exists()
 
 

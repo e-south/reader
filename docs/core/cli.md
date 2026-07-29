@@ -98,10 +98,10 @@ entry gains a `readiness` block, and `summary.by_readiness` counts experiments b
 Within each readiness block, `records.catalog` reports whether `records.json`
 exists and `records.available` reports whether it contains usable current
 records. `records.verification` reports `ok`, `unverifiable`, `failed`, or
-`null` when no current records exist. A valid schema-v5 catalog whose config or
-build identity differs from the current environment is `catalog_ready`;
-verified current evidence is `records_ready`. An empty catalog is runnable,
-and an invalid or artifact-drifted catalog is blocked.
+`null` when no current records exist. A valid catalog-schema-v4 envelope whose
+record-schema-v5 payloads differ from the current config or build identity is
+`catalog_ready`; verified current evidence is `records_ready`. An empty catalog
+is runnable, and an invalid or artifact-drifted catalog is blocked.
 
 Filter the list down to one assay family, one lifecycle, or just broken configs:
 
@@ -287,7 +287,11 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
 Use `--reset-records` only to replace an incompatible generated catalog before
-a complete pipeline rerun. It cannot be combined with a slice or dry run.
+a complete pipeline rerun. The replacement catalog starts a fresh provenance
+epoch and selects a new invocation-schema-v2 ledger. Prior epoch ledgers remain
+as forensic residue; they are inactive and are not independently verifiable
+after their catalog has been replaced. The option cannot be combined with a
+slice or dry run.
 
 Inspect the emitted records catalog:
 
@@ -299,11 +303,11 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 
 In JSON mode, `uv run reader records` keeps experiment identity at the top of
 `data`, then adds the record-manifest path, a summary by record kind and
-producer, and the latest record entries. Current schema-v5 records bind the
-complete config identity, Reader build identity, typed input evidence, exact
-upstream revisions, and generated-file evidence. File bundles include one
-typed description for every path. Non-v5 record payloads are rejected as an
-invalid catalog and must be reproduced from source inputs. `--all` adds
+producer, and the latest record entries. Current record-schema-v5 payloads bind
+the complete config identity, Reader build identity, typed input evidence,
+exact upstream revisions, and generated-file evidence. File bundles include
+one typed description for every path. Non-v5 record payloads are rejected as
+an invalid catalog and must be reproduced from source inputs. `--all` adds
 revision counts rather than dumping every stored revision. Use `reader verify`
 to prove the current catalog rather than treating `records` as an integrity
 check.

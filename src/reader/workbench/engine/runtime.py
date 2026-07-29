@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from reader.errors import ConfigError, InvocationFinalizationError
+from reader.errors import ConfigError, ExecutionError, InvocationFinalizationError
 from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.workbench.commands import reader_command
@@ -16,6 +17,7 @@ from reader.workbench.decl import WorkbenchDecl, load_workbench_decl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
 from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records import current_build_identity
+from reader.workbench.records.locking import provenance_lock_scope
 
 from ._shared import collect_categories
 from .execution import run_steps
@@ -135,6 +137,7 @@ def run_spec(
         )
         return ExecutionResult(
             invocation_id=None,
+            provenance_epoch_id=None,
             operation=operation,
             status="planned",
             dry_run=True,
@@ -176,8 +179,69 @@ def run_spec(
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
     )
-    if reset_records:
-        store.reset_catalog()
+    with provenance_lock_scope(
+        store.provenance_lock,
+        acquire_error=ExecutionError("Could not acquire the experiment writer lease"),
+        release_error=ExecutionError(
+            "Execution completed, but Reader could not release the experiment writer lease. "
+            "Do not retry blindly; run reader verify before continuing."
+        ),
+        release_note="Reader also could not release the experiment writer lease",
+    ):
+        return _run_spec_locked(
+            decl=decl,
+            runtime=runtime,
+            out_dir=out_dir,
+            store=store,
+            logger=logger,
+            all_steps=all_steps,
+            pipeline_steps=pipeline_steps,
+            plot_steps=plot_steps,
+            export_steps=export_steps,
+            registry=registry,
+            selected_steps=selected_steps,
+            operation=operation,
+            reset_records=reset_records,
+            verbose=verbose,
+            console=console,
+            include_pipeline=include_pipeline,
+            show_next_steps=show_next_steps,
+            job_label=job_label,
+        )
+
+
+def _run_spec_locked(
+    *,
+    decl: WorkbenchDecl,
+    runtime: ReaderRuntime,
+    out_dir: Path,
+    store: Any,
+    logger: Any,
+    all_steps: list[Any],
+    pipeline_steps: list[Any],
+    plot_steps: list[Any],
+    export_steps: list[Any],
+    registry: Any,
+    selected_steps: SelectedSteps,
+    operation: str,
+    reset_records: bool,
+    verbose: bool,
+    console: Console,
+    include_pipeline: bool,
+    show_next_steps: bool,
+    job_label: str | None,
+) -> ExecutionResult:
+    """Execute one mutating plan while the caller holds the experiment writer lease."""
+
+    provenance_epoch_id = store.reset_catalog() if reset_records else store.provenance_epoch_id()
+    store.bind_provenance_epoch(provenance_epoch_id)
+    ledger = InvocationLedger(
+        experiment_root=decl.experiment.root,
+        outputs_dir=out_dir,
+        provenance_epoch_id=provenance_epoch_id,
+        epoch_guard=store.assert_provenance_epoch,
+        writer_lock=store.provenance_lock,
+    )
     ctx = build_run_context(
         decl=decl,
         runtime=runtime,
@@ -186,7 +250,6 @@ def run_spec(
         logger=logger,
         palette_book=resolve_palette_book(decl=decl, steps=all_steps, dry_run=False),
     )
-    ledger = InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=out_dir)
     steps_by_phase = {
         "pipeline": pipeline_steps,
         "plots": plot_steps,
@@ -315,6 +378,7 @@ def run_spec(
         console.print(Panel.fit(f"✓ Done — outputs in {str(out_dir)}", border_style="green", box=box.ROUNDED))
     return ExecutionResult(
         invocation_id=attempt.invocation_id,
+        provenance_epoch_id=provenance_epoch_id,
         operation=operation,
         status="succeeded",
         dry_run=False,

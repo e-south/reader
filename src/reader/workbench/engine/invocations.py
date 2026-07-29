@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from reader.errors import ConfigError, ExecutionError
 from reader.workbench.graph import FileRef, RecordCollectionRef, RecordRef, ResourceRef
+from reader.workbench.paths import resolve_confined_sink_root
 from reader.workbench.records import record_revision_digest
 from reader.workbench.records.identity import BuildIdentity
+from reader.workbench.records.locking import provenance_lock_scope
 
-INVOCATION_SCHEMA = "reader.invocation/v1"
+INVOCATION_SCHEMA = "reader.invocation/v2"
 _FAILURE_REASON_LIMIT = 500
 _DECLARED_INPUT_LIMIT = 4096
 _SECRET_ASSIGNMENT_RE = re.compile(
@@ -52,6 +56,7 @@ _URI_USERINFO_RE = re.compile(r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)[^/@\s]+@"
 @dataclass(frozen=True)
 class InvocationAttempt:
     invocation_id: str
+    provenance_epoch_id: str
     config_digest: str
     build_identity: BuildIdentity
     operation: str
@@ -108,6 +113,7 @@ class ProducedRecordRevision:
 @dataclass(frozen=True)
 class ExecutionResult:
     invocation_id: str | None
+    provenance_epoch_id: str | None
     operation: Literal["run", "plot", "export", "mixed"]
     status: Literal["planned", "succeeded"]
     dry_run: bool
@@ -117,12 +123,37 @@ class ExecutionResult:
 
 
 class InvocationLedger:
-    def __init__(self, *, experiment_root: Path, outputs_dir: Path) -> None:
+    def __init__(
+        self,
+        *,
+        experiment_root: Path,
+        outputs_dir: Path,
+        provenance_epoch_id: str,
+        epoch_guard: Callable[[str], None] | None = None,
+        writer_lock: Any | None = None,
+    ) -> None:
         self.experiment_root = Path(experiment_root).resolve(strict=False)
         self.outputs_dir = Path(outputs_dir).resolve(strict=False)
         if not self.outputs_dir.is_relative_to(self.experiment_root):
             raise ConfigError(f"Invocation outputs directory must stay under the experiment root: {self.outputs_dir}")
-        self.path = self.outputs_dir / "manifests" / "invocations.jsonl"
+        self.provenance_epoch_id = _require_uuid4(provenance_epoch_id, field="provenance_epoch_id")
+        self._epoch_guard = epoch_guard
+        self._writer_lock = writer_lock
+        self.path = self.outputs_dir / "manifests" / "invocations" / f"{self.provenance_epoch_id}.jsonl"
+
+    @classmethod
+    def for_store(cls, *, store: Any) -> InvocationLedger:
+        """Bind a ledger to the record catalog's active provenance epoch."""
+
+        epoch_id = store.provenance_epoch_id()
+        store.bind_provenance_epoch(epoch_id)
+        return cls(
+            experiment_root=store.experiment_root,
+            outputs_dir=store.root,
+            provenance_epoch_id=epoch_id,
+            epoch_guard=store.assert_provenance_epoch,
+            writer_lock=store.provenance_lock,
+        )
 
     def append_attempt(
         self,
@@ -136,6 +167,7 @@ class InvocationLedger:
         selected = _normalize_selected_step_ids(selected_step_ids)
         attempt = InvocationAttempt(
             invocation_id=str(uuid4()),
+            provenance_epoch_id=self.provenance_epoch_id,
             config_digest=_require_digest(config_digest),
             build_identity=build_identity,
             operation=_normalize_operation(operation),
@@ -162,6 +194,8 @@ class InvocationLedger:
         produced_record_revisions: list[dict[str, Any]],
         failure: BaseException | None = None,
     ) -> None:
+        if attempt.provenance_epoch_id != self.provenance_epoch_id:
+            raise ExecutionError("Invocation attempt belongs to a different provenance epoch")
         if not isinstance(exit_status, int) or exit_status < 0:
             raise ExecutionError("Invocation exit_status must be a non-negative integer")
         if exit_status == 0 and failure is not None:
@@ -184,6 +218,7 @@ class InvocationLedger:
         return {
             "schema": INVOCATION_SCHEMA,
             "invocation_id": attempt.invocation_id,
+            "provenance_epoch_id": attempt.provenance_epoch_id,
             "timestamp": datetime.now(UTC).isoformat(),
             "config_digest": attempt.config_digest,
             "build_identity": attempt.build_identity.to_dict(),
@@ -205,24 +240,43 @@ class InvocationLedger:
         return {"type": type(failure).__name__, "reason": reason}
 
     def _append(self, event: dict[str, Any]) -> None:
-        manifests_dir = self.path.parent
-        manifests_dir.mkdir(parents=True, exist_ok=True)
-        resolved_parent = manifests_dir.resolve(strict=True)
-        if not resolved_parent.is_relative_to(self.experiment_root):
-            raise ConfigError(f"Invocation manifest directory must stay under the experiment root: {resolved_parent}")
+        if self._writer_lock is None:
+            self._append_locked(event)
+            return
+        with provenance_lock_scope(
+            self._writer_lock,
+            acquire_error=ExecutionError("Could not acquire the invocation writer lease"),
+            release_error=ExecutionError(
+                "The invocation event may have been committed, but Reader could not release the writer lease. "
+                "Inspect the active ledger and run reader verify before retrying."
+            ),
+            release_note="Reader also could not release the invocation writer lease",
+        ):
+            self._append_locked(event)
+
+    def _append_locked(self, event: dict[str, Any]) -> None:
+        self._assert_active_epoch()
+        ledger_dir = self._resolve_ledger_dir(create=True)
+        assert ledger_dir is not None
         if self.path.is_symlink():
             raise ConfigError(f"Invocation ledger must not be a symlink: {self.path}")
+        ledger_path = ledger_dir / self.path.name
 
         payload = (json.dumps(event, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
         flags |= getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
         try:
-            descriptor = os.open(self.path, flags, 0o644)
+            descriptor = os.open(ledger_path, flags, 0o644)
         except OSError as exc:
             raise ExecutionError(f"Could not append invocation event under outputs/manifests: {exc}") from exc
         try:
-            initial_size = os.fstat(descriptor).st_size
+            self._assert_active_epoch()
+            ledger_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(ledger_stat.st_mode) or ledger_stat.st_nlink != 1:
+                raise ExecutionError("Invocation ledger must be a regular file with a single link")
+            initial_size = ledger_stat.st_size
             try:
                 written = os.write(descriptor, payload)
                 if written != len(payload):
@@ -245,6 +299,42 @@ class InvocationLedger:
             raise ExecutionError(f"Could not inspect invocation ledger under outputs/manifests: {exc}") from exc
         finally:
             os.close(descriptor)
+
+    def _assert_active_epoch(self) -> None:
+        if self._epoch_guard is not None:
+            self._epoch_guard(self.provenance_epoch_id)
+
+    def _resolve_ledger_dir(self, *, create: bool) -> Path | None:
+        try:
+            outputs_dir = resolve_confined_sink_root(
+                self.outputs_dir,
+                root=self.experiment_root,
+                label="Invocation outputs",
+            )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        manifests_dir = outputs_dir / "manifests"
+        ledger_dir = manifests_dir / "invocations"
+        if manifests_dir.is_symlink():
+            raise ConfigError(f"Invocation manifest directory must not be a symlink: {manifests_dir}")
+        if create:
+            manifests_dir.mkdir(parents=True, exist_ok=True)
+        elif not manifests_dir.exists():
+            return None
+        if manifests_dir.is_symlink():
+            raise ConfigError(f"Invocation manifest directory must not be a symlink: {manifests_dir}")
+        if ledger_dir.is_symlink():
+            raise ConfigError(f"Invocation ledger directory must not be a symlink: {ledger_dir}")
+        if create:
+            ledger_dir.mkdir(parents=True, exist_ok=True)
+        elif not ledger_dir.exists():
+            return None
+        if ledger_dir.is_symlink():
+            raise ConfigError(f"Invocation ledger directory must not be a symlink: {ledger_dir}")
+        resolved_parent = ledger_dir.resolve(strict=True)
+        if not resolved_parent.is_relative_to(outputs_dir.resolve(strict=True)):
+            raise ConfigError(f"Invocation ledger directory must stay under the outputs directory: {resolved_parent}")
+        return resolved_parent
 
 
 def capture_revision_snapshot(store: Any) -> dict[str, dict[str, Any]]:
@@ -298,6 +388,18 @@ def produced_record_revisions(
 def _require_digest(value: str) -> str:
     if not isinstance(value, str) or not value.startswith("sha256:"):
         raise ExecutionError("Invocation config_digest must be a sha256 digest")
+    return value
+
+
+def _require_uuid4(value: str, *, field: str) -> str:
+    if not isinstance(value, str):
+        raise ConfigError(f"Invocation {field} must be a canonical UUID4")
+    try:
+        parsed = UUID(value)
+    except ValueError as exc:
+        raise ConfigError(f"Invocation {field} must be a canonical UUID4") from exc
+    if parsed.version != 4 or str(parsed) != value:
+        raise ConfigError(f"Invocation {field} must be a canonical UUID4")
     return value
 
 

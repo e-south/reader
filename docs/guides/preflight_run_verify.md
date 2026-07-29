@@ -79,7 +79,7 @@ attempt has one unambiguous terminal result.
 For a human review, also inspect:
 
 - `outputs/manifests/records.json`
-- `outputs/manifests/invocations.jsonl`
+- the active `outputs/manifests/invocations/<epoch>.jsonl`
 - generated plot files
 - generated export files
 

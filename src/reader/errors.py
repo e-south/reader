@@ -18,6 +18,10 @@ class ContractError(ReaderError): ...
 class RecordError(ReaderError): ...
 
 
+class ProvenanceEpochChangedError(RecordError):
+    """A bound record-store operation observed a different provenance epoch."""
+
+
 class ExecutionError(ReaderError): ...
 
 

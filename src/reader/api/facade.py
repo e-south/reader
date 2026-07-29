@@ -250,7 +250,13 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
         return RecordCatalogResult(
             experiment=experiment.identity,
             catalog_exists=False,
-            catalog={"path": str(store.records_path), "outputs_root": str(outputs_dir)},
+            catalog={
+                "path": str(store.records_path),
+                "outputs_root": str(outputs_dir),
+                "schema_version": None,
+                "provenance_epoch_id": None,
+                "active_invocation_ledger": None,
+            },
             include_history=include_history,
             summary={
                 "records": 0,
@@ -360,6 +366,7 @@ def run(
     from_step: str | None = None,
     until_step: str | None = None,
     only: str | None = None,
+    reset_records: bool = False,
     dry_run: bool = False,
     log_level: str = "INFO",
 ) -> RunResult:
@@ -370,6 +377,10 @@ def run(
     only = _step_selector(only, field="only")
     if only is not None and (from_step is not None or until_step is not None):
         raise ConfigError("only cannot be combined with from_step or until_step")
+    if reset_records and (only is not None or from_step is not None or until_step is not None):
+        raise ConfigError("reset_records requires a complete run without from_step, until_step, or only")
+    if reset_records and dry_run:
+        raise ConfigError("reset_records cannot be combined with dry_run")
     normalize_log_level(log_level)
     if not dry_run and experiment._declaration.experiment.lifecycle != "active":
         lifecycle = experiment._declaration.experiment.lifecycle
@@ -379,6 +390,7 @@ def run(
         experiment._declaration,
         resume_from=only if only is not None else from_step,
         until=only if only is not None else until_step,
+        reset_records=reset_records,
         dry_run=dry_run,
         log_level=log_level,
         verbose=False,
@@ -392,6 +404,7 @@ def run(
     return RunResult(
         experiment=experiment.identity,
         invocation_id=execution.invocation_id,
+        provenance_epoch_id=execution.provenance_epoch_id,
         operation=execution.operation,
         status=execution.status,
         dry_run=execution.dry_run,

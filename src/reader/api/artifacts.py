@@ -29,6 +29,7 @@ class ArtifactBundleResult(ApiResult):
 
     experiment: ExperimentIdentity
     invocation_id: str
+    provenance_epoch_id: str
     record: RecordRevision
     paths: tuple[str, ...]
     ledger_path: str
@@ -69,7 +70,7 @@ def publish_artifact_bundle(
     )
     publication = _publish(
         store=store,
-        ledger=InvocationLedger(experiment_root=decl.experiment.root, outputs_dir=layout.outputs_dir),
+        ledger=InvocationLedger.for_store(store=store),
         config_digest=decl.config_digest,
         build_identity=current_build_identity(),
         producer_id=producer_id,
@@ -83,6 +84,7 @@ def publish_artifact_bundle(
     return ArtifactBundleResult(
         experiment=experiment.identity,
         invocation_id=publication.invocation_id,
+        provenance_epoch_id=publication.provenance_epoch_id,
         record=RecordRevision(
             record_id=publication.record.record_id,
             revision=publication.revision,

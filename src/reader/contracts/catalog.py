@@ -108,8 +108,13 @@ def _validate_contract_graph(contracts: Mapping[ContractId, DataFrameContract]) 
             raise ContractError(f"contract {contract.id!r} column names must be non-empty strings")
         if len(column_names) != len(set(column_names)):
             raise ContractError(f"contract {contract.id!r} declares duplicate column names")
+        if type(contract.allow_extra_columns) is not bool:
+            raise ContractError(f"contract {contract.id!r} allow_extra_columns must be bool")
         columns_by_name = {rule.name: rule for rule in contract.columns}
         for rule in contract.columns:
+            for field in ("required", "allow_nan", "monotone_non_decreasing", "nonnegative"):
+                if type(getattr(rule, field)) is not bool:
+                    raise ContractError(f"contract {contract.id!r} column {rule.name!r} {field} must be bool")
             if rule.nonnegative and rule.dtype not in {"int", "float"}:
                 raise ContractError(
                     f"contract {contract.id!r} column {rule.name!r} uses nonnegative with non-numeric dtype"

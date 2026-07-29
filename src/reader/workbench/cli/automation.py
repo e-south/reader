@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, cast
 
 import click
 
@@ -21,6 +21,16 @@ class AutomationRequest:
 
 _REQUEST: ContextVar[AutomationRequest | None] = ContextVar("reader_cli_automation_request", default=None)
 _DOCUMENT_EMITTED: ContextVar[bool] = ContextVar("reader_cli_json_document_emitted", default=False)
+
+
+class ClickError(Protocol):
+    """The stable behavior Reader needs from a Click-compatible usage error."""
+
+    exit_code: int
+
+    def format_message(self) -> str: ...
+
+    def show(self) -> None: ...
 
 
 def request_from_argv(argv: Sequence[str]) -> AutomationRequest:
@@ -139,11 +149,35 @@ def emit_document(payload: dict[str, object]) -> None:
         _DOCUMENT_EMITTED.set(True)
 
 
-def _bad_parameter_field(exc: click.BadParameter) -> str:
-    if exc.param is not None and getattr(exc.param, "name", None):
-        return str(exc.param.name)
-    if exc.param_hint:
-        hint = exc.param_hint[0] if isinstance(exc.param_hint, tuple) else exc.param_hint
+def _has_typer_click_base(exc: Exception, name: str) -> bool:
+    return any(base.__name__ == name and base.__module__.partition(".")[0] == "typer" for base in type(exc).__mro__)
+
+
+def as_click_error(exc: Exception) -> ClickError | None:
+    """Adapt external Click and Typer-owned Click errors at the CLI boundary.
+
+    Newer Typer releases may own their Click implementation, so exception class
+    identity is not guaranteed to match the separately installed ``click``
+    package. Reader depends only on the public usage-error behavior here and
+    does not import Typer's private compatibility modules.
+    """
+
+    if not isinstance(exc, click.ClickException) and not _has_typer_click_base(exc, "ClickException"):
+        return None
+    if type(getattr(exc, "exit_code", None)) is not int:
+        return None
+    if not callable(getattr(exc, "format_message", None)) or not callable(getattr(exc, "show", None)):
+        return None
+    return cast(ClickError, exc)
+
+
+def _bad_parameter_field(exc: ClickError) -> str:
+    param = getattr(exc, "param", None)
+    if param is not None and getattr(param, "name", None):
+        return str(param.name)
+    param_hint = getattr(exc, "param_hint", None)
+    if param_hint:
+        hint = param_hint[0] if isinstance(param_hint, tuple) else param_hint
         return str(hint).lstrip("-").replace("-", "_")
     reason = str(exc).lower()
     if "experiment" in reason and "root" in reason:
@@ -163,8 +197,10 @@ def _bad_parameter_field(exc: click.BadParameter) -> str:
     return "parameter"
 
 
-def click_error_details(exc: click.ClickException) -> dict[str, Any]:
-    if isinstance(exc, click.BadParameter):
+def click_error_details(exc: ClickError) -> dict[str, Any]:
+    if isinstance(exc, click.BadParameter) or (
+        isinstance(exc, Exception) and _has_typer_click_base(exc, "BadParameter")
+    ):
         field = _bad_parameter_field(exc)
         return {
             "code": "invalid_parameter",

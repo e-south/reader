@@ -83,30 +83,6 @@ def test_audit_verification_uses_composed_runtime_record_store(tmp_path: Path, m
     manifests = outputs / "manifests"
     manifests.mkdir(parents=True)
     (manifests / "records.json").write_text("{}", encoding="utf-8")
-    invocation_id = "audit-test"
-    (manifests / "invocations.jsonl").write_text(
-        "\n".join(
-            [
-                json.dumps(
-                    {
-                        "schema": "reader.invocation/v1",
-                        "event": "attempt",
-                        "invocation_id": invocation_id,
-                    }
-                ),
-                json.dumps(
-                    {
-                        "schema": "reader.invocation/v1",
-                        "event": "result",
-                        "invocation_id": invocation_id,
-                        "status": "succeeded",
-                        "exit_status": 0,
-                    }
-                ),
-            ]
-        ),
-        encoding="utf-8",
-    )
     store = SimpleNamespace(iter_latest_records=lambda: [SimpleNamespace(record_id="ingest/df")])
     calls: list[dict[str, object]] = []
 

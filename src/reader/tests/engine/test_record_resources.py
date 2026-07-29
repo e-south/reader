@@ -379,7 +379,7 @@ def test_self_source_output_collision_fails_before_record_or_ledger_mutation(tmp
     )
     catalog_before = store.records_path.read_bytes()
     revision_counts_before = store.revision_counts()
-    invocation_path = aggregate_root / "outputs" / "manifests" / "invocations.jsonl"
+    invocation_path = store.invocation_ledger_path()
     decl = load_workbench_decl(config, protocols=builtin_protocol_catalog())
 
     with pytest.raises(ConfigError, match="same experiment.*planned output"):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ from reader.contracts import builtin_contract_catalog
 from reader.errors import ContractError, RecordError
 from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
 from reader.workbench.records import (
+    DataFrameArtifactRecord,
     PathDescription,
     RecordStore,
 )
@@ -27,6 +29,32 @@ def test_records_catalog_invalid_json_raises(tmp_path) -> None:
     store = RecordStore(outputs, contracts=builtin_contract_catalog(), create=False)
     with pytest.raises(RecordError):
         store.iter_latest_records()
+
+
+def test_records_catalog_rejects_a_symlinked_catalog_before_reading_it(tmp_path: Path) -> None:
+    outputs = tmp_path / "outputs"
+    manifests = outputs / "manifests"
+    manifests.mkdir(parents=True)
+    outside = tmp_path / "outside-records.json"
+    outside.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "provenance_epoch_id": "2c1e4014-6217-4f10-9241-f4efb748bd75",
+                "latest": {},
+                "history": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    try:
+        (manifests / "records.json").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    store = RecordStore(outputs, contracts=builtin_contract_catalog(), create=False)
+
+    with pytest.raises(RecordError, match="records.json must not be a symlink"):
+        store.provenance_epoch_id()
 
 
 @pytest.mark.parametrize("sink", ["outputs", "artifacts", "manifests", "plots", "exports"])
@@ -75,6 +103,131 @@ def test_record_store_creates_normal_confined_sink_roots(tmp_path: Path) -> None
     assert all(path.is_dir() for path in (store.artifacts_dir, store.manifests_dir, store.plots_dir, store.exports_dir))
 
 
+def test_record_catalog_owns_a_canonical_provenance_epoch(tmp_path: Path) -> None:
+    store = RecordStore(
+        tmp_path / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=tmp_path,
+    )
+
+    initial_epoch = store.provenance_epoch_id()
+    initial_path = store.invocation_ledger_path()
+    store.reset_catalog()
+    reset_epoch = store.provenance_epoch_id()
+
+    assert UUID(initial_epoch).version == 4
+    assert UUID(reset_epoch).version == 4
+    assert reset_epoch != initial_epoch
+    assert initial_path == store.manifests_dir / "invocations" / f"{initial_epoch}.jsonl"
+    assert store.invocation_ledger_path() == store.manifests_dir / "invocations" / f"{reset_epoch}.jsonl"
+
+
+def test_bound_record_store_rejects_catalog_reset(tmp_path: Path) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    store.bind_provenance_epoch(store.provenance_epoch_id())
+
+    with pytest.raises(RecordError, match="bound.*provenance epoch"):
+        store.reset_catalog()
+
+
+def test_catalog_commit_rejects_a_same_epoch_concurrent_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    first = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    second = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    original_write = first._write_catalog
+    injected = False
+
+    def _inject_update(payload, **kwargs):
+        nonlocal injected
+        if not injected and kwargs.get("expected_provenance_epoch_id") is not None:
+            injected = True
+            second.persist_dataframe(
+                producer_id="second",
+                producer_plugin="ingest/synergy_h1",
+                out_name="df",
+                record_id="second/df",
+                df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [2.0]}),
+                contract_id="tidy.v1",
+                inputs=[],
+                config_digest="sha256:second",
+            )
+        return original_write(payload, **kwargs)
+
+    monkeypatch.setattr(first, "_write_catalog", _inject_update)
+
+    with pytest.raises(RecordError, match="changed concurrently"):
+        first.persist_dataframe(
+            producer_id="first",
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id="first/df",
+            df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest="sha256:first",
+        )
+
+    assert second.latest_record("second/df") is not None
+    assert second.latest_record("first/df") is None
+
+
+def test_idempotent_dataframe_write_rejects_a_stale_same_epoch_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    first = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    second = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=tmp_path)
+    original = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    first.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=original,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    original_verify = DataFrameArtifactRecord.verify_content_digest
+    injected = False
+
+    def _inject_update(record: DataFrameArtifactRecord) -> None:
+        nonlocal injected
+        original_verify(record)
+        if not injected:
+            injected = True
+            second.persist_dataframe(
+                producer_id="ingest",
+                producer_plugin="ingest/synergy_h1",
+                out_name="df",
+                record_id="ingest/df",
+                df=original.assign(value=[2.0]),
+                contract_id="tidy.v1",
+                inputs=[],
+                config_digest="sha256:test",
+            )
+
+    monkeypatch.setattr(DataFrameArtifactRecord, "verify_content_digest", _inject_update)
+
+    with pytest.raises(RecordError, match="changed concurrently"):
+        first.persist_dataframe(
+            producer_id="ingest",
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id="ingest/df",
+            df=original,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest="sha256:test",
+        )
+
+    assert second.latest_dataframe("ingest/df").load_dataframe()["value"].tolist() == [2.0]
+
+
 def test_record_store_normalizes_macos_var_alias_consistently() -> None:
     with TemporaryDirectory() as temporary_directory:
         experiment = Path(temporary_directory) / "experiment"
@@ -113,7 +266,7 @@ def test_records_catalog_unknown_schema_version_raises(tmp_path) -> None:
         encoding="utf-8",
     )
     store = RecordStore(outputs, contracts=builtin_contract_catalog(), create=False)
-    with pytest.raises(RecordError, match="schema_version must be 3"):
+    with pytest.raises(RecordError, match="schema_version must be 4"):
         store.iter_latest_records()
 
 
@@ -146,11 +299,9 @@ def test_file_bundle_record_rejects_noncurrent_or_malformed_schema_version(tmp_p
         "record_id": "plot:qc",
         "kind": "file_bundle",
     }
-    catalog = {
-        "schema_version": 3,
-        "latest": {"plot:qc": payload},
-        "history": {"plot:qc": [payload]},
-    }
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    catalog["latest"] = {"plot:qc": payload}
+    catalog["history"] = {"plot:qc": [payload]}
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     with pytest.raises(RecordError, match="record payload schema_version must be 5"):
