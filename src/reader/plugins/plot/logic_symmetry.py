@@ -12,7 +12,7 @@ from reader.workbench.registry import PluginConfig
 
 class LogicSymmetryPlotCfg(PluginConfig):
     title: str = "Logic symmetry"
-    uncertainty: Literal["none", "errorbars", "halo"] = "halo"
+    dispersion: Literal["none", "bars", "halo"] = "halo"
     encodings: dict[str, Any] = Field(default_factory=dict)
     ideals_overlay: dict[str, Any] = Field(default_factory=dict)
     visuals: dict[str, Any] = Field(default_factory=dict)
@@ -37,7 +37,7 @@ class LogicSymmetryPlot(FigurePlotPlugin):
         figure = render_logic_symmetry(
             inputs["table"],
             title=cfg.title,
-            uncertainty=cfg.uncertainty,
+            dispersion=cfg.dispersion,
             encodings=cfg.encodings,
             ideals_overlay=cfg.ideals_overlay,
             visuals=cfg.visuals,

@@ -156,7 +156,7 @@ def _draw_snapshot_panel(
 
     for treatment in order:
         subset = data.snapshot_points[data.snapshot_points[treatment_col].astype(str) == str(treatment)].sort_values(
-            "replicate_index"
+            "observation_index"
         )
         offsets = np.linspace(-0.12, 0.12, len(subset)) if len(subset) > 1 else np.zeros(len(subset))
         if not subset.empty:

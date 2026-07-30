@@ -41,8 +41,13 @@ protocol:
       views:
         sfxi_diagnostic:
           design_ids: [design-a, design-b]
+          trajectory_interval_mass: 0.95
+          trajectory_resamples: 300
           format: [png]
 ```
+
+These intervals describe observation dispersion; they do not establish a
+replicate relationship among positions.
 
 ## Per-experiment heatmap
 

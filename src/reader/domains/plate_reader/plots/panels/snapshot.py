@@ -18,7 +18,7 @@ def draw_snapshot_panel(
     x_col: str,
     hue_col: str | None,
     agg: str,
-    err: str,
+    dispersion: str,
     palette_book: PaletteBook | None,
     show_legend: bool,
     legend_loc: str,
@@ -32,7 +32,7 @@ def draw_snapshot_panel(
     axis_label_size: float | None = None,
     tick_label_size: float | None = None,
     legend_fontsize: float | None = None,
-    replicate_seed: int = 0,
+    observation_seed: int = 0,
 ) -> None:
     x_levels = stats[x_col].astype(str).unique().tolist()
     resolved_x_order = [str(value) for value in x_order] if x_order is not None else order_levels(x_levels)
@@ -76,7 +76,7 @@ def draw_snapshot_panel(
     ax.xaxis.grid(False)
 
     legend_handles: dict[str, object] = {}
-    rng = np.random.default_rng(int(replicate_seed))
+    rng = np.random.default_rng(int(observation_seed))
     for j, x_value in enumerate(resolved_x_order):
         x_center = base_pos[j]
         for hue in hue_levels:
@@ -89,10 +89,10 @@ def draw_snapshot_panel(
             height = float(row[agg])
 
             yerr = None
-            if err == "sem":
-                err_value = float(row.get("sem", np.nan))
-                yerr = None if not np.isfinite(err_value) else err_value
-            elif err == "iqr":
+            if dispersion == "sd":
+                dispersion_value = float(row.get("std", np.nan))
+                yerr = None if not np.isfinite(dispersion_value) else dispersion_value
+            elif dispersion == "iqr":
                 q1 = row.get("q1", np.nan)
                 q3 = row.get("q3", np.nan)
                 if np.isfinite(q1) and np.isfinite(q3):

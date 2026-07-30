@@ -51,7 +51,7 @@ def test_time_series_window_does_not_change_snapshot_endpoint() -> None:
         snap_channel="RFP/OD600",
         snap_time=12.0,
         snap_agg="median",
-        snap_err="none",
+        snap_dispersion="none",
     )
 
     ax_ts, ax_snap = figures[0].fig.axes
@@ -278,6 +278,6 @@ def test_iqr_error_bars_emit_no_deprecation_warning() -> None:
             snap_channel="RFP/OD600",
             snap_time=12.0,
             snap_agg="median",
-            snap_err="iqr",
+            snap_dispersion="iqr",
         )
     plt.close(figures[0].fig)

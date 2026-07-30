@@ -104,7 +104,7 @@ def draw_scatter(
     *,
     hue_col: str | None,
     visuals: VisualConfig,
-    uncertainty_mode: str,
+    dispersion_mode: str,
     overlay_cfg: OverlayStyle | None = None,
     overlay_gate_set: str | None = None,
     title: str | None = None,
@@ -234,7 +234,7 @@ def draw_scatter(
 
     # ——— Experimental points ———
     for marker, sub in points.groupby("shape_value"):
-        if uncertainty_mode == "halo":
+        if dispersion_mode == "halo":
             k = 1.5
             halo_size = sub["size_value"] * (1.0 + k * sub.get("cv", pd.Series(0.0, index=sub.index)).clip(0, 0.5))
             ax.scatter(
@@ -249,7 +249,7 @@ def draw_scatter(
                 zorder=1,
             )
 
-        if uncertainty_mode == "errorbars":
+        if dispersion_mode == "bars":
             err = (sub.get("cv", pd.Series(0.0, index=sub.index)).clip(0, 0.5)) * 0.3
             ax.errorbar(
                 sub["L"],

@@ -26,7 +26,7 @@ class ResponseWindowSummaryPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {"designs": dataframe_input("designs", "plate_reader.response_window.designs.v3")}
+        return {"designs": dataframe_input("designs", "plate_reader.response_window.designs.v4")}
 
     def render(self, ctx, inputs, cfg):
         from reader.domains.plate_reader.plots.response_window.summary import (  # noqa: PLC0415

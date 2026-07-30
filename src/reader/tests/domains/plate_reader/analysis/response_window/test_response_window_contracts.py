@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowAnalysisSpec
+from reader.plugins.transform.response_window import ResponseWindowTransform
+from reader.protocols import builtin_protocol_catalog
 
 
 def _payload() -> dict[str, object]:
@@ -44,15 +46,15 @@ def _payload() -> dict[str, object]:
             },
         ],
         "aggregation": {
-            "replicate_stat": "median",
-            "bootstrap_samples": 200,
-            "confidence_level": 0.9,
+            "observation_stat": "median",
+            "descriptive_resampling_draws": 200,
+            "descriptive_interval_mass": 0.9,
             "random_seed": 17,
         },
         "quality": {
             "positive_floor": 1.0e-12,
             "max_interior_gap_h": 0.75,
-            "min_replicates_per_state": 2,
+            "min_observations_per_state": 2,
         },
     }
 
@@ -81,6 +83,60 @@ def test_analysis_rejects_unknown_fields() -> None:
 
     with pytest.raises(ValueError, match="unknown fields"):
         ResponseWindowAnalysisSpec.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("section", "retired_key", "replacement_key"),
+    [
+        ("aggregation", "replicate_stat", "observation_stat"),
+        ("aggregation", "bootstrap_samples", "descriptive_resampling_draws"),
+        ("aggregation", "confidence_level", "descriptive_interval_mass"),
+        ("quality", "min_replicates_per_state", "min_observations_per_state"),
+    ],
+)
+def test_analysis_rejects_retired_replicate_and_inferential_keys(
+    section: str,
+    retired_key: str,
+    replacement_key: str,
+) -> None:
+    payload = _payload()
+    section_payload = payload[section]
+    assert isinstance(section_payload, dict)
+    section_payload[retired_key] = section_payload.pop(replacement_key)
+
+    with pytest.raises(ValueError, match=rf"unknown fields.*{retired_key}"):
+        ResponseWindowAnalysisSpec.from_mapping(payload)
+
+
+def test_analysis_exposes_observation_and_descriptive_resampling_policy() -> None:
+    spec = ResponseWindowAnalysisSpec.from_mapping(_payload())
+
+    assert spec.aggregation.observation_stat == "median"
+    assert spec.aggregation.descriptive_resampling_draws == 200
+    assert spec.aggregation.descriptive_interval_mass == 0.9
+    assert spec.quality.min_observations_per_state == 2
+    assert not hasattr(spec.aggregation, "replicate_stat")
+    assert not hasattr(spec.quality, "min_replicates_per_state")
+
+
+def test_protocol_and_transform_publish_only_observation_named_surfaces() -> None:
+    descriptor = builtin_protocol_catalog().resolve("plate_reader/response_window")
+    fields = {field.key: field for field in descriptor.analysis_fields}
+    aggregation = fields["aggregation"].default
+    quality = fields["quality"].default
+    ports = ResponseWindowTransform.output_ports()
+
+    assert isinstance(aggregation, dict)
+    assert isinstance(quality, dict)
+    assert set(aggregation) == {
+        "observation_stat",
+        "descriptive_resampling_draws",
+        "descriptive_interval_mass",
+        "random_seed",
+    }
+    assert "min_observations_per_state" in quality
+    assert "descriptive_resampling_draws" in ports
+    assert "bootstrap_draws" not in ports
 
 
 def test_analysis_requires_exact_four_state_mapping() -> None:

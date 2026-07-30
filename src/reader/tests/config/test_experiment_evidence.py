@@ -7,6 +7,7 @@ import pytest
 from reader.errors import ConfigError
 from reader.tests.support.configs import base_reader_config, load_models, write_config
 from reader.workbench.config import ReaderSpec, reader_spec_digest
+from reader.workbench.experiment import ExperimentEvidence
 
 
 def _config_with_evidence() -> dict:
@@ -108,6 +109,19 @@ def test_evidence_preserves_unknown_replication_without_an_invented_identity(tmp
     }
 
 
+@pytest.mark.parametrize("replicate_kind", ["biological", "technical", "mixed"])
+def test_evidence_requires_identity_for_declared_replicate_relationships(
+    tmp_path: Path,
+    replicate_kind: str,
+) -> None:
+    payload = _config_with_evidence()
+    payload["evidence"]["replicate_kind"] = replicate_kind
+    payload["evidence"].pop("replicate_identity_field")
+
+    with pytest.raises(ConfigError, match="replicate_identity_field.*required"):
+        ReaderSpec.load(write_config(tmp_path / f"{replicate_kind}-without-identity.yaml", payload))
+
+
 def test_evidence_rejects_unknown_fields_and_invalid_identity_combinations(tmp_path: Path) -> None:
     payload = _config_with_evidence()
     payload["evidence"]["comment"] = "free-form schema drift"
@@ -143,3 +157,27 @@ def test_evidence_changes_the_normalized_config_identity() -> None:
     with_evidence = ReaderSpec.model_validate(with_evidence_payload)
 
     assert reader_spec_digest(with_evidence) != reader_spec_digest(baseline)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"replicate_kind": "biological", "replicate_identity_field": None}, "replicate_identity_field.*required"),
+        ({"replicate_kind": "invented"}, "unsupported replicate_kind"),
+        ({"replicate_identity_field": "   "}, "replicate_identity_field.*non-empty"),
+    ],
+)
+def test_experiment_evidence_direct_construction_matches_config_invariants(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    values: dict[str, object] = {
+        "data_class": "plate_reader_screen",
+        "data_class_reason": "Declared source evidence.",
+        "replicate_kind": "unknown",
+        "replicate_identity_field": None,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        ExperimentEvidence(**values)  # type: ignore[arg-type]

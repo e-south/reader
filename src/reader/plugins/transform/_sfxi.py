@@ -76,7 +76,7 @@ def log_sfxi_plugin_result(*, ctx, result: SFXIBuildResult) -> None:
         ctx.logger.info(
             "sfxi • design_by=%s\n"
             "   time: mode=%s target=%.3g tol=%.3g • chosen=%s\n"
-            "   reference: requested=%r → resolved=%r • sequence=%r • stat=%s\n"
+            "   reference: requested=%r → resolved=%r • sequence=%r • observation_stat=%s\n"
             "   rows: per_corner_logic=%d per_corner_intensity=%d vec8=%d (flat=%d)\n"
             "   r_logic: median=%.3g iqr=[%.3g, %.3g]",
             ", ".join(sfxi_cfg.design_by),
@@ -87,7 +87,7 @@ def log_sfxi_plugin_result(*, ctx, result: SFXIBuildResult) -> None:
             ref_info.get("design_id"),
             ref_info.get("design_id_resolved"),
             ref_info.get("sequence"),
-            ref_info.get("stat"),
+            ref_info.get("observation_stat"),
             int(len(sel_logic.per_corner)),
             int(len(sel_int.per_corner)),
             int(len(vec8)),
@@ -97,7 +97,7 @@ def log_sfxi_plugin_result(*, ctx, result: SFXIBuildResult) -> None:
             (float(r_stats["75%"]) if r_stats is not None else float("nan")),
         )
 
-        _log_sfxi_replicate_summary(
+        _log_sfxi_observation_summary(
             ctx=ctx,
             design_by=sfxi_cfg.design_by,
             idx_cols=idx_cols,
@@ -117,7 +117,7 @@ def log_sfxi_plugin_result(*, ctx, result: SFXIBuildResult) -> None:
         pass
 
 
-def _log_sfxi_replicate_summary(*, ctx, design_by: list[str], idx_cols: list[str], sel_logic, sel_int) -> None:
+def _log_sfxi_observation_summary(*, ctx, design_by: list[str], idx_cols: list[str], sel_logic, sel_int) -> None:
     try:
         logic_counts = sel_logic.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]].rename(
             columns={"n00": "n00_L", "n10": "n10_L", "n01": "n01_L", "n11": "n11_L"}
@@ -128,19 +128,24 @@ def _log_sfxi_replicate_summary(*, ctx, design_by: list[str], idx_cols: list[str
         joined = logic_counts.join(intensity_counts, how="outer").reset_index().sort_values(idx_cols)
         for _, row in joined.iterrows():
             key = " | ".join(f"{col}={row[col]}" for col in design_by if col in row.index)
-            logic_reps = [
+            logic_observations = [
                 int(row.get("n00_L", 0) or 0),
                 int(row.get("n10_L", 0) or 0),
                 int(row.get("n01_L", 0) or 0),
                 int(row.get("n11_L", 0) or 0),
             ]
-            intensity_reps = [
+            intensity_observations = [
                 int(row.get("n00_I", 0) or 0),
                 int(row.get("n10_I", 0) or 0),
                 int(row.get("n01_I", 0) or 0),
                 int(row.get("n11_I", 0) or 0),
             ]
-            ctx.logger.info("sfxi • %s: replicates (logic)=%s  (intensity)=%s", key, logic_reps, intensity_reps)
+            ctx.logger.info(
+                "sfxi • %s: observations (logic)=%s  (intensity)=%s",
+                key,
+                logic_observations,
+                intensity_observations,
+            )
     except Exception:
         pass
 
@@ -156,12 +161,12 @@ def _log_sfxi_vec8_preview(
     sel_logic,
 ) -> None:
     try:
-        rep_map: dict[tuple, tuple[int, ...]] = {}
+        observation_count_map: dict[tuple, tuple[int, ...]] = {}
         if not sel_logic.points.empty:
             counts = sel_logic.points.set_index(idx_cols)[["n00", "n10", "n01", "n11"]]
             for key, values in counts.iterrows():
                 normalized_key = key if isinstance(key, tuple) else (key,)
-                rep_map[normalized_key] = tuple(int(item) for item in values.to_list())
+                observation_count_map[normalized_key] = tuple(int(item) for item in values.to_list())
 
         sort_cols = [col for col in [label_col] if col in vec8.columns]
         lines: list[str] = []
@@ -169,15 +174,15 @@ def _log_sfxi_vec8_preview(
             key = " | ".join(f"{col}={row[col]}" for col in sort_cols)
             v_txt = [f"{float(row[col]):.3f}" for col in ("v00", "v10", "v01", "v11")]
             y_txt = [f"{float(row[col]):.3f}" for col in ("y00_star", "y10_star", "y01_star", "y11_star")]
-            rep_key = tuple(row[col] for col in idx_cols if col in vec8.columns)
-            rep_txt = ""
-            if rep_key in rep_map:
-                rep_txt = f"  n={list(rep_map[rep_key])}"
+            observation_key = tuple(row[col] for col in idx_cols if col in vec8.columns)
+            count_text = ""
+            if observation_key in observation_count_map:
+                count_text = f"  observation_n={list(observation_count_map[observation_key])}"
             lines.append(
                 f"   • {key}: v={v_txt} | y*={y_txt} | r_logic={float(row.get('r_logic', np.nan)):.3g} "
                 f"(max/min={float(row.get('r_logic_max', np.nan)):.3g}/{float(row.get('r_logic_min', np.nan)):.3g}; "
                 f"corners {row.get('r_logic_corner_max', '?')}/{row.get('r_logic_corner_min', '?')}; "
-                f"span_log2={float(row.get('logic_span_log2', np.nan)):.3g}){rep_txt}"
+                f"span_log2={float(row.get('logic_span_log2', np.nan)):.3g}){count_text}"
             )
         if lines:
             more = "" if len(lines) <= 12 else f"\n   … (+{len(lines) - 12} more)"

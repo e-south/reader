@@ -38,8 +38,11 @@ class ResponseWindowTransform(Plugin):
     def output_ports(cls):
         return {
             "wells": dataframe_output("wells", "plate_reader.response_window.wells.v3"),
-            "designs": dataframe_output("designs", "plate_reader.response_window.designs.v3"),
-            "bootstrap_draws": dataframe_output("bootstrap_draws", "plate_reader.response_window.bootstrap_draws.v2"),
+            "designs": dataframe_output("designs", "plate_reader.response_window.designs.v4"),
+            "descriptive_resampling_draws": dataframe_output(
+                "descriptive_resampling_draws",
+                "plate_reader.response_window.descriptive_resampling_draws.v3",
+            ),
             "traces": dataframe_output("traces", "plate_reader.response_window.traces.v3"),
             "events": dataframe_output("events", "plate_reader.response_window.events.v2"),
         }
@@ -76,7 +79,7 @@ class ResponseWindowTransform(Plugin):
                 event_spec=spec.event,
             )
             materialized.append(materialize_experiment(source, request=spec))
-        names = ("wells", "designs", "bootstrap_draws", "traces", "events")
+        names = ("wells", "designs", "descriptive_resampling_draws", "traces", "events")
         return {
             name: pd.concat([frames[index] for frames in materialized], ignore_index=True)
             for index, name in enumerate(names)

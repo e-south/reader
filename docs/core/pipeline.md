@@ -42,6 +42,7 @@ protocol:
         "YFP:500,530": YFP
     fold_change:
       report_times: [8.0, 14.0]
+      observation_stat: median
 
 resources:
   sample_map:
@@ -52,8 +53,10 @@ resources:
 `replicate_kind` records what the source establishes: `biological`,
 `technical`, `mixed`, `unknown`, or `not_applicable`. Declare
 `replicate_identity_field` only when a persisted source field identifies the
-corresponding unit. A plate position identifies an observation; it does not by
-itself establish the replicate relationship.
+corresponding unit; it is required for `biological`, `technical`, and `mixed`.
+Use `unknown` with no identity field when the relationship is not established.
+A plate position identifies an observation; it does not by itself establish the
+replicate relationship.
 
 `channel_map` keys are exact canonical channel labels from the Synergy export.
 Keep wavelength suffixes when the workbook supplies them; the values are the
@@ -210,6 +213,7 @@ protocol:
       sheet_names: ["Plate 1 - Sheet1", "Plate 2 - Sheet1"]
     fold_change:
       report_times: [8.0, 14.0]
+      observation_stat: median
       treatment_column: treatment
       group_by: [design_id]
   analysis:
@@ -242,7 +246,7 @@ protocol:
       mode: mixed
     reference:
       design_id: REF
-      stat: mean
+      observation_stat: mean
     design_by: [design_id]
     state_map_ref: induction_logic
   analysis:

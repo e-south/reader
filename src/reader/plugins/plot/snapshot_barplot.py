@@ -20,7 +20,7 @@ class SnapshotBarCfg(PluginConfig):
     fig: dict[str, Any] = Field(default_factory=dict)
     filename: str | None = None
     agg: str = "mean"  # median|mean
-    err: str = "sem"  # iqr|sem|none
+    dispersion: Literal["sd", "iqr", "none"] = "sd"
     time_tolerance: float = 0.51
     panel_by: Literal["channel", "x", "group"] = "channel"
     channel_select: str | None = None
@@ -55,7 +55,7 @@ class SnapshotBarplot(FigurePlotPlugin):
             filename=cfg.filename,
             palette_book=ctx.palette_book,
             agg=cfg.agg,
-            err=cfg.err,
+            dispersion=cfg.dispersion,
             time_tolerance=cfg.time_tolerance,
             panel_by=cfg.panel_by,
             channel_select=cfg.channel_select,

@@ -87,7 +87,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         analysis_fields=(),
         factors=(
             ProtocolFactorSpec(name="sample", role="sample", summary="Primary experimental unit."),
-            ProtocolFactorSpec(name="replicate", role="replicate", summary="Replicate grouping axis.", required=False),
+            ProtocolFactorSpec(
+                name="replicate",
+                role="replicate",
+                summary="Source-declared replicate grouping axis.",
+                required=False,
+            ),
             ProtocolFactorSpec(name="time", role="time", summary="Observation axis when present.", required=False),
         ),
         ranking=ProtocolRankingSpec(
@@ -199,12 +204,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             _field(
                 "aggregation",
-                "Replicate and uncertainty aggregation settings.",
+                "Within-experiment observation aggregation and descriptive resampling settings.",
                 allow_unknown=True,
                 default={
-                    "replicate_stat": "median",
-                    "bootstrap_samples": 100,
-                    "confidence_level": 0.95,
+                    "observation_stat": "median",
+                    "descriptive_resampling_draws": 100,
+                    "descriptive_interval_mass": 0.95,
                     "random_seed": 0,
                 },
             ),
@@ -215,7 +220,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 default={
                     "positive_floor": 1e-09,
                     "max_interior_gap_h": 1.0,
-                    "min_replicates_per_state": 2,
+                    "min_observations_per_state": 2,
                 },
             ),
         ),
@@ -338,7 +343,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         kind="number_list",
                     ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
-                    _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
+                    _field(
+                        "observation_stat",
+                        "Observation aggregation statistic.",
+                        kind="string",
+                        choices=("median", "mean"),
+                        default="median",
+                    ),
                     _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
                     _field(
                         "group_by",
@@ -470,7 +481,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         factors=(
             ProtocolFactorSpec(name="design_id", role="construct", summary="Primary construct or design grouping."),
             ProtocolFactorSpec(name="treatment", role="condition", summary="Primary treatment or assay condition."),
-            ProtocolFactorSpec(name="replicate_id", role="replicate", summary="Replicate well identifier."),
+            ProtocolFactorSpec(name="position", role="observation", summary="Observed well or sample position."),
             ProtocolFactorSpec(name="time", role="time", summary="Time after assay start."),
             ProtocolFactorSpec(name="plate_id", role="plate", summary="Plate-local normalization boundary."),
         ),
@@ -708,7 +719,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "target": binding_value("fold_change.target", "YFP/CFP"),
                         "report_times": binding_value("fold_change.report_times"),
                         "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
-                        "agg": binding_value("fold_change.agg", "median"),
+                        "observation_stat": binding_value("fold_change.observation_stat", "median"),
                         "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
                         "group_by": binding_value("fold_change.group_by", ["design_id"]),
                         "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
@@ -826,7 +837,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         kind="number_list",
                     ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
-                    _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
+                    _field(
+                        "observation_stat",
+                        "Observation aggregation statistic.",
+                        kind="string",
+                        choices=("median", "mean"),
+                        default="median",
+                    ),
                     _field("treatment_column", "Treatment-state column name.", kind="string", default="treatment"),
                     _field(
                         "group_by",
@@ -861,7 +878,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "Reference design and aggregation policy for vec8 normalization.",
                 children=(
                     _field("design_id", "Reference design id.", kind="string", default="REF"),
-                    _field("stat", "Reference aggregation statistic.", kind="string", default="mean"),
+                    _field("observation_stat", "Reference observation statistic.", kind="string", default="mean"),
                 ),
             ),
             _field("design_by", "Grouping columns for logic designs.", kind="string_list", default=["design_id"]),
@@ -921,7 +938,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 "logic_symmetry",
                 "Logic-symmetry summary settings used when that deliverable is selected.",
                 children=(
-                    _field("batch_col", "Replicate-batch column.", kind="string", default="batch"),
+                    _field("batch_col", "Observation-batch column.", kind="string", default="batch"),
                     _field(
                         "treatment_column",
                         "Optional treatment column override; otherwise the ordered state space owns it.",
@@ -929,8 +946,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         allow_none=True,
                     ),
                     _field(
-                        "replicate_stat",
-                        "Replicate aggregator for each state corner.",
+                        "observation_stat",
+                        "Observation aggregation statistic for each state corner.",
                         kind="string",
                         choices=("mean", "median"),
                         default="mean",
@@ -1214,7 +1231,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "target": binding_value("fold_change.target", "YFP/CFP"),
                         "report_times": binding_value("fold_change.report_times"),
                         "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
-                        "agg": binding_value("fold_change.agg", "median"),
+                        "observation_stat": binding_value("fold_change.observation_stat", "median"),
                         "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
                         "group_by": binding_value("fold_change.group_by", ["design_id"]),
                         "use_global_baseline": binding_value("fold_change.use_global_baseline", True),
@@ -1240,7 +1257,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "state_map_ref": binding_value("state_map_ref", "induction_logic"),
                         "reference": {
                             "design_id": binding_value("reference.design_id", "REF"),
-                            "stat": binding_value("reference.stat", "mean"),
+                            "observation_stat": binding_value("reference.observation_stat", "mean"),
                         },
                         "require_all_corners_per_design": binding_value("require_all_corners_per_design", True),
                         "exclude_reference_from_output": binding_value("exclude_reference_from_output", True),

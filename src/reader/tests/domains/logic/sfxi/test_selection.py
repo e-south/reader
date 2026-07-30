@@ -1,4 +1,4 @@
-"""Aggregate replicates per corner and map treatments -> {00,10,01,11}.
+"""Aggregate observations per corner and map treatments -> {00,10,01,11}.
 Also ensures we pick time 'nearest' and counts are correct for both channels."""
 
 import numpy as np
@@ -15,8 +15,8 @@ def _tidy(rows):
     return pd.DataFrame(rows)
 
 
-def test_cornerize_aggregates_replicates_for_logic_and_intensity():
-    # two replicates per corner at the same time (12.0 h), one design_id
+def test_cornerize_aggregates_observations_for_logic_and_intensity():
+    # Two observations per corner at the same time (12.0 h), one design_id.
     TMAP = {
         "00": "EtOH_0_percent_0nM_cipro",
         "10": "EtOH_3_percent_0nM_cipro",
@@ -29,7 +29,7 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
     vals_int = {"00": [10, 30], "10": [10, 30], "01": [10, 30], "11": [10, 30]}
     corners = ["00", "10", "01", "11"]
     for pos, corner in zip(["A1", "B1", "C1", "D1"], corners, strict=False):
-        # two replicates per corner at the same time
+        # Two observations per corner at the same time.
         for rep in range(2):
             rows.append(
                 {
@@ -75,7 +75,7 @@ def test_cornerize_aggregates_replicates_for_logic_and_intensity():
     assert np.isclose(ptI["b00"], 20.0) and np.isclose(ptI["b10"], 20.0)
     assert np.isclose(ptI["b01"], 20.0) and np.isclose(ptI["b11"], 20.0)
 
-    # replicate counts carried through (two per corner)
+    # Observation counts are carried through (two per corner).
     for col in ["n00", "n10", "n01", "n11"]:
         assert int(ptL[col]) == 2
         assert int(ptI[col]) == 2

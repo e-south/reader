@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from reader.errors import ExecutionError
 from reader.plugins.plot.sfxi_diagnostic import SFXIDiagnosticCfg, SFXIDiagnosticPlot
@@ -94,6 +95,12 @@ def test_sfxi_diagnostic_declares_both_persisted_inputs() -> None:
 
     assert ports["df"].contract == "plate_reader.annotated.v1"
     assert ports["vec8"].contract == "sfxi.vec8.v3"
+
+
+@pytest.mark.parametrize("legacy_key", ["trajectory_ci", "trajectory_bootstraps"])
+def test_sfxi_diagnostic_rejects_legacy_interval_keys(legacy_key: str) -> None:
+    with pytest.raises(ValidationError, match=legacy_key):
+        SFXIDiagnosticCfg(state_map_ref="states", **{legacy_key: 10})
 
 
 def test_sfxi_diagnostic_defaults_to_one_artifact_per_persisted_design() -> None:
@@ -193,7 +200,7 @@ def test_sfxi_diagnostic_runtime_persists_one_normal_plot_bundle(tmp_path: Path)
                         "state_map_ref": "states",
                         "response_channel": "response",
                         "design_ids": ["design-b"],
-                        "trajectory_bootstraps": 10,
+                        "trajectory_resamples": 10,
                         "format": ["png"],
                         "dpi": 72,
                     },

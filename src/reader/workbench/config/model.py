@@ -78,6 +78,10 @@ class EvidenceSpec(BaseModel):
     def _validate_replicate_identity(self) -> EvidenceSpec:
         if self.replicate_kind == "not_applicable" and self.replicate_identity_field is not None:
             raise ValueError("evidence.replicate_identity_field cannot be set when replicate_kind is not_applicable")
+        if self.replicate_kind in {"biological", "technical", "mixed"} and self.replicate_identity_field is None:
+            raise ValueError(
+                "evidence.replicate_identity_field is required when replicate_kind declares a known relationship"
+            )
         return self
 
 

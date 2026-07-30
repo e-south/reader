@@ -54,7 +54,7 @@ def summarize_snapshot_values(
     *,
     df: pd.DataFrame,
     group_cols: Sequence[str],
-    err: str,
+    dispersion: str,
 ) -> pd.DataFrame:
     stats_pl = (
         pl.from_pandas(df)
@@ -71,15 +71,9 @@ def summarize_snapshot_values(
             pl.col("value").median().alias("median"),
             pl.col("value").std(ddof=1).alias("std"),
         )
-        .with_columns(
-            pl.when(pl.col("n") > 0)
-            .then(pl.col("std") / pl.col("n").cast(pl.Float64).sqrt())
-            .otherwise(None)
-            .alias("sem")
-        )
     )
 
-    if err == "iqr":
+    if dispersion == "iqr":
         quantiles = (
             pl.from_pandas(df)
             .group_by(list(group_cols))

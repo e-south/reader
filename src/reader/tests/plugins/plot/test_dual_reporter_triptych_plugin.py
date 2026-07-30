@@ -40,7 +40,7 @@ def test_dual_reporter_triptych_plugin_renders_one_artifact_per_design() -> None
         snapshot_time_mode="nearest",
         snapshot_time_tolerance_h=0.2,
         treatment_order=["control", "induced"],
-        trajectory_bootstraps=25,
+        trajectory_resamples=25,
         filename_prefix="triptych",
         format=["png", "pdf"],
         dpi=144,
@@ -62,7 +62,7 @@ def test_dual_reporter_triptych_plugin_renders_one_artifact_per_design() -> None
     assert rendered[2].fig is rendered[3].fig
     assert rendered[0].fig is not rendered[2].fig
     assert {item.description for item in rendered} == {
-        "Growth and reporter-ratio kinetics with bootstrap confidence intervals, plus observed endpoint values and mean with sample standard deviation."
+        "Growth and reporter-ratio kinetics with descriptive within-experiment resampling bands, plus observed endpoint values and mean with sample standard deviation."
     }
     for figure in {item.fig for item in rendered}:
         plt.close(figure)
@@ -79,7 +79,7 @@ def test_dual_reporter_triptych_normalizes_design_labels_for_partitioning() -> N
     rendered = DualReporterTriptychPlot().render(
         SimpleNamespace(palette_book=None, experiment=None),
         {"df": frame},
-        DualReporterTriptychCfg(snapshot_time_h=1.0, trajectory_bootstraps=5),
+        DualReporterTriptychCfg(snapshot_time_h=1.0, trajectory_resamples=5),
     )
 
     assert [item.filename for item in rendered] == [
@@ -99,7 +99,7 @@ def test_dual_reporter_triptych_rejects_colliding_design_artifact_names() -> Non
         DualReporterTriptychPlot().render(
             SimpleNamespace(palette_book=None, experiment=None),
             {"df": frame},
-            DualReporterTriptychCfg(snapshot_time_h=1.0, trajectory_bootstraps=5),
+            DualReporterTriptychCfg(snapshot_time_h=1.0, trajectory_resamples=5),
         )
 
 

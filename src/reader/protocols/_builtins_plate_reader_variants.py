@@ -94,7 +94,7 @@ def build_plate_reader_variant_protocol(
                 default=None,
             ),
             field(
-                "replicate_aggregation",
+                "observation_aggregation",
                 "Optional within-unit and across-unit aggregation policy for temporal diagnostics.",
                 allow_unknown=True,
                 allow_none=True,
@@ -256,7 +256,7 @@ def build_plate_reader_variant_protocol(
                     with_={
                         "report_times": binding_value("fold_change.report_times"),
                         "time_tolerance": binding_value("fold_change.time_tolerance", 0.51),
-                        "agg": binding_value("fold_change.agg", "median"),
+                        "observation_stat": binding_value("fold_change.observation_stat", "median"),
                         "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
                         "group_by": binding_value("fold_change.group_by", ["design_id"]),
                         "use_global_baseline": binding_value("fold_change.use_global_baseline", False),

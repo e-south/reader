@@ -43,7 +43,7 @@ def summarize_logic_symmetry(
     treatment_column: str | None = None,
     treatment_map: dict[str, str] | None = None,
     treatment_case_sensitive: bool = True,
-    replicate_stat: str = "mean",
+    observation_stat: str = "mean",
     prep: dict | None = None,
 ) -> pd.DataFrame:
     """Compute one contract-ready logic-symmetry row per design and batch."""
@@ -53,8 +53,8 @@ def summarize_logic_symmetry(
         raise ValueError(
             "treatment_map must be provided with keys {'00','10','01','11'} and single exact labels as values"
         )
-    if replicate_stat not in {"mean", "median"}:
-        raise ValueError(f"replicate_stat must be 'mean' or 'median', got {replicate_stat!r}")
+    if observation_stat not in {"mean", "median"}:
+        raise ValueError(f"observation_stat must be 'mean' or 'median', got {observation_stat!r}")
 
     LOG.info("logic_symmetry: computing summary")
     LOG.info("response_channel=%s | design_by=%s | batch_col=%s", response_channel, design_by, batch_col)
@@ -91,7 +91,7 @@ def summarize_logic_symmetry(
         design_by=design_by,
         batch_col=batch_col,
         response_channel=response_channel,
-        replicate_stat=replicate_stat,
+        observation_stat=observation_stat,
     )
     points, _ = resolve_and_aggregate(df, mapping)
     LOG.info("logic_symmetry: aggregated groups=%d", len(points))
@@ -154,7 +154,7 @@ def render_logic_symmetry(
     table: pd.DataFrame,
     *,
     title: str = "Logic symmetry",
-    uncertainty: str = "halo",
+    dispersion: str = "halo",
     encodings: dict | None = None,
     ideals_overlay: dict | None = None,
     visuals: dict | None = None,
@@ -163,8 +163,8 @@ def render_logic_symmetry(
 ):
     """Render a logic-symmetry figure from a persisted summary table."""
 
-    if uncertainty not in {"none", "errorbars", "halo"}:
-        raise ValueError(f"uncertainty must be one of 'none'|'errorbars'|'halo', got {uncertainty!r}")
+    if dispersion not in {"none", "bars", "halo"}:
+        raise ValueError(f"dispersion must be one of 'none'|'bars'|'halo', got {dispersion!r}")
 
     hue = _dget(encodings, "hue", None)
     if hue is None or str(hue).lower() in {"baseline", "baseline_corner", "min", "min_corner"}:
@@ -226,7 +226,7 @@ def render_logic_symmetry(
         encoded,
         hue_col=encoding.hue,
         visuals=visual,
-        uncertainty_mode=uncertainty,
+        dispersion_mode=dispersion,
         overlay_cfg=overlay if overlay_enabled else None,
         overlay_gate_set=overlay_gate_set if overlay_enabled else None,
         title=title,

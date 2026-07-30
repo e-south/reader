@@ -38,7 +38,7 @@ quality thresholds. A normal run produces manifest-backed records for:
 
 - resolved event timing and event-relative coordinates;
 - well-level interpolation and reduction results;
-- replicate aggregation, uncertainty, and censor bounds; and
+- within-experiment observation aggregation, descriptive resampling, and censor bounds; and
 - design summaries, traces, and event intervals.
 
 The standard summary plot and CSV export plugins consume those records. An
@@ -63,12 +63,39 @@ protocol:
 
 The compiler supplies the reduction marked `role: primary`; plot configuration
 cannot override that scientific contract. The diagnostic labels the reduction
-method, response basis, replicate statistic, bootstrap confidence level, and
-event-time uncertainty. It distinguishes bootstrap intervals from event-time
-sensitivity, shows the pre-event window for `post_minus_pre`, and marks
+method, response basis, observation statistic, descriptive interval mass, and
+event-time uncertainty. It distinguishes descriptive resampling intervals from
+event-time sensitivity, shows the pre-event window for `post_minus_pre`, and marks
 non-exact, clipped, or overflow-affected values. Python callers discover the
 manifest-backed record catalog with `reader.api.records()` and load dataframe
 contents with `reader.api.read_dataframe()`.
+
+The aggregation policy uses observation-only terminology:
+
+```yaml
+protocol:
+  analysis:
+    aggregation:
+      observation_stat: median
+      descriptive_resampling_draws: 500
+      descriptive_interval_mass: 0.90
+      random_seed: 1729
+    quality:
+      positive_floor: 1.0e-12
+      max_interior_gap_h: 0.75
+      min_observations_per_state: 2
+```
+
+`descriptive_interval_mass` is a fraction strictly between `0.5` and `1.0`;
+the diagnostic renders it as a percentage. Resampling is over the observed
+wells inside one source experiment. Its spread and interval summarize that
+finite observed set and do not represent biological-replicate variation,
+population uncertainty, or inferential confidence. The public design record is
+`plate_reader.response_window.designs.v4`; the draw record is
+`plate_reader.response_window.descriptive_resampling_draws.v3`.
+The design record keeps authored thresholds (`allowed_*`, `required_*`)
+separate from observed support (`min_*_count`, `max_observed_*`) so downstream
+checks cannot confuse a policy with a measurement.
 
 Channel labels and state values are source metadata. The response-window
 contract does not turn them, the selected design, or the eight-component record

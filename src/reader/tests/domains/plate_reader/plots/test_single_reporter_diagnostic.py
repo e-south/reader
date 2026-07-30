@@ -13,7 +13,7 @@ from reader.domains.plate_reader.plots.single_reporter_diagnostic_render import 
 from reader.domains.time_series import (
     EndpointSelection,
     IntervalSelection,
-    ReplicateAggregationSpec,
+    ObservationAggregationSpec,
     TemporalReductionSpec,
     TemporalSupportPolicy,
 )
@@ -24,10 +24,10 @@ def _frame() -> pd.DataFrame:
     for subject in ("subject-a", "subject-b"):
         for condition_index, condition in enumerate(("baseline", "induced")):
             for replicate_index, replicate in enumerate(("replicate-1", "replicate-2")):
-                for technical_index, position in enumerate(("A1", "A2")):
+                for observation_index, position in enumerate(("A1", "A2")):
                     for time in (0.0, 1.0, 2.0):
-                        normalizer = 0.2 + time * 0.1 + replicate_index * 0.02 + technical_index * 0.01
-                        reporter = 1.0 + condition_index * 2.0 + time + technical_index * 0.2
+                        normalizer = 0.2 + time * 0.1 + replicate_index * 0.02 + observation_index * 0.01
+                        reporter = 1.0 + condition_index * 2.0 + time + observation_index * 0.2
                         for channel, value in (
                             ("absorbance", normalizer),
                             ("mScarlet", reporter),
@@ -62,7 +62,7 @@ def _prepare(*, endpoint_time_h=None, window_h=None):
         reporter_channel="mScarlet",
         ratio_channel="mScarlet/absorbance",
         temporal_reduction=_temporal(endpoint_time_h=endpoint_time_h, window_h=window_h),
-        replicate_aggregation=_aggregation(),
+        observation_aggregation=_aggregation(),
     )
 
 
@@ -102,8 +102,8 @@ def _temporal(*, endpoint_time_h=None, window_h=None) -> TemporalReductionSpec:
     return TemporalReductionSpec(selection=selection, method=method, output_space="linear", support=support)
 
 
-def _aggregation() -> ReplicateAggregationSpec:
-    return ReplicateAggregationSpec(
+def _aggregation() -> ObservationAggregationSpec:
+    return ObservationAggregationSpec(
         within_unit_statistic="median",
         across_unit_statistic="median",
     )
@@ -146,7 +146,7 @@ def test_single_reporter_diagnostic_condition_order_is_closed() -> None:
             reporter_channel="mScarlet",
             ratio_channel="mScarlet/absorbance",
             temporal_reduction=_temporal(endpoint_time_h=1.0),
-            replicate_aggregation=_aggregation(),
+            observation_aggregation=_aggregation(),
         )
 
 
@@ -169,7 +169,7 @@ def test_single_reporter_diagnostic_rejects_nonfinite_ratio_rows() -> None:
             reporter_channel="mScarlet",
             ratio_channel="mScarlet/absorbance",
             temporal_reduction=_temporal(endpoint_time_h=1.0),
-            replicate_aggregation=_aggregation(),
+            observation_aggregation=_aggregation(),
         )
 
 
@@ -198,7 +198,7 @@ def test_single_reporter_diagnostic_requires_channel_pairing_at_each_acquisition
             reporter_channel="mScarlet",
             ratio_channel="mScarlet/absorbance",
             temporal_reduction=_temporal(endpoint_time_h=1.0),
-            replicate_aggregation=_aggregation(),
+            observation_aggregation=_aggregation(),
         )
 
 

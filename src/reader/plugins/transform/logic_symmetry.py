@@ -24,7 +24,7 @@ class LogicSymmetryCfg(PluginConfig):
     batch_col: str = Field("batch", min_length=1)
     treatment_column: str | None = None
     state_map_ref: str = Field(min_length=1)
-    replicate_stat: Literal["mean", "median"] = "mean"
+    observation_stat: Literal["mean", "median"] = "mean"
     prep: LogicSymmetryPrepCfg = Field(default_factory=LogicSymmetryPrepCfg)
 
 
@@ -61,7 +61,7 @@ class LogicSymmetryTransform(Plugin):
             treatment_column=cfg.treatment_column or state_space.column,
             treatment_map=dict(state_space.source_values),
             treatment_case_sensitive=state_space.case_sensitive,
-            replicate_stat=cfg.replicate_stat,
+            observation_stat=cfg.observation_stat,
             prep=prep,
         )
         return {"table": table}

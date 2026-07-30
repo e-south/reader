@@ -24,7 +24,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
     ),
     DataFrameContract(
         id="fold_change.v1",
-        description="Fold-change summary table per (group..., treatment, time, target).",
+        description=(
+            "Fold-change summary table per (group..., treatment, time, target) with explicit observation counts."
+        ),
         columns=[
             ColumnRule("target", "string"),
             ColumnRule("time", "float", nonnegative=True),

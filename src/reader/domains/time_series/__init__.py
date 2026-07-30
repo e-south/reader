@@ -1,6 +1,6 @@
 """Assay-neutral temporal selection and reduction primitives."""
 
-from .aggregation import ReplicateAggregationSpec
+from .aggregation import ObservationAggregationSpec
 from .contracts import (
     EndpointSelection,
     IntervalSelection,
@@ -18,7 +18,7 @@ from .reduction import (
 __all__ = [
     "EndpointSelection",
     "IntervalSelection",
-    "ReplicateAggregationSpec",
+    "ObservationAggregationSpec",
     "TemporalReductionResult",
     "TemporalReductionSpec",
     "TemporalSupportPolicy",

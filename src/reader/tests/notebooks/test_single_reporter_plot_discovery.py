@@ -67,7 +67,7 @@ def test_engine_persists_single_reporter_diagnostic_for_canonical_notebook_disco
                     "censored_values": "allow",
                 },
             },
-            "replicate_aggregation": {
+            "observation_aggregation": {
                 "within_unit_statistic": "median",
                 "across_unit_statistic": "median",
             },

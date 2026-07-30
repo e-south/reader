@@ -12,11 +12,12 @@ def test_response_window_modules_stay_bounded() -> None:
     limits = {
         ANALYSIS_PACKAGE / "aggregation.py": 220,
         ANALYSIS_PACKAGE / "contracts.py": 360,
+        ANALYSIS_PACKAGE / "event_sensitivity.py": 60,
         ANALYSIS_PACKAGE / "materialize.py": 280,
         ANALYSIS_PACKAGE / "reduction.py": 260,
         ANALYSIS_PACKAGE / "seeds.py": 40,
         ANALYSIS_PACKAGE / "sources.py": 340,
-        ANALYSIS_PACKAGE / "uncertainty.py": 130,
+        ANALYSIS_PACKAGE / "observation_resampling.py": 130,
         PLOT_PACKAGE / "diagnostic.py": 320,
         PLOT_PACKAGE / "diagnostic_render.py": 320,
         PLOT_PACKAGE / "schema.py": 40,
@@ -36,11 +37,12 @@ def test_response_window_roles_have_distinct_packages() -> None:
         "__init__.py",
         "aggregation.py",
         "contracts.py",
+        "event_sensitivity.py",
         "materialize.py",
         "reduction.py",
         "seeds.py",
         "sources.py",
-        "uncertainty.py",
+        "observation_resampling.py",
     }
     assert not (DOMAIN_ROOT / "evidence").exists()
     assert {path.name for path in PLOT_PACKAGE.glob("*.py")} == {

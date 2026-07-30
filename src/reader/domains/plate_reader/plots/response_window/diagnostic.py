@@ -22,16 +22,16 @@ class ResponseWindowDiagnostic:
     reduction_id: str
     reduction_method: str
     response_basis: str
-    replicate_stat: str
-    bootstrap_samples: int
-    confidence_level: float
+    observation_stat: str
+    descriptive_resampling_draws: int
+    descriptive_interval_mass: float
     event_id: str
     event_time_uncertainty_h: float
     window: tuple[float, float]
     pre_window: tuple[float, float] | None
     component_values: tuple[float, ...]
-    component_ci_low: tuple[float, ...]
-    component_ci_high: tuple[float, ...]
+    component_descriptive_interval_low: tuple[float, ...]
+    component_descriptive_interval_high: tuple[float, ...]
     component_event_half_range: tuple[float, ...]
     component_bound_kinds: tuple[str, ...]
     component_has_policy_clipping: tuple[bool, ...]
@@ -79,13 +79,13 @@ def prepare_response_window_diagnostic(
         raise ValueError("response-window diagnostic requires a finite window start before its end")
 
     values = tuple(float(row[column]) for column in COMPONENT_COLUMNS)
-    ci_low = tuple(float(row[f"{column}_ci_low"]) for column in COMPONENT_COLUMNS)
-    ci_high = tuple(float(row[f"{column}_ci_high"]) for column in COMPONENT_COLUMNS)
+    interval_low = tuple(float(row[f"{column}_descriptive_interval_low"]) for column in COMPONENT_COLUMNS)
+    interval_high = tuple(float(row[f"{column}_descriptive_interval_high"]) for column in COMPONENT_COLUMNS)
     event_half_range = tuple(float(row[f"{column}_event_half_range"]) for column in COMPONENT_COLUMNS)
-    if not np.isfinite((*values, *ci_low, *ci_high, *event_half_range)).all():
-        raise ValueError("response-window diagnostic requires finite component uncertainty values")
-    if any(low > high for low, high in zip(ci_low, ci_high, strict=True)):
-        raise ValueError("response-window diagnostic confidence-interval lower bounds must not exceed upper bounds")
+    if not np.isfinite((*values, *interval_low, *interval_high, *event_half_range)).all():
+        raise ValueError("response-window diagnostic requires finite component dispersion values")
+    if any(low > high for low, high in zip(interval_low, interval_high, strict=True)):
+        raise ValueError("response-window diagnostic descriptive-interval lower bounds must not exceed upper bounds")
     if any(value < 0.0 for value in event_half_range):
         raise ValueError("response-window diagnostic event-sensitivity half-ranges must be non-negative")
 
@@ -102,16 +102,18 @@ def prepare_response_window_diagnostic(
         reduction_id=reduction_id,
         reduction_method=_identifier(row["reduction_method"], field="reduction_method"),
         response_basis=response_basis,
-        replicate_stat=_choice(row["replicate_stat"], field="replicate_stat", choices={"mean", "median"}),
-        bootstrap_samples=_positive_int(row["bootstrap_samples"], field="bootstrap_samples"),
-        confidence_level=_confidence_level(row["confidence_level"]),
+        observation_stat=_choice(row["observation_stat"], field="observation_stat", choices={"mean", "median"}),
+        descriptive_resampling_draws=_positive_int(
+            row["descriptive_resampling_draws"], field="descriptive_resampling_draws"
+        ),
+        descriptive_interval_mass=_descriptive_interval_mass(row["descriptive_interval_mass"]),
         event_id=_identifier(row["event_id"], field="event_id"),
         event_time_uncertainty_h=_nonnegative_float(row["event_time_uncertainty_h"], field="event_time_uncertainty_h"),
         window=window,
         pre_window=pre_window,
         component_values=values,
-        component_ci_low=ci_low,
-        component_ci_high=ci_high,
+        component_descriptive_interval_low=interval_low,
+        component_descriptive_interval_high=interval_high,
         component_event_half_range=event_half_range,
         component_bound_kinds=tuple(
             _choice(row[f"{column}_bound_kind"], field=f"{column}_bound_kind", choices=BOUND_KINDS)
@@ -132,8 +134,8 @@ def _design_columns() -> set[str]:
         f"{component}_{suffix}"
         for component in COMPONENT_COLUMNS
         for suffix in (
-            "ci_low",
-            "ci_high",
+            "descriptive_interval_low",
+            "descriptive_interval_high",
             "event_half_range",
             "bound_kind",
             "has_policy_clipping",
@@ -149,9 +151,9 @@ def _design_columns() -> set[str]:
         "reduction_id",
         "reduction_method",
         "response_basis",
-        "replicate_stat",
-        "bootstrap_samples",
-        "confidence_level",
+        "observation_stat",
+        "descriptive_resampling_draws",
+        "descriptive_interval_mass",
         "event_id",
         "event_time_uncertainty_h",
         "window_start_event_h",
@@ -281,10 +283,10 @@ def _nonnegative_float(value: object, *, field: str) -> float:
     return result
 
 
-def _confidence_level(value: object) -> float:
-    result = _nonnegative_float(value, field="confidence_level")
+def _descriptive_interval_mass(value: object) -> float:
+    result = _nonnegative_float(value, field="descriptive_interval_mass")
     if not 0.5 < result < 1.0:
-        raise ValueError("response-window diagnostic confidence_level must be between 0.5 and 1.0")
+        raise ValueError("response-window diagnostic descriptive_interval_mass must be between 0.5 and 1.0")
     return result
 
 

@@ -6,10 +6,11 @@ import numpy as np
 import pandas as pd
 
 from .contracts import ReductionSpec, ResponseWindowAnalysisSpec
+from .event_sensitivity import symmetric_event_sensitivity_half_width
+from .observation_resampling import joint_state_descriptive_resampling_draws
 from .reduction import combine_bound_kinds, invert_bound_kind
 from .seeds import stable_seed
 from .sources import STATE_ORDER, ExperimentSource
-from .uncertainty import joint_state_bootstrap_draws, symmetric_event_sensitivity_half_width
 
 
 def build_design_records(
@@ -41,20 +42,23 @@ def build_design_records(
             "reduction_method": reduction.method,
             "response_basis": reduction.response_basis,
             "reduction_role": reduction.role,
-            "replicate_stat": request.aggregation.replicate_stat,
-            "bootstrap_samples": request.aggregation.bootstrap_samples,
-            "confidence_level": request.aggregation.confidence_level,
+            "observation_stat": request.aggregation.observation_stat,
+            "descriptive_resampling_draws": request.aggregation.descriptive_resampling_draws,
+            "descriptive_interval_mass": request.aggregation.descriptive_interval_mass,
             "event_id": source.event.event_id,
             "event_time_estimate_assay_h": source.event.estimate_assay_h,
             "event_time_uncertainty_h": source.event.uncertainty_h,
             "window_start_event_h": reduction.window_start_event_h,
             "window_end_event_h": reduction.window_end_event_h,
             "is_reference": str(design_id) == request.source.reference_design_id,
-            "min_replicates_per_state": int(design["replicate_count"].min()),
+            "positive_floor": request.quality.positive_floor,
+            "allowed_max_interior_gap_h": request.quality.max_interior_gap_h,
+            "required_min_observations_per_state": request.quality.min_observations_per_state,
+            "min_observation_count_per_state": int(design["observation_count"].min()),
             "min_observed_points_per_trace": int(design["min_observed_points"].min()),
-            "max_interior_gap_h": float(design["max_interior_gap_h"].max()),
+            "max_observed_interior_gap_h": float(design["max_interior_gap_h"].max()),
             "min_pre_observed_points_per_trace": int(design["min_pre_observed_points"].min()),
-            "max_pre_interior_gap_h": float(design["max_pre_interior_gap_h"].max()),
+            "max_pre_observed_interior_gap_h": float(design["max_pre_interior_gap_h"].max()),
         }
         for state in STATE_ORDER:
             row = design_by_state.loc[state]
@@ -62,12 +66,12 @@ def build_design_records(
             upper_row = upper_design.loc[state]
             record[f"r{state}"] = float(row["response"])
             record[f"b{state}"] = float(row["anchored_magnitude"])
-            record[f"r{state}_bootstrap_sd"] = float(row["response_bootstrap_sd"])
-            record[f"b{state}_bootstrap_sd"] = float(row["anchored_magnitude_bootstrap_sd"])
-            record[f"r{state}_ci_low"] = float(row["response_ci_low"])
-            record[f"r{state}_ci_high"] = float(row["response_ci_high"])
-            record[f"b{state}_ci_low"] = float(row["anchored_magnitude_ci_low"])
-            record[f"b{state}_ci_high"] = float(row["anchored_magnitude_ci_high"])
+            record[f"r{state}_descriptive_resampling_sd"] = float(row["response_descriptive_resampling_sd"])
+            record[f"b{state}_descriptive_resampling_sd"] = float(row["anchored_magnitude_descriptive_resampling_sd"])
+            record[f"r{state}_descriptive_interval_low"] = float(row["response_descriptive_interval_low"])
+            record[f"r{state}_descriptive_interval_high"] = float(row["response_descriptive_interval_high"])
+            record[f"b{state}_descriptive_interval_low"] = float(row["anchored_magnitude_descriptive_interval_low"])
+            record[f"b{state}_descriptive_interval_high"] = float(row["anchored_magnitude_descriptive_interval_high"])
             record[f"r{state}_event_half_range"] = symmetric_event_sensitivity_half_width(
                 float(row["response"]),
                 float(lower_row["response"]),
@@ -91,28 +95,30 @@ def build_design_records(
             record[f"b{state}_has_policy_clipping"] = bool(row["anchored_magnitude_has_policy_clipping"])
             record[f"b{state}_has_instrument_overflow"] = bool(row["anchored_magnitude_has_instrument_overflow"])
             record[f"b{state}_bound_kind"] = str(row["anchored_magnitude_bound_kind"])
-            record[f"n{state}"] = int(row["replicate_count"])
+            record[f"n{state}"] = int(row["observation_count"])
         records.append(record)
     return pd.DataFrame.from_records(records)
 
 
 def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
-    stat = request.aggregation.replicate_stat
+    stat = request.aggregation.observation_stat
     aggregate = np.median if stat == "median" else np.mean
     anchor_id = request.source.reference_design_id
     anchor = wells.loc[wells["design_id"].astype(str).eq(anchor_id)]
     if set(anchor["state"].astype(str)) != set(STATE_ORDER):
         raise ValueError(f"reference design {anchor_id!r} lacks complete four-state support.")
     rows: list[dict[str, object]] = []
-    alpha = (1.0 - request.aggregation.confidence_level) / 2.0
+    alpha = (1.0 - request.aggregation.descriptive_interval_mass) / 2.0
     for (design_id, state), frame in wells.groupby(["design_id", "state"], sort=True):
         response_values = frame["response_well"].to_numpy(dtype=float)
         magnitude_values = frame["magnitude_well"].to_numpy(dtype=float)
         state_anchor = anchor.loc[anchor["state"].astype(str).eq(str(state))]
         anchor_values = state_anchor["magnitude_well"].to_numpy(dtype=float)
-        minimum = request.quality.min_replicates_per_state
+        minimum = request.quality.min_observations_per_state
         if min(len(response_values), len(magnitude_values), len(anchor_values)) < minimum:
-            raise ValueError(f"{design_id}:{state} requires at least {minimum} design and reference replicate wells.")
+            raise ValueError(
+                f"{design_id}:{state} requires at least {minimum} within-experiment design and reference observations."
+            )
         rng = np.random.default_rng(
             stable_seed(
                 request.aggregation.random_seed,
@@ -122,11 +128,11 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowAnaly
                 str(frame["reduction_id"].iloc[0]),
             )
         )
-        response_draws, anchored_magnitude_draws = joint_state_bootstrap_draws(
+        response_draws, anchored_magnitude_draws = joint_state_descriptive_resampling_draws(
             response_values,
             magnitude_values,
             anchor_values,
-            samples=request.aggregation.bootstrap_samples,
+            samples=request.aggregation.descriptive_resampling_draws,
             stat=stat,
             rng=rng,
             paired_anchor=str(design_id) == anchor_id,
@@ -148,13 +154,15 @@ def _aggregate_state_values(wells: pd.DataFrame, *, request: ResponseWindowAnaly
                 "state": str(state),
                 "response": float(aggregate(response_values)),
                 "anchored_magnitude": float(aggregate(magnitude_values) - aggregate(anchor_values)),
-                "response_bootstrap_sd": float(np.std(response_draws, ddof=1)),
-                "anchored_magnitude_bootstrap_sd": float(np.std(anchored_magnitude_draws, ddof=1)),
-                "response_ci_low": float(np.quantile(response_draws, alpha)),
-                "response_ci_high": float(np.quantile(response_draws, 1.0 - alpha)),
-                "anchored_magnitude_ci_low": float(np.quantile(anchored_magnitude_draws, alpha)),
-                "anchored_magnitude_ci_high": float(np.quantile(anchored_magnitude_draws, 1.0 - alpha)),
-                "replicate_count": int(min(len(response_values), len(magnitude_values))),
+                "response_descriptive_resampling_sd": float(np.std(response_draws, ddof=1)),
+                "anchored_magnitude_descriptive_resampling_sd": float(np.std(anchored_magnitude_draws, ddof=1)),
+                "response_descriptive_interval_low": float(np.quantile(response_draws, alpha)),
+                "response_descriptive_interval_high": float(np.quantile(response_draws, 1.0 - alpha)),
+                "anchored_magnitude_descriptive_interval_low": float(np.quantile(anchored_magnitude_draws, alpha)),
+                "anchored_magnitude_descriptive_interval_high": float(
+                    np.quantile(anchored_magnitude_draws, 1.0 - alpha)
+                ),
+                "observation_count": int(min(len(response_values), len(magnitude_values))),
                 "min_observed_points": int(
                     frame[["response_observed_point_count", "magnitude_observed_point_count"]].min().min()
                 ),

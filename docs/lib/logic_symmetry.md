@@ -40,7 +40,10 @@ This preserves the distinction between the two single-input states (`10` vs `01`
 
 ## Computation (step by step)
 
-All quantities are computed from **replicate-aggregated means** at a **snapshot** time (replicates aggregated by `mean` or `median`; default `mean`).
+All quantities are computed from **observation-aggregated values** at a
+**snapshot** time (observations aggregated by `mean` or `median`; default
+`mean`). Positions are observations unless the source explicitly declares a
+relationship among them.
 
 ### Inputs
 
@@ -96,10 +99,10 @@ A = u10 - u01
 
 ### 4) Optional noise summary (CV)
 
-If you set `size_by: "cv"`, bubble area visualizes **replicate noise**:
+If you set `size_by: "cv"`, bubble area visualizes **observation dispersion**:
 
 ```
-CV_corner = SD(replicates at that corner) / Mean(replicates at that corner)
+CV_corner = SD(observations at that corner) / Mean(observations at that corner)
 CV_point  = mean of CV_corner across {00,10,01,11}, ignoring corners with n<2
 ```
 
@@ -159,7 +162,8 @@ A = u10 - u01
 1. Filter to `response_channel`.
 2. Map **exact** treatment labels → `00/10/01/11` (no sorting).
 3. Enforce **snapshot** rule per `(design_by…, batch, treatment)` (fail-fast if violated).
-4. Aggregate replicates per corner (mean/median), keep `n` and `SD`.
+4. Aggregate observations per corner (mean/median), keeping observation count
+   `n` and dispersion `SD`.
 5. Compute `r`, `u`, `L`, `A`, and optional `CV`.
 6. Persist the contract-validated summary table.
 7. Build view-only encodings (size/hue/alpha/shape) from that table.
@@ -176,6 +180,16 @@ the exact four-state mapping under
 and `protocol.analysis`. See the maintained
 [SFXI workflow](./sfxi/workflow.md) for a complete
 `reader/v8` fragment and preflight sequence.
+
+```yaml
+protocol:
+  analysis:
+    logic_symmetry:
+      observation_stat: mean
+```
+
+`observation_stat` selects `mean` or `median` over numeric observations in a
+corner. It does not declare a relationship among plate positions.
 
 ### Notes & options
 

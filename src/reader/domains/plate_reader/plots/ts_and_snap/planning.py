@@ -216,7 +216,7 @@ def prepare_snapshot_panel_data(
     snap_channel: str,
     snap_time: float,
     snap_time_tolerance: float,
-    snap_err: str,
+    snap_dispersion: str,
     order_x: list[str] | None,
     order_snap_hue: list[str] | None,
     order_hue: list[str] | None,
@@ -234,7 +234,11 @@ def prepare_snapshot_panel_data(
         return None
 
     group_cols = [snap_x_col] + ([snap_hue_col] if snap_hue_col else [])
-    stats = summarize_snapshot_values(df=selection.rows, group_cols=group_cols, err=snap_err)
+    stats = summarize_snapshot_values(
+        df=selection.rows,
+        group_cols=group_cols,
+        dispersion=snap_dispersion,
+    )
     hue_order = (
         resolve_level_order(
             observed=stats[snap_hue_col].astype(str).unique().tolist(),

@@ -303,7 +303,7 @@ def _single_reporter_aggregation_policy() -> dict:
 
 def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -> None:
     temporal_reduction = _single_reporter_interval_policy()
-    replicate_aggregation = _single_reporter_aggregation_policy()
+    observation_aggregation = _single_reporter_aggregation_policy()
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
             id="plate_reader/single_reporter_screen",
@@ -311,7 +311,7 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
                 "reporter_channel": "mScarlet",
                 "normalizer_channel": "absorbance",
                 "temporal_reduction": temporal_reduction,
-                "replicate_aggregation": replicate_aggregation,
+                "observation_aggregation": observation_aggregation,
             },
             outputs={
                 "plots": {
@@ -338,7 +338,7 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
         "partition": {"collection_ref": "subjects"},
         "condition_column": "condition_alias",
         "temporal_reduction": temporal_reduction,
-        "replicate_aggregation": replicate_aggregation,
+        "observation_aggregation": observation_aggregation,
         "time_column": "time",
         "normalizer_channel": "absorbance",
         "reporter_channel": "mScarlet",
@@ -371,7 +371,7 @@ def test_single_reporter_diagnostic_requires_one_valid_temporal_reduction(
             id="plate_reader/single_reporter_screen",
             analysis={
                 "temporal_reduction": temporal_reduction,
-                "replicate_aggregation": _single_reporter_aggregation_policy(),
+                "observation_aggregation": _single_reporter_aggregation_policy(),
             },
             outputs={
                 "plots": {
@@ -392,7 +392,7 @@ def test_single_reporter_diagnostic_rejects_retired_technical_aggregation_fields
             id="plate_reader/single_reporter_screen",
             analysis={
                 "temporal_reduction": _single_reporter_interval_policy(),
-                "replicate_aggregation": {
+                "observation_aggregation": {
                     "technical_replicate_statistic": "median",
                     "replicate_center_statistic": "median",
                 },
@@ -411,7 +411,7 @@ def test_single_reporter_screen_rejects_retired_aggregation_fields_without_diagn
             id="plate_reader/single_reporter_screen",
             analysis={
                 "temporal_reduction": _single_reporter_interval_policy(),
-                "replicate_aggregation": {
+                "observation_aggregation": {
                     "technical_replicate_statistic": "median",
                     "replicate_center_statistic": "median",
                 },
@@ -432,7 +432,7 @@ def test_single_reporter_screen_rejects_retired_aggregation_fields_without_diagn
         "reporter_channel",
         "ratio_channel",
         "temporal_reduction",
-        "replicate_aggregation",
+        "observation_aggregation",
         "endpoint_time_h",
         "window_h",
         "summary_stat",
@@ -444,7 +444,7 @@ def test_single_reporter_diagnostic_rejects_compiler_owned_channel_overrides(key
             id="plate_reader/single_reporter_screen",
             analysis={
                 "temporal_reduction": _single_reporter_interval_policy(),
-                "replicate_aggregation": _single_reporter_aggregation_policy(),
+                "observation_aggregation": _single_reporter_aggregation_policy(),
             },
             outputs={
                 "plots": {

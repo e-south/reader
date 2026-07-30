@@ -17,7 +17,7 @@ def _spec(method: str, *, start_h: float = 0.0, end_h: float = 2.0):
         response_basis="post_window",
         role="primary",
     )
-    quality = QualitySpec(positive_floor=1.0e-12, max_interior_gap_h=1.0, min_replicates_per_state=2)
+    quality = QualitySpec(positive_floor=1.0e-12, max_interior_gap_h=1.0, min_observations_per_state=2)
     return response_window_temporal_spec(reduction, quality)
 
 
