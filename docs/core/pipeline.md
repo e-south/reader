@@ -2,7 +2,7 @@
 doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
@@ -29,7 +29,7 @@ evidence:
   data_class: plate_reader_screen
   data_class_reason: Time-series plate-reader assay with an explicit sample map.
   replicate_kind: biological
-  replicate_identity_field: position
+  replicate_identity_field: biological_replicate_id
 
 protocol:
   id: plate_reader/dual_reporter_screen
@@ -48,6 +48,12 @@ resources:
     kind: file
     path: ./inputs/metadata.xlsx
 ```
+
+`replicate_kind` records what the source establishes: `biological`,
+`technical`, `mixed`, `unknown`, or `not_applicable`. Declare
+`replicate_identity_field` only when a persisted source field identifies the
+corresponding unit. A plate position identifies an observation; it does not by
+itself establish the replicate relationship.
 
 `channel_map` keys are exact canonical channel labels from the Synergy export.
 Keep wavelength suffixes when the workbook supplies them; the values are the

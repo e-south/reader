@@ -11,13 +11,13 @@ AggregationStatistic = Literal["mean", "median"]
 
 @dataclass(frozen=True)
 class ReplicateAggregationSpec:
-    """Distinguish technical collapse from the across-replicate center."""
+    """Separate within-unit observation reduction from the across-unit center."""
 
-    technical_replicate_statistic: AggregationStatistic
-    replicate_center_statistic: AggregationStatistic
+    within_unit_statistic: AggregationStatistic
+    across_unit_statistic: AggregationStatistic
 
     def __post_init__(self) -> None:
-        for field_name in ("technical_replicate_statistic", "replicate_center_statistic"):
+        for field_name in ("within_unit_statistic", "across_unit_statistic"):
             if getattr(self, field_name) not in {"mean", "median"}:
                 raise ValueError(f"replicate_aggregation.{field_name} must be 'mean' or 'median'")
 
@@ -26,7 +26,7 @@ class ReplicateAggregationSpec:
         if not isinstance(value, Mapping):
             raise ValueError("replicate_aggregation must be a mapping")
         payload = {str(key): item for key, item in value.items()}
-        expected = {"technical_replicate_statistic", "replicate_center_statistic"}
+        expected = {"within_unit_statistic", "across_unit_statistic"}
         unknown = sorted(set(payload) - expected)
         missing = sorted(expected - set(payload))
         if unknown:
@@ -34,20 +34,20 @@ class ReplicateAggregationSpec:
         if missing:
             raise ValueError(f"replicate_aggregation is missing required fields: {missing}")
         return cls(
-            technical_replicate_statistic=_statistic(
-                payload["technical_replicate_statistic"],
-                field="technical_replicate_statistic",
+            within_unit_statistic=_statistic(
+                payload["within_unit_statistic"],
+                field="within_unit_statistic",
             ),
-            replicate_center_statistic=_statistic(
-                payload["replicate_center_statistic"],
-                field="replicate_center_statistic",
+            across_unit_statistic=_statistic(
+                payload["across_unit_statistic"],
+                field="across_unit_statistic",
             ),
         )
 
     def to_mapping(self) -> dict[str, str]:
         return {
-            "technical_replicate_statistic": self.technical_replicate_statistic,
-            "replicate_center_statistic": self.replicate_center_statistic,
+            "within_unit_statistic": self.within_unit_statistic,
+            "across_unit_statistic": self.across_unit_statistic,
         }
 
 

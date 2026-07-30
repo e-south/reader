@@ -104,12 +104,12 @@ def _temporal(*, endpoint_time_h=None, window_h=None) -> TemporalReductionSpec:
 
 def _aggregation() -> ReplicateAggregationSpec:
     return ReplicateAggregationSpec(
-        technical_replicate_statistic="median",
-        replicate_center_statistic="median",
+        within_unit_statistic="median",
+        across_unit_statistic="median",
     )
 
 
-def test_single_reporter_diagnostic_reduces_technical_wells_within_declared_units() -> None:
+def test_single_reporter_diagnostic_reduces_observations_within_declared_units() -> None:
     (diagnostic,) = _prepare(window_h=(1.0, 2.0))
 
     assert diagnostic.group_label == "paired"

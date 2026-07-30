@@ -214,11 +214,11 @@ def _prepare_partition(
         where=f"partition {group_label!r}",
     )
 
-    technical_stat = replicate_aggregation.technical_replicate_statistic
+    within_unit_stat = replicate_aggregation.within_unit_statistic
     kinetics = _reduce_rows(
         work,
         group_columns=["__segment", time_column, "__condition", "__unit", "channel"],
-        statistic=technical_stat,
+        statistic=within_unit_stat,
     )
     _require_complete_channels(
         kinetics,
@@ -237,7 +237,7 @@ def _prepare_partition(
     reduced = _reduce_rows(
         observation_reductions,
         group_columns=["__condition", "__unit", "channel"],
-        statistic=technical_stat,
+        statistic=within_unit_stat,
     )
     _require_complete_channels(
         reduced,

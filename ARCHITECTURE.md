@@ -2,7 +2,7 @@
 doc_id: reader-architecture
 surface: architecture
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
 ---
 
@@ -97,8 +97,10 @@ Assay-neutral temporal selection and reduction live under
 `domains/time_series/`. That package owns endpoint versus interval selection,
 absolute versus event-relative coordinates, numerical value space, trace
 support, gap, and censor mechanics. Assay packages adapt their authored policy
-to that contract. Technical and biological aggregation remain explicit and
-separate; a plot plugin cannot silently choose either one.
+to that contract. Within-unit observation reduction and across-unit centering
+remain explicit and separate; evidence declares whether units are biological,
+technical, mixed, unknown, or not applicable. A plot plugin cannot infer that
+relationship from position or silently choose an aggregation policy.
 
 Cross-repository bridge skills only route between these owners. They may name
 public contracts and verification commands, but must not contain equations,

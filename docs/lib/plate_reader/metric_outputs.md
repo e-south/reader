@@ -2,7 +2,7 @@
 doc_id: reader-plate-reader-metric-outputs
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-07-30
 summary: Route compatible measurement records to independent typed analysis outputs.
 ---
 
@@ -95,8 +95,8 @@ Temporal reduction is analysis policy, not plot configuration. The neutral
 contract declares an absolute or event-relative time basis, an endpoint or
 inclusive interval, a numerical method and output space, and explicit support,
 gap, positivity, and censor handling. Single-reporter acquisition traces require
-the absolute basis. Technical-well reduction and the displayed across-replicate
-center are configured separately:
+the absolute basis. Within-unit observation reduction and the displayed
+across-unit center are configured separately:
 
 ```yaml
 protocol:
@@ -118,8 +118,8 @@ protocol:
         positive_value_scope: selected_support
         censored_values: reject
     replicate_aggregation:
-      technical_replicate_statistic: median
-      replicate_center_statistic: median
+      within_unit_statistic: median
+      across_unit_statistic: median
   outputs:
     plots:
       profile: none
@@ -134,11 +134,16 @@ protocol:
 ```
 
 When `evidence.replicate_identity_field` is declared, the plot reduces
-technical observations within that identity before comparing conditions. If
-it is absent, each well position remains a separate plot unit. The compiler
-owns the temporal and replicate policies plus the reporter, normalizer, ratio,
-and time-channel bindings; a plot view owns only partitioning, condition
-presentation, and figure options.
+observations within that explicitly named unit before comparing conditions. If
+it is absent, each well position remains a separate plot unit. Neither a well
+position nor spatial proximity establishes whether observations are biological
+or technical replicates. Use `replicate_kind: unknown` when the source does not
+declare that relationship. Here, `replicate_kind` describes relationships among
+units or observations inside one experiment record. A downstream study may
+separately treat several plate experiments as biological replicate blocks. The
+compiler owns the temporal and aggregation
+policies plus the reporter, normalizer, ratio, and time-channel bindings; a
+plot view owns only partitioning, condition presentation, and figure options.
 
 This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study

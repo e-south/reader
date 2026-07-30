@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from reader.protocols.model import ProtocolBinding, ProtocolSemanticProgram
 
 ResourceKind = Literal["file", "record"]
-ReplicateKind = Literal["biological", "technical", "mixed", "not_applicable"]
+ReplicateKind = Literal["biological", "technical", "mixed", "unknown", "not_applicable"]
 
 
 @dataclass(frozen=True)

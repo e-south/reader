@@ -120,8 +120,8 @@ def _endpoint_policy():
 
 def _aggregation_policy():
     return {
-        "technical_replicate_statistic": "median",
-        "replicate_center_statistic": "median",
+        "within_unit_statistic": "median",
+        "across_unit_statistic": "median",
     }
 
 
