@@ -48,6 +48,7 @@ def _assert_ratio_then_reduce_case(case: dict[str, object]) -> None:
     }
     spec = TemporalReductionSpec.from_mapping(payload["temporal_reduction"])
     per_well: dict[str, float] = {}
+    alternative_per_well: dict[str, float] = {}
     for well in payload["wells"]:
         well_id = well["well_id"]
         rows = np.asarray(well["rows"], dtype=float)
@@ -62,9 +63,16 @@ def _assert_ratio_then_reduce_case(case: dict[str, object]) -> None:
         )
         assert result.observed_point_count == expected["observed_point_count"]
         per_well[well_id] = result.value
+        alternative_per_well[well_id] = float(np.median(rows[:, 1]) / np.median(rows[:, 2]))
 
     assert per_well == pytest.approx(expected["per_well"])
-    assert float(np.median(list(per_well.values()))) == pytest.approx(expected["technical_median"])
+    technical_median = float(np.median(list(per_well.values())))
+    assert technical_median == pytest.approx(expected["technical_median"])
+    alternative = expected["alternative_reduce_then_ratio"]
+    assert alternative_per_well == pytest.approx(alternative["per_well"])
+    alternative_median = float(np.median(list(alternative_per_well.values())))
+    assert alternative_median == pytest.approx(alternative["technical_median"])
+    assert alternative_median != pytest.approx(technical_median)
 
 
 def _assert_single_trace_case(case: dict[str, object]) -> None:
