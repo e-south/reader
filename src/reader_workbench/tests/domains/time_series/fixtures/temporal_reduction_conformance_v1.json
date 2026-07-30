@@ -5,8 +5,8 @@
   "cases": [
     {
       "id": "ratio_then_reduce_10_minute_4_8h_observed_median",
-      "kind": "ratio_then_reduce_technical_aggregation",
-      "case_payload_digest": "sha256:4f862bd6f59442f8c0957104de990ca6d492a0806e3bae0e363bf7a0168a56a7",
+      "kind": "ratio_then_reduce_observation_aggregation",
+      "case_payload_digest": "sha256:217d2cd873ecb6ff7e8283577135ab76d3741534a9cc68e4609ba7da82108e51",
       "payload": {
         "declared_ratio_channel": {
           "numerator": "signal",
@@ -14,7 +14,7 @@
           "zero_denominator": "reject"
         },
         "operation_order": "ratio_then_reduce",
-        "technical_aggregation": "median",
+        "observation_aggregation": "median",
         "temporal_reduction": {
           "selection": {
             "kind": "interval",
@@ -36,7 +36,7 @@
         },
         "wells": [
           {
-            "well_id": "technical-1",
+            "well_id": "observation-1",
             "rows": [
               [4.0, 10.0, 10.0], [4.166666666666667, 20.0, 10.0], [4.333333333333333, 30.0, 10.0],
               [4.5, 40.0, 10.0], [4.666666666666667, 50.0, 10.0], [4.833333333333333, 60.0, 10.0],
@@ -50,7 +50,7 @@
             ]
           },
           {
-            "well_id": "technical-2",
+            "well_id": "observation-2",
             "rows": [
               [4.0, 20.0, 10.0], [4.166666666666667, 40.0, 10.0], [4.333333333333333, 60.0, 10.0],
               [4.5, 80.0, 10.0], [4.666666666666667, 100.0, 10.0], [4.833333333333333, 120.0, 10.0],
@@ -64,7 +64,7 @@
             ]
           },
           {
-            "well_id": "technical-3",
+            "well_id": "observation-3",
             "rows": [
               [4.0, 30.0, 10.0], [4.166666666666667, 60.0, 10.0], [4.333333333333333, 90.0, 10.0],
               [4.5, 120.0, 10.0], [4.666666666666667, 150.0, 10.0], [4.833333333333333, 180.0, 10.0],
@@ -80,11 +80,11 @@
         ]
       },
       "expected": {
-        "per_well": {"technical-1": 13.0, "technical-2": 26.0, "technical-3": 39.0},
-        "technical_median": 26.0,
+        "per_well": {"observation-1": 13.0, "observation-2": 26.0, "observation-3": 39.0},
+        "observation_median": 26.0,
         "alternative_reduce_then_ratio": {
-          "per_well": {"technical-1": 23.0, "technical-2": 46.0, "technical-3": 69.0},
-          "technical_median": 46.0
+          "per_well": {"observation-1": 23.0, "observation-2": 46.0, "observation-3": 69.0},
+          "observation_median": 46.0
         },
         "observed_point_count": 25
       }
