@@ -18,7 +18,7 @@ def _frame() -> pd.DataFrame:
     for design in ("pA", "pB"):
         for treatment in ("control", "induced"):
             for time in (0.0, 1.0, 2.0):
-                for replicate in (1, 2):
+                for observation_index in (1, 2):
                     for channel, base in (("OD600", 0.2), ("YFP/CFP", 1.0)):
                         rows.append(
                             {
@@ -26,8 +26,8 @@ def _frame() -> pd.DataFrame:
                                 "treatment": treatment,
                                 "time": time,
                                 "channel": channel,
-                                "value": base + time + replicate / 10.0,
-                                "position": f"A{replicate}",
+                                "value": base + time + observation_index / 10.0,
+                                "position": f"A{observation_index}",
                                 "sheet_index": 0 if time == 0.0 else 1,
                             }
                         )

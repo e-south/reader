@@ -136,16 +136,16 @@ protocol:
 
 When `evidence.replicate_identity_field` is declared, the plot reduces
 observations within that explicitly named unit before comparing conditions. If
-it is absent, each well position remains a separate plot unit. Neither a well
-position nor spatial proximity establishes whether observations are biological
-or technical replicates. Use `replicate_kind: unknown` when the source does not
-declare that relationship; known kinds require the matching identity field.
-Here, `replicate_kind` describes relationships among
-units or observations inside one experiment record. A downstream study may
-separately treat several plate experiments as biological replicate blocks. The
-compiler owns the temporal and aggregation
-policies plus the reporter, normalizer, ratio, and time-channel bindings; a
-plot view owns only partitioning, condition presentation, and figure options.
+it is absent, the replicate-kind declaration applies to the experiment and each
+well position remains a separate within-experiment plot unit. Thus a study in
+which each physical plate is a biological replicate can declare
+`replicate_kind: biological` on every plate experiment without inventing a
+within-plate identity field. Neither a well position nor spatial proximity
+establishes technical replication. Use `replicate_kind: unknown` when the kind
+is not established, and omit the identity field when no grouping relationship
+is established. The compiler owns the temporal and aggregation policies plus
+the reporter, normalizer, ratio, and time-channel bindings; a plot view owns
+only partitioning, condition presentation, and figure options.
 
 This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study

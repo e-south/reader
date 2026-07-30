@@ -110,7 +110,7 @@ def test_evidence_preserves_unknown_replication_without_an_invented_identity(tmp
 
 
 @pytest.mark.parametrize("replicate_kind", ["biological", "technical", "mixed"])
-def test_evidence_requires_identity_for_declared_replicate_relationships(
+def test_evidence_without_identity_uses_the_experiment_as_the_declared_replicate_unit(
     tmp_path: Path,
     replicate_kind: str,
 ) -> None:
@@ -118,8 +118,11 @@ def test_evidence_requires_identity_for_declared_replicate_relationships(
     payload["evidence"]["replicate_kind"] = replicate_kind
     payload["evidence"].pop("replicate_identity_field")
 
-    with pytest.raises(ConfigError, match="replicate_identity_field.*required"):
-        ReaderSpec.load(write_config(tmp_path / f"{replicate_kind}-without-identity.yaml", payload))
+    spec = ReaderSpec.load(write_config(tmp_path / f"{replicate_kind}-without-identity.yaml", payload))
+
+    assert spec.evidence is not None
+    assert spec.evidence.replicate_kind == replicate_kind
+    assert spec.evidence.replicate_identity_field is None
 
 
 def test_evidence_rejects_unknown_fields_and_invalid_identity_combinations(tmp_path: Path) -> None:
@@ -160,15 +163,26 @@ def test_evidence_changes_the_normalized_config_identity() -> None:
 
 
 @pytest.mark.parametrize(
-    ("overrides", "message"),
+    ("overrides", "exception", "message"),
     [
-        ({"replicate_kind": "biological", "replicate_identity_field": None}, "replicate_identity_field.*required"),
-        ({"replicate_kind": "invented"}, "unsupported replicate_kind"),
-        ({"replicate_identity_field": "   "}, "replicate_identity_field.*non-empty"),
+        ({"replicate_kind": "invented"}, ValueError, "unsupported replicate_kind"),
+        ({"replicate_identity_field": "   "}, ValueError, "replicate_identity_field.*non-empty"),
+        ({"data_class": 1}, TypeError, "data_class must be a string"),
+        ({"data_class_reason": 1}, TypeError, "data_class_reason must be a string"),
+        ({"replicate_kind": 1}, TypeError, "replicate_kind must be a string"),
+        ({"replicate_identity_field": 1}, TypeError, "replicate_identity_field must be a string"),
+        ({"data_class": "   "}, ValueError, "data_class must be a non-empty string"),
+        ({"data_class_reason": "   "}, ValueError, "data_class_reason must be a non-empty string"),
+        (
+            {"replicate_kind": "not_applicable", "replicate_identity_field": "position"},
+            ValueError,
+            "cannot be set",
+        ),
     ],
 )
 def test_experiment_evidence_direct_construction_matches_config_invariants(
     overrides: dict[str, object],
+    exception: type[Exception],
     message: str,
 ) -> None:
     values: dict[str, object] = {
@@ -179,5 +193,17 @@ def test_experiment_evidence_direct_construction_matches_config_invariants(
     }
     values.update(overrides)
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(exception, match=message):
         ExperimentEvidence(**values)  # type: ignore[arg-type]
+
+
+def test_experiment_evidence_direct_construction_accepts_an_experiment_level_biological_replicate() -> None:
+    evidence = ExperimentEvidence(
+        data_class="plate_reader_screen",
+        data_class_reason="One physical plate represented by this experiment.",
+        replicate_kind="biological",
+        replicate_identity_field=None,
+    )
+
+    assert evidence.to_payload()["replicate_kind"] == "biological"
+    assert evidence.replicate_identity_field is None

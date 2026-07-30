@@ -29,7 +29,6 @@ evidence:
   data_class: plate_reader_screen
   data_class_reason: Time-series plate-reader assay with an explicit sample map.
   replicate_kind: biological
-  replicate_identity_field: biological_replicate_id
 
 protocol:
   id: plate_reader/dual_reporter_screen
@@ -53,10 +52,13 @@ resources:
 `replicate_kind` records what the source establishes: `biological`,
 `technical`, `mixed`, `unknown`, or `not_applicable`. Declare
 `replicate_identity_field` only when a persisted source field identifies the
-corresponding unit; it is required for `biological`, `technical`, and `mixed`.
-Use `unknown` with no identity field when the relationship is not established.
-A plate position identifies an observation; it does not by itself establish the
-replicate relationship.
+replicate units inside one experiment record. Without that field, the
+declaration applies to the experiment itself. For example, when one Reader
+experiment represents one physical plate and plates are biological replicates,
+declare `replicate_kind: biological` and omit `replicate_identity_field`. Plate
+positions remain observations; they are not thereby technical replicates. Use
+`unknown` when the replicate kind is not established, and omit the identity
+field as well when no grouping relationship is established.
 
 `channel_map` keys are exact canonical channel labels from the Synergy export.
 Keep wavelength suffixes when the workbook supplies them; the values are the

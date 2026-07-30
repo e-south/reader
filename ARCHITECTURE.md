@@ -99,8 +99,10 @@ absolute versus event-relative coordinates, numerical value space, trace
 support, gap, and censor mechanics. Assay packages adapt their authored policy
 to that contract. Within-unit observation reduction and across-unit centering
 remain explicit and separate; evidence declares whether units are biological,
-technical, mixed, unknown, or not applicable. A plot plugin cannot infer that
-relationship from position or silently choose an aggregation policy.
+technical, mixed, unknown, or not applicable. Replicate-kind evidence applies
+to the experiment unless it names a within-record identity field. A plot plugin
+cannot infer that relationship from position or silently choose an aggregation
+policy.
 
 Cross-repository bridge skills only route between these owners. They may name
 public contracts and verification commands, but must not contain equations,

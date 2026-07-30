@@ -15,8 +15,8 @@ from reader.plugins.plot.ts_and_snap import TSAndSnapCfg
 def _windowed_frame() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for treatment_index, treatment in enumerate(("Null", "IPTG")):
-        for replicate in range(3):
-            position = f"{treatment_index}-{replicate}"
+        for observation_index in range(3):
+            position = f"{treatment_index}-{observation_index}"
             for time in (0.0, 8.0, 12.0):
                 rows.append(
                     {
@@ -32,7 +32,7 @@ def _windowed_frame() -> pd.DataFrame:
                     "position": position,
                     "time": 12.0,
                     "channel": "RFP/OD600",
-                    "value": 10.0 + treatment_index + replicate,
+                    "value": 10.0 + treatment_index + observation_index,
                     "treatment": treatment,
                 }
             )

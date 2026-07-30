@@ -42,8 +42,6 @@ class ExperimentEvidence:
             raise ValueError("replicate_identity_field must be a non-empty string when provided")
         if self.replicate_kind == "not_applicable" and self.replicate_identity_field is not None:
             raise ValueError("replicate_identity_field cannot be set when replicate_kind is not_applicable")
-        if self.replicate_kind in {"biological", "technical", "mixed"} and self.replicate_identity_field is None:
-            raise ValueError("replicate_identity_field is required when replicate_kind declares a known relationship")
         object.__setattr__(self, "data_class", data_class)
         object.__setattr__(self, "data_class_reason", data_class_reason)
         object.__setattr__(self, "replicate_identity_field", replicate_identity_field)
