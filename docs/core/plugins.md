@@ -16,28 +16,28 @@ choices. Public configs do not list raw plugin ids.
 ## Plugin categories
 
 Built-in plugin implementations live under
-[`src/reader/plugins/`](../../src/reader/plugins/):
+[`src/reader_workbench/plugins/`](../../src/reader_workbench/plugins/):
 
-- [`ingest/`](../../src/reader/plugins/ingest/)
+- [`ingest/`](../../src/reader_workbench/plugins/ingest/)
   read raw files into tidy tables
-- [`transform/`](../../src/reader/plugins/transform/)
+- [`transform/`](../../src/reader_workbench/plugins/transform/)
   derive or enrich dataframe records
-- [`validator/`](../../src/reader/plugins/validator/)
+- [`validator/`](../../src/reader_workbench/plugins/validator/)
   enforce or promote contracts
-- [`plot/`](../../src/reader/plugins/plot/)
+- [`plot/`](../../src/reader_workbench/plugins/plot/)
   render file-bundle plot outputs
-- [`export/`](../../src/reader/plugins/export/)
+- [`export/`](../../src/reader_workbench/plugins/export/)
   write file-bundle export artifacts
 
 Built-in registration is explicit in
-[`src/reader/plugins/catalog.py`](../../src/reader/plugins/catalog.py), with
-category manifests beside the implementations under `reader.plugins`. The
+[`src/reader_workbench/plugins/catalog.py`](../../src/reader_workbench/plugins/catalog.py), with
+category manifests beside the implementations under `reader_workbench.plugins`. The
 runtime injects those descriptors into the generic workbench registry; it does
 not discover built-ins by scanning package trees.
 
-The registry has a `reader.plugins` entry-point hook for coordinated
+The registry has a `reader_workbench.plugins` entry-point hook for coordinated
 maintainer integrations. It is not a standalone public plugin SDK: the current
-descriptor and port imports live under `reader.workbench`, and an entry point
+descriptor and port imports live under `reader_workbench.workbench`, and an entry point
 cannot add `reader/v8` protocol semantics by itself. Do not advertise an
 external package as a Reader feature until Reader protocol code owns its
 authoring and compilation path.
@@ -47,20 +47,20 @@ authoring and compilation path.
 A good plugin is thin orchestration.
 
 - Keep domain parsing and math in
-  [`src/reader/domains/`](../../src/reader/domains/).
+  [`src/reader_workbench/domains/`](../../src/reader_workbench/domains/).
 - Keep shared plotting mechanics in
-  [`src/reader/plotting/`](../../src/reader/plotting/).
+  [`src/reader_workbench/plotting/`](../../src/reader_workbench/plotting/).
 - Keep shared ingest autodiscovery in
-  [`src/reader/plugins/ingest/discovery_policy.py`](../../src/reader/plugins/ingest/discovery_policy.py)
-  or [`src/reader/plugins/ingest/_discovery.py`](../../src/reader/plugins/ingest/_discovery.py),
+  [`src/reader_workbench/plugins/ingest/discovery_policy.py`](../../src/reader_workbench/plugins/ingest/discovery_policy.py)
+  or [`src/reader_workbench/plugins/ingest/_discovery.py`](../../src/reader_workbench/plugins/ingest/_discovery.py),
   not duplicated across adapters.
 - Keep built-in plugin metadata in the plugin-owned catalog and shared ontology
   types:
-  [`src/reader/plugins/catalog.py`](../../src/reader/plugins/catalog.py),
-  [`src/reader/workbench/assets/types.py`](../../src/reader/workbench/assets/types.py)
-  and [`src/reader/workbench/ontology.py`](../../src/reader/workbench/ontology.py).
+  [`src/reader_workbench/plugins/catalog.py`](../../src/reader_workbench/plugins/catalog.py),
+  [`src/reader_workbench/workbench/assets/types.py`](../../src/reader_workbench/workbench/assets/types.py)
+  and [`src/reader_workbench/workbench/ontology.py`](../../src/reader_workbench/workbench/ontology.py).
 - Keep protocol-facing defaults and output selection in
-  [`src/reader/protocols/`](../../src/reader/protocols/), not in ad hoc CLI or
+  [`src/reader_workbench/protocols/`](../../src/reader_workbench/protocols/), not in ad hoc CLI or
   docs-only conventions.
 
 If maintainers need to widen the public config just to reach a plugin, the
@@ -70,12 +70,12 @@ design is probably heading in the wrong direction.
 
 The maintainer path is:
 
-1. Implement the plugin class under `src/reader/plugins/<category>/`.
+1. Implement the plugin class under `src/reader_workbench/plugins/<category>/`.
 2. Register it in the built-in manifest. A coordinated external integration
-   may instead expose a `reader.plugins` entry point that resolves to an
+   may instead expose a `reader_workbench.plugins` entry point that resolves to an
    `AssetDescriptor`.
 3. Wire it into a
-   [`protocol compiler`](../../src/reader/protocols/compiler.py) so the protocol
+   [`protocol compiler`](../../src/reader_workbench/protocols/compiler.py) so the protocol
    owns when it runs and what semantic output it represents.
 4. Expose it through protocol inputs, analysis knobs, plot profiles, or export
    artifacts rather than raw plugin ids in user config.
@@ -93,8 +93,8 @@ effects during commands that request only one plugin category.
 ```python
 from typing import Any
 
-from reader.workbench.ports import dataframe_output, file_path_input
-from reader.workbench.registry import Plugin, PluginConfig
+from reader_workbench.workbench.ports import dataframe_output, file_path_input
+from reader_workbench.workbench.registry import Plugin, PluginConfig
 
 
 class MyCfg(PluginConfig):
@@ -152,7 +152,7 @@ domain logic -> plugin adapter -> asset registration -> protocol-owned exposure.
 ## Port and contract rules
 
 Plugin I/O is declared through
-[`reader.workbench.ports`](../../src/reader/workbench/ports/), not string
+[`reader_workbench.workbench.ports`](../../src/reader_workbench/workbench/ports/), not string
 conventions.
 
 - Optional inputs use `optional=True`, not `?` suffixes.
@@ -200,7 +200,7 @@ meanings through `FigurePlotPlugin`, describe each public `PlotFigure` before
 the shared sink writes it:
 
 ```python
-from reader.plotting.sinks import PlotFigure
+from reader_workbench.plotting.sinks import PlotFigure
 
 return [
     PlotFigure(
@@ -217,11 +217,11 @@ return [
 ```
 
 The shared plot adapter converts those descriptions into public
-[`PathDescription`](../../src/reader/workbench/records/model.py) values after
+[`PathDescription`](../../src/reader_workbench/workbench/records/model.py) values after
 saving. A lower-level custom `Plugin` may return those values directly:
 
 ```python
-from reader.workbench.records import PathDescription
+from reader_workbench.workbench.records import PathDescription
 
 return {
     "artifacts": [
@@ -240,7 +240,7 @@ bundles keep one operational plugin description because their files are not
 treated as scientific figures.
 
 For file output helpers, start with
-[`src/reader/plotting/sinks.py`](../../src/reader/plotting/sinks.py).
+[`src/reader_workbench/plotting/sinks.py`](../../src/reader_workbench/plotting/sinks.py).
 
 ## Useful inspection routes
 

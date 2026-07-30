@@ -59,11 +59,11 @@ prove DOP classification.
 
 | Fact type | Owned by | Maintenance rule |
 | --- | --- | --- |
-| DOP data-class ids, protocol candidates, stop conditions, transfer rules, ready-spec gates | `src/reader/workbench/dop/` | Update registry and targeted tests first when automation consumes the fact. |
+| DOP data-class ids, protocol candidates, stop conditions, transfer rules, ready-spec gates | `src/reader_workbench/workbench/dop/` | Update registry and targeted tests first when automation consumes the fact. |
 | DOP overview and operator explanation | `docs/guides/data_operations_plan.md` and subpages | Keep pages short and link to the owned source instead of duplicating tables. |
 | Experiment creation procedure | `docs/guides/experiment_bootstrap.md` and `reader-experiment-bootstrap` | Start after DOP classification and metadata stop conditions are known. |
 | Agent routing | `.agents/skills/reader-data-operations-plan/` | Route to docs and CLI; do not become a long policy document. |
-| Executable assay semantics | `src/reader/protocols/` | Add or change protocols only when intake policy is not enough. |
+| Executable assay semantics | `src/reader_workbench/protocols/` | Add or change protocols only when intake policy is not enough. |
 | Generated evidence | `outputs/manifests/records.json` | Verify outputs through records; do not use generated files as source inputs. |
 
 ## Merelogic Principle Map

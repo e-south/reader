@@ -33,8 +33,8 @@ The generated notebook contains:
 - one viewport for the selected table, image, or PDF;
 - one lazy accordion for metadata, catalog summaries, and readiness issues.
 
-The notebook reads only through `reader.api.records`, `reader.api.verify`,
-`reader.api.read_dataframe`, and `reader.api.read_artifact`. Each preview is
+The notebook reads only through `reader_workbench.api.records`, `reader_workbench.api.verify`,
+`reader_workbench.api.read_dataframe`, and `reader_workbench.api.read_artifact`. Each preview is
 bound to the selected record revision and revision digest. Reader verifies the
 exact dataframe bytes or file bytes before rendering them.
 
@@ -47,9 +47,9 @@ scientific-record producer.
 Do not add an assay-specific notebook lifecycle. Put reusable behavior at its
 owning layer:
 
-- domain math and rendering under `reader.domains`;
-- thin executable adapters under `reader.plugins`;
-- assay composition and defaults under `reader.protocols`;
+- domain math and rendering under `reader_workbench.domains`;
+- thin executable adapters under `reader_workbench.plugins`;
+- assay composition and defaults under `reader_workbench.protocols`;
 - persisted dataframes and files in the normal `RecordStore` lifecycle.
 
 The canonical notebook discovers new plot and export records automatically.
@@ -63,14 +63,18 @@ selected in the same viewport after `reader plot`.
 
 ## Scaffolding and launch modes
 
-Install the optional notebook dependencies, then scaffold or launch:
+Scaffold without installing Marimo:
 
 ```bash
-uv sync --locked --extra notebooks
 uv run reader notebook experiments/my_experiment/config.yaml --mode none
-uv run reader notebook experiments/my_experiment/config.yaml --mode edit
-uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
 ```
+
+Reader does not publish a `notebooks` extra while the released Marimo and
+PyMdown constraints lack a dependency resolution Reader can safely advertise.
+For `edit` or `run` modes, use a separately managed and audited environment
+that provides Marimo, Altair, and DuckDB, then invoke the `reader` command from
+that environment. Do not bypass dependency conflicts with an installer
+override.
 
 Notebooks are written beneath the owning experiment's configured
 `outputs/notebooks/` directory. Use `--name EDA_custom.py` to choose a filename,

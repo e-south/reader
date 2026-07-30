@@ -13,7 +13,7 @@ Guidelines:
   external tooling such as Google Workspace access or spreadsheet editing.
 
 These are Codex workflow instructions, not Reader runtime plugins. Code under
-`src/reader/plugins/` adapts pipeline execution. Use an agent plugin only for
+`src/reader_workbench/plugins/` adapts pipeline execution. Use an agent plugin only for
 installable distribution, and use MCP only when a workflow needs live external
 data, authentication, or controlled actions.
 

@@ -67,8 +67,8 @@ method, response basis, observation statistic, descriptive interval mass, and
 event-time uncertainty. It distinguishes descriptive resampling intervals from
 event-time sensitivity, shows the pre-event window for `post_minus_pre`, and marks
 non-exact, clipped, or overflow-affected values. Python callers discover the
-manifest-backed record catalog with `reader.api.records()` and load dataframe
-contents with `reader.api.read_dataframe()`.
+manifest-backed record catalog with `reader_workbench.api.records()` and load dataframe
+contents with `reader_workbench.api.read_dataframe()`.
 
 The aggregation policy uses observation-only terminology:
 
@@ -110,7 +110,7 @@ mappings, invalid event bounds or reductions, and insufficient trace support.
 It does not infer identity or semantics from experiment names.
 
 Open an experiment with `reader.open_experiment()` before using those public
-`reader.api` operations.
+`reader_workbench.api` operations.
 
 ## Related references
 

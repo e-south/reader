@@ -64,7 +64,7 @@ External plugins and notebooks are executable Python. They are an extension surf
 - plugin ports are typed and validated
 - dataframe contracts are checked at runtime
 - built-in plugins are registered through an explicit manifest, not by implicit package scanning
-- external plugins must come from the `reader.plugins` entry-point group
+- external plugins must come from the `reader_workbench.plugins` entry-point group
 
 ### Provenance and integrity
 

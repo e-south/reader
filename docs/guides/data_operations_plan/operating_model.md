@@ -29,13 +29,13 @@ document.
 
 ## Ownership Rules
 
-- `src/reader/workbench/dop/` owns the machine-readable data-class and
+- `src/reader_workbench/workbench/dop/` owns the machine-readable data-class and
   ready-spec registry.
 - `docs/guides/data_operations_plan/` owns human-facing explanations,
   checklists, and examples.
 - `.agents/skills/reader-data-operations-plan/` owns agent routing for DOP
   classification and maintenance.
-- `src/reader/protocols/` owns executable assay semantics.
+- `src/reader_workbench/protocols/` owns executable assay semantics.
 - `reader/v8` config owns authored experiment intent, not lab-wide policy.
 - `outputs/manifests/records.json` owns generated evidence after execution.
 
@@ -85,7 +85,7 @@ git diff --check
 For registry or CLI changes, add:
 
 ```bash
-uv run pytest -q src/reader/tests/workbench/test_dop_registry.py
+uv run pytest -q src/reader_workbench/tests/workbench/test_dop_registry.py
 uv run reader dop classes --format json
 uv run reader dop ready-specs --format json
 ```

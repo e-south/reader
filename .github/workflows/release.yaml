@@ -35,6 +35,15 @@ jobs:
         run: uv lock --check
       - name: Build distributions
         run: uv build --no-sources
+      - name: Smoke-test built wheel
+        run: |
+          python -m venv .tmp/wheel-smoke
+          .tmp/wheel-smoke/bin/python -m pip install dist/*.whl
+          .tmp/wheel-smoke/bin/python -m pip check
+          .tmp/wheel-smoke/bin/python -c 'import importlib.util; import reader_workbench; assert importlib.util.find_spec("reader") is None'
+          .tmp/wheel-smoke/bin/reader --version
+          .tmp/wheel-smoke/bin/reader plugins --format json > /dev/null
+          .tmp/wheel-smoke/bin/reader protocols --format json > /dev/null
       - name: Verify distribution metadata
         run: uvx --from twine==7.0.0 twine check dist/*
       - name: Upload distributions

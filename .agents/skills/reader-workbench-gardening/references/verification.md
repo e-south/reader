@@ -31,7 +31,7 @@ scope to confirm it still matches reality.
 uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q <targeted-tests>
-uv run python -m compileall src/reader
+test -d src/reader_workbench && uv run python -m compileall -q src/reader_workbench
 git diff --check
 ```
 

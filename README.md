@@ -9,8 +9,8 @@ transformations, and writes validated records, plots, exports, and notebooks.
 Every unit of work—including a cross-experiment aggregate—has an owned directory
 beneath `experiments/`, with source material in `inputs/`, a `reader/v8`
 contract in `config.yaml`, and generated artifacts in `outputs/`.
-The distribution is named `reader-workbench`; its import package and command
-remain `reader`.
+The distribution and import package are named `reader-workbench` and
+`reader_workbench`; the installed command remains `reader`.
 
 ## Install
 
@@ -45,7 +45,7 @@ added.
 ## Contribute from a checkout
 
 ```bash
-uv sync --locked --group dev --extra notebooks
+uv sync --locked --group dev
 uv run reader demo
 ```
 

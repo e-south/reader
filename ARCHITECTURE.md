@@ -195,7 +195,7 @@ The CLI mirrors this lifecycle on purpose. Discovery and preflight are first-cla
 These registries are meant to reduce cognitive load, not increase it. Experiment authors should normally interact with protocols and semantic outputs. Maintainers use plugin registries when extending or debugging the workbench kernel.
 
 Built-in plugins are registered explicitly by category; coordinated external
-integrations may contribute descriptors through the `reader.plugins` entry
+integrations may contribute descriptors through the `reader_workbench.plugins` entry
 point. Registration validates category, identity, typed ports, and contract
 surfaces before execution. A plugin becomes an experiment feature only when a
 protocol compiler gives it a semantic role—registry presence alone never
@@ -244,11 +244,11 @@ runtime plan and inspection payloads. The following concentrated owners remain
 worth decomposing when a change reaches them:
 
 - plate-reader protocol descriptors are concentrated in
-  `src/reader/protocols/_builtins_plate_reader_variants.py`
-- `src/reader/protocols/compilers/plate_reader.py` remains the largest family
-  compiler; `src/reader/protocols/compiler.py` is only its stable public facade
-- notebook composition belongs under `src/reader/workbench/notebooks/`, while
-  reusable calculations belong under `src/reader/domains/`
+  `src/reader_workbench/protocols/_builtins_plate_reader_variants.py`
+- `src/reader_workbench/protocols/compilers/plate_reader.py` remains the largest family
+  compiler; `src/reader_workbench/protocols/compiler.py` is only its stable public facade
+- notebook composition belongs under `src/reader_workbench/workbench/notebooks/`, while
+  reusable calculations belong under `src/reader_workbench/domains/`
 
 New work should move one coherent responsibility at a time into a domain or
 family package. A split is useful when it creates an explicit contract or

@@ -75,12 +75,12 @@ def _(threshold):
 Use the record catalog to select data. Do not scan arbitrary files when a
 typed record exists.
 
-- Read cataloged dataframes through `reader.api.read_dataframe` with the exact
-  revision and revision digest returned by `reader.api.records`.
+- Read cataloged dataframes through `reader_workbench.api.read_dataframe` with the exact
+  revision and revision digest returned by `reader_workbench.api.records`.
 - Keep filtering, grouping, pivoting, and statistics in Polars when possible.
 - Convert to Pandas only at a public plotting boundary that requires it, and
   convert a bounded or downsampled payload rather than the full record.
-- Put reusable assay calculations in `reader.domains`, not in a large notebook
+- Put reusable assay calculations in `reader_workbench.domains`, not in a large notebook
   cell.
 - Gate expensive deterministic work behind its true dependencies. Display-only
   controls must not trigger data preparation or statistics again.
@@ -160,8 +160,8 @@ for handoff values, metadata, outputs, and raw records.
 After changing the canonical notebook scaffold:
 
 ```bash
-uv run pytest -q src/reader/tests/notebooks/test_canonical_notebook.py
-uv run pytest -q src/reader/tests/notebooks
+uv run pytest -q src/reader_workbench/tests/notebooks/test_canonical_notebook.py
+uv run pytest -q src/reader_workbench/tests/notebooks
 uv run ruff check .
 uv run ruff format . --check
 ```

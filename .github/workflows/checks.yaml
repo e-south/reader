@@ -34,7 +34,7 @@ jobs:
       - name: Audit operational dependencies
         run: |
           mkdir -p .artifacts
-          uv export --locked --no-dev --extra notebooks --no-emit-project \
+          uv export --locked --no-dev --no-emit-project \
             --format requirements-txt \
             --output-file .artifacts/operational-requirements.txt
           uv run --locked pip-audit \
@@ -50,11 +50,18 @@ jobs:
       - name: Check formatting
         run: uv run --locked ruff format --check .
       - name: Compile source
-        run: uv run --locked python -m compileall -q src/reader
+        run: test -d src/reader_workbench && uv run --locked python -m compileall -q src/reader_workbench
       - name: Build distributions
         run: uv build --no-sources
       - name: Smoke-test built wheel
-        run: uv run --isolated --no-project --with ./dist/*.whl reader --version
+        run: |
+          python -m venv .tmp/wheel-smoke
+          .tmp/wheel-smoke/bin/python -m pip install dist/*.whl
+          .tmp/wheel-smoke/bin/python -m pip check
+          .tmp/wheel-smoke/bin/python -c 'import importlib.util; import reader_workbench; assert importlib.util.find_spec("reader") is None'
+          .tmp/wheel-smoke/bin/reader --version
+          .tmp/wheel-smoke/bin/reader plugins --format json > /dev/null
+          .tmp/wheel-smoke/bin/reader protocols --format json > /dev/null
       - name: Verify distribution metadata
         run: uv run --locked twine check dist/*
 
@@ -73,12 +80,12 @@ jobs:
         with:
           enable-cache: true
       - name: Install locked dependencies
-        run: uv sync --locked --group dev --extra notebooks
+        run: uv sync --locked --group dev
       - name: Run tests
         run: |
           mkdir -p .artifacts
           uv run --locked pytest -q \
-            --cov=reader \
+            --cov=reader_workbench \
             --cov-report=term-missing:skip-covered \
             --cov-report=xml:.artifacts/coverage.xml \
             --junitxml=.artifacts/pytest.xml
@@ -111,12 +118,12 @@ jobs:
         run: >-
           uv run --isolated --no-dev --with-editable .
           --with 'typer==0.16.0' --with 'click==8.3.3' --with 'pytest>=8.2'
-          pytest -q src/reader/tests/cli/test_json_automation.py -k main_cli_framework
+          pytest -q src/reader_workbench/tests/cli/test_json_automation.py -k main_cli_framework
       - name: Smoke-test latest compatible CLI dependencies
         run: >-
           uv run --isolated --no-dev --with-editable .
           --upgrade-package typer --upgrade-package click --with 'pytest>=8.2'
-          pytest -q src/reader/tests/cli/test_json_automation.py -k main_cli_framework
+          pytest -q src/reader_workbench/tests/cli/test_json_automation.py -k main_cli_framework
 
   coverage:
     name: Coverage

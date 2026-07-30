@@ -182,12 +182,12 @@ Unknown transform and nested response/reference settings are rejected.
 
 ## Source map
 
-- [selection.py](../../../src/reader/domains/logic/sfxi/selection.py): treatment,
+- [selection.py](../../../src/reader_workbench/domains/logic/sfxi/selection.py): treatment,
   time, and corner selection
-- [math.py](../../../src/reader/domains/logic/sfxi/math.py): vec8 calculation
-- [reference.py](../../../src/reader/domains/logic/sfxi/reference.py): reference
+- [math.py](../../../src/reader_workbench/domains/logic/sfxi/math.py): vec8 calculation
+- [reference.py](../../../src/reader_workbench/domains/logic/sfxi/reference.py): reference
   identity and anchors
-- [builder.py](../../../src/reader/domains/logic/sfxi/builder.py): orchestration and
+- [builder.py](../../../src/reader_workbench/domains/logic/sfxi/builder.py): orchestration and
   output assembly
-- [logic.py](../../../src/reader/contracts/builtins/logic.py): dataframe
+- [logic.py](../../../src/reader_workbench/contracts/builtins/logic.py): dataframe
   contract

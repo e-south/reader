@@ -55,8 +55,8 @@ Neither analysis infers state order from source labels.
 
 ## Code map
 
-- Wire parsing: [`src/reader/workbench/config/`](../../src/reader/workbench/config/)
-- Experiment semantics: [`src/reader/workbench/experiment/`](../../src/reader/workbench/experiment/)
-- SFXI binding: [`src/reader/domains/logic/sfxi/treatment_semantics.py`](../../src/reader/domains/logic/sfxi/treatment_semantics.py)
-- Response-window analysis: [`src/reader/domains/plate_reader/analysis/response_window/`](../../src/reader/domains/plate_reader/analysis/response_window/)
-- Record-collection binding: [`src/reader/workbench/records/sources.py`](../../src/reader/workbench/records/sources.py)
+- Wire parsing: [`src/reader_workbench/workbench/config/`](../../src/reader_workbench/workbench/config/)
+- Experiment semantics: [`src/reader_workbench/workbench/experiment/`](../../src/reader_workbench/workbench/experiment/)
+- SFXI binding: [`src/reader_workbench/domains/logic/sfxi/treatment_semantics.py`](../../src/reader_workbench/domains/logic/sfxi/treatment_semantics.py)
+- Response-window analysis: [`src/reader_workbench/domains/plate_reader/analysis/response_window/`](../../src/reader_workbench/domains/plate_reader/analysis/response_window/)
+- Record-collection binding: [`src/reader_workbench/workbench/records/sources.py`](../../src/reader_workbench/workbench/records/sources.py)

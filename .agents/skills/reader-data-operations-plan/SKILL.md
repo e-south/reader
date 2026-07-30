@@ -61,7 +61,7 @@ Clarification policy:
 
 - exactly one DOP mode is selected before work starts
 - automation-facing DOP facts come from `uv run reader dop ...` or
-  `src/reader/workbench/dop/`
+  `src/reader_workbench/workbench/dop/`
 - docs and skill routes point to owned surfaces instead of duplicating registry
   facts
 - stop conditions block ambiguous metadata instead of encouraging inference

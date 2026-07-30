@@ -56,6 +56,11 @@ Choose the smallest verification set that still exercises the risk:
 
 The quality bar for those checks is defined in [QUALITY.md](../QUALITY.md).
 
+Release preparation must also apply the
+[package namespace migration](./guides/package_namespace_migration.md) to
+downstream Python consumers and external plugin distributions. The installed
+CLI and persisted wire identities are intentionally unchanged.
+
 For docs and routing changes, start with:
 
 ```bash
@@ -70,9 +75,10 @@ Reader keeps continuous verification and publication distinct:
 - `Checks` in [.github/workflows/checks.yaml](../.github/workflows/checks.yaml)
   runs on pull requests and main pushes. Package verification, supported Typer
   bounds, and the portable test suite run in parallel; the dependency audit
-  covers both runtime and notebook execution surfaces, and coverage upload
-  remains separately permissioned. The final `Checks` job is the only required
-  branch-protection context.
+  covers the published runtime surface, and coverage upload remains separately
+  permissioned. Notebook execution uses a separately managed environment until
+  Reader can publish a safe Marimo dependency resolution. The final `Checks`
+  job is the only required branch-protection context.
 - `Release` in [.github/workflows/release.yaml](../.github/workflows/release.yaml)
   runs only for a published GitHub release whose `v<version>` tag exactly
   matches `pyproject.toml`. An unprivileged job builds the distributions, then
