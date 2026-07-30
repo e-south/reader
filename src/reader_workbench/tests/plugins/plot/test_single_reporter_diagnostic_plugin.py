@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from reader_workbench.plugins.plot.single_reporter_diagnostic import (
     SingleReporterDiagnosticCfg,
     SingleReporterDiagnosticPlot,
+    _reduction_columns,
 )
 from reader_workbench.workbench.experiment import (
     AnnotationCollections,
@@ -48,7 +49,7 @@ def _frame() -> pd.DataFrame:
     return pd.DataFrame.from_records(rows)
 
 
-def _context():
+def _context(*, replicate_identity_field: str | None = "biological_replicate_id"):
     annotations = AnnotationSemantics(
         orders=AnnotationOrders(
             by_id={"conditions": AnnotationOrderSpec(column="condition_alias", values=["baseline", "induced"])}
@@ -68,7 +69,7 @@ def _context():
             data_class="plate_reader_screen",
             data_class_reason="Synthetic plugin fixture.",
             replicate_kind="biological",
-            replicate_identity_field="biological_replicate_id",
+            replicate_identity_field=replicate_identity_field,
         ),
     )
     return SimpleNamespace(experiment=experiment, palette_book=None)
@@ -154,6 +155,14 @@ def test_single_reporter_diagnostic_plugin_uses_semantic_partition_and_declared_
 
 def test_single_reporter_diagnostic_declares_tidy_record_input() -> None:
     assert SingleReporterDiagnosticPlot.input_ports()["df"].contract == "plate_reader.annotated.v1"
+
+
+def test_single_reporter_diagnostic_keeps_plate_scoped_biological_identity_unknown() -> None:
+    context = _context(replicate_identity_field=None)
+
+    assert context.experiment.evidence.replicate_kind == "biological"
+    assert context.experiment.evidence.replicate_identity_field is None
+    assert _reduction_columns(ctx=context, frame=_frame()) == ("position", "position")
 
 
 def test_single_reporter_diagnostic_config_requires_compiler_owned_reduction_policy() -> None:
