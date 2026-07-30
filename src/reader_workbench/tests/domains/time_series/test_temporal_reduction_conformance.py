@@ -18,7 +18,9 @@ def _canonical_digest(payload: object) -> str:
 
 
 def test_temporal_reduction_conformance_vector_executes_reader_reducer() -> None:
-    vector = json.loads(_VECTOR_PATH.read_text(encoding="utf-8"))
+    vector_text = _VECTOR_PATH.read_text(encoding="utf-8")
+    assert "technical" not in vector_text.lower()
+    vector = json.loads(vector_text)
 
     assert vector["schema"] == "reader.temporal_reduction_conformance.v1"
     assert vector["contract"] == "reader.domains.time_series.temporal_reduction.v1"
@@ -27,8 +29,8 @@ def test_temporal_reduction_conformance_vector_executes_reader_reducer() -> None
 
     for case in vector["cases"]:
         assert case["case_payload_digest"] == _canonical_digest(case["payload"]), case["id"]
-        assert case["kind"] in {"ratio_then_reduce_technical_aggregation", "single_trace"}
-        if case["kind"] == "ratio_then_reduce_technical_aggregation":
+        assert case["kind"] in {"ratio_then_reduce_observation_aggregation", "single_trace"}
+        if case["kind"] == "ratio_then_reduce_observation_aggregation":
             _assert_ratio_then_reduce_case(case)
         else:
             _assert_single_trace_case(case)
@@ -40,7 +42,7 @@ def _assert_ratio_then_reduce_case(case: dict[str, object]) -> None:
     assert isinstance(payload, dict)
     assert isinstance(expected, dict)
     assert payload["operation_order"] == "ratio_then_reduce"
-    assert payload["technical_aggregation"] == "median"
+    assert payload["observation_aggregation"] == "median"
     assert payload["declared_ratio_channel"] == {
         "numerator": "signal",
         "denominator": "reference",
@@ -66,13 +68,13 @@ def _assert_ratio_then_reduce_case(case: dict[str, object]) -> None:
         alternative_per_well[well_id] = float(np.median(rows[:, 1]) / np.median(rows[:, 2]))
 
     assert per_well == pytest.approx(expected["per_well"])
-    technical_median = float(np.median(list(per_well.values())))
-    assert technical_median == pytest.approx(expected["technical_median"])
+    observation_median = float(np.median(list(per_well.values())))
+    assert observation_median == pytest.approx(expected["observation_median"])
     alternative = expected["alternative_reduce_then_ratio"]
     assert alternative_per_well == pytest.approx(alternative["per_well"])
     alternative_median = float(np.median(list(alternative_per_well.values())))
-    assert alternative_median == pytest.approx(alternative["technical_median"])
-    assert alternative_median != pytest.approx(technical_median)
+    assert alternative_median == pytest.approx(alternative["observation_median"])
+    assert alternative_median != pytest.approx(observation_median)
 
 
 def _assert_single_trace_case(case: dict[str, object]) -> None:
