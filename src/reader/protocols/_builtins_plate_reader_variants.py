@@ -86,6 +86,20 @@ def build_plate_reader_variant_protocol(
                 kind="string",
                 default="OD600",
             ),
+            field(
+                "temporal_reduction",
+                "Optional compiler-owned endpoint or interval reduction used by temporal diagnostic outputs.",
+                allow_unknown=True,
+                allow_none=True,
+                default=None,
+            ),
+            field(
+                "replicate_aggregation",
+                "Optional technical-replicate and across-replicate aggregation policy for temporal diagnostics.",
+                allow_unknown=True,
+                allow_none=True,
+                default=None,
+            ),
             field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=False),
             preprocessing_field,
         ),
@@ -166,6 +180,14 @@ def build_plate_reader_variant_protocol(
                 kind="qc",
                 summary="Raw kinetics over the normalizer, reporter, and derived ratio channels.",
                 primary=True,
+            ),
+            ProtocolFigureSpec(
+                id="single_reporter_diagnostic",
+                kind="qc",
+                summary=(
+                    "One-row normalizer, reporter, ratio, and condition-reduction diagnostic using an explicit "
+                    "endpoint or interval."
+                ),
             ),
             ProtocolFigureSpec(
                 id="endpoint_by_condition",

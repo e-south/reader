@@ -3,6 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from reader.domains.time_series import (
+    ReplicateAggregationSpec,
+    TemporalReductionSpec,
+)
 from reader.errors import ConfigError
 from reader.protocols.model import CompiledProtocolPlan
 from reader.protocols.semantic_coverage import (
@@ -350,6 +354,7 @@ def _plate_reader_plot_output_ids(*, measurement: str) -> set[str]:
 def _plate_reader_single_reporter_plot_output_ids() -> set[str]:
     return {
         "raw_kinetics",
+        "single_reporter_diagnostic",
         "endpoint_by_condition",
         "endpoint_by_design",
         "intensity_overview",
@@ -584,6 +589,43 @@ def _plate_reader_single_reporter_plot_output(
         reporter_channel=reporter_channel,
         normalizer_channel=normalizer_channel,
     )
+    if output_id == "single_reporter_diagnostic":
+        compiler_owned = {
+            "endpoint_time_h",
+            "endpoint_time_tolerance_h",
+            "normalizer_channel",
+            "replicate_aggregation",
+            "reporter_channel",
+            "ratio_channel",
+            "summary_stat",
+            "temporal_reduction",
+            "time_column",
+            "window_h",
+        }
+        overridden = sorted(compiler_owned.intersection(settings))
+        if overridden:
+            raise ConfigError(
+                "protocol.outputs.plots.views.single_reporter_diagnostic cannot override compiler-owned fields "
+                f"{overridden}; configure protocol.analysis temporal_reduction, replicate_aggregation, "
+                "reporter_channel, and normalizer_channel instead"
+            )
+        temporal_reduction, replicate_aggregation = _single_reporter_diagnostic_policy(protocol)
+        defaults = {
+            **({} if "partition" in settings else {"partition": {"by": "design_id"}}),
+            "condition_column": "treatment",
+            "temporal_reduction": temporal_reduction,
+            "replicate_aggregation": replicate_aggregation,
+            "time_column": "time",
+            "normalizer_channel": normalizer_channel,
+            "reporter_channel": reporter_channel,
+            "ratio_channel": ratio_label,
+        }
+        return _step(
+            id="single_reporter_diagnostic",
+            plugin="plot/single_reporter_diagnostic",
+            reads={"df": RecordInputDecl(record_id="sample_measurements/df")},
+            with_=_deep_merge(defaults, settings),
+        )
     if output_id == "raw_kinetics":
         defaults = {
             "partition": {"by": "design_id"},
@@ -666,6 +708,28 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown single-reporter plot output {output_id!r}")
+
+
+def _single_reporter_diagnostic_policy(protocol: Any) -> tuple[dict[str, object], dict[str, str]]:
+    analysis = _analysis_options(protocol)
+    raw_temporal = analysis.get("temporal_reduction")
+    raw_aggregation = analysis.get("replicate_aggregation")
+    if raw_temporal is None or raw_aggregation is None:
+        raise ConfigError(
+            "plate_reader/single_reporter_screen requires protocol.analysis.temporal_reduction and "
+            "protocol.analysis.replicate_aggregation when single_reporter_diagnostic is selected"
+        )
+    try:
+        temporal = TemporalReductionSpec.from_mapping(raw_temporal)
+        aggregation = ReplicateAggregationSpec.from_mapping(raw_aggregation)
+    except ValueError as exc:
+        raise ConfigError(f"invalid single-reporter diagnostic reduction policy: {exc}") from exc
+    if temporal.selection.time_basis != "absolute":
+        raise ConfigError(
+            "plate_reader/single_reporter_screen temporal_reduction.selection.time_basis must be 'absolute'; "
+            "event-relative timing belongs to a protocol that declares an event"
+        )
+    return temporal.to_mapping(), aggregation.to_mapping()
 
 
 def _plate_reader_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:

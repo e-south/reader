@@ -39,6 +39,16 @@ def test_dual_reporter_triptych_descriptor_is_plate_reader_plot() -> None:
     assert descriptor.summary == "Render per-design growth, reporter-ratio, and endpoint panels."
 
 
+def test_single_reporter_diagnostic_descriptor_is_study_neutral_plate_reader_plot() -> None:
+    descriptor = builtin_plugin_catalog().resolve("plot/single_reporter_diagnostic")
+
+    assert descriptor.domain == "plate_reader"
+    assert descriptor.family == "composite_plot"
+    assert descriptor.summary == (
+        "Render single-reporter kinetics, an explicit reduction, and normalizer QC in one row."
+    )
+
+
 def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
     assert {descriptor.plugin_id for descriptor in builtin_plugin_descriptors()} == {
         "export/csv",
@@ -54,6 +64,7 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "plot/sfxi_diagnostic",
         "plot/sfxi_vec8_collection",
         "plot/sfxi_vec8_heatmap",
+        "plot/single_reporter_diagnostic",
         "plot/snapshot_barplot",
         "plot/snapshot_heatmap",
         "plot/time_series",

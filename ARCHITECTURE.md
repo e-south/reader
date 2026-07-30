@@ -93,6 +93,13 @@ If several studies later need the same measurement reduction, extract the
 preference-free reduction into Reader and keep each study's identity,
 calibration, scoring, and interpretation with that study.
 
+Assay-neutral temporal selection and reduction live under
+`domains/time_series/`. That package owns endpoint versus interval selection,
+absolute versus event-relative coordinates, numerical value space, trace
+support, gap, and censor mechanics. Assay packages adapt their authored policy
+to that contract. Technical and biological aggregation remain explicit and
+separate; a plot plugin cannot silently choose either one.
+
 Cross-repository bridge skills only route between these owners. They may name
 public contracts and verification commands, but must not contain equations,
 treatment ontologies, candidate mappings, or executable study logic.

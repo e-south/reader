@@ -68,6 +68,81 @@ The plot summarizes observed reporter-ratio values at the selected acquisition
 time; it does not assign study meaning to treatments, infer an intervention
 from workbook boundaries, or compute a downstream objective.
 
+## Single-reporter diagnostic
+
+`single_reporter_diagnostic` is an optional plot output of
+`plate_reader/single_reporter_screen`. The protocol filters the persisted ratio
+record to `type: SAMPLE`, validates required treatment and design metadata, and
+publishes that projection as `sample_measurements/df` under
+`plate_reader.annotated.v1`. Publication trims treatment and design identifiers,
+rejects identifiers that are then blank, and requires finite time and value
+columns. Unlabeled blank rows therefore cannot invalidate fully annotated
+sample evidence. The diagnostic reads only that canonical
+sample record and renders four approximately square
+panels in one row: normalizer kinetics, reporter kinetics, their ratio
+kinetics, and the ratio reduced by the declared condition. The reduction panel
+keeps raw replicate-unit values visible and shows the normalizer on a labeled
+QC axis rather than treating it as an objective.
+
+Temporal reduction is analysis policy, not plot configuration. The neutral
+contract declares an absolute or event-relative time basis, an endpoint or
+inclusive interval, a numerical method and output space, and explicit support,
+gap, positivity, and censor handling. Single-reporter acquisition traces require
+the absolute basis. Technical-well reduction and the displayed across-replicate
+center are configured separately:
+
+```yaml
+protocol:
+  analysis:
+    temporal_reduction:
+      selection:
+        kind: interval
+        time_basis: absolute
+        start_h: 8.0
+        end_h: 12.0
+        boundary: inclusive
+      method: observed_median
+      output_space: linear
+      support:
+        boundary_support: observed
+        minimum_observations: 25
+        maximum_interior_gap_h: 0.2
+        positive_floor: null
+        positive_value_scope: selected_support
+        censored_values: reject
+    replicate_aggregation:
+      technical_replicate_statistic: median
+      replicate_center_statistic: median
+  outputs:
+    plots:
+      profile: none
+      include: [single_reporter_diagnostic]
+      views:
+        single_reporter_diagnostic:
+          partition:
+            by: sample_id_alias
+          condition_column: condition_alias
+          condition_order_ref: condition_order
+          format: [png, pdf]
+```
+
+When `evidence.replicate_identity_field` is declared, the plot reduces
+technical observations within that identity before comparing conditions. If
+it is absent, each well position remains a separate plot unit. The compiler
+owns the temporal and replicate policies plus the reporter, normalizer, ratio,
+and time-channel bindings; a plot view owns only partitioning, condition
+presentation, and figure options.
+
+This figure is descriptive. Its endpoint or interval is authored experiment
+policy, not an inferred event, dose rule, control ontology, ranking, or study
+objective. A downstream study may validate and select such a policy while the
+Reader plot stays reusable across single-reporter assays. The same neutral
+temporal contract also underlies response-window trace reduction, but the
+response-window protocol separately owns event estimation, interpolation,
+reference anchoring, log2 output, and uncertainty. Matching source data and
+nominal bounds imply matching values only when every reduction and support
+setting also matches.
+
 ## Continue by task
 
 - [SFXI in Reader](../sfxi_vec8_in_reader.md)

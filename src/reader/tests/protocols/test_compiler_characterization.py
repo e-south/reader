@@ -86,10 +86,11 @@ COMPILED_PLAN_FIXTURES = {
             "blank",
             "overflow",
             "ratio_reporter_normalizer",
+            "sample_measurements",
         ),
         "plots": ("raw_kinetics", "value_distributions"),
         "exports": (),
-        "sha256": "6738f08ad41b1e62e3c85a14a39f99e3ef86c24398a2bc2c1034664916fd7a7d",  # pragma: allowlist secret
+        "sha256": "8b029f4232e05d4b264eff305c3256cba05784499aeba5e378b7b44db4e737fb",  # pragma: allowlist secret
     },
 }
 

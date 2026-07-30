@@ -6,7 +6,12 @@ import pandas as pd
 
 from .aggregation import build_design_records
 from .contracts import ReductionSpec, ResponseWindowAnalysisSpec
-from .reduction import combine_bound_kinds, invert_bound_kind, summarize_trace
+from .reduction import (
+    combine_bound_kinds,
+    invert_bound_kind,
+    reduce_temporal_trace,
+    response_window_temporal_spec,
+)
 from .sources import ExperimentSource
 from .uncertainty import bootstrap_draw_records
 
@@ -138,21 +143,16 @@ def _summaries_by_trace(
     signal_kind: str,
     pre_window_end_h: float | None,
 ) -> pd.DataFrame:
-    post_start = event_estimate_h + reduction.window_start_event_h
-    post_end = event_estimate_h + reduction.window_end_event_h
     rows: list[dict[str, object]] = []
     for (design_id, state, position), trace in frame.groupby(
         ["design_id", "state", "position"], sort=True, dropna=False
     ):
         trace_id = f"{frame['experiment_id'].iloc[0]}:{signal_kind}:{design_id}:{state}:{position}:{reduction.id}"
-        post = summarize_trace(
+        post = reduce_temporal_trace(
             trace["time"].to_numpy(dtype=float),
             trace["value"].to_numpy(dtype=float),
-            window_start_h=post_start,
-            window_end_h=post_end,
-            method=reduction.method,
-            positive_floor=request.quality.positive_floor,
-            max_interior_gap_h=request.quality.max_interior_gap_h,
+            spec=response_window_temporal_spec(reduction, request.quality),
+            origin_h=event_estimate_h,
             trace_id=trace_id,
             policy_clipped=trace["value_policy_clipped"].to_numpy(dtype=bool),
             instrument_overflow=trace["value_instrument_overflow"].to_numpy(dtype=bool),
@@ -168,14 +168,17 @@ def _summaries_by_trace(
         if signal_kind == "response" and reduction.response_basis == "post_minus_pre":
             if reduction.pre_window_duration_h is None or pre_window_end_h is None:
                 raise ValueError(f"{trace_id}: delta response lacks an explicit pre-event window.")
-            pre = summarize_trace(
+            pre = reduce_temporal_trace(
                 trace["time"].to_numpy(dtype=float),
                 trace["value"].to_numpy(dtype=float),
-                window_start_h=pre_window_end_h - reduction.pre_window_duration_h,
-                window_end_h=pre_window_end_h,
-                method=reduction.method,
-                positive_floor=request.quality.positive_floor,
-                max_interior_gap_h=request.quality.max_interior_gap_h,
+                spec=response_window_temporal_spec(
+                    reduction,
+                    request.quality,
+                    absolute_window_h=(
+                        pre_window_end_h - reduction.pre_window_duration_h,
+                        pre_window_end_h,
+                    ),
+                ),
                 trace_id=f"{trace_id}:pre",
                 policy_clipped=trace["value_policy_clipped"].to_numpy(dtype=bool),
                 instrument_overflow=trace["value_instrument_overflow"].to_numpy(dtype=bool),
@@ -186,7 +189,7 @@ def _summaries_by_trace(
             instrument_overflow_point_count += pre.instrument_overflow_point_count
             bound_kind = combine_bound_kinds(bound_kind, invert_bound_kind(pre.bound_kind))
             pre_observed_point_count = pre.observed_point_count
-            pre_integration_point_count = pre.integration_point_count
+            pre_integration_point_count = pre.evaluation_point_count
             pre_max_interior_gap_h = pre.max_interior_gap_h
         rows.append(
             {
@@ -195,7 +198,7 @@ def _summaries_by_trace(
                 "position": str(position),
                 f"{signal_kind}_well": float(value),
                 f"{signal_kind}_observed_point_count": post.observed_point_count,
-                f"{signal_kind}_integration_point_count": post.integration_point_count,
+                f"{signal_kind}_integration_point_count": post.evaluation_point_count,
                 f"{signal_kind}_max_interior_gap_h": post.max_interior_gap_h,
                 f"{signal_kind}_pre_observed_point_count": pre_observed_point_count,
                 f"{signal_kind}_pre_integration_point_count": pre_integration_point_count,

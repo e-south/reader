@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 
+import numpy as np
 import pandas as pd
 from pydantic import Field
 
@@ -13,6 +14,8 @@ from reader.workbench.registry import Plugin, PluginConfig
 class PromoteCfg(PluginConfig):
     require_columns: list[str] = Field(default_factory=lambda: ["treatment", "design_id"])
     require_non_null: bool = True  # be strict when promoting
+    trim_and_require_non_blank: list[str] = Field(default_factory=list)
+    require_finite: list[str] = Field(default_factory=list)
     # Only promote a subset of rows (e.g., samples). If provided, we require the column to exist.
     type_column: str = "type"
     include_types: list[str] = Field(default_factory=list)  # e.g., ["SAMPLE"]
@@ -87,10 +90,36 @@ class PromoteToTidyPlusMap(Plugin):
         missing = [c for c in cfg.require_columns if c not in df.columns]
         if missing:
             raise ExecutionError(f"Cannot promote to plate_reader.annotated.v1; missing columns: {missing}")
+        validation_columns = set(cfg.trim_and_require_non_blank) | set(cfg.require_finite)
+        missing_validation = sorted(validation_columns - set(df.columns))
+        if missing_validation:
+            raise ExecutionError(
+                "Cannot promote to plate_reader.annotated.v1; configured validation refers to "
+                f"missing columns: {missing_validation}"
+            )
         if cfg.require_non_null:
             bad = {c: int(df[c].isna().sum()) for c in cfg.require_columns if df[c].isna().any()}
             if bad:
                 raise ExecutionError(f"Cannot promote; required columns contain NaN: {bad}")
+        blank: dict[str, int] = {}
+        for column in cfg.trim_and_require_non_blank:
+            normalized = df[column].astype("string").str.strip()
+            invalid = normalized.isna() | normalized.eq("")
+            if invalid.any():
+                blank[column] = int(invalid.sum())
+            df[column] = normalized
+        if blank:
+            raise ExecutionError(f"Cannot promote; configured identity columns contain blank values: {blank}")
+        nonfinite: dict[str, int] = {}
+        for column in cfg.require_finite:
+            numeric = pd.to_numeric(df[column], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+            invalid_count = int((~np.isfinite(numeric)).sum())
+            if invalid_count:
+                nonfinite[column] = invalid_count
+        if nonfinite:
+            raise ExecutionError(
+                f"Cannot promote; configured measurement columns contain non-finite values: {nonfinite}"
+            )
         # dtype normalization for 'batch' (if present)
         if "batch" in df.columns:
             df["batch"] = pd.to_numeric(df["batch"], errors="raise").astype("Int64")

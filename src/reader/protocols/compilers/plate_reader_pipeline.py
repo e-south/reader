@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from reader.workbench.decl.model import PluginStepDecl, RecordInputDecl, ResourceInputDecl
+from reader.workbench.decl.model import PluginStepDecl, RecordInputDecl, RecordOutputDecl, ResourceInputDecl
 
 from .common import _deep_merge, _step
 
@@ -88,6 +88,21 @@ def compose_single_reporter_pipeline(
                 "numerator": reporter_channel,
                 "denominator": normalizer_channel,
             },
+            source_recipe=SINGLE_REPORTER_BASE_RECIPE_ID,
+            source_recipe_with=recipe_arguments,
+        ),
+        _step(
+            id="sample_measurements",
+            plugin="validator/to_tidy_plus_map",
+            reads={"df": RecordInputDecl(record_id="ratio_reporter_normalizer/df")},
+            with_={
+                "include_types": ["SAMPLE"],
+                "require_columns": ["treatment", "design_id"],
+                "require_non_null": True,
+                "trim_and_require_non_blank": ["treatment", "design_id"],
+                "require_finite": ["time", "value"],
+            },
+            writes={"df": RecordOutputDecl(record_id="sample_measurements/df")},
             source_recipe=SINGLE_REPORTER_BASE_RECIPE_ID,
             source_recipe_with=recipe_arguments,
         ),
