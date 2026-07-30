@@ -272,6 +272,156 @@ def test_dual_reporter_screen_requires_explicit_triptych_snapshot_time() -> None
         protocol.compile()
 
 
+def _single_reporter_interval_policy() -> dict:
+    return {
+        "selection": {
+            "kind": "interval",
+            "time_basis": "absolute",
+            "start_h": 8.0,
+            "end_h": 12.0,
+            "boundary": "inclusive",
+        },
+        "method": "observed_median",
+        "output_space": "linear",
+        "support": {
+            "boundary_support": "observed",
+            "minimum_observations": 25,
+            "maximum_interior_gap_h": 0.2,
+            "positive_floor": None,
+            "positive_value_scope": "selected_support",
+            "censored_values": "reject",
+        },
+    }
+
+
+def _single_reporter_aggregation_policy() -> dict:
+    return {
+        "technical_replicate_statistic": "median",
+        "replicate_center_statistic": "median",
+    }
+
+
+def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -> None:
+    temporal_reduction = _single_reporter_interval_policy()
+    replicate_aggregation = _single_reporter_aggregation_policy()
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "reporter_channel": "mScarlet",
+                "normalizer_channel": "absorbance",
+                "temporal_reduction": temporal_reduction,
+                "replicate_aggregation": replicate_aggregation,
+            },
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["single_reporter_diagnostic"],
+                    "views": {
+                        "single_reporter_diagnostic": {
+                            "partition": {"collection_ref": "subjects"},
+                            "condition_column": "condition_alias",
+                            "condition_order_ref": "conditions",
+                            "format": ["png", "pdf"],
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "single_reporter_diagnostic")
+
+    assert diagnostic.plugin == "plot/single_reporter_diagnostic"
+    assert diagnostic.reads["df"].record_id == "sample_measurements/df"
+    assert diagnostic.with_ == {
+        "partition": {"collection_ref": "subjects"},
+        "condition_column": "condition_alias",
+        "temporal_reduction": temporal_reduction,
+        "replicate_aggregation": replicate_aggregation,
+        "time_column": "time",
+        "normalizer_channel": "absorbance",
+        "reporter_channel": "mScarlet",
+        "ratio_channel": "mScarlet/absorbance",
+        "condition_order_ref": "conditions",
+        "format": ["png", "pdf"],
+    }
+
+
+@pytest.mark.parametrize(
+    "temporal_reduction",
+    [
+        None,
+        {**_single_reporter_interval_policy(), "unknown": True},
+        {
+            **_single_reporter_interval_policy(),
+            "selection": {
+                **_single_reporter_interval_policy()["selection"],
+                "start_h": 12.0,
+                "end_h": 8.0,
+            },
+        },
+    ],
+)
+def test_single_reporter_diagnostic_requires_one_valid_temporal_reduction(
+    temporal_reduction: dict | None,
+) -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": temporal_reduction,
+                "replicate_aggregation": _single_reporter_aggregation_policy(),
+            },
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["single_reporter_diagnostic"],
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="diagnostic"):
+        protocol.compile()
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "time_column",
+        "normalizer_channel",
+        "reporter_channel",
+        "ratio_channel",
+        "temporal_reduction",
+        "replicate_aggregation",
+        "endpoint_time_h",
+        "window_h",
+        "summary_stat",
+    ],
+)
+def test_single_reporter_diagnostic_rejects_compiler_owned_channel_overrides(key: str) -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": _single_reporter_interval_policy(),
+                "replicate_aggregation": _single_reporter_aggregation_policy(),
+            },
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["single_reporter_diagnostic"],
+                    "views": {"single_reporter_diagnostic": {key: "override"}},
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="cannot override compiler-owned fields"):
+        protocol.compile()
+
+
 def test_response_window_diagnostic_requires_an_explicit_record_identity() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(

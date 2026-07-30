@@ -9,6 +9,7 @@ from reader.plugins.plot.response_window_summary import ResponseWindowSummaryPlo
 from reader.plugins.plot.sfxi_diagnostic import SFXIDiagnosticPlot
 from reader.plugins.plot.sfxi_vec8_collection import SFXIVec8CollectionHeatmapPlot
 from reader.plugins.plot.sfxi_vec8_heatmap import SFXIVec8HeatmapPlot
+from reader.plugins.plot.single_reporter_diagnostic import SingleReporterDiagnosticPlot
 from reader.plugins.plot.snapshot_barplot import SnapshotBarplot
 from reader.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
 from reader.plugins.plot.time_series import TimeSeriesPlot
@@ -36,6 +37,16 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
             tags=("dual_reporter", "kinetics", "snapshot"),
         ),
         plugin_cls=DualReporterTriptychPlot,
+    ),
+    build_plugin_asset(
+        plugin_id="plot/single_reporter_diagnostic",
+        semantics=PluginSemantics(
+            domain="plate_reader",
+            family="composite_plot",
+            summary="Render single-reporter kinetics, an explicit reduction, and normalizer QC in one row.",
+            tags=("single_reporter", "kinetics", "reduction", "qc"),
+        ),
+        plugin_cls=SingleReporterDiagnosticPlot,
     ),
     build_plugin_asset(
         plugin_id="plot/response_window_diagnostic",

@@ -8,7 +8,7 @@ from .contracts import (
     ResponseWindowAnalysisSpec,
     ResponseWindowSourceSpec,
 )
-from .reduction import TraceSummary, summarize_trace
+from .reduction import response_window_temporal_spec
 
 __all__ = [
     "AggregationSpec",
@@ -17,6 +17,5 @@ __all__ = [
     "ReductionSpec",
     "ResponseWindowAnalysisSpec",
     "ResponseWindowSourceSpec",
-    "TraceSummary",
-    "summarize_trace",
+    "response_window_temporal_spec",
 ]
