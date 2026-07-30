@@ -34,9 +34,16 @@ summary time, event, ordered-state ontology, classification, or objective.
 Record-backed collection protocols use `resources` of kind `record`; they do
 not copy source configs or publish custom manifests.
 
-The lanes may read compatible source records, but they do not share reductions
-or infer one another from filenames. Downstream interpretation remains a
-consumer concern.
+The lanes may read compatible source records, but one output is never inferred
+from filenames or relabeled as another record schema. They are separately
+addressable and independently validatable. When a coordinate is derived from
+the same verified source revision and selected rows with the same time basis or
+event origin, temporal operator and support, ratio order, grouping, technical
+aggregation, reference operation, and numerical tolerance, that shared reduced
+coordinate must be numerically identical. Historical SFXI vec8 normally does
+not meet that identity: it uses one acquisition-time snapshot, per-design logic
+scaling, and corner-specific intensity normalization. Downstream interpretation
+remains a consumer concern.
 
 ## Dual-reporter triptych
 
