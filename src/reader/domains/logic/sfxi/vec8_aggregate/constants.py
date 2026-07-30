@@ -15,6 +15,7 @@ METADATA_COLUMNS = (
     "source_resource_id",
     "source_experiment_id",
     "source_record_id",
+    "source_record_revision_digest",
     "source_row_index",
     "row_label",
     "design_id",

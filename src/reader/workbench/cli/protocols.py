@@ -12,7 +12,6 @@ from reader.workbench.commands import reader_command
 
 from . import shared
 from ._lazy import load as _load
-from .helpers import default_protocol_plan
 from .shared import app, emit_json, normalize_output_format, table
 
 
@@ -75,8 +74,19 @@ def protocols(
                     projection=f"section:{selected_section}" if selected_section is not None else "full",
                 )
                 return
-            bound_protocol, compiled_plan = default_protocol_plan(descriptor=descriptor, runtime=runtime)
-            semantic_program = compiled_plan.semantic_program
+            compilation_error = None
+            try:
+                bound_protocol = runtime.bind_protocol(
+                    _load("reader.protocols").ProtocolBinding(id=descriptor.protocol)
+                )
+            except ConfigError as exc:
+                bound_protocol = None
+                compiled_plan = None
+                semantic_program = descriptor.semantic_program()
+                compilation_error = str(exc)
+            else:
+                compiled_plan = bound_protocol.compile()
+                semantic_program = compiled_plan.semantic_program
             summary = table(f"Protocol: {descriptor.protocol}")
             summary.add_column("Section", style="accent")
             summary.add_column("Details")
@@ -110,10 +120,10 @@ def protocols(
                         + (1 if semantic_program.ranking is not None else 0)
                     ),
                 )
-            summary.add_row("Default notebook", descriptor.execution.notebook.default_template)
-            summary.add_row("Allowed notebooks", ", ".join(descriptor.execution.notebook.allowed_templates))
             if descriptor.default_plot_profile is not None:
                 summary.add_row("Default plot profile", descriptor.default_plot_profile)
+            if compilation_error is not None:
+                summary.add_row("Default compilation", f"Requires authoring: {compilation_error}")
             shared.console.print(Panel(summary, border_style="accent", box=box.ROUNDED))
 
             input_rows = inspection_protocols.protocol_surface_rows(descriptor.input_fields)
@@ -177,7 +187,7 @@ def protocols(
                         box=box.ROUNDED,
                     )
                 )
-            if compiled_plan.pipeline:
+            if compiled_plan is not None and compiled_plan.pipeline:
                 shared.console.print(
                     Panel(
                         inspection_protocols.protocol_pipeline_table(compiled_plan.pipeline),
@@ -185,7 +195,7 @@ def protocols(
                         box=box.ROUNDED,
                     )
                 )
-            if compiled_plan.plots:
+            if compiled_plan is not None and bound_protocol is not None and compiled_plan.plots:
                 shared.console.print(
                     Panel(
                         inspection_protocols.protocol_surface_impl_table(
@@ -198,7 +208,7 @@ def protocols(
                         box=box.ROUNDED,
                     )
                 )
-            if compiled_plan.exports:
+            if compiled_plan is not None and bound_protocol is not None and compiled_plan.exports:
                 shared.console.print(
                     Panel(
                         inspection_protocols.protocol_surface_impl_table(

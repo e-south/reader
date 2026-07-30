@@ -57,7 +57,7 @@ Each source package has one architectural role:
 | Package | Owns | Must not own |
 | --- | --- | --- |
 | `api/` | Stable task-oriented Python operations and typed results | Assay semantics or alternate execution paths |
-| `protocols/` | Assay vocabulary, defaults, semantic programs, and family compilers | Raw parser or renderer implementations |
+| `protocols/` | Assay vocabulary, defaults, semantic programs, family compilers, and assay step composition | Raw parser or renderer implementations |
 | `domains/` | Experimental parsing, transforms, analysis, ordering, and figure planning | Config loading, record lookup, runtime composition, or CLI behavior |
 | `plugins/` | Thin ingest, transform, validator, plot, and export adapters | Hidden assay policy |
 | `contracts/` | Dataframe identities, schemas, and validation | Workflow order |
@@ -110,7 +110,7 @@ meaning of a particular collection:
 | `domains/plate_reader/analysis/response_window/` | Response-window source validation, reductions, aggregation, and uncertainty |
 | `domains/plate_reader/plots/response_window/` | Response-window summary selection, validation, labeling, and rendering |
 | `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
-| `protocols/` | Compile the declared collection, plots, exports, and notebook into the normal workbench plan |
+| `protocols/` | Compile the declared collection, plots, and exports into the normal workbench plan |
 
 SFXI vec8 collection uses the same core record-reference seam. Neither
 capability owns experiment discovery, direct publication, a custom manifest,
@@ -134,9 +134,11 @@ config -> protocol -> compiled plan -> engine -> plugin adapter
                                                 |
 source -> ingest -> dataframe record -> transform -> dataframe record
                                                    |
-                                      plot | export | notebook
+                                             plot | export
                                                    |
                                              file-bundle record
+
+record catalog -> verified public reads -> canonical notebook viewport
 ```
 
 Adding an ingest format, transform, or figure should extend one segment of this
@@ -170,14 +172,13 @@ The CLI mirrors this lifecycle on purpose. Discovery and preflight are first-cla
 
 - Protocol registry
   Owns assay-facing semantics and defaults.
-- Plugin asset registry
+- Plugin catalog
   Owns executable ingest, transform, validator, plot, and export implementations plus their semantic descriptors.
 - Contract registry
   Owns dataframe contract identities and validation rules.
-- Notebook template registry
-  Owns scaffoldable notebook entry points and protocol compatibility.
 - Runtime composition
-  Assembles the built-in catalogs once and supplies stateful adapters such as
+  Assembles the built-in catalogs once, injects plugin-owned descriptors into
+  the generic workbench registry, and supplies stateful adapters such as
   record-store access to CLI and API operations.
 
 These registries are meant to reduce cognitive load, not increase it. Experiment authors should normally interact with protocols and semantic outputs. Maintainers use plugin registries when extending or debugging the workbench kernel.
@@ -189,12 +190,16 @@ surfaces before execution. A plugin becomes an experiment feature only when a
 protocol compiler gives it a semantic role—registry presence alone never
 creates a second authoring or execution surface.
 
+The notebook is deliberately outside those registries and compiled plans.
+Reader packages one fixed `notebook/eda` scaffold that opens the owning
+experiment as a verified, RecordStore-backed operator viewport.
+
 Data-producing work belongs in pipeline transforms. Plot and export plugins
 consume persisted records and may emit file bundles, but cannot smuggle new
-dataframe records into a presentation phase. The generic notebook surface is
-likewise record-driven: any cataloged dataframe or file bundle can be
-discovered through the public record API, while specialized components remain
-optional views over those same records rather than separate lifecycles.
+dataframe records into a presentation phase. The canonical notebook is a
+read-only record viewport: any cataloged dataframe or file bundle can be
+discovered through the verified public API without another computation or
+publication lifecycle.
 
 ## Architectural Invariants
 
@@ -248,7 +253,7 @@ Use these rules when adding new behavior.
 - Add new semantic outputs as protocol figures or artifacts, not as raw plugin ids in user config.
 - Prefer composition over near-identical plugin variants.
 - Keep the canonical notebook record-driven so a newly registered contract or
-  deliverable is inspectable before any specialized notebook view exists.
+  deliverable is inspectable without a specialized notebook lifecycle.
 
 ## Related Docs
 

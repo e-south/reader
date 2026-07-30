@@ -30,8 +30,9 @@ need the overview.
   meanings when the assay uses them.
 - Canonical labels: design ids, strain ids, treatments, aliases, orders,
   collections, and ordered state spaces.
-- Requested outputs: plot profile, export artifacts, and notebook template only
-  when they differ from protocol defaults.
+- Requested outputs: plot profile and export artifacts when they differ from
+  protocol defaults. The EDA notebook scaffold is fixed rather than
+  protocol-selected.
 
 ## Stop Conditions
 

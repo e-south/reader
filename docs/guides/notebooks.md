@@ -2,148 +2,115 @@
 doc_id: reader-notebooks-guide
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-14
-summary: Reader marimo notebook workflow, template selection, component ownership, and live-review checks.
+last_verified: 2026-07-29
+summary: Operate Reader's canonical record-driven Marimo workbench.
 ---
 
 # Running notebooks
 
-Once you run a pipeline you can generate [marimo notebooks](https://marimo.io/) to explore outputs.
+Reader generates one fixed scaffold, packaged as `notebook/eda`. It is a read-only viewport
+over an experiment's verified record catalog. Assay computation, plots, and
+exports remain normal protocol-owned steps.
 
-## Contents
+## Canonical workflow
 
-1. [General usage](#general-usage)
-2. [Using reader templates](#using-reader-templates)
+Run and verify the experiment before opening its notebook:
 
----
+```bash
+uv run reader validate experiments/my_experiment/config.yaml
+uv run reader run experiments/my_experiment/config.yaml
+uv run reader plot experiments/my_experiment/config.yaml
+uv run reader export experiments/my_experiment/config.yaml
+uv run reader verify experiments/my_experiment/config.yaml
+uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
+```
 
-## General usage
+The generated notebook contains:
 
-Use Reader's launcher for generated experiment notebooks. It owns the output
-path, runtime cache, loopback server, and stale-session checks:
+- a compact experiment and pipeline overview;
+- one dropdown for dataframe records and registered plot, export, or other
+  file-bundle records;
+- one viewport for the selected table, image, or PDF;
+- one lazy accordion for metadata, catalog summaries, and readiness issues.
+
+The notebook reads only through `reader.api.records`, `reader.api.verify`,
+`reader.api.read_dataframe`, and `reader.api.read_artifact`. Each preview is
+bound to the selected record revision and revision digest. Reader verifies the
+exact dataframe bytes or file bytes before rendering them.
+
+The notebook does not scan output directories, infer artifact ownership, or
+publish records. A generated notebook is operator scaffolding, not a
+scientific-record producer.
+
+## Adding a review surface
+
+Do not add an assay-specific notebook lifecycle. Put reusable behavior at its
+owning layer:
+
+- domain math and rendering under `reader.domains`;
+- thin executable adapters under `reader.plugins`;
+- assay composition and defaults under `reader.protocols`;
+- persisted dataframes and files in the normal `RecordStore` lifecycle.
+
+The canonical notebook discovers new plot and export records automatically.
+Study labels, objectives, and interpretation stay with the consuming study;
+Reader may render authored labels but does not invent their meaning.
+
+Examples include the normal `dual_reporter_triptych`,
+`response_window_diagnostic`, `sfxi_diagnostic`, and
+`cytometry_diagnostic` plot outputs. Each consumes persisted records and can be
+selected in the same viewport after `reader plot`.
+
+## Scaffolding and launch modes
+
+Install the optional notebook dependencies, then scaffold or launch:
 
 ```bash
 uv sync --locked --extra notebooks
+uv run reader notebook experiments/my_experiment/config.yaml --mode none
+uv run reader notebook experiments/my_experiment/config.yaml --mode edit
 uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
 ```
 
-Use Marimo directly for a hand-authored notebook under
-`experiments/<experiment>/notebooks/`:
+Notebooks are written beneath the owning experiment's configured
+`outputs/notebooks/` directory. Use `--name EDA_custom.py` to choose a filename,
+`--refresh` to regenerate it, or `--new` to create a numbered sibling. Do not
+hand-edit generated scaffolds; change the shared scaffold source or component and
+regenerate. The packaged scaffold has one stable identity; filenames are not
+template choices.
+
+Reader manages loopback Marimo sessions and repo-local runtime caches. It
+reuses a session only when the notebook and Reader runtime fingerprints still
+match. Use `--port` only when a fixed local port is necessary.
+
+For a static check:
 
 ```bash
-uv run marimo edit --watch experiments/my_experiment/notebooks/review.py
+uv run marimo check outputs/notebooks/EDA_YYYYMMDD.py
 ```
 
-Do not hand-edit a scaffold under `outputs/notebooks/`. Change the owning
-template or helper and regenerate it. For sandbox dependencies and the full
-Marimo API, use the [official Marimo documentation](https://docs.marimo.io/).
+A static HTML export is useful for execution and shareability checks, but use a
+live `marimo run` session to verify interactive selection and rendering. See
+the [Marimo reference](./marimo_reference.md) for component and performance
+rules.
 
----
+## Aggregate experiments
 
-## Using Reader templates
-
-Templates let you scaffold a ready-to-run marimo notebook that’s already wired to your experiment outputs.
-Use `uv run reader notebook` for broad exploration across dataframe records.
-By default, notebooks are written under `outputs/notebooks/`.
-
-Scaffold a notebook (opens Marimo by default):
+Cross-experiment review remains an experiment, not a notebook exception. For
+example, an SFXI vec8 collection declares exact Reader record resources and
+runs the ordinary lifecycle:
 
 ```bash
-uv run reader notebook experiments/my_experiment/config.yaml
+uv run reader init experiments/vec8_collection \
+  --protocol logic/sfxi_vec8_collection \
+  --title "SFXI vec8 collection"
+uv run reader validate experiments/vec8_collection
+uv run reader run experiments/vec8_collection
+uv run reader plot experiments/vec8_collection
+uv run reader export experiments/vec8_collection
+uv run reader verify experiments/vec8_collection
 ```
 
-For browser review without opening the editor, prefer:
-
-```bash
-uv run reader notebook experiments/my_experiment/config.yaml --mode run --headless
-```
-
-What the scaffolded notebook includes:
-
-* dataframe record discovery through `reader.api.records`
-* a dataset dropdown labeled “Dataset (dataframe record)” (defaults to the most downstream step when possible)
-* a canonical dataframe selection loaded through `reader.api.read_dataframe`, with artifact-digest and dataframe-contract validation before display
-* a compact experiment overview with experiment id, protocol, pipeline steps, paths, and `design_id` / `treatment` vocabulary when those columns exist
-* a progressive-disclosure deliverables panel for manifest-backed records, plots, exports, and generated notebooks
-* persisted per-path plot descriptions drawn from protocol figure or explicit producer semantics, with experiment-specific limits added beside the visual when needed
-* a dataset table explorer (`mo.ui.table`) driven by the dataset dropdown
-* load-status messaging when no cataloged dataframe records exist yet or validation fails
-
-The default `notebook/eda` and `notebook/basic` templates are intentionally minimal record explorers.
-They do not currently scaffold ad-hoc plotting controls or Altair chart builders.
-`notebook/dual_reporter_triptych` is a neutral plate-reader review surface for dual-reporter assays. It renders
-OD600 kinetics, YFP/CFP kinetics, and a YFP/CFP snapshot bar plot for one selected design without assuming SFXI
-four-corner logic or vec8 export semantics.
-
-Template selection is ordered and protocol-constrained:
-
-1. explicit `--template`
-2. first compiled notebook spec from `config.yaml`
-3. bound protocol default
-
-The selected template must be listed in the protocol's allowed notebook
-templates. This keeps template choice semantic without letting template
-capabilities silently override the experiment contract.
-
-Generated notebooks consume shared review pieces through the stable
-`reader.api.notebooks` surface:
-
-* `overview` owns frontmatter, path summaries, pipeline rows, and the
-  design/treatment vocabulary table.
-* `deliverables` owns manifest-backed records plus plot, export, and generated
-  notebook file bundles, while retaining a generic artifact bucket for other
-  contract-registered file-bundle producers.
-* `records` projects public catalog entries into stable selectors without
-  exposing artifact paths to notebook table loaders.
-* `load_notebook_context()` exposes domain-neutral compiled-step metadata and
-  ordered-state-space projections; `resolve_effective_step_config()` resolves
-  the selected step's protocol-bound settings. Assay templates own any
-  domain-specific selection and adaptation.
-* assay-specific templates can add domain review sections above or beside
-  those panels, but should avoid duplicating component-owned tables.
-
-The dataset dropdown drives the canonical dataframe selection used by the
-record explorer and assay-specific sections.
-
-See what’s available:
-
-```bash
-uv run reader notebook --list-templates
-```
-
-Notes:
-
-* `uv run reader notebook` only scaffolds the notebook; it does not run the pipeline.
-* `uv run reader notebook` launches Marimo with the active Python interpreter, so running via `uv run` ensures the notebook deps are available.
-* `reader notebook` manages Marimo runtime state under `.cache/marimo/` in the repo. It uses clean repo-local XDG and Matplotlib cache directories instead of leaking into user-global Marimo state.
-* `reader notebook` reuses an existing Reader-managed session for the same notebook only when the notebook file and Reader runtime fingerprint match. If either has drifted, it restarts the stale session instead of silently attaching to it.
-* It also prunes older reader-managed sessions for the same experiment and launch mode before starting a new one.
-* Use `--mode none` to scaffold without launching Marimo, `--mode run` to launch the notebook as an app without the editor, and `--headless` when an agent or browser automation should attach to the printed loopback URL.
-* Use `--port <n>` only when you need a fixed loopback port. Otherwise let `reader` choose a clean port starting at `2718`.
-* For agent review, the low-friction path is:
-  - `uv run reader notebook <config> --mode run --headless`
-  - open the printed URL in the in-app browser
-  - or run `uv run marimo check <notebook.py>` for a static validation pass
-* Static HTML export is useful as an execution/shareability smoke check, but it is not an interaction check. Validate dropdowns, sliders, export buttons, and chart rerenders from a live `marimo run` app.
-* Dataset selection uses the canonical record catalog. If `outputs/manifests/records.json` is missing, run `uv run reader run` before opening the notebook.
-* Common templates include `notebook/eda`, `notebook/basic`, `notebook/dual_reporter_triptych`, `notebook/cytometry`, and `notebook/sfxi_eda`.
-* Template behavior is contract-driven:
-  - plot filtering is only available for templates that declare plot-filter support
-  - default selection uses the compiled notebook spec or the protocol default instead of hardcoded CLI branching
-  - template applicability checks are declared on the template asset itself
-* `notebook/sfxi_eda` requires SFXI-capable context declared through asset requirements: either an SFXI-tagged pipeline transform or compatible dataframe records.
-* `notebook/sfxi_eda` reuses the neutral dual-reporter triptych for visualization, then layers a non-persistent SFXI vec8 recomputation and reference review on top. The typed `sfxi_vec8/vec8` record remains the handoff, and durable workbooks use `reader export`.
-* The SFXI template draws a neutral dashed acquisition-transition marker when
-  `sheet_index` identifies a later workbook segment. This marker describes
-  file provenance, not a biological intervention. Event-relative analyses
-  require a separate typed event declaration and must not infer one from sheet
-  order. The marker is omitted when no later segment exists.
-* If the target notebook already exists, use `--force` (or `--refresh`) to overwrite it, or `--new` to create a second notebook with an automatic numeric suffix.
-* If `--template` is omitted, reader uses the first configured `notebooks.specs` entry from `config.yaml` if provided; otherwise it uses the bound protocol default.
-
-See the [Reader Marimo reference](./marimo_reference.md) for reactive,
-performance, progressive-disclosure, and figure-description rules. See
-[SFXI vec8 in reader](../lib/sfxi_vec8_in_reader.md) for the vec8 pipeline and
-SFXI notebook boundary. See
-[Plate-reader metric outputs](../lib/plate_reader/metric_outputs.md) when an
-experiment may support more than one analysis output.
+See [SFXI plot surfaces](../lib/sfxi/plots.md) and
+[plate-reader metric outputs](../lib/plate_reader/metric_outputs.md) for the
+record and plot contracts.

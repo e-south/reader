@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from reader.errors import ConfigError
-from reader.workbench.decl.model import NotebookTemplateCallDecl, PluginStepDecl
+from reader.workbench.decl.model import PluginStepDecl
 from reader.workbench.ontology import PluginDomain, validate_plugin_domain
 
 MetricStage = Literal["raw", "support", "derived", "comparison", "summary", "ranking", "qc", "burden", "leakiness"]
@@ -172,6 +172,7 @@ class ProtocolConfigFieldSpec:
     children: tuple[ProtocolConfigFieldSpec, ...] = ()
     allow_unknown: bool = False
     default: Any = _UNSET
+    example: Any = _UNSET
 
     def __post_init__(self) -> None:
         key = str(self.key).strip()
@@ -194,6 +195,10 @@ class ProtocolConfigFieldSpec:
     @property
     def has_default(self) -> bool:
         return self.default is not _UNSET
+
+    @property
+    def has_example(self) -> bool:
+        return self.example is not _UNSET
 
     def render_default(self) -> str:
         if not self.has_default:
@@ -731,36 +736,12 @@ class ProtocolPluginDefaultsSpec:
 
 
 @dataclass(frozen=True)
-class ProtocolNotebookPolicy:
-    default_template: str
-    allowed_templates: tuple[str, ...] = ()
-    summary: str = ""
-
-    def __post_init__(self) -> None:
-        default_template = str(self.default_template).strip()
-        if not default_template:
-            raise ValueError("ProtocolNotebookPolicy.default_template must be a non-empty string.")
-        summary = str(self.summary).strip()
-        if not summary:
-            raise ValueError("ProtocolNotebookPolicy.summary must be a non-empty string.")
-        allowed = tuple(str(value).strip() for value in self.allowed_templates if str(value).strip())
-        if not allowed:
-            allowed = (default_template,)
-        elif default_template not in allowed:
-            allowed = (default_template, *allowed)
-        object.__setattr__(self, "default_template", default_template)
-        object.__setattr__(self, "allowed_templates", allowed)
-        object.__setattr__(self, "summary", summary)
-
-
-@dataclass(frozen=True)
 class CompiledProtocolPlan:
     semantic_program: ProtocolSemanticProgram
     runtime: dict[str, Any] = field(default_factory=dict)
     pipeline: tuple[PluginStepDecl, ...] = ()
     plots: tuple[PluginStepDecl, ...] = ()
     exports: tuple[PluginStepDecl, ...] = ()
-    notebooks: tuple[NotebookTemplateCallDecl, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.semantic_program, ProtocolSemanticProgram):
@@ -769,7 +750,6 @@ class CompiledProtocolPlan:
         object.__setattr__(self, "pipeline", tuple(self.pipeline or ()))
         object.__setattr__(self, "plots", tuple(self.plots or ()))
         object.__setattr__(self, "exports", tuple(self.exports or ()))
-        object.__setattr__(self, "notebooks", tuple(self.notebooks or ()))
 
 
 ProtocolCompiler = Callable[["BoundProtocol"], CompiledProtocolPlan]
@@ -777,7 +757,6 @@ ProtocolCompiler = Callable[["BoundProtocol"], CompiledProtocolPlan]
 
 @dataclass(frozen=True)
 class ProtocolExecutionPlan:
-    notebook: ProtocolNotebookPolicy
     plugin_defaults: tuple[ProtocolPluginDefaultsSpec, ...] = ()
     compiler: ProtocolCompiler | None = None
 
@@ -1173,19 +1152,8 @@ class BoundProtocol:
         return self.descriptor.execution
 
     @property
-    def default_notebook_template(self) -> str:
-        return self.execution.notebook.default_template
-
-    @property
     def default_plot_profile(self) -> str | None:
         return self.descriptor.default_plot_profile
-
-    @property
-    def allowed_notebook_templates(self) -> tuple[str, ...]:
-        return self.execution.notebook.allowed_templates
-
-    def allows_notebook_template(self, template: str) -> bool:
-        return template in self.allowed_notebook_templates
 
     def effective_inputs(self) -> dict[str, Any]:
         return self._effective_authoring_surface(section="inputs")
@@ -1208,20 +1176,6 @@ class BoundProtocol:
         program = self.descriptor.semantic_program(active_profile=active_profile)
         return program.with_execution_overrides(execution_overrides, protocol_id=self.id)
 
-    def resolve_notebook_template(
-        self,
-        *,
-        explicit_template: str | None = None,
-        configured_template: str | None = None,
-    ) -> str:
-        selected = explicit_template or configured_template or self.default_notebook_template
-        if not self.allows_notebook_template(selected):
-            options = ", ".join(self.allowed_notebook_templates) or "—"
-            raise ConfigError(
-                f"Protocol {self.id!r} does not allow notebook template {selected!r}. Allowed templates: {options}"
-            )
-        return selected
-
     def compile(self) -> CompiledProtocolPlan:
         compiler = self.execution.compiler
         if compiler is None:
@@ -1231,12 +1185,6 @@ class BoundProtocol:
             raise ConfigError(
                 f"Protocol {self.id!r} compiler returned {type(plan).__name__}, expected CompiledProtocolPlan."
             )
-        notebooks = plan.notebooks
-        if not notebooks:
-            selected_template = self.resolve_notebook_template(configured_template=self.configured_notebook_template())
-            notebooks = (NotebookTemplateCallDecl(id="default", template=selected_template),)
-        for entry in notebooks:
-            self.resolve_notebook_template(explicit_template=entry.template)
         if plan.semantic_program.protocol != self.id:
             raise ConfigError(
                 f"Protocol {self.id!r} compiler returned semantic program for {plan.semantic_program.protocol!r}."
@@ -1247,21 +1195,11 @@ class BoundProtocol:
             pipeline=plan.pipeline,
             plots=plan.plots,
             exports=plan.exports,
-            notebooks=notebooks,
         )
 
     def effective_plugin_config(self, *, plugin_id: str, step_with: dict[str, Any] | None = None) -> dict[str, Any]:
         defaults = self._protocol_plugin_defaults(plugin_id)
         return _deep_merge(defaults, dict(step_with or {}))
-
-    def configured_notebook_template(self) -> str | None:
-        block = self._output_block("notebook")
-        template = block.get("template")
-        if template is None:
-            return None
-        if not isinstance(template, str) or not template.strip():
-            raise ConfigError(f"protocol.outputs.notebook.template for {self.id!r} must be a non-empty string")
-        return template.strip()
 
     def select_plot_outputs(
         self,

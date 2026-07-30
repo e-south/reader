@@ -29,7 +29,7 @@ summary time, event, ordered-state ontology, classification, or objective.
 | --- | --- | --- | --- |
 | General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
 | SFXI vec8 | `logic/sfxi_screen` | one selected acquisition-time snapshot | `sfxi_vec8/vec8` under `sfxi.vec8.v3` |
-| Response window | `plate_reader/response_window` | one declared event and event-relative windows | normal dataframe, plot, export, and notebook records |
+| Response window | `plate_reader/response_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
 
 Record-backed collection protocols use `resources` of kind `record`; they do
 not copy source configs or publish custom manifests.
@@ -37,6 +37,36 @@ not copy source configs or publish custom manifests.
 The lanes may read compatible source records, but they do not share reductions
 or infer one another from filenames. Downstream interpretation remains a
 consumer concern.
+
+## Dual-reporter triptych
+
+`dual_reporter_triptych` is an optional plot output of
+`plate_reader/dual_reporter_screen`. It reads the persisted
+`ratio_yfp_od600/df` record and writes one static growth, reporter-ratio, and
+endpoint figure per design. It is not a notebook template or a separate
+execution path.
+
+The endpoint time is experiment policy, so Reader has no implicit hour value.
+Declare it in the plot view:
+
+```yaml
+protocol:
+  outputs:
+    plots:
+      profile: none
+      include: [dual_reporter_triptych]
+      views:
+        dual_reporter_triptych:
+          snapshot_time_h: 8.0
+          snapshot_time_mode: nearest
+          snapshot_time_tolerance_h: 0.25
+          treatment_order_ref: conditions
+          format: [png, pdf]
+```
+
+The plot summarizes observed reporter-ratio values at the selected acquisition
+time; it does not assign study meaning to treatments, infer an intervention
+from workbook boundaries, or compute a downstream objective.
 
 ## Continue by task
 

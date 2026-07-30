@@ -25,7 +25,6 @@ from reader.workbench.graph import (
 from reader.workbench.paths import resolve_path_within_root
 from reader.workbench.records import DataFrameArtifactRecord, resolve_source_record
 from reader.workbench.registry import Plugin, PreflightIssue
-from reader.workbench.templates import require_notebook_template_for_protocol
 
 from ._shared import collect_categories
 from .contracts import _resolve_output_labels
@@ -227,11 +226,6 @@ def _validate_specs(
             )
 
 
-def _validate_notebook_specs(items: list[Any], *, protocol: Any) -> None:
-    for spec_item in items:
-        require_notebook_template_for_protocol(spec_item.template, protocol=protocol)
-
-
 def _resolve_exp_path(path: Path, *, exp_root: Path | None) -> Path:
     if exp_root is None:
         return path
@@ -368,8 +362,7 @@ def validation_summary(
     pipeline_steps = list(workbench.pipeline)
     plot_specs = list(workbench.plots) if plot_specs_override is None else list(plot_specs_override)
     export_specs = list(workbench.exports) if export_specs_override is None else list(export_specs_override)
-    notebook_specs = list(workbench.notebooks)
-    ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs, notebook_specs)
+    ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs)
     categories = collect_categories(list(workbench.plugin_steps()))
     if "plot" in categories:
         ensure_mpl_cache_dir()
@@ -416,9 +409,6 @@ def validation_summary(
             available_labels=pipeline_labels,
             protocol=bound_protocol,
         )
-    if notebook_specs:
-        _validate_notebook_specs(notebook_specs, protocol=bound_protocol)
-
     declared_entries: list[tuple[str, str, str, Path]] = []
     declared_roots: list[tuple[str, str, Path]] = []
     if exp_root is not None:
@@ -563,7 +553,6 @@ def validation_summary(
             "pipeline": len(pipeline_steps),
             "plots": len(plot_specs),
             "exports": len(export_specs),
-            "notebooks": len(notebook_specs),
         },
         "checks": checks,
         "files": files_payload,
@@ -599,7 +588,6 @@ def validate(
         f"[dim]pipeline[/dim]: {summary['counts']['pipeline']}",
         f"[dim]plots[/dim]: {summary['counts']['plots']}",
         f"[dim]exports[/dim]: {summary['counts']['exports']}",
-        f"[dim]notebooks[/dim]: {summary['counts']['notebooks']}",
         f"[dim]checks[/dim]: {', '.join(summary['checks'])}",
     ]
     lines.append(f"[dim]files[/dim]: {summary['files']['summary']}")

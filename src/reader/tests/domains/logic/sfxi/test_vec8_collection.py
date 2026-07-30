@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pandas as pd
 import pytest
 
@@ -7,6 +9,10 @@ import reader.domains.logic.sfxi.vec8_aggregate as vec8_aggregate
 from reader.domains.logic.sfxi.vec8_aggregate import SFXIVec8Source, aggregate_sfxi_vec8_sources
 from reader.domains.logic.sfxi.vec8_aggregate.render import _display_row_labels, _ordered_plot_frame
 from reader.errors import SFXIError
+
+
+def _revision_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _vec8(*design_ids: str) -> pd.DataFrame:
@@ -37,6 +43,7 @@ def test_vec8_collection_accepts_only_canonical_in_memory_source_metadata() -> N
             SFXIVec8Source(
                 resource_id="second",
                 experiment_id="experiment-2",
+                revision_digest=_revision_digest("revision-2"),
                 frame=_vec8("design-2"),
                 record_id="sfxi_vec8/vec8",
             ),
@@ -46,6 +53,7 @@ def test_vec8_collection_accepts_only_canonical_in_memory_source_metadata() -> N
     assert aggregate.frame["source_resource_id"].tolist() == ["second"]
     assert aggregate.frame["source_experiment_id"].tolist() == ["experiment-2"]
     assert aggregate.frame["source_record_id"].tolist() == ["sfxi_vec8/vec8"]
+    assert aggregate.frame["source_record_revision_digest"].tolist() == [_revision_digest("revision-2")]
     assert {"source_path", "table_path", "source_kind"}.isdisjoint(aggregate.frame.columns)
     assert not hasattr(vec8_aggregate, "load_sfxi_vec8_table")
 
@@ -56,12 +64,14 @@ def test_vec8_collection_renderer_uses_generic_natural_order_and_labels() -> Non
             SFXIVec8Source(
                 resource_id="tenth",
                 experiment_id="experiment-10",
+                revision_digest=_revision_digest("revision-10"),
                 frame=_vec8("design-10", "design-2"),
                 record_id="vec8/ten",
             ),
             SFXIVec8Source(
                 resource_id="second",
                 experiment_id="experiment-2",
+                revision_digest=_revision_digest("revision-2"),
                 frame=_vec8("design-10", "design-2"),
                 record_id="vec8/two",
             ),
@@ -91,12 +101,14 @@ def test_vec8_collection_distinguishes_records_from_the_same_experiment() -> Non
                 resource_id="first",
                 experiment_id="shared-experiment",
                 record_id="vec8/first",
+                revision_digest=_revision_digest("revision-first"),
                 frame=_vec8("design"),
             ),
             SFXIVec8Source(
                 resource_id="second",
                 experiment_id="shared-experiment",
                 record_id="vec8/second",
+                revision_digest=_revision_digest("revision-second"),
                 frame=_vec8("design"),
             ),
         )
@@ -128,13 +140,40 @@ def test_vec8_collection_rejects_duplicate_exact_source_records() -> None:
                     resource_id="first-alias",
                     experiment_id="shared-experiment",
                     record_id="vec8/shared",
+                    revision_digest=_revision_digest("revision-shared"),
                     frame=_vec8("first-design"),
                 ),
                 SFXIVec8Source(
                     resource_id="second-alias",
                     experiment_id="shared-experiment",
                     record_id="vec8/shared",
+                    revision_digest=_revision_digest("revision-shared"),
                     frame=_vec8("second-design"),
+                ),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "revision_digest",
+    (
+        "sha256:revision",
+        "sha256:" + "a" * 63,
+        "sha256:" + "a" * 65,
+        "sha256:" + "A" * 64,
+        "sha512:" + "a" * 64,
+    ),
+)
+def test_vec8_collection_rejects_noncanonical_revision_digest(revision_digest: str) -> None:
+    with pytest.raises(SFXIError, match="revision_digest must be a canonical sha256 digest"):
+        aggregate_sfxi_vec8_sources(
+            (
+                SFXIVec8Source(
+                    resource_id="source",
+                    experiment_id="experiment",
+                    record_id="sfxi_vec8/vec8",
+                    revision_digest=revision_digest,
+                    frame=_vec8("design"),
                 ),
             )
         )

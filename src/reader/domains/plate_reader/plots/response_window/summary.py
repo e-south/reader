@@ -9,10 +9,7 @@ import pandas as pd
 
 from reader.plotting.style import use_style
 
-COMPONENT_COLUMNS = ("r00", "r10", "r01", "r11", "b00", "b10", "b01", "b11")
-RESPONSE_COLUMNS = COMPONENT_COLUMNS[:4]
-MAGNITUDE_COLUMNS = COMPONENT_COLUMNS[4:]
-STATE_LABELS = tuple(column[1:] for column in RESPONSE_COLUMNS)
+from .schema import COMPONENT_COLUMNS, MAGNITUDE_COLUMNS, RESPONSE_COLUMNS, STATE_ORDER
 
 
 @dataclass(frozen=True)
@@ -83,7 +80,7 @@ def render_response_window_summary(
                 cmap="coolwarm",
                 norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
             )
-            axis.set_xticks(range(len(STATE_LABELS)), labels=STATE_LABELS)
+            axis.set_xticks(range(len(STATE_ORDER)), labels=STATE_ORDER)
             axis.set_title(panel_title)
             axis.set_xlabel("state")
             figure.colorbar(image, ax=axis, label=colorbar_label, shrink=0.8)
@@ -98,7 +95,7 @@ __all__ = [
     "MAGNITUDE_COLUMNS",
     "RESPONSE_COLUMNS",
     "ResponseWindowSummaryMatrix",
-    "STATE_LABELS",
+    "STATE_ORDER",
     "render_response_window_summary",
     "response_window_summary_matrix",
 ]

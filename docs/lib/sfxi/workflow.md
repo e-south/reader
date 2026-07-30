@@ -103,26 +103,26 @@ The default workbook path is `outputs/exports/sfxi/vec8.xlsx`, with a `vec8`
 worksheet. The typed record remains the source for Reader automation; the
 workbook is an explicit presentation/export artifact.
 
-## Open the SFXI notebook
+## Review persisted SFXI diagnostics
 
 ```bash
-uv run reader notebook <config-or-experiment> \
-  --template notebook/sfxi_eda \
-  --mode run
+uv run reader plot <config-or-experiment> --only sfxi_diagnostic
+uv run reader verify <config-or-experiment> --format json
+uv run reader notebook <config-or-experiment> --mode run
 ```
 
-The template reads experiment records and supports interactive vec8 review. Its
-acquisition-time selector lists only times observed across every required SFXI
-state, so each selection is a valid snapshot. Time-series lines show means with
-95% bootstrap confidence intervals. Snapshot panels show exact well values as
-hollow points, a short mean line, and sample-standard-deviation whiskers. A
-selected time produces a non-persistent review table; it does not replace
-`sfxi_vec8/vec8` or write a second handoff. Use `reader export` when a durable
-workbook is required.
+The diagnostic is a normal plot step. It reads the manifest-backed
+`promote_to_tidy_plus_map/df` and `sfxi_vec8/vec8` records, renders one artifact
+per persisted design by default, and uses each vec8 row's `time_selected_h` as
+the trajectory marker. The first two panels show growth and response
+trajectories with bootstrap intervals. The remaining panels show the persisted
+logic-shape and relative-intensity components on separate scales. It does not
+choose a new time or recompute vec8.
 
-Reader scaffolds the notebook under `outputs/notebooks/`, so change the template
-or a hand-authored notebook when behavior must be durable. Do not hand-edit a
-generated scaffold as the package implementation.
+The canonical `notebook/eda` workbench discovers the resulting plot bundle and
+the vec8 dataframe through the record catalog. Use `reader export` when a
+durable workbook is required. Do not hand-edit generated plot or notebook
+artifacts.
 
 ## Operating sequence
 

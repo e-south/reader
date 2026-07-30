@@ -43,7 +43,7 @@ outputs. Use the reference pages when you need exact CLI or config details.
 - [Python API](./core/python_api.md): typed inspection, planning, record, and
   verification entrypoints for integrations.
 - [Record provenance](./core/record_provenance.md): catalog-v4 epochs,
-  record-schema-v5 evidence, and verification states.
+  record-schema-v6 evidence, and verification states.
 - [Configuring `reader/v8`](./core/pipeline.md): config schema and protocol-owned settings.
 - [Ordered state spaces](./core/ordered_state_spaces.md): metric-neutral state
   identity and exact metadata-value binding.
@@ -68,6 +68,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
 
 ## Library notes
 
+- [Cytometry flow panels](./lib/cytometry.md): explicit FCS ingestion, gating,
+  typed statistics, QC, registered diagnostics, and exports.
 - [Crosstalk pairs](./lib/crosstalk_pairs.md)
 - [Logic-symmetry space](./lib/logic_symmetry.md): generic four-state geometry,
   records, configuration, and plot semantics.

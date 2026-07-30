@@ -32,7 +32,7 @@ from reader.workbench.experiment import (
 from reader.workbench.experiments import ExperimentCatalog
 from reader.workbench.paths import resolve_path_within_root
 
-from .model import ExperimentDecl, NotebookDecl, PipelineDecl, SurfaceDecl, WorkbenchDecl
+from .model import ExperimentDecl, PipelineDecl, SurfaceDecl, WorkbenchDecl
 
 
 def load_workbench_decl(path: Path, *, protocols: ProtocolCatalog) -> WorkbenchDecl:
@@ -126,7 +126,6 @@ def build_workbench_decl(
         pipeline=PipelineDecl(runtime=dict(compiled.runtime or {}), steps=tuple(compiled.pipeline)),
         plots=SurfaceDecl(specs=tuple(compiled.plots)),
         exports=SurfaceDecl(specs=tuple(compiled.exports)),
-        notebooks=NotebookDecl(specs=tuple(compiled.notebooks)),
         config_digest=reader_spec_digest(spec),
     )
 

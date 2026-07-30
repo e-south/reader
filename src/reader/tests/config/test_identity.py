@@ -30,7 +30,7 @@ def test_reader_spec_digest_is_normalized_and_sensitive_to_semantics() -> None:
                 "outputs": "./outputs",
             },
             "protocol": {
-                "outputs": {"exports": {}, "plots": {}, "notebook": {}},
+                "outputs": {"exports": {}, "plots": {}},
                 "analysis": {},
                 "inputs": {},
                 "id": "workbench/generic",

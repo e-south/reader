@@ -9,7 +9,7 @@ API_ROOT = READER_ROOT / "api"
 DOMAIN_ROOT = READER_ROOT / "domains"
 WORKBENCH_NOTEBOOK_ROOT = READER_ROOT / "workbench" / "notebooks"
 WORKBENCH_NOTEBOOK_COMPONENT_ROOT = WORKBENCH_NOTEBOOK_ROOT / "components"
-WORKBENCH_NOTEBOOK_TEMPLATE_ROOT = READER_ROOT / "workbench" / "templates" / "builtins"
+CANONICAL_NOTEBOOK_SOURCE = WORKBENCH_NOTEBOOK_ROOT / "eda.marimo.py.txt"
 FORBIDDEN_DOMAIN_DEPENDENCIES = (
     "reader.api",
     "reader.maintenance",
@@ -122,6 +122,24 @@ def test_domain_capabilities_do_not_create_parallel_public_lifecycles() -> None:
     assert not (READER_ROOT / "runtime" / "sfxi_vec8_aggregate.py").exists()
 
 
+def test_protocol_compilers_own_assay_step_composition() -> None:
+    retired_recipe_surfaces = (
+        READER_ROOT / "workbench" / "recipes",
+        READER_ROOT / "workbench" / "recipes.py",
+    )
+    compiler_root = READER_ROOT / "protocols" / "compilers"
+    stale_imports = [
+        str(path.relative_to(READER_ROOT))
+        for path in sorted(compiler_root.rglob("*.py"))
+        if "reader.workbench.recipes" in path.read_text(encoding="utf-8")
+    ]
+
+    assert not any(path.exists() for path in retired_recipe_surfaces), (
+        "Assay step composition belongs to protocol compiler support"
+    )
+    assert stale_imports == [], f"Protocol compilers still depend on the retired recipe registry: {stale_imports}"
+
+
 def test_workbench_owns_plugin_domain_ontology() -> None:
     legacy_owner = DOMAIN_ROOT / "semantics.py"
     legacy_import = ".".join(("reader", "domains", "semantics"))
@@ -157,9 +175,9 @@ def test_workbench_notebooks_do_not_own_scientific_analysis() -> None:
 
 def test_generated_notebooks_use_only_canonical_dataframe_records() -> None:
     violations: list[str] = []
-    templates = sorted(WORKBENCH_NOTEBOOK_TEMPLATE_ROOT.glob("*.marimo.py.txt"))
-    assert templates, "Reader must package built-in notebook templates"
-    for path in templates:
+    notebook_sources = sorted(READER_ROOT.rglob("*.marimo.py.txt"))
+    assert notebook_sources == [CANONICAL_NOTEBOOK_SOURCE], "Reader must package exactly one fixed notebook scaffold"
+    for path in notebook_sources:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
         api_imports = {

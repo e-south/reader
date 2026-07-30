@@ -287,6 +287,15 @@ def test_notebook_api_generates_protocol_owned_progressive_workbench(tmp_path: P
     assert result.to_dict()["path"] == result.path
 
 
+def test_notebook_api_does_not_expose_template_selection(tmp_path: Path) -> None:
+    experiment = open_experiment(_generic_experiment(tmp_path))
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'template'"):
+        notebook(experiment, template="notebook/eda")  # type: ignore[call-arg]
+
+    assert not (tmp_path / "outputs").exists()
+
+
 @pytest.mark.parametrize("selector", ["from_step", "until_step", "only"])
 def test_run_rejects_empty_step_selectors_without_writing_outputs(tmp_path: Path, selector: str) -> None:
     config_path = _generic_experiment(tmp_path)

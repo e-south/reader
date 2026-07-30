@@ -94,7 +94,7 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
     )
     record = aggregate_store.latest_dataframe("collect_vec8/vec8")
     assert record is not None
-    assert record.contract_id == "sfxi.vec8_collection.v1"
+    assert record.contract_id == "sfxi.vec8_collection.v2"
     collection_frame = record.load_dataframe()
     assert collection_frame[
         ["source_resource_id", "source_experiment_id", "source_record_id"]
@@ -506,6 +506,17 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
                     "min_replicates_per_state": 2,
                 },
             },
+            protocol_outputs={
+                "plots": {
+                    "include": ["response_window_diagnostic"],
+                    "views": {
+                        "response_window_diagnostic": {
+                            "source_experiment_id": "trace-source",
+                            "design_id": "candidate",
+                        }
+                    },
+                }
+            },
             resources={
                 "response": {"kind": "record", "experiment": "trace-source", "record": "response/df"},
                 "magnitude": {"kind": "record", "experiment": "trace-source", "record": "magnitude/df"},
@@ -526,6 +537,7 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
     assert store.latest_dataframe("response_window/designs") is not None
     assert store.latest_dataframe("response_window/events") is not None
     assert store.latest_record("plot:response_window_summary") is not None
+    assert store.latest_record("plot:response_window_diagnostic") is not None
     assert store.latest_record("export:designs_table") is not None
     assert store.latest_record("export:events_table") is not None
     assert not (aggregate_root / "outputs" / "manifest.json").exists()

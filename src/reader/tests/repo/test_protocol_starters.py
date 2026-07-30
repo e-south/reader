@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from reader.protocols import BUILTIN_PROTOCOLS, ProtocolBinding
 from reader.runtime import builtin_runtime
+from reader.tests.support import cytometry_test_gating_policy
 from reader.workbench.cli import app
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import ResourceInputDecl
@@ -44,10 +46,22 @@ def test_generated_starters_declare_only_executable_plot_outputs() -> None:
             assert descriptor.execution.compiler is not None
 
 
+def test_generated_cytometry_starter_preserves_singlet_y_over_x_semantics(tmp_path: Path) -> None:
+    target = tmp_path / "cytometry"
+    result = CliRunner().invoke(app, ["init", str(target), "--protocol", "cytometry/flow_panel"])
+
+    assert result.exit_code == 0, result.output
+    starter = yaml.safe_load((target / "config.yaml").read_text(encoding="utf-8"))
+    gating = starter["protocol"]["inputs"]["gating"]
+    assert gating["singlet_x_channel"] == "<singlet-denominator-channel>"
+    assert gating["singlet_y_channel"] == "<singlet-numerator-channel>"
+
+
 def test_protocol_resource_contract_matches_the_default_compiled_plan() -> None:
     runtime = builtin_runtime()
     for descriptor in BUILTIN_PROTOCOLS:
-        plan = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol)).compile()
+        inputs = {"gating": cytometry_test_gating_policy()} if descriptor.protocol == "cytometry/flow_panel" else {}
+        plan = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol, inputs=inputs)).compile()
         compiled_resource_ids = {
             ref.resource_id
             for step in (*plan.pipeline, *plan.plots, *plan.exports)

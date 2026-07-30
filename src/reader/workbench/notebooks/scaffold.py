@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from importlib import import_module
+from importlib.resources import files
 from pathlib import Path
 
 from reader.errors import ConfigError
 from reader.workbench.paths import resolve_confined_sink_root, resolve_path_within_root
+
+CANONICAL_NOTEBOOK_ID = "notebook/eda"
+_CANONICAL_NOTEBOOK_SOURCE = "eda.marimo.py.txt"
 
 
 def write_experiment_notebook(
@@ -12,9 +15,7 @@ def write_experiment_notebook(
     *,
     experiment_root: Path,
     notebooks_root: Path,
-    template: str,
     overwrite: bool = False,
-    plot_specs: list[dict] | None = None,
 ) -> tuple[Path, bool]:
     target = _confined_notebook_target(
         target,
@@ -23,14 +24,17 @@ def write_experiment_notebook(
     )
     if target.exists() and not overwrite:
         return target, False
-    descriptor = import_module("reader.workbench.templates").resolve_notebook_template_descriptor(template)
-    body = descriptor.load_body()
-    if descriptor.capabilities.inject_plot_specs and "__PLOT_SPECS__" in body:
-        payload = plot_specs or []
-        body = body.replace("__PLOT_SPECS__", repr(payload))
+    body = _load_canonical_notebook_body()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body, encoding="utf-8")
     return target, True
+
+
+def _load_canonical_notebook_body() -> str:
+    try:
+        return files(__package__).joinpath(_CANONICAL_NOTEBOOK_SOURCE).read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        raise ConfigError(f"Canonical notebook source {CANONICAL_NOTEBOOK_ID!r} is unavailable.") from exc
 
 
 def _confined_notebook_target(target: Path, *, experiment_root: Path, notebooks_root: Path) -> Path:

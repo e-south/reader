@@ -10,6 +10,7 @@ class SFXIVec8Source:
     resource_id: str
     experiment_id: str
     record_id: str
+    revision_digest: str
     frame: pd.DataFrame
 
 

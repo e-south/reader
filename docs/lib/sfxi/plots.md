@@ -11,6 +11,39 @@ summary: Reader-owned SFXI vec8 plot inputs, outputs, and failure boundaries.
 Reader renders SFXI figures only from typed Reader records. Plot plugins own
 configuration and publication; the SFXI domain owns measurement calculations.
 
+## Per-design diagnostic
+
+`sfxi_diagnostic` reads both `promote_to_tidy_plus_map/df` and
+`sfxi_vec8/vec8`. It renders one artifact per persisted vec8 design by default.
+Each figure shows growth and response trajectories, marks the exact
+`time_selected_h` carried by that design's vec8 row, and displays the persisted
+logic-shape and relative-intensity components on separate scales. The plot does
+not select another time or recompute vec8.
+
+Generate the diagnostic and inspect it in the canonical record-driven
+workbench:
+
+```bash
+uv run reader plot <config-or-experiment> --only sfxi_diagnostic
+uv run reader verify <config-or-experiment> --format json
+uv run reader notebook <config-or-experiment> --mode run
+```
+
+To render a focused subset, use the semantic figure view:
+
+```yaml
+protocol:
+  id: logic/sfxi_screen
+  outputs:
+    plots:
+      profile: none
+      include: [sfxi_diagnostic]
+      views:
+        sfxi_diagnostic:
+          design_ids: [design-a, design-b]
+          format: [png]
+```
+
 ## Per-experiment heatmap
 
 `sfxi_vec8_heatmap` reads `sfxi_vec8/vec8` and writes
@@ -56,14 +89,16 @@ uv run reader export experiments/vec8_aggregate
 uv run reader notebook experiments/vec8_aggregate --mode none
 ```
 
-`reader run` writes the collection record and digest-bearing manifest. The
+`reader run` writes the collection record under the
+`sfxi.vec8_collection.v2` contract and a digest-bearing manifest. The
 explicit plot, export, and notebook commands materialize their own requested
 surfaces below the same experiment's `outputs/` directory. Reader rejects
 unknown experiments, missing or changed records, incompatible contracts,
 duplicate upstream `(experiment, record)` identities, missing columns,
 negative offsets, and incomplete vectors. The collection table keeps the
 consumer-local alias (`source_resource_id`) separate from the upstream
-`source_experiment_id` and `source_record_id`.
+`source_experiment_id`, `source_record_id`, and exact
+`source_record_revision_digest`.
 
 ## Related references
 

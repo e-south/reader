@@ -65,7 +65,8 @@ uv run reader export ./experiments/<experiment>/config.yaml
 uv run reader notebook ./experiments/<experiment>/config.yaml
 ```
 
-If you want a specific template, pass `--template <name>` (otherwise reader uses the first configured `notebooks.specs` entry or auto-picks).
+Reader always generates the canonical record-driven notebook; assay-specific
+views arrive through registered plot and export records.
 
 9) Verify current artifacts and provenance
 

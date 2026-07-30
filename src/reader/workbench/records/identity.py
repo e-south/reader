@@ -11,7 +11,7 @@ from reader._version import package_version
 from reader.errors import RecordError
 
 _PACKAGED_SOURCE_SUFFIXES = frozenset({".py", ".pyi"})
-_PACKAGED_DATA_GLOBS = ("workbench/templates/builtins/*.marimo.py.txt",)
+_PACKAGED_DATA_GLOBS = ("workbench/notebooks/*.marimo.py.txt",)
 _PACKAGED_DATA_NAMES = frozenset({"py.typed"})
 
 

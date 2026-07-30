@@ -424,7 +424,7 @@ def test_verifier_rejects_a_hard_linked_ledger_before_reading_it(
     assert read_external_target == []
 
 
-def test_new_records_are_schema_v5_and_verify_without_loading_dataframe(tmp_path: Path) -> None:
+def test_new_records_are_schema_v6_and_verify_without_loading_dataframe(tmp_path: Path) -> None:
     store, _ledger_path, _events = _write_valid_invocation(tmp_path)
     record = store.read_record("ingest/df")
 
@@ -435,7 +435,7 @@ def test_new_records_are_schema_v5_and_verify_without_loading_dataframe(tmp_path
         expected_config_digest="sha256:experiment-config",
     )
 
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["producer_config_digest"] == "sha256:producer-config"
     assert payload["build_identity"]["reader_version"]
     assert payload["build_identity"]["source_digest"].startswith("sha256:")
@@ -946,7 +946,8 @@ def test_verifier_rejects_retired_record_schemas_as_invalid_catalogs(tmp_path: P
         "invocation_failures": 0,
     }
     assert report["issues"][0]["code"] == "catalog.invalid"
-    assert "schema_version must be 5" in report["issues"][0]["reason"]
+    assert "schema_version must be 6" in report["issues"][0]["reason"]
+    assert "--reset-records" in report["issues"][0]["reason"]
 
 
 def test_verifier_reports_corrupt_dataframe_bytes(tmp_path: Path) -> None:

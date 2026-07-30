@@ -41,6 +41,7 @@ def _normalize_vec8_frame(source: SFXIVec8Source, *, source_index: int) -> pd.Da
     resource_id = _nonempty_identity(source.resource_id, field="resource_id")
     experiment_id = _nonempty_identity(source.experiment_id, field="experiment_id")
     record_id = _nonempty_identity(source.record_id, field="record_id")
+    revision_digest = _canonical_sha256_digest(source.revision_digest)
     source_label = f"{resource_id} ({experiment_id}:{record_id})"
     frame = source.frame.copy()
     require_vec8_columns(frame)
@@ -72,6 +73,7 @@ def _normalize_vec8_frame(source: SFXIVec8Source, *, source_index: int) -> pd.Da
             "SFXI vec8 aggregate design_id values must be unique within each source: " + ", ".join(duplicates)
         )
     out.insert(0, "source_row_index", range(len(out)))
+    out.insert(0, "source_record_revision_digest", revision_digest)
     out.insert(0, "source_record_id", record_id)
     out.insert(0, "source_experiment_id", experiment_id)
     out.insert(0, "source_resource_id", resource_id)
@@ -105,6 +107,14 @@ def _nonempty_identity(value: str, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SFXIError(f"SFXI vec8 aggregate {field} must be a non-empty string.")
     return value.strip()
+
+
+def _canonical_sha256_digest(value: str) -> str:
+    if isinstance(value, str) and value.startswith("sha256:"):
+        digest = value.removeprefix("sha256:")
+        if len(digest) == 64 and all(character in "0123456789abcdef" for character in digest):
+            return value
+    raise SFXIError("SFXI vec8 aggregate revision_digest must be a canonical sha256 digest.")
 
 
 def _nonempty_string_column(series: pd.Series, *, column: str, source: str) -> pd.Series:

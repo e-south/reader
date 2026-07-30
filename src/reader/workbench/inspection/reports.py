@@ -6,7 +6,6 @@ from rich.table import Table
 from rich.text import Text
 
 from reader.workbench.graph import OutputRef, input_ref_display, output_ref_display
-from reader.workbench.templates import resolve_notebook_template_descriptor
 
 from .common import flatten_binding_rows
 from .results import record_payload_detail_text
@@ -61,7 +60,6 @@ def experiment_inspect_renderables(
         ),
     )
     overview.add_row("Plot profile", str(experiment.get("plot_profile") or "—"))
-    overview.add_row("Notebook", str(experiment.get("notebook_template") or "—"))
     renderables.append(Panel(overview, title="Experiment overview", border_style="accent", box=box.ROUNDED))
 
     if readiness:
@@ -219,18 +217,6 @@ def experiment_inspect_renderables(
     renderables.append(_surface_specs_panel(title="Plot outputs", rows=(compiled.get("plots") or [])))
     renderables.append(_surface_specs_panel(title="Exports", rows=(compiled.get("exports") or [])))
 
-    notebooks = [dict(item) for item in (compiled.get("notebooks") or []) if isinstance(item, dict)]
-    notebook_table = _table("Notebooks")
-    notebook_table.add_column("#", justify="right", style="muted")
-    notebook_table.add_column("template", style="accent")
-    notebook_table.add_column("status")
-    if notebooks:
-        for idx, notebook in enumerate(notebooks, 1):
-            notebook_table.add_row(str(idx), str(notebook.get("template") or "—"), "configured")
-    else:
-        notebook_table.add_row("—", "—", "No notebook template selected.")
-    renderables.append(Panel(notebook_table, border_style="accent", box=box.ROUNDED))
-
     return renderables
 
 
@@ -241,7 +227,6 @@ def workflow_explain_renderables(
     pipeline_steps,
     plot_specs,
     export_specs,
-    notebook_specs,
     registry,
 ) -> list[Panel]:
     renderables: list[Panel] = []
@@ -254,7 +239,6 @@ def workflow_explain_renderables(
     summary.add_row("Pipeline flow", " -> ".join(step.id for step in pipeline_steps) if pipeline_steps else "—")
     summary.add_row("Plots", ", ".join(step.id for step in plot_specs) if plot_specs else "—")
     summary.add_row("Exports", ", ".join(step.id for step in export_specs) if export_specs else "—")
-    summary.add_row("Notebooks", ", ".join(step.template for step in notebook_specs) if notebook_specs else "—")
     resources = tuple(decl.experiment_semantics.resources.by_id.keys())
     if resources:
         summary.add_row("Resources", ", ".join(resources))
@@ -303,15 +287,6 @@ def workflow_explain_renderables(
                 subtitle=Text(f"{len(export_specs)} specs", style="dim"),
             )
         )
-    if notebook_specs:
-        renderables.append(
-            Panel(
-                _workflow_notebook_table(notebook_specs, title="Notebooks"),
-                border_style="cyan",
-                box=box.ROUNDED,
-                subtitle=Text(f"{len(notebook_specs)} specs", style="dim"),
-            )
-        )
     return renderables
 
 
@@ -356,25 +331,6 @@ def _workflow_plan_table(steps, registry, *, title: str) -> Table:
             f"{descriptor.domain}/{descriptor.family}",
             "\n".join(input_lines) if input_lines else "—",
             "\n".join(output_lines) if output_lines else "—",
-        )
-    return table
-
-
-def _workflow_notebook_table(steps, *, title: str) -> Table:
-    table = _table(title)
-    table.add_column("#", justify="right", style="muted")
-    table.add_column("Spec ID", style="accent")
-    table.add_column("Template")
-    table.add_column("Type")
-    table.add_column("Config")
-    for index, step in enumerate(steps, 1):
-        descriptor = resolve_notebook_template_descriptor(step.template)
-        table.add_row(
-            str(index),
-            step.id,
-            step.template,
-            descriptor.family,
-            "—",
         )
     return table
 

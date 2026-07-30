@@ -33,12 +33,9 @@ class RecordVerificationScope:
     """Current record identities owned by one compiled workbench declaration."""
 
     record_ids: frozenset[str] = field(default_factory=frozenset)
-    notebook_templates: frozenset[str] = field(default_factory=frozenset)
 
     def includes(self, record: DataFrameArtifactRecord | FileBundleRecord) -> bool:
-        if record.record_id in self.record_ids:
-            return True
-        return record.producer.kind == "notebook" and record.producer.template in self.notebook_templates
+        return record.record_id in self.record_ids
 
 
 def _issue(*, code: str, field: str, reason: str, remediation: str, retryable: bool = False) -> dict[str, object]:
@@ -633,7 +630,7 @@ def _missing_catalog_report() -> dict[str, object]:
                 code="catalog.missing",
                 field="outputs/manifests/records.json",
                 reason="The experiment has no records catalog.",
-                remediation="Run the experiment to produce schema-v5 records, then verify again.",
+                remediation="Run the experiment to produce schema-v6 records, then verify again.",
             ),
         ],
         "records": [],
@@ -874,7 +871,7 @@ def verify_record_store(
                         code="input.evidence_missing",
                         field=f"inputs.{item.label}",
                         reason="The file input has no artifact evidence.",
-                        remediation="Rerun the producing surface to emit schema-v5 evidence.",
+                        remediation="Rerun the producing surface to emit schema-v6 evidence.",
                     )
                 )
                 continue
@@ -917,7 +914,7 @@ def verify_record_store(
                             code="artifact.evidence_missing",
                             field="file_evidence",
                             reason=f"No file evidence is recorded for {relative}.",
-                            remediation="Rerun the producing surface to emit schema-v5 evidence.",
+                            remediation="Rerun the producing surface to emit schema-v6 evidence.",
                         )
                     )
                     continue

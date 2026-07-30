@@ -98,7 +98,7 @@ REQUIRED_LINKS = {
         "./spec.md",
         "../../ARCHITECTURE.md",
         "../../src/reader/plugins/",
-        "../../src/reader/workbench/assets/plugin_manifest.py",
+        "../../src/reader/plugins/catalog.py",
         "../../src/reader/protocols/compiler.py",
     },
 }

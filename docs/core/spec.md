@@ -51,10 +51,10 @@ plugin wiring or internal graph structure.
 
 - [`src/reader/protocols/model.py`](../../src/reader/protocols/model.py)
   owns the typed protocol contract: config fields, plots, artifacts, semantic
-  nodes, notebook policy, and the compiled semantic program contract.
+  nodes, and the compiled semantic program contract.
 - [`src/reader/protocols/compiler.py`](../../src/reader/protocols/compiler.py)
   owns protocol-specific compilation from bound protocol config into pipeline,
-  plots, exports, notebooks, and step assembly.
+  plots, exports, and step assembly.
 - [`src/reader/protocols/builtins.py`](../../src/reader/protocols/builtins.py)
   remains the public builtin catalog surface, while
   [`src/reader/protocols/_builtins_plate_reader_variants.py`](../../src/reader/protocols/_builtins_plate_reader_variants.py)
@@ -82,10 +82,11 @@ plugin wiring or internal graph structure.
 - [`src/reader/workbench/inspection/`](../../src/reader/workbench/inspection/)
   owns read-only payloads and reports for `inspect`, `steps`, `records`, and
   related CLI surfaces.
-- [`src/reader/workbench/assets/plugin_manifest.py`](../../src/reader/workbench/assets/plugin_manifest.py)
-  is the explicit built-in plugin registry.
-- [`src/reader/workbench/templates/catalog.py`](../../src/reader/workbench/templates/catalog.py)
-  owns notebook template selection and compatibility checks.
+- [`src/reader/plugins/catalog.py`](../../src/reader/plugins/catalog.py)
+  owns the explicit built-in plugin catalog; runtime composition injects its
+  descriptors into the generic workbench registry.
+- [`src/reader/workbench/notebooks/scaffold.py`](../../src/reader/workbench/notebooks/scaffold.py)
+  owns confined rendering of Reader's one canonical notebook scaffold.
 - [`src/reader/workbench/notebooks/launch.py`](../../src/reader/workbench/notebooks/launch.py)
   owns Marimo launch orchestration, while
   [`src/reader/workbench/notebooks/_launch_runtime.py`](../../src/reader/workbench/notebooks/_launch_runtime.py)
@@ -149,8 +150,9 @@ separate hardening concern.
 
 - Public config lives in [`docs/core/pipeline.md`](./pipeline.md), not in plugin
   docs.
-- Protocols own user-facing output vocabulary such as figures, artifacts, and
-  notebook policy.
+- Protocols own user-facing output vocabulary such as figures and artifacts.
+- The fixed `notebook/eda` scaffold is an operator viewport over verified
+  records; it is neither protocol-selected nor part of the compiled plan.
 - Plugins stay mechanical. If a maintainer needs assay meaning to understand a
   plugin, that logic probably belongs in a domain or protocol package instead.
 - Domains accept explicit data and parameters. Config loading, record lookup,

@@ -7,6 +7,7 @@ import pytest
 
 from reader.contracts import builtin_contract_catalog
 from reader.errors import RegistryError
+from reader.plugins.catalog import builtin_plugin_descriptors
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.ports import dataframe_input, dataframe_output
@@ -55,7 +56,11 @@ def test_load_plugin_catalog_registers_validator_plugins(monkeypatch) -> None:
 
     monkeypatch.setattr(md, "entry_points", _entry_points)
 
-    registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+    registry = load_plugin_catalog(
+        contracts=builtin_contract_catalog(),
+        builtin_descriptors=builtin_plugin_descriptors(categories={"validator"}),
+        categories={"validator"},
+    )
 
     assert registry.resolve("validator/external_validator") is _ValidatorPlugin
 
@@ -73,7 +78,11 @@ def test_load_plugin_catalog_does_not_import_unrequested_external_categories(mon
         lambda *, group: [_UnrequestedEntryPoint()] if group == "reader.plugins" else [],
     )
 
-    registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+    registry = load_plugin_catalog(
+        contracts=builtin_contract_catalog(),
+        builtin_descriptors=builtin_plugin_descriptors(categories={"validator"}),
+        categories={"validator"},
+    )
 
     assert "external_plot" not in registry.categories()["plot"]
 
@@ -85,13 +94,17 @@ def test_validator_only_catalog_does_not_import_unrequested_builtin_categories(m
         "reader.plugins.plot.",
         "reader.plugins.transform.",
     )
-    manifest_prefix = "reader.workbench.assets.plugin_manifests."
+    manifest_prefix = "reader.plugins.manifests."
     for module_name in tuple(sys.modules):
         if module_name.startswith(unrelated_plugin_prefixes) or module_name.startswith(manifest_prefix):
             monkeypatch.delitem(sys.modules, module_name)
     monkeypatch.setattr(md, "entry_points", lambda *, group: [])
 
-    registry = load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+    registry = load_plugin_catalog(
+        contracts=builtin_contract_catalog(),
+        builtin_descriptors=builtin_plugin_descriptors(categories={"validator"}),
+        categories={"validator"},
+    )
 
     assert registry.resolve("validator/to_tidy_plus_map")
     assert not [module_name for module_name in sys.modules if module_name.startswith(unrelated_plugin_prefixes)]
@@ -112,7 +125,11 @@ def test_load_plugin_catalog_rejects_bare_plugin_classes(monkeypatch) -> None:
     monkeypatch.setattr(md, "entry_points", _entry_points)
 
     with pytest.raises(RegistryError, match="descriptor or descriptor factory"):
-        load_plugin_catalog(contracts=builtin_contract_catalog(), categories={"validator"})
+        load_plugin_catalog(
+            contracts=builtin_contract_catalog(),
+            builtin_descriptors=builtin_plugin_descriptors(categories={"validator"}),
+            categories={"validator"},
+        )
 
 
 def test_plugin_semantics_reject_unknown_domain() -> None:

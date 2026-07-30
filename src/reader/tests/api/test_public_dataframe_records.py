@@ -7,15 +7,17 @@ from pathlib import Path
 from typing import get_type_hints
 
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
-from reader.api import DataFrameRecordResult, Experiment, open_experiment, read_dataframe
+from reader.api import DataFrameRecordResult, Experiment, open_experiment, read_dataframe, records
 from reader.errors import RecordError
 from reader.runtime import ReaderRuntime, builtin_runtime
 from reader.tests.support.configs import base_reader_config, write_config
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl import WorkbenchDecl, build_workbench_decl
-from reader.workbench.records import DataFrameArtifactRecord
+from reader.workbench.records import DataFrameArtifactRecord, record_revision_digest
+from reader.workbench.records import model as record_model
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,50 @@ def test_read_dataframe_returns_verified_revision_and_defensive_copy(tmp_path: P
     }
 
 
+def test_records_and_read_dataframe_bind_one_exact_revision(tmp_path: Path) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    first_frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
+    second_frame = first_frame.assign(value=[2.0])
+    first = _persist_dataframe(store, fixture, first_frame)
+    first_digest = record_revision_digest(first, outputs_dir=store.root)
+    second = _persist_dataframe(store, fixture, second_frame)
+
+    entry = records(fixture.experiment).entries[0]
+    loaded = read_dataframe(
+        fixture.experiment,
+        "ingest/df",
+        revision=1,
+        revision_digest=first_digest,
+    )
+
+    assert entry["revision"] == 2
+    assert entry["revision_digest"] == record_revision_digest(second, outputs_dir=store.root)
+    assert loaded.record.revision == 1
+    assert loaded.record.revision_digest == first_digest
+    pd.testing.assert_frame_equal(loaded.dataframe, first_frame)
+
+
+def test_read_dataframe_rejects_mismatched_exact_revision_identity(tmp_path: Path) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
+    first = _persist_dataframe(store, fixture, frame)
+    first_digest = record_revision_digest(first, outputs_dir=store.root)
+    second = _persist_dataframe(store, fixture, frame.assign(value=[2.0]))
+    second_digest = record_revision_digest(second, outputs_dir=store.root)
+
+    with pytest.raises(RecordError, match="revision digest mismatch.*refresh"):
+        read_dataframe(
+            fixture.experiment,
+            "ingest/df",
+            revision=1,
+            revision_digest=second_digest,
+        )
+
+    assert first_digest != second_digest
+
+
 def test_read_dataframe_rejects_missing_catalog_without_creating_outputs(tmp_path: Path) -> None:
     fixture = _experiment(tmp_path)
 
@@ -143,6 +189,80 @@ def test_read_dataframe_rejects_content_digest_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(RecordError, match="content digest mismatch"):
         read_dataframe(fixture.experiment, "ingest/df")
+
+
+def test_read_dataframe_row_limit_returns_verified_bounded_preview(tmp_path: Path, monkeypatch) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    frame = pd.DataFrame(
+        {
+            "position": [f"A{index + 1}" for index in range(500)],
+            "time": [float(index) for index in range(500)],
+            "channel": ["signal"] * 500,
+            "value": [float(index) for index in range(500)],
+        }
+    )
+    record = _persist_dataframe(store, fixture, frame)
+
+    def _reject_full_materialization(*_args, **_kwargs):
+        raise AssertionError("bounded preview must not use pandas.read_parquet")
+
+    monkeypatch.setattr(pd, "read_parquet", _reject_full_materialization)
+
+    result = read_dataframe(fixture.experiment, "ingest/df", row_limit=200)
+
+    assert result.record.revision == 1
+    assert result.record.revision_digest == record_revision_digest(record, outputs_dir=store.root)
+    assert result.content_digest == record.content_digest
+    pd.testing.assert_frame_equal(result.dataframe, frame.head(200))
+
+
+def test_read_dataframe_row_limit_rejects_tampered_content(tmp_path: Path) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    frame = pd.DataFrame({"position": ["A1", "A2"], "time": [0.0, 1.0], "channel": ["signal"] * 2, "value": [1.0, 2.0]})
+    record = _persist_dataframe(store, fixture, frame)
+    record.path.write_bytes(record.path.read_bytes() + b"tampered")
+
+    with pytest.raises(RecordError, match="content digest mismatch"):
+        read_dataframe(fixture.experiment, "ingest/df", row_limit=1)
+
+
+def test_read_dataframe_row_limit_reads_verified_open_descriptor_when_path_is_replaced(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    original_frame = pd.DataFrame(
+        {"position": ["A1", "A2"], "time": [0.0, 1.0], "channel": ["signal"] * 2, "value": [1.0, 2.0]}
+    )
+    replacement_frame = original_frame.assign(value=[99.0, 100.0])
+    record = _persist_dataframe(store, fixture, original_frame)
+    replacement_path = tmp_path / "replacement.parquet"
+    replacement_frame.to_parquet(replacement_path, index=False)
+    original_parquet_file = pq.ParquetFile
+
+    def _replace_path_then_open(source, *args, **kwargs):
+        replacement_path.replace(record.path)
+        return original_parquet_file(source, *args, **kwargs)
+
+    monkeypatch.setattr(record_model.pq, "ParquetFile", _replace_path_then_open)
+
+    result = read_dataframe(fixture.experiment, "ingest/df", row_limit=1)
+
+    pd.testing.assert_frame_equal(result.dataframe, original_frame.head(1))
+
+
+@pytest.mark.parametrize("row_limit", [0, -1, True, 1.5])
+def test_read_dataframe_rejects_invalid_row_limit(tmp_path: Path, row_limit: object) -> None:
+    fixture = _experiment(tmp_path)
+    store = _record_store(fixture)
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
+    _persist_dataframe(store, fixture, frame)
+
+    with pytest.raises(RecordError, match="row_limit must be a positive integer"):
+        read_dataframe(fixture.experiment, "ingest/df", row_limit=row_limit)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

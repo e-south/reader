@@ -745,34 +745,6 @@ class RecordStore:
             build_identity=build_identity,
         )
 
-    def append_notebook_file_bundle(
-        self,
-        *,
-        producer_id: str,
-        producer_template: str,
-        record_id: str,
-        inputs: Iterable[RecordInputEvidence],
-        config_digest: str,
-        producer_config_digest: str,
-        files: list[Path],
-        description: str,
-        path_descriptions: tuple[PathDescription, ...],
-        build_identity: BuildIdentity | None = None,
-    ) -> FileBundleRecord:
-        """Append a typed file bundle produced through canonical artifact publication."""
-
-        return self._append_file_bundle_record(
-            producer=RecordProducer(kind="notebook", id=producer_id, template=producer_template),
-            record_id=record_id,
-            inputs=inputs,
-            config_digest=config_digest,
-            producer_config_digest=producer_config_digest,
-            files=files,
-            description=description,
-            path_descriptions=path_descriptions,
-            build_identity=build_identity,
-        )
-
     def _append_file_bundle_record(
         self,
         *,

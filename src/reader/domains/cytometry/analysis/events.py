@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 import polars as pl
@@ -15,33 +14,6 @@ _METADATA_COLUMNS = ("treatment", "design_id", "sample_label")
 
 class CytometryAnalysisError(ValueError):
     """Raised when a cytometry event table cannot support the requested analysis."""
-
-
-@dataclass(frozen=True, slots=True)
-class EventFilters:
-    """Optional exact-match filters applied before the long-to-wide pivot."""
-
-    design_id: str | None = None
-    treatment: str | None = None
-    sample_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class NumericRange:
-    """Observed extent and selected default interval for one numeric signal."""
-
-    minimum: float
-    maximum: float
-    selected: tuple[float, float]
-
-
-@dataclass(frozen=True, slots=True)
-class GateDefaults:
-    """Default cytometry gate ranges derived from finite event values."""
-
-    cells_x: NumericRange
-    cells_y: NumericRange
-    singlet_ratio: NumericRange
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,79 +58,15 @@ class CytometryAnalysis:
 EventFrame = pl.DataFrame | pl.LazyFrame
 
 
-def scan_event_table(path: str | Path) -> pl.LazyFrame:
-    """Open a parquet event table lazily so filters and projections can be pushed down."""
-
-    return pl.scan_parquet(path)
-
-
-def frame_columns(frame: EventFrame) -> tuple[str, ...]:
-    """Return frame column names without collecting a lazy event table."""
-
-    if isinstance(frame, pl.LazyFrame):
-        return tuple(frame.collect_schema().names())
-    if isinstance(frame, pl.DataFrame):
-        return tuple(frame.columns)
-    raise TypeError(f"Expected a Polars DataFrame or LazyFrame, got {type(frame).__name__}.")
-
-
-def distinct_string_values(frame: EventFrame, column: str) -> list[str]:
-    """Collect sorted non-empty strings from one projected column."""
-
-    return distinct_string_values_by_column(frame, (column,))[column]
-
-
-def distinct_string_values_by_column(
-    frame: EventFrame,
-    columns: Sequence[str],
-) -> dict[str, list[str]]:
-    """Collect sorted string values for several columns in one projected query."""
-
-    requested = list(dict.fromkeys(columns))
-    available = set(frame_columns(frame))
-    present = [column for column in requested if column in available]
-    values_by_column = {column: [] for column in requested}
-    if not present:
-        return values_by_column
-    collected = (
-        _as_lazy(frame)
-        .select(
-            *[pl.col(column).drop_nulls().cast(pl.String).unique().sort().implode().alias(column) for column in present]
-        )
-        .collect()
-    )
-    row = collected.row(0, named=True)
-    for column in present:
-        values_by_column[column] = [value for value in row[column] if value]
-    return values_by_column
-
-
-def prepare_event_preview(
-    frame: EventFrame,
-    *,
-    row_limit: int = 10_000,
-    column_limit: int = 40,
-) -> pl.DataFrame:
-    """Collect a bounded table preview for notebook display."""
-
-    if row_limit <= 0:
-        raise ValueError("row_limit must be positive.")
-    if column_limit <= 0:
-        raise ValueError("column_limit must be positive.")
-    columns = frame_columns(frame)[:column_limit]
-    return _as_lazy(frame).select(columns).head(row_limit).collect()
-
-
 def prepare_event_table(
     frame: EventFrame,
     *,
     channels: Sequence[str],
-    filters: EventFilters | None = None,
+    metadata_columns: Sequence[str] = (),
 ) -> pl.DataFrame:
-    """Filter and pivot a tidy event table while keeping the preparation in Polars."""
+    """Pivot declared channels from a tidy event table without inferring policy."""
 
-    filters = filters or EventFilters()
-    available = frame_columns(frame)
+    available = _frame_columns(frame)
     missing_tidy = [column for column in _REQUIRED_TIDY_COLUMNS if column not in available]
     if missing_tidy:
         raise CytometryAnalysisError(
@@ -169,13 +77,21 @@ def prepare_event_table(
     if not selected_channels:
         raise CytometryAnalysisError("Select at least one cytometry channel.")
 
-    metadata_columns = [column for column in _METADATA_COLUMNS if column in available]
-    index_columns = ["sample_id", "event_index", *metadata_columns]
+    requested_metadata = tuple(dict.fromkeys(str(column).strip() for column in metadata_columns if str(column).strip()))
+    missing_metadata = [column for column in requested_metadata if column not in available]
+    if missing_metadata:
+        raise CytometryAnalysisError(
+            "Missing requested cytometry metadata column(s): " + ", ".join(missing_metadata) + "."
+        )
+    retained_metadata = list(
+        dict.fromkeys((*[column for column in _METADATA_COLUMNS if column in available], *requested_metadata))
+    )
+    index_columns = ["sample_id", "event_index", *retained_metadata]
     pivot_key_columns = [*index_columns, "channel"]
     projected_columns = [*index_columns, "channel", "value"]
     event_identity_columns = ["sample_id", "event_index"]
     metadata_consistency_columns = {
-        column: f"__reader_event_metadata_n_unique__{column}" for column in metadata_columns
+        column: f"__reader_event_metadata_n_unique__{column}" for column in retained_metadata
     }
     query = _as_lazy(frame).select(projected_columns)
     if metadata_consistency_columns:
@@ -186,15 +102,6 @@ def prepare_event_table(
             ]
         )
     query = query.filter(pl.col("channel").is_in(selected_channels))
-    for column, value in (
-        ("design_id", filters.design_id),
-        ("treatment", filters.treatment),
-        ("sample_id", filters.sample_id),
-    ):
-        if value is not None:
-            if column not in available:
-                raise CytometryAnalysisError(f"Cannot filter on missing column `{column}`.")
-            query = query.filter(pl.col(column) == value)
 
     channel_profile = query.select(
         pl.len().alias("row_count"),
@@ -253,30 +160,6 @@ def prepare_event_table(
     )
 
 
-def gate_defaults(
-    event_table: pl.DataFrame,
-    *,
-    cells_x_channel: str,
-    cells_y_channel: str,
-    singlet_x_channel: str,
-    singlet_y_channel: str,
-) -> GateDefaults:
-    """Compute finite 1st-to-99th-percentile defaults for cells and singlets gates."""
-
-    _require_columns(
-        event_table,
-        (cells_x_channel, cells_y_channel, singlet_x_channel, singlet_y_channel),
-    )
-    ratio = event_table.select(
-        (pl.col(singlet_y_channel) / pl.col(singlet_x_channel)).alias("singlet_ratio")
-    ).get_column("singlet_ratio")
-    return GateDefaults(
-        cells_x=_numeric_range(event_table.get_column(cells_x_channel)),
-        cells_y=_numeric_range(event_table.get_column(cells_y_channel)),
-        singlet_ratio=_numeric_range(ratio),
-    )
-
-
 def _as_lazy(frame: EventFrame) -> pl.LazyFrame:
     if isinstance(frame, pl.LazyFrame):
         return frame
@@ -285,23 +168,15 @@ def _as_lazy(frame: EventFrame) -> pl.LazyFrame:
     raise TypeError(f"Expected a Polars DataFrame or LazyFrame, got {type(frame).__name__}.")
 
 
+def _frame_columns(frame: EventFrame) -> tuple[str, ...]:
+    if isinstance(frame, pl.LazyFrame):
+        return tuple(frame.collect_schema().names())
+    if isinstance(frame, pl.DataFrame):
+        return tuple(frame.columns)
+    raise TypeError(f"Expected a Polars DataFrame or LazyFrame, got {type(frame).__name__}.")
+
+
 def _require_columns(frame: pl.DataFrame, columns: Sequence[str]) -> None:
     missing = [column for column in dict.fromkeys(columns) if column not in frame.columns]
     if missing:
         raise CytometryAnalysisError("Missing cytometry column(s): " + ", ".join(missing) + ".")
-
-
-def _numeric_range(values: pl.Series, *, low_quantile: float = 0.01, high_quantile: float = 0.99) -> NumericRange:
-    numeric = values.cast(pl.Float64, strict=False).drop_nulls()
-    numeric = numeric.filter(numeric.is_finite())
-    if numeric.is_empty():
-        raise CytometryAnalysisError("No finite values are available for gate defaults.")
-    minimum = float(numeric.min())
-    maximum = float(numeric.max())
-    if maximum <= minimum:
-        maximum = minimum + 1e-6
-    selected_low = max(float(numeric.quantile(low_quantile, interpolation="linear")), minimum)
-    selected_high = min(float(numeric.quantile(high_quantile, interpolation="linear")), maximum)
-    if selected_high <= selected_low:
-        selected_low, selected_high = minimum, maximum
-    return NumericRange(minimum=minimum, maximum=maximum, selected=(selected_low, selected_high))

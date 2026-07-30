@@ -4,7 +4,6 @@ from pathlib import Path
 
 from reader.tests.support import base_reader_config, load_decl, write_config
 from reader.workbench import (
-    NotebookTemplateCall,
     PluginStep,
     RecordRef,
     ResourceRef,
@@ -26,36 +25,32 @@ def _base_config() -> dict:
         protocol_outputs={
             "plots": {"profile": "none", "include": ["raw_kinetics"]},
             "exports": {"include": ["crosstalk_pairs_table"]},
-            "notebook": {"template": "notebook/eda"},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
 
 
-def test_resolve_workbench_separates_plugin_steps_from_notebook_templates(tmp_path: Path) -> None:
+def test_resolve_workbench_contains_only_executable_plugin_steps(tmp_path: Path) -> None:
     decl = load_decl(write_config(tmp_path, _base_config()))
     workbench = resolve_workbench(decl)
 
-    assert workbench.counts() == {"pipeline": 10, "plot": 1, "export": 1, "notebook": 1}
+    assert workbench.counts() == {"pipeline": 10, "plot": 1, "export": 1}
     assert all(isinstance(item, PluginStep) for item in workbench.pipeline + workbench.plots + workbench.exports)
-    assert all(isinstance(item, NotebookTemplateCall) for item in workbench.notebooks)
     assert workbench.pipeline[0].plugin_category == "ingest"
     assert workbench.plots[0].id == "raw_kinetics"
     assert workbench.plots[0].plugin_category == "plot"
     assert workbench.exports[0].id == "crosstalk_pairs_table"
     assert workbench.exports[0].plugin_category == "export"
-    assert workbench.notebooks[0].template == "notebook/eda"
 
 
-def test_materialize_workbench_emits_pipeline_plot_export_and_notebook_sections(tmp_path: Path) -> None:
+def test_materialize_workbench_emits_only_executable_sections(tmp_path: Path) -> None:
     decl = load_decl(write_config(tmp_path, _base_config()))
     materialized = materialize_workbench(decl)
 
     assert materialized["pipeline"][0]["id"] == "ingest"
     assert [item["id"] for item in materialized["plots"]] == ["raw_kinetics"]
     assert [item["id"] for item in materialized["exports"]] == ["crosstalk_pairs_table"]
-    assert [item["id"] for item in materialized["notebooks"]] == ["default"]
-    assert set(materialized["notebooks"][0]) == {"id", "template"}
+    assert set(materialized) == {"pipeline", "plots", "exports"}
 
 
 def test_resolve_workbench_preserves_typed_recipe_provenance(tmp_path: Path) -> None:

@@ -175,7 +175,6 @@ def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSem
             plugin_ids=("transform/sfxi",),
             record_ids=("sfxi_vec8/vec8",),
             config_paths=(
-                "protocol.inputs.response",
                 "protocol.inputs.reference",
                 "protocol.inputs.design_by",
                 "protocol.inputs.state_map_ref",

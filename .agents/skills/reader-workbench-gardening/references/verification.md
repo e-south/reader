@@ -48,19 +48,19 @@ uv run reader run <config|dir|index> --dry-run --format json
 
 ## End-to-end or experiment-surface changes
 
-Start with the code and CLI bundle above, then add the smallest repo marker
-that matches the risk:
+Start with the code and CLI bundle above, then run the portable integration
+subset and one named local experiment when its ignored inputs are available:
 
 ```bash
-uv run pytest -q -m repo_matrix
 uv run pytest -q -m integration
-uv run pytest -q -m active_experiments
+uv run reader validate <config|dir|index>
+uv run reader run <config|dir|index> --dry-run
+uv run reader verify <config|dir|index>
 ```
 
-Use only the smallest marker set that proves the changed surface. If plots,
-exports, or notebooks changed, add the matching `reader plot --list`,
-`reader export --list`, `reader records`, or notebook mode command for one
-representative experiment.
+If plots, exports, or notebooks changed, add the matching `reader plot --list`,
+`reader export --list`, `reader records`, or notebook mode command for that
+experiment.
 
 ## Continue into repo maintenance when
 

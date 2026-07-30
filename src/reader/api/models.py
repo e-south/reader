@@ -189,6 +189,31 @@ class DataFrameRecordResult(ApiResult):
 
 
 @dataclass(frozen=True)
+class ArtifactFileResult(ApiResult):
+    """One digest-verified file from an exact file-bundle record revision."""
+
+    experiment: ExperimentIdentity
+    record: RecordRevision
+    relative_path: str
+    media_type: str
+    content_digest: str
+    size_bytes: int
+    content: bytes = field(repr=False, compare=False)
+
+    def to_dict(self) -> dict[str, object]:
+        """Project JSON-ready evidence without serializing artifact bytes."""
+
+        return {
+            "experiment": self.experiment.to_dict(),
+            "record": self.record.to_dict(),
+            "relative_path": self.relative_path,
+            "media_type": self.media_type,
+            "content_digest": self.content_digest,
+            "size_bytes": self.size_bytes,
+        }
+
+
+@dataclass(frozen=True)
 class RunResult(ApiResult):
     experiment: ExperimentIdentity
     invocation_id: str | None
@@ -238,6 +263,7 @@ class PluginDescriptorResult(ApiResult):
 
 __all__ = [
     "ApiResult",
+    "ArtifactFileResult",
     "DataFrameRecordResult",
     "Experiment",
     "ExperimentEvidence",

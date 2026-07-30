@@ -17,6 +17,9 @@ def test_response_window_modules_stay_bounded() -> None:
         ANALYSIS_PACKAGE / "seeds.py": 40,
         ANALYSIS_PACKAGE / "sources.py": 340,
         ANALYSIS_PACKAGE / "uncertainty.py": 130,
+        PLOT_PACKAGE / "diagnostic.py": 320,
+        PLOT_PACKAGE / "diagnostic_render.py": 320,
+        PLOT_PACKAGE / "schema.py": 40,
         PLOT_PACKAGE / "summary.py": 150,
     }
     observed = {path: len(path.read_text(encoding="utf-8").splitlines()) for path in limits}
@@ -42,6 +45,9 @@ def test_response_window_roles_have_distinct_packages() -> None:
     assert not (DOMAIN_ROOT / "evidence").exists()
     assert {path.name for path in PLOT_PACKAGE.glob("*.py")} == {
         "__init__.py",
+        "diagnostic.py",
+        "diagnostic_render.py",
+        "schema.py",
         "summary.py",
     }
     assert not (DOMAIN_ROOT.parent / "review.py").exists()

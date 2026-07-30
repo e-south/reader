@@ -13,7 +13,7 @@ covers the repository-specific rules that are easy to miss. For the complete
 Marimo component and API reference, use the
 [official Marimo documentation](https://docs.marimo.io/).
 
-For operator commands and template selection, start with
+For operator commands and canonical scaffolding, start with
 [Running notebooks](./notebooks.md). For the files and records that notebooks
 consume, use [Configuring Reader v8](../core/pipeline.md).
 
@@ -75,9 +75,8 @@ def _(threshold):
 Use the record catalog to select data. Do not scan arbitrary files when a
 typed record exists.
 
-- Prefer Polars for notebook data preparation.
-- For large Parquet records, start with `pl.scan_parquet`, project the columns
-  needed by the current analysis, apply filters, and then collect.
+- Read cataloged dataframes through `reader.api.read_dataframe` with the exact
+  revision and revision digest returned by `reader.api.records`.
 - Keep filtering, grouping, pivoting, and statistics in Polars when possible.
 - Convert to Pandas only at a public plotting boundary that requires it, and
   convert a bounded or downsampled payload rather than the full record.
@@ -93,11 +92,11 @@ These rules matter for cytometry and aggregate reviews, where a compact
 Parquet file can expand to hundreds of megabytes after eager materialization or
 wide conversion.
 
-The built-in cytometry template follows this contract through
-`reader.domains.cytometry.analysis`: it scans the long event record lazily,
-projects and filters before the wide pivot, keeps gating and statistics in
-Polars, and converts only two plotting payloads capped at 25,000 rows each to
-Pandas.
+Cytometry gating follows this contract before the notebook: the normal
+`transform/cytometry_gating` step persists bounded summary and QC records, and
+`plot/cytometry_diagnostic` downsamples only its display payload. Prefer those
+records and the registered diagnostic over loading the full gated-event table
+for routine review.
 
 ## Scientific visual descriptions
 
@@ -157,17 +156,17 @@ for handoff values, metadata, outputs, and raw records.
 
 ## Validation
 
-After changing a notebook template:
+After changing the canonical notebook scaffold:
 
 ```bash
-uv run pytest -q src/reader/tests/notebooks/test_templates.py
+uv run pytest -q src/reader/tests/notebooks/test_canonical_notebook.py
 uv run pytest -q src/reader/tests/notebooks
 uv run ruff check .
 uv run ruff format . --check
 ```
 
-The template suite renders each built-in template to a temporary `.py` file
-and runs `marimo check` when notebook dependencies are installed. It also
+The notebook suite renders the fixed scaffold to a temporary `.py` file and
+runs `marimo check` when notebook dependencies are installed. It also
 checks for duplicate globals and cell-shaped functions that are missing an
 `@app.cell` decorator.
 

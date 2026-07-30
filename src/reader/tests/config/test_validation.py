@@ -6,7 +6,9 @@ import pytest
 from rich.console import Console
 
 from reader.errors import ConfigError
-from reader.tests.support import base_reader_config, load_models, write_config
+from reader.protocols.builtins import builtin_protocol_catalog
+from reader.protocols.model import ProtocolBinding
+from reader.tests.support import base_reader_config, cytometry_test_gating_policy, load_models, write_config
 from reader.workbench import resolve_workbench
 from reader.workbench.config import ReaderSpec
 from reader.workbench.decl.model import FileInputDecl
@@ -266,6 +268,45 @@ def test_single_reporter_protocol_compiles_opt_in_subject_comparison(tmp_path: P
     assert plot.with_["snap_channel"] == "RFP/OD600"
 
 
+def test_cytometry_protocol_compiles_explicit_gating_into_normal_records_and_artifacts(tmp_path: Path) -> None:
+    gating = cytometry_test_gating_policy()
+    data = base_reader_config(
+        experiment_id="exp_cytometry",
+        protocol_id="cytometry/flow_panel",
+        protocol_inputs={"gating": gating},
+        resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
+    )
+    spec, decl = load_models(write_config(tmp_path, data))
+    workbench = resolve_workbench(decl)
+    step = next(item for item in workbench.pipeline if item.id == "cytometry_gating")
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id=spec.protocol.id,
+            inputs=spec.protocol.inputs,
+            analysis=spec.protocol.analysis,
+            outputs=spec.protocol.outputs.model_dump(exclude_none=True),
+        )
+    )
+
+    assert step.plugin == "transform/cytometry_gating"
+    assert step.with_ == {}
+    assert protocol.effective_plugin_config(plugin_id=step.plugin, step_with=step.with_) == gating
+    assert {name: ref.record_id for name, ref in step.writes.items()} == {
+        "gate_definition": "cytometry_gating/gate_definition",
+        "gated_events": "cytometry_gating/gated_events",
+        "sample_stats": "cytometry_gating/sample_stats",
+        "group_stats": "cytometry_gating/group_stats",
+        "qc": "cytometry_gating/qc",
+    }
+    assert [(item.id, item.plugin) for item in workbench.plots] == [("gating_diagnostic", "plot/cytometry_diagnostic")]
+    assert [item.id for item in workbench.exports] == [
+        "gate_definition_table",
+        "sample_stats_table",
+        "group_stats_table",
+        "qc_table",
+    ]
+
+
 def test_load_normalizes_annotations_and_resources(tmp_path: Path) -> None:
     data = _base_config()
     data["resources"] = {"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}}
@@ -323,12 +364,16 @@ def test_load_rejects_non_list_annotation_collection_items(tmp_path: Path) -> No
         ReaderSpec.load(path)
 
 
-def test_validate_rejects_notebook_template_outside_protocol_policy(tmp_path: Path) -> None:
-    data = base_reader_config(experiment_id="exp_cyto", protocol_id="cytometry/flow_panel")
+def test_load_rejects_removed_notebook_output_selection(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_cyto",
+        protocol_id="cytometry/flow_panel",
+        protocol_inputs={"gating": cytometry_test_gating_policy()},
+    )
     data["resources"] = {"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}}
-    data["protocol"]["outputs"] = {"notebook": {"template": "notebook/eda"}}
+    data["protocol"]["outputs"] = {"notebook": {"template": "notebook/missing"}}
     path = write_config(tmp_path, data)
-    with pytest.raises(ConfigError, match="does not allow notebook template"):
+    with pytest.raises(ConfigError, match="protocol.outputs"):
         load_models(path)
 
 
@@ -419,12 +464,7 @@ def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None
 
     assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
     assert "sfxi_vec8_heatmap" not in [plot.id for plot in workbench.plots]
-    assert [plot.id for plot in workbench.plots] == [
-        "raw_kinetics",
-        "endpoint_by_condition",
-        "endpoint_by_design",
-        "intensity_overview",
-    ]
+    assert [plot.id for plot in workbench.plots] == ["raw_kinetics"]
 
 
 def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_path: Path) -> None:

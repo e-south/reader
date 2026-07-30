@@ -228,18 +228,19 @@ uv run reader explain <config|dir|index> --format json
 uv run reader run <config|dir|index> --dry-run --format json
 ```
 
-When the gardening cycle changes end-to-end experiment behavior, add the
-smallest repo marker that proves the surface:
+When the gardening cycle changes end-to-end experiment behavior, run the
+portable integration subset and one named experiment path when local data is
+available:
 
 ```bash
-uv run pytest -q -m repo_matrix
 uv run pytest -q -m integration
-uv run pytest -q -m active_experiments
+uv run reader validate <config|dir|index>
+uv run reader run <config|dir|index> --dry-run
+uv run reader verify <config|dir|index>
 ```
 
-Use only the smallest marker set that matches the risk. If plots, exports, or
-notebooks changed, add the matching `plot --list`, `export --list`, `records`,
-or notebook command for one representative experiment.
+If plots, exports, or notebooks changed, add the matching `plot --list`,
+`export --list`, `records`, or notebook command for that experiment.
 
 ### 6. Close the cycle
 

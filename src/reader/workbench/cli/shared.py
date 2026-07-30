@@ -93,16 +93,6 @@ NOTEBOOK_MODE_OPTION = typer.Option(
     "--mode",
     help="Launch mode: edit | run | none (default: edit).",
 )
-NOTEBOOK_PLOT_ONLY_OPTION = typer.Option(
-    None,
-    "--only",
-    help="Filter plot ids when using a notebook template that supports plot selection (repeatable).",
-)
-NOTEBOOK_PLOT_EXCLUDE_OPTION = typer.Option(
-    None,
-    "--exclude",
-    help="Exclude plot ids when using a notebook template that supports plot selection (repeatable).",
-)
 
 
 @app.callback(invoke_without_command=True)

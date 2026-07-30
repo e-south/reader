@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
@@ -16,8 +17,14 @@ from reader.workbench.graph import ProvenanceInput, RecipeSource, RecordRef
 from reader.workbench.records import (
     DataFrameArtifactRecord,
     PathDescription,
+    RecordProducer,
     RecordStore,
 )
+
+
+def test_record_producer_rejects_retired_notebook_publication_kind() -> None:
+    with pytest.raises(RecordError, match="pipeline, plot, or export"):
+        RecordProducer(kind="notebook", id="review", plugin="notebook/eda")  # type: ignore[arg-type]
 
 
 def test_records_catalog_invalid_json_raises(tmp_path) -> None:
@@ -270,7 +277,7 @@ def test_records_catalog_unknown_schema_version_raises(tmp_path) -> None:
         store.iter_latest_records()
 
 
-def test_record_payload_unknown_schema_version_raises(tmp_path) -> None:
+def test_record_payload_schema_v5_requires_full_regeneration(tmp_path) -> None:
     store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
     store.persist_dataframe(
         producer_id="ingest",
@@ -283,14 +290,17 @@ def test_record_payload_unknown_schema_version_raises(tmp_path) -> None:
         config_digest="sha256:test",
     )
     catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
-    catalog["latest"]["ingest/df"]["schema_version"] = 999
+    catalog["latest"]["ingest/df"]["schema_version"] = 5
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
-    with pytest.raises(RecordError, match="record payload schema_version must be 5"):
+    with pytest.raises(
+        RecordError,
+        match=r"record payload schema_version must be 6 \(got 5\).*--reset-records",
+    ):
         store.read_record("ingest/df")
 
 
-@pytest.mark.parametrize("schema_version", [None, "4", 3, 4, 6, []])
+@pytest.mark.parametrize("schema_version", [None, "5", 3, 4, 5, 7, []])
 def test_file_bundle_record_rejects_noncurrent_or_malformed_schema_version(tmp_path, schema_version) -> None:
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
@@ -304,7 +314,7 @@ def test_file_bundle_record_rejects_noncurrent_or_malformed_schema_version(tmp_p
     catalog["history"] = {"plot:qc": [payload]}
     store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
 
-    with pytest.raises(RecordError, match="record payload schema_version must be 5"):
+    with pytest.raises(RecordError, match="record payload schema_version must be 6"):
         store.read_record("plot:qc")
 
 
@@ -328,6 +338,66 @@ def test_record_payload_rejects_ambiguous_provenance_input(tmp_path) -> None:
 
     with pytest.raises(RecordError, match="invalid provenance input.*unknown kind"):
         store.read_record("ingest/df")
+
+
+@pytest.mark.parametrize("catalog_section", ["latest", "history"])
+@pytest.mark.parametrize(
+    ("mutation", "expected_detail"),
+    [
+        ("unknown", "unknown=unexpected"),
+        ("missing_recipe", "missing=recipe"),
+        ("missing_with", "missing=with"),
+    ],
+)
+def test_schema_v6_record_rejects_non_exact_source_recipe_fields(
+    tmp_path,
+    catalog_section: str,
+    mutation: str,
+    expected_detail: str,
+) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+        source_recipe=RecipeSource(recipe="plate_reader/synergy_h1", with_={"channels": ["OD600"]}),
+    )
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [2.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+        source_recipe=RecipeSource(recipe="plate_reader/synergy_h1", with_={"channels": ["OD600"]}),
+    )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    payloads = [catalog["history"]["ingest/df"][0]]
+    if catalog_section == "latest":
+        payloads = [catalog["latest"]["ingest/df"], catalog["history"]["ingest/df"][-1]]
+    for payload in payloads:
+        source_recipe = payload["producer"]["source_recipe"]
+        if mutation == "unknown":
+            source_recipe["unexpected"] = True
+        else:
+            source_recipe.pop(mutation.removeprefix("missing_"))
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    with pytest.raises(
+        RecordError,
+        match=rf"producer\.source_recipe has unknown or missing fields: {expected_detail}",
+    ):
+        if catalog_section == "latest":
+            store.read_record("ingest/df")
+        else:
+            store.record_history("ingest/df")
 
 
 def test_schema_v5_record_payload_rejects_unknown_fields(tmp_path) -> None:
@@ -363,7 +433,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
         contract_id="tidy.v1",
         inputs=[],
         config_digest="sha256:test",
-        source_recipe=RecipeSource(recipe="plate_reader/sample_map", with_={"channel": "OD600"}),
+        source_recipe=RecipeSource(recipe="plate_reader/synergy_h1", with_={"channels": ["OD600"]}),
     )
     plot_path = outputs / "plots" / "trace.png"
     plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -394,7 +464,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
         "Grouped time-series traces for the configured channels and treatment groups."
     )
     persisted = json.loads(store.records_path.read_text(encoding="utf-8"))
-    assert persisted["latest"]["plot:qc_plot"]["schema_version"] == 5
+    assert persisted["latest"]["plot:qc_plot"]["schema_version"] == 6
     assert persisted["latest"]["plot:qc_plot"]["file_evidence"] == [
         {
             "content_digest": "sha256:8f8cbb7dcf46e0bc7d53265749a6c17d116093a6ba95e442764060c76fd4a86c",
@@ -416,7 +486,7 @@ def test_record_store_persists_dataframe_and_file_bundle(tmp_path) -> None:
     assert len(store.record_history("plot:qc_plot")) == 1
     assert store.revision_counts(["ingest/df", "plot:qc_plot"]) == {"ingest/df": 1, "plot:qc_plot": 1}
     assert record.producer.source_recipe is not None
-    assert record.producer.source_recipe.recipe == "plate_reader/sample_map"
+    assert record.producer.source_recipe.recipe == "plate_reader/synergy_h1"
 
 
 def test_file_bundle_rejects_dataframe_record_id_without_mutating_catalog(tmp_path: Path) -> None:
@@ -621,6 +691,39 @@ def test_dataframe_record_load_rejects_content_digest_mismatch(tmp_path) -> None
 
     with pytest.raises(RecordError, match="content digest mismatch"):
         record.load_dataframe()
+
+
+def test_dataframe_record_parses_the_exact_verified_buffer_when_path_changes(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = tmp_path / "outputs"
+    store = RecordStore(outputs, contracts=builtin_contract_catalog())
+    original = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    replacement = original.assign(value=[9.0])
+    record = store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synergy_h1",
+        out_name="df",
+        record_id="ingest/df",
+        df=original,
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    original_read_parquet = pd.read_parquet
+
+    def _replace_path_then_parse(source, *args, **kwargs):
+        replacement.to_parquet(record.path, index=False)
+        assert isinstance(source, BytesIO)
+        return original_read_parquet(source, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", _replace_path_then_parse)
+
+    loaded = record.load_dataframe()
+
+    pd.testing.assert_frame_equal(loaded, original)
+    pd.testing.assert_frame_equal(original_read_parquet(record.path), replacement)
 
 
 def test_same_config_changed_dataframe_uses_immutable_revision_paths(tmp_path) -> None:

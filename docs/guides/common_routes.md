@@ -22,7 +22,7 @@ The first command lists discovered experiments. `--details` adds selected
 pipeline, plot, and export summaries. `--readiness` adds the current preflight
 state, including `config_error`, `template`, `draft`, `dependency_blocked`,
 `blocked`, `runnable`, `uncataloged_outputs_present`, and `records_ready`.
-`catalog_ready` means a valid catalog-schema-v4 envelope with record-schema-v5
+`catalog_ready` means a valid catalog-schema-v4 envelope with record-schema-v6
 payloads exists but its recorded config or Reader build differs from the
 current environment. `records_ready` requires
 every current record to pass source, config, dependency, and generated-file

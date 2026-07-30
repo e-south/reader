@@ -26,7 +26,7 @@ Assume these components are trusted code and should be treated accordingly:
 
 - built-in plugins
 - external plugins discovered from Python entry points
-- notebook templates
+- the canonical notebook scaffold
 - repo-local Python code and dependencies
 
 External plugins and notebooks are executable Python. They are an extension surface, not a sandbox boundary.
@@ -53,7 +53,8 @@ External plugins and notebooks are executable Python. They are an extension surf
 - path escapes via `..` are rejected
 - absolute subdirectory paths are rejected
 - generated runtime outputs are confined to each experiment's `outputs/`
-- notebook artifact staging and publication reject path and symlink escapes
+- generated notebook paths reject path and symlink escapes; notebook previews
+  read only exact, digest-verified record revisions
 - provenance catalogs, lock files, and active invocation ledgers reject
   symlinks, nonregular files, and multiply linked files before reading or
   mutation
@@ -67,11 +68,11 @@ External plugins and notebooks are executable Python. They are an extension surf
 
 ### Provenance and integrity
 
-- schema-v5 records bind complete and effective producer-config digests plus
+- schema-v6 records bind complete and effective producer-config digests plus
   Reader build identity
 - data and file bundles are tracked in `outputs/manifests/records.json`
 - direct and auto-discovered input files are confined to the experiment root;
-  schema-v5 evidence records their relative path, byte size, SHA-256 digest,
+  schema-v6 evidence records their relative path, byte size, SHA-256 digest,
   and selection policy
 - dataframe and file-bundle artifacts carry byte sizes and SHA-256 digests that
   `reader verify` checks against current files
@@ -81,7 +82,7 @@ External plugins and notebooks are executable Python. They are an extension surf
   catalog, and terminal invocation publication
 - invocation verification rejects missing, duplicate, orphaned, or malformed
   terminal lifecycle events
-- record readers accept schema v5 only; older payloads make the catalog invalid
+- record readers accept schema v6 only; older payloads make the catalog invalid
   and require regeneration from the owning experiment
 
 ## What Reader Does Not Promise
@@ -131,11 +132,12 @@ can bypass them. Repository tests therefore verify that tracked experiment
 content remains confined to the synthetic template and that public package
 metadata does not expose a personal email address.
 
-As verified on 2026-07-29, the checked-out public tree and distributions built
-from it contain no tracked private experiment files or personal email address.
-GitHub secret scanning and push protection are enabled, and the repository has
-no open secret alerts. This check does not prove the contents of every remote
-branch, tag, cached view, clone, or superseded artifact.
+Release review must confirm that the checked-out public tree and built
+distributions contain no tracked private experiment files, personal email
+address, or local home path. Keep GitHub secret scanning and push protection
+enabled, and resolve alerts before release. These checks do not prove the
+contents of every remote branch, tag, cached view, clone, or superseded
+artifact.
 
 Historical GitHub pull-request refs still retain superseded experiment
 material, local paths, and a personal commit identity. Treat that material as

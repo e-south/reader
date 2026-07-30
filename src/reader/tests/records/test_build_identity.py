@@ -10,12 +10,12 @@ def test_source_digest_tracks_only_packaged_runtime_files(tmp_path: Path) -> Non
     runtime_source = package_root / "runtime.py"
     test_source = package_root / "tests" / "test_runtime.py"
     source_doc = package_root / "domains" / "example" / "docs.md"
-    template = package_root / "workbench" / "templates" / "builtins" / "basic.marimo.py.txt"
+    notebook_source = package_root / "workbench" / "notebooks" / "eda.marimo.py.txt"
     for path, content in (
         (runtime_source, "RUNTIME = 1\n"),
         (test_source, "def test_runtime(): ...\n"),
         (source_doc, "# Internal notes\n"),
-        (template, "# packaged template\n"),
+        (notebook_source, "# packaged notebook source\n"),
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
@@ -30,5 +30,5 @@ def test_source_digest_tracks_only_packaged_runtime_files(tmp_path: Path) -> Non
     runtime_changed = _source_digest(package_root)
     assert runtime_changed != baseline
 
-    template.write_text("# changed packaged template\n", encoding="utf-8")
+    notebook_source.write_text("# changed packaged notebook source\n", encoding="utf-8")
     assert _source_digest(package_root) != runtime_changed

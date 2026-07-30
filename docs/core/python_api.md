@@ -14,7 +14,7 @@ need to assemble runtime, declaration, graph, engine, and record objects.
 
 ```python
 from reader import open_experiment
-from reader.api import inspect, notebook, plan, plots, read_dataframe, records, run, validate, verify
+from reader.api import inspect, notebook, plan, plots, read_artifact, read_dataframe, records, run, validate, verify
 
 experiment = open_experiment("experiments/my_experiment")
 
@@ -51,15 +51,21 @@ declarations, runtime composition, and record stores remain API internals.
   with its contract, content digest, revision number, and revision digest. Its
   `to_dict()` projection contains only JSON-ready identity and dataframe-shape
   metadata; dataframe values remain available through `.dataframe` in Python.
+- `read_dataframe(..., revision=..., revision_digest=...)` loads the exact
+  catalog revision selected by a caller. Add `row_limit=N` for a digest-verified
+  bounded preview that does not materialize the full Parquet record.
+  `read_artifact(...)` requires the same exact revision identity plus one
+  cataloged outputs-relative file path, verifies its recorded size and digest,
+  and returns bytes without exposing a local filesystem path.
 - `verify(experiment)` checks the catalog-schema-v4 envelope,
-  record-schema-v5 source, config, Reader-build, exact-upstream-revision, and
+  record-schema-v6 source, config, Reader-build, exact-upstream-revision, and
   generated-artifact evidence together with the active invocation-schema-v2
   lifecycle. It does not change outputs.
 - `run(experiment)` executes pipeline steps through the same engine path as the
   CLI and returns the invocation id, provenance epoch, selected steps, exact
   produced record revisions, and active invocation-ledger path.
-- `notebook(experiment, name=None, template=None, overwrite=False)` generates a
-  protocol-compatible Marimo workbench under the experiment's configured
+- `notebook(experiment, name=None, overwrite=False)` generates Reader's
+  canonical Marimo workbench under the experiment's configured
   output directory. The shared EDA surface uses one deliverable selector, one
   primary viewport, and a lazy single-open accordion for detail.
 
@@ -76,46 +82,31 @@ prior epoch ledgers remain inactive forensic residue. Plot and export mutation
 remain behind `reader plot` and `reader export` while their typed public results
 are defined.
 
-## Notebook components and artifact publication
+## Notebook components and verified artifacts
 
 Generated notebooks import reusable controls from `reader.api.notebooks` and
-load data only through `records()` and `read_dataframe()`. Record selection,
-digest verification, and dataframe-contract validation therefore use the same
-public path as non-notebook integrations. `load_notebook_context()` also
-projects compiled pipeline-step metadata and configured ordered state spaces;
-`resolve_effective_step_config()` returns one selected step's protocol-bound
-plugin configuration. Those projections are domain-neutral, so assay templates
-select and adapt the steps they understand.
+load data only through `records()`, `read_dataframe()`, `read_artifact()`, and
+`verify()`. Each selector option binds the explicit `revision` and
+`revision_digest` returned by `records()`; a refreshed or invalid selection
+never falls through to a different artifact. File previews consume verified
+bytes rather than direct local paths, and verification failures remain visible
+as readiness notes. `load_notebook_context()` exposes only the experiment,
+owned output paths, and compiled pipeline step ids needed by that viewport.
+Protocol-owned plots carry assay-specific rendering into the shared viewport;
+the notebook API does not project protocol inputs or effective plugin config.
 
-When an interactive notebook produces files worth retaining, publish them as
-one experiment-owned bundle:
+Downstream integrations should preserve the same exact record identity:
 
 ```python
-from reader.api import ArtifactSpec, publish_artifact_bundle
-
-result = publish_artifact_bundle(
+entry = next(item for item in record_catalog.entries if item["record_id"] == "plot:summary")
+preview = read_artifact(
     experiment,
-    record_id="notebook:review",
-    producer_id="review",
-    template="notebook/eda",
-    upstream_records={"table": "analysis/summary"},
-    producer_config={"view": "overview"},
-    description="Reviewed summary and figure.",
-    artifacts=(
-        ArtifactSpec(
-            relative_path="summary.pdf",
-            description="Reviewed summary figure.",
-            writer=lambda path: figure.savefig(path),
-        ),
-    ),
+    entry["record_id"],
+    revision=entry["revision"],
+    revision_digest=entry["revision_digest"],
+    path=entry["files"][0],
 )
 ```
-
-Publication is confined to the experiment's configured exports directory. It
-captures exact upstream revisions, writes an immutable file-bundle revision,
-registers the bundle in `records.json`, and records the operation in the normal
-invocation ledger. Invalid paths, missing inputs, or writer failures stop before
-catalog publication.
 
 ## Plugin discovery
 

@@ -5,7 +5,12 @@ from copy import deepcopy
 from pathlib import Path
 
 from reader.errors import RegistryError
-from reader.workbench.records import DataFrameArtifactRecord, FileBundleRecord, record_to_dict
+from reader.workbench.records import (
+    DataFrameArtifactRecord,
+    FileBundleRecord,
+    record_revision_digest,
+    record_to_dict,
+)
 
 from .common import format_relative_path
 
@@ -43,9 +48,12 @@ def record_payload(
     *,
     outputs_dir: Path,
     runtime=None,
+    revision: int,
     revision_count: int | None = None,
 ) -> dict[str, object]:
     payload = record_to_dict(record, outputs_dir=outputs_dir)
+    payload["revision"] = revision
+    payload["revision_digest"] = record_revision_digest(record, outputs_dir=outputs_dir)
     payload["producer_label"] = f"{record.producer.kind}:{record.producer.id}"
     if isinstance(record, FileBundleRecord) or runtime is not None:
         payload["description"] = record_description(record, runtime=runtime)
@@ -73,15 +81,25 @@ def record_entries_payload(
     runtime=None,
     include_history: bool = False,
 ) -> list[dict[str, object]]:
-    latest_records = store.iter_latest_records()
+    snapshot = store.catalog_snapshot()
+    latest_records = snapshot.latest_records
     if not include_history:
-        return [record_payload(record, outputs_dir=outputs_dir, runtime=runtime) for record in latest_records]
-    revision_counts = store.revision_counts(record.record_id for record in latest_records)
+        return [
+            record_payload(
+                record,
+                outputs_dir=outputs_dir,
+                runtime=runtime,
+                revision=snapshot.revision_counts[record.record_id],
+            )
+            for record in latest_records
+        ]
+    revision_counts = snapshot.revision_counts
     return [
         record_payload(
             record,
             outputs_dir=outputs_dir,
             runtime=runtime,
+            revision=revision_counts[record.record_id],
             revision_count=revision_counts[record.record_id],
         )
         for record in latest_records
@@ -135,6 +153,7 @@ def record_catalog_payload(
                 record,
                 outputs_dir=outputs_dir,
                 runtime=runtime,
+                revision=snapshot.revision_counts[record.record_id],
                 revision_count=(revision_counts or {}).get(record.record_id),
             )
             for record in latest_records

@@ -21,7 +21,7 @@ class SFXIVec8CollectionHeatmapPlot(FigurePlotPlugin):
 
     @classmethod
     def input_ports(cls):
-        return {"vec8": dataframe_input("vec8", "sfxi.vec8_collection.v1")}
+        return {"vec8": dataframe_input("vec8", "sfxi.vec8_collection.v2")}
 
     def render(self, ctx, inputs, cfg):
         from reader.domains.logic.sfxi.vec8_aggregate import render_sfxi_vec8_heatmap  # noqa: PLC0415

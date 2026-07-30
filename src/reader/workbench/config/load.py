@@ -328,15 +328,7 @@ def _normalize_annotations(annotations_raw: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_outputs(raw: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
-    _ensure_only_keys(raw, {"notebook", "plots", "exports"}, where="protocol.outputs")
-    notebook = raw.get("notebook", {}) or {}
-    if not isinstance(notebook, dict):
-        raise ConfigError("protocol.outputs.notebook must be a mapping")
-    _ensure_only_keys(notebook, {"template"}, where="protocol.outputs.notebook")
-    template = notebook.get("template")
-    if template is not None and (not isinstance(template, str) or not template.strip()):
-        raise ConfigError("protocol.outputs.notebook.template must be a non-empty string when provided")
-    normalized["notebook"] = {"template": template}
+    _ensure_only_keys(raw, {"plots", "exports"}, where="protocol.outputs")
 
     plots = raw.get("plots", {}) or {}
     if not isinstance(plots, dict):

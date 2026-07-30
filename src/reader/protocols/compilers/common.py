@@ -5,7 +5,6 @@ from typing import Any
 
 from reader.errors import ConfigError
 from reader.workbench.decl.model import (
-    NotebookTemplateCallDecl,
     PluginStepDecl,
     RecipeSourceDecl,
 )
@@ -87,6 +86,7 @@ def _step(
     writes: dict[str, Any] | None = None,
     with_: dict[str, Any] | None = None,
     source_recipe: str | None = None,
+    source_recipe_with: dict[str, Any] | None = None,
 ) -> PluginStepDecl:
     return PluginStepDecl(
         id=id,
@@ -94,9 +94,7 @@ def _step(
         reads=dict(reads or {}),
         writes=dict(writes or {}),
         with_=dict(with_ or {}),
-        source_recipe=(RecipeSourceDecl(recipe=source_recipe) if source_recipe else None),
+        source_recipe=(
+            RecipeSourceDecl(recipe=source_recipe, with_=dict(source_recipe_with or {})) if source_recipe else None
+        ),
     )
-
-
-def default_notebook_call(template: str) -> NotebookTemplateCallDecl:
-    return NotebookTemplateCallDecl(id="default", template=template)

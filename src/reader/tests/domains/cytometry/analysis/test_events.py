@@ -9,16 +9,10 @@ from pandas.testing import assert_frame_equal
 
 from reader.domains.cytometry.analysis import (
     CytometryAnalysisError,
-    EventFilters,
     GateSpec,
     ThresholdSpec,
     analyze_events,
-    distinct_string_values_by_column,
-    gate_defaults,
     prepare_event_table,
-    prepare_plot_events,
-    prepare_plot_payload,
-    scan_event_table,
 )
 
 
@@ -68,11 +62,9 @@ def _tidy_events() -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-def _reference_prepare(frame: pl.DataFrame, *, design_id: str | None = None) -> pd.DataFrame:
+def _reference_prepare(frame: pl.DataFrame) -> pd.DataFrame:
     channels = ["FSC-A", "FSC-H", "SSC-A", "mCherry-A"]
     work = frame.filter(pl.col("channel").is_in(channels))
-    if design_id is not None:
-        work = work.filter(pl.col("design_id") == design_id)
     return (
         work.with_columns(pl.col("value").cast(pl.Float64))
         .pivot(
@@ -91,17 +83,12 @@ def _canonical_pandas(frame: pl.DataFrame | pd.DataFrame, columns: list[str]) ->
     return frame.loc[:, columns].sort_values(columns[:2]).reset_index(drop=True)
 
 
-def test_prepare_event_table_matches_reference_reduction_and_projects_before_collect(tmp_path) -> None:
-    path = tmp_path / "events.parquet"
-    _tidy_events().write_parquet(path)
-
-    source = scan_event_table(path)
+def test_prepare_event_table_matches_reference_reduction_and_projects_before_collect() -> None:
     actual = prepare_event_table(
-        source,
+        _tidy_events().lazy(),
         channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
-        filters=EventFilters(design_id="d1"),
     )
-    expected = _reference_prepare(_tidy_events(), design_id="d1")
+    expected = _reference_prepare(_tidy_events())
     columns = [
         "sample_id",
         "event_index",
@@ -119,21 +106,8 @@ def test_prepare_event_table_matches_reference_reduction_and_projects_before_col
         _canonical_pandas(expected, columns),
         check_dtype=False,
     )
-    assert actual.get_column("event_index").to_list() == [0, 1, 2]
+    assert actual.get_column("event_index").to_list() == [0, 1, 2, 0, 1, 2]
     assert "unused" not in actual.columns
-
-
-def test_distinct_string_values_are_collected_in_one_column_map() -> None:
-    values = distinct_string_values_by_column(
-        _tidy_events().lazy(),
-        ("channel", "design_id", "missing"),
-    )
-
-    assert values == {
-        "channel": ["FSC-A", "FSC-H", "SSC-A", "mCherry-A"],
-        "design_id": ["d1", "d2"],
-        "missing": [],
-    }
 
 
 def test_prepare_event_table_fails_fast_when_a_selected_channel_is_absent() -> None:
@@ -177,7 +151,6 @@ def test_prepare_event_table_rejects_metadata_drift_within_one_event() -> None:
         prepare_event_table(
             events.drop("row_number"),
             channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
-            filters=EventFilters(design_id="d1"),
         )
 
 
@@ -196,7 +169,7 @@ def test_prepare_event_table_rejects_missing_selected_channel_within_one_event()
         )
 
 
-def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
+def test_gate_and_summary_values_match_declared_analysis_semantics() -> None:
     wide = prepare_event_table(
         _tidy_events(),
         channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
@@ -213,6 +186,7 @@ def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
             singlet_ratio_range=(0.8, 1.2),
         ),
         threshold=ThresholdSpec(channel="mCherry-A", value=5.0),
+        group_column="treatment",
     )
 
     assert result.gated_events.select("sample_id", "event_index").rows() == [
@@ -252,189 +226,3 @@ def test_gate_and_summary_values_match_current_notebook_semantics() -> None:
     assert math.isclose(qc.get_column("pct_nonpositive")[0], 100.0 / 3.0)
     assert qc.get_column("pct_nonpositive")[1] == 0.0
     assert result.threshold_value == 5.0
-
-
-def test_gate_defaults_use_finite_linear_quantiles() -> None:
-    wide = prepare_event_table(
-        _tidy_events(),
-        channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
-    )
-
-    defaults = gate_defaults(
-        wide,
-        cells_x_channel="FSC-A",
-        cells_y_channel="SSC-A",
-        singlet_x_channel="FSC-A",
-        singlet_y_channel="FSC-H",
-    )
-
-    assert defaults.cells_x.minimum == 10.0
-    assert defaults.cells_x.maximum == 1000.0
-    assert all(
-        math.isclose(actual, expected)
-        for actual, expected in zip(defaults.cells_x.selected, (10.1, 951.5), strict=True)
-    )
-    assert all(
-        math.isclose(actual, expected) for actual, expected in zip(defaults.cells_y.selected, (20.0, 29.9), strict=True)
-    )
-    assert all(math.isfinite(value) for value in defaults.singlet_ratio.selected)
-
-
-def test_plot_payload_is_projected_filtered_and_bounded() -> None:
-    wide = prepare_event_table(
-        _tidy_events(),
-        channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
-    )
-
-    payload = prepare_plot_events(
-        wide,
-        columns=("sample_id", "FSC-A", "SSC-A", "mCherry-A"),
-        x_channel="FSC-A",
-        y_channel="SSC-A",
-        max_events=3,
-        group_columns=("sample_id",),
-        low_clip_quantile=0.1,
-        positive_x=True,
-        positive_y=True,
-    )
-
-    assert payload.columns == ["sample_id", "FSC-A", "SSC-A", "mCherry-A"]
-    assert payload.height <= 3
-    assert payload.get_column("FSC-A").is_finite().all()
-    assert payload.get_column("SSC-A").is_finite().all()
-    assert (payload.get_column("FSC-A") > 0).all()
-    assert (payload.get_column("SSC-A") > 0).all()
-
-
-def test_plot_event_filters_can_use_channels_omitted_from_the_payload() -> None:
-    events = pl.DataFrame(
-        {
-            "sample_id": ["s1", "s1", "s2"],
-            "x": [1.0, -1.0, 3.0],
-            "y": [2.0, 3.0, float("nan")],
-            "signal": [10.0, 20.0, 30.0],
-        }
-    )
-
-    payload = prepare_plot_events(
-        events,
-        columns=("sample_id", "signal"),
-        x_channel="x",
-        y_channel="y",
-        max_events=10,
-        positive_x=True,
-    )
-
-    assert payload.columns == ["sample_id", "signal"]
-    assert payload.rows() == [("s1", 10.0)]
-
-
-def test_plot_event_clipping_can_use_a_group_omitted_from_the_payload() -> None:
-    events = pl.DataFrame(
-        {
-            "batch": ["a", "a", "b", "b"],
-            "x": [1.0, 100.0, 2.0, 50.0],
-            "y": [1.0, 100.0, 2.0, 50.0],
-            "signal": [10.0, 20.0, 30.0, 40.0],
-        }
-    )
-
-    payload = prepare_plot_events(
-        events,
-        columns=("x", "y", "signal"),
-        x_channel="x",
-        y_channel="y",
-        max_events=10,
-        low_clip_quantile=0.5,
-        clip_group_column="batch",
-    )
-
-    assert payload.columns == ["x", "y", "signal"]
-    assert payload.rows() == [(100.0, 100.0, 20.0), (50.0, 50.0, 40.0)]
-
-
-def test_plot_event_sampling_can_use_a_group_omitted_from_the_payload() -> None:
-    events = pl.DataFrame(
-        {
-            "sample_id": ["a"] * 9 + ["b"],
-            "x": [float(value + 1) for value in range(10)],
-            "y": [float(value + 1) for value in range(10)],
-            "signal": [float(value) for value in range(9)] + [100.0],
-        }
-    )
-
-    payload = prepare_plot_events(
-        events,
-        columns=("x", "y", "signal"),
-        x_channel="x",
-        y_channel="y",
-        max_events=2,
-        group_columns=("sample_id",),
-    )
-
-    assert payload.columns == ["x", "y", "signal"]
-    assert payload.height == 2
-    assert 100.0 in payload.get_column("signal")
-
-
-def test_plot_payload_projection_downsamples_without_changing_source() -> None:
-    wide = prepare_event_table(
-        _tidy_events(),
-        channels=("FSC-A", "FSC-H", "SSC-A", "mCherry-A"),
-    )
-
-    payload = prepare_plot_payload(
-        wide,
-        columns=("sample_id", "FSC-A", "FSC-H"),
-        max_events=3,
-        group_columns=("sample_id",),
-    )
-
-    assert payload.columns == ["sample_id", "FSC-A", "FSC-H"]
-    assert payload.height <= 3
-    assert wide.height == 6
-
-
-def test_plot_payload_sampling_can_use_a_group_omitted_from_the_payload() -> None:
-    events = pl.DataFrame(
-        {
-            "sample_id": ["a"] * 9 + ["b"],
-            "signal": [float(value) for value in range(9)] + [100.0],
-        }
-    )
-
-    payload = prepare_plot_payload(
-        events,
-        columns=("signal",),
-        max_events=2,
-        group_columns=("sample_id", "missing"),
-    )
-
-    assert payload.columns == ["signal"]
-    assert payload.height == 2
-    assert 100.0 in payload.get_column("signal")
-
-
-def test_plot_payload_uses_the_existing_seeded_row_selection() -> None:
-    frame = pl.DataFrame(
-        {
-            "event_index": list(range(12)),
-            "sample_id": ["a"] * 6 + ["b"] * 6,
-            "signal": [float(value) for value in range(12)],
-        }
-    )
-    pandas_frame = frame.to_pandas(use_pyarrow_extension_array=False)
-    expected = (
-        pandas_frame.groupby(["sample_id"], dropna=False, group_keys=False)
-        .apply(lambda group: group.sample(n=3, random_state=0), include_groups=False)
-        .reset_index(drop=True)
-    )
-
-    actual = prepare_plot_payload(
-        frame,
-        columns=("event_index", "sample_id", "signal"),
-        max_events=6,
-        group_columns=("sample_id",),
-    )
-
-    assert actual.get_column("event_index").to_list() == expected["event_index"].tolist()

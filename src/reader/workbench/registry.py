@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import importlib
 import importlib.metadata as md
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,6 @@ from pydantic import BaseModel
 
 from reader.contracts import ContractCatalog, ContractId, OutputContractSurface
 from reader.errors import ContractError, RegistryError
-from reader.plotting.mpl import ensure_mpl_cache_dir
 from reader.workbench.assets import AssetCatalog, AssetDescriptor, plugin_category_from_id
 from reader.workbench.ports import (
     InputPortSpec,
@@ -192,8 +190,6 @@ class Plugin(ABC):
         """Execute and return dict of outputs by label."""
 
     def bind_runtime(self, *, descriptor: AssetDescriptor, contracts: ContractCatalog) -> None:
-        if descriptor.kind != "plugin":
-            raise RegistryError(f"Cannot bind non-plugin descriptor {descriptor.name!r} to plugin instance")
         if descriptor.cls is not type(self):
             raise RegistryError(
                 f"Descriptor {descriptor.plugin_id!r} points to {descriptor.cls.__module__}.{descriptor.cls.__name__}, "
@@ -228,10 +224,7 @@ class Plugin(ABC):
 
     @property
     def plugin_category(self) -> str:
-        category = self.descriptor.category
-        if category is None:
-            raise RegistryError(f"Plugin descriptor {self.descriptor.name!r} is missing a category")
-        return category
+        return self.descriptor.category
 
 
 class Registry:
@@ -242,8 +235,6 @@ class Registry:
         self.contracts = contracts
 
     def register(self, descriptor: AssetDescriptor) -> None:
-        if descriptor.kind != "plugin":
-            raise RegistryError(f"Registry can only register plugin descriptors, got {descriptor.kind!r}")
         if not issubclass(descriptor.cls, Plugin):
             raise RegistryError(
                 f"Plugin descriptor {descriptor.plugin_id!r} must point to a Plugin subclass, "
@@ -277,8 +268,6 @@ class Registry:
         }
         for descriptor in self._descriptors.values():
             category = descriptor.category
-            if category is None:
-                continue
             grouped[category][descriptor.key] = descriptor.cls
         return grouped
 
@@ -311,27 +300,27 @@ def _coerce_external_descriptor(loaded: Any, *, ep_name: str) -> AssetDescriptor
         raise RegistryError(
             f"Entry point {ep_name!r} must load an AssetDescriptor or a zero-arg callable returning one"
         )
-    if descriptor.kind != "plugin":
-        raise RegistryError(f"Entry point {ep_name!r} must resolve to a plugin descriptor")
     if ep_name != descriptor.plugin_id:
         raise RegistryError(f"Entry point {ep_name!r} must match descriptor plugin id {descriptor.plugin_id!r}")
     return descriptor
 
 
-def load_plugin_catalog(*, contracts: ContractCatalog, categories: set[str] | None = None) -> Registry:
-    """Register built-in plugins from an explicit manifest, then load external descriptors via entry points."""
+def load_plugin_catalog(
+    *,
+    contracts: ContractCatalog,
+    builtin_descriptors: Iterable[AssetDescriptor],
+    categories: set[str] | None = None,
+) -> Registry:
+    """Register supplied built-ins and coordinated external plugin entry points."""
     reg = Registry(contracts=contracts)
     wanted = set(categories) if categories else None
 
-    if wanted is None or "plot" in wanted:
-        ensure_mpl_cache_dir()
-
-    builtin_descriptors = importlib.import_module("reader.workbench.assets.plugin_manifest").builtin_plugin_descriptors(
-        categories=wanted
+    selected_builtin_descriptors = tuple(
+        descriptor for descriptor in builtin_descriptors if wanted is None or descriptor.category in wanted
     )
-    if not builtin_descriptors:
-        raise RegistryError("No built-in plugin descriptors were declared in the built-in plugin manifest.")
-    for descriptor in builtin_descriptors:
+    if not selected_builtin_descriptors:
+        raise RegistryError("No built-in plugin descriptors were supplied for the requested categories.")
+    for descriptor in selected_builtin_descriptors:
         reg.register(descriptor)
 
     for ep in md.entry_points(group="reader.plugins"):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
-    "scaffold": {"write_experiment_notebook"},
+    "scaffold": {"CANONICAL_NOTEBOOK_ID", "write_experiment_notebook"},
 }
 
 __all__ = tuple(sorted({name for names in _EXPORTS.values() for name in names}))

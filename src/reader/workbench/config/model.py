@@ -194,12 +194,6 @@ class AnnotationSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class NotebookOutputsSpec(BaseModel):
-    template: str | None = None
-
-    model_config = {"extra": "forbid"}
-
-
 class PlotOutputsSpec(BaseModel):
     profile: str | None = None
     include: list[str] = Field(default_factory=list)
@@ -218,7 +212,6 @@ class ExportOutputsSpec(BaseModel):
 
 
 class OutputsSpec(BaseModel):
-    notebook: NotebookOutputsSpec = Field(default_factory=NotebookOutputsSpec)
     plots: PlotOutputsSpec = Field(default_factory=PlotOutputsSpec)
     exports: ExportOutputsSpec = Field(default_factory=ExportOutputsSpec)
 
