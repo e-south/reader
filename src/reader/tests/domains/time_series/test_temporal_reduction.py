@@ -50,6 +50,33 @@ def test_observed_median_reduction_is_linear_and_inclusive() -> None:
     assert result.evaluation_point_count == 3
 
 
+@pytest.mark.parametrize(
+    ("gap_delta_h", "accepted"),
+    [
+        (0.0, True),
+        (0.5e-9, True),
+        (2.0e-9, False),
+    ],
+    ids=["exact", "within-absolute-time-tolerance", "over-absolute-time-tolerance"],
+)
+def test_maximum_interior_gap_uses_absolute_time_tolerance(gap_delta_h: float, accepted: bool) -> None:
+    spec = TemporalReductionSpec(
+        selection=IntervalSelection(time_basis="absolute", start_h=0.0, end_h=2.0),
+        method="observed_median",
+        output_space="linear",
+        support=_support(minimum=3, gap=1.0),
+    )
+    times = np.asarray([0.0, 1.0 + gap_delta_h, 2.0])
+    values = np.asarray([1.0, 2.0, 3.0])
+
+    if accepted:
+        result = reduce_temporal_trace(times, values, spec=spec, trace_id="gap-tolerance")
+        assert result.value == 2.0
+    else:
+        with pytest.raises(ValueError, match="interior gap"):
+            reduce_temporal_trace(times, values, spec=spec, trace_id="gap-tolerance")
+
+
 def test_endpoint_selection_is_explicit_and_exact() -> None:
     spec = TemporalReductionSpec(
         selection=EndpointSelection(time_basis="absolute", time_h=2.0, mode="exact", tolerance_h=0.0),

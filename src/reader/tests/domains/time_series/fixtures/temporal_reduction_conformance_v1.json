@@ -1,0 +1,215 @@
+{
+  "schema": "reader.temporal_reduction_conformance.v1",
+  "contract": "reader.domains.time_series.temporal_reduction.v1",
+  "time_unit": "hour",
+  "cases": [
+    {
+      "id": "ratio_then_reduce_10_minute_4_8h_observed_median",
+      "kind": "ratio_then_reduce_technical_aggregation",
+      "case_payload_digest": "sha256:9ff661614d43af16fa270e89ad55f76549c21ca1641e18c53c2e534ed2a39412",
+      "payload": {
+        "declared_ratio_channel": {
+          "numerator": "signal",
+          "denominator": "reference",
+          "zero_denominator": "reject"
+        },
+        "operation_order": "ratio_then_reduce",
+        "technical_aggregation": "median",
+        "temporal_reduction": {
+          "selection": {
+            "kind": "interval",
+            "time_basis": "absolute",
+            "start_h": 4.0,
+            "end_h": 8.0,
+            "boundary": "inclusive"
+          },
+          "method": "observed_median",
+          "output_space": "linear",
+          "support": {
+            "boundary_support": "observed",
+            "minimum_observations": 25,
+            "maximum_interior_gap_h": 0.16666666666666666,
+            "positive_floor": null,
+            "positive_value_scope": "selected_support",
+            "censored_values": "reject"
+          }
+        },
+        "wells": [
+          {
+            "well_id": "technical-1",
+            "rows": [
+              [4.0, 1.0, 1.0], [4.166666666666667, 2.0, 1.0], [4.333333333333333, 3.0, 1.0],
+              [4.5, 4.0, 1.0], [4.666666666666667, 5.0, 1.0], [4.833333333333333, 6.0, 1.0],
+              [5.0, 7.0, 1.0], [5.166666666666667, 8.0, 1.0], [5.333333333333333, 9.0, 1.0],
+              [5.5, 10.0, 1.0], [5.666666666666667, 11.0, 1.0], [5.833333333333333, 12.0, 1.0],
+              [6.0, 13.0, 1.0], [6.166666666666667, 14.0, 1.0], [6.333333333333333, 15.0, 1.0],
+              [6.5, 16.0, 1.0], [6.666666666666667, 17.0, 1.0], [6.833333333333333, 18.0, 1.0],
+              [7.0, 19.0, 1.0], [7.166666666666667, 20.0, 1.0], [7.333333333333333, 21.0, 1.0],
+              [7.5, 22.0, 1.0], [7.666666666666667, 23.0, 1.0], [7.833333333333333, 24.0, 1.0],
+              [8.0, 25.0, 1.0]
+            ]
+          },
+          {
+            "well_id": "technical-2",
+            "rows": [
+              [4.0, 2.0, 1.0], [4.166666666666667, 4.0, 1.0], [4.333333333333333, 6.0, 1.0],
+              [4.5, 8.0, 1.0], [4.666666666666667, 10.0, 1.0], [4.833333333333333, 12.0, 1.0],
+              [5.0, 14.0, 1.0], [5.166666666666667, 16.0, 1.0], [5.333333333333333, 18.0, 1.0],
+              [5.5, 20.0, 1.0], [5.666666666666667, 22.0, 1.0], [5.833333333333333, 24.0, 1.0],
+              [6.0, 26.0, 1.0], [6.166666666666667, 28.0, 1.0], [6.333333333333333, 30.0, 1.0],
+              [6.5, 32.0, 1.0], [6.666666666666667, 34.0, 1.0], [6.833333333333333, 36.0, 1.0],
+              [7.0, 38.0, 1.0], [7.166666666666667, 40.0, 1.0], [7.333333333333333, 42.0, 1.0],
+              [7.5, 44.0, 1.0], [7.666666666666667, 46.0, 1.0], [7.833333333333333, 48.0, 1.0],
+              [8.0, 50.0, 1.0]
+            ]
+          },
+          {
+            "well_id": "technical-3",
+            "rows": [
+              [4.0, 3.0, 1.0], [4.166666666666667, 6.0, 1.0], [4.333333333333333, 9.0, 1.0],
+              [4.5, 12.0, 1.0], [4.666666666666667, 15.0, 1.0], [4.833333333333333, 18.0, 1.0],
+              [5.0, 21.0, 1.0], [5.166666666666667, 24.0, 1.0], [5.333333333333333, 27.0, 1.0],
+              [5.5, 30.0, 1.0], [5.666666666666667, 33.0, 1.0], [5.833333333333333, 36.0, 1.0],
+              [6.0, 39.0, 1.0], [6.166666666666667, 42.0, 1.0], [6.333333333333333, 45.0, 1.0],
+              [6.5, 48.0, 1.0], [6.666666666666667, 51.0, 1.0], [6.833333333333333, 54.0, 1.0],
+              [7.0, 57.0, 1.0], [7.166666666666667, 60.0, 1.0], [7.333333333333333, 63.0, 1.0],
+              [7.5, 66.0, 1.0], [7.666666666666667, 69.0, 1.0], [7.833333333333333, 72.0, 1.0],
+              [8.0, 75.0, 1.0]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "per_well": {"technical-1": 13.0, "technical-2": 26.0, "technical-3": 39.0},
+        "technical_median": 26.0,
+        "observed_point_count": 25
+      }
+    },
+    {
+      "id": "exact_endpoint",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:16d8f6f9a8b372a4bf625d856251940a902e0affc78551da2d0a63ec38e2668e",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "endpoint", "time_basis": "absolute", "time_h": 6.0, "mode": "exact", "tolerance_h": 0.0},
+          "method": "identity",
+          "output_space": "linear",
+          "support": {
+            "boundary_support": "none", "minimum_observations": 1, "maximum_interior_gap_h": null,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [5.0, 6.0, 7.0],
+        "values": [2.0, 4.0, 8.0]
+      },
+      "expected": {"status": "ok", "value": 4.0}
+    },
+    {
+      "id": "observed_boundaries_within_absolute_tolerance",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:b3f512d03024f636af33d934db066882ee23787a686afdedd964e84f69fba9e2",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "interval", "time_basis": "absolute", "start_h": 0.0, "end_h": 2.0, "boundary": "inclusive"},
+          "method": "observed_median", "output_space": "linear",
+          "support": {
+            "boundary_support": "observed", "minimum_observations": 3, "maximum_interior_gap_h": 1.0,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [5e-10, 1.0000000005, 2.0000000005],
+        "values": [1.0, 2.0, 3.0]
+      },
+      "expected": {"status": "ok", "value": 2.0}
+    },
+    {
+      "id": "observed_boundaries_beyond_absolute_tolerance",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:09874e03877509ca34e37216758a6df8dce3e331590b62d533cec7573f7ffdce",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "interval", "time_basis": "absolute", "start_h": 0.0, "end_h": 2.0, "boundary": "inclusive"},
+          "method": "observed_median", "output_space": "linear",
+          "support": {
+            "boundary_support": "observed", "minimum_observations": 1, "maximum_interior_gap_h": 1.0,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [2e-9, 1.0, 2.000000002],
+        "values": [1.0, 2.0, 3.0]
+      },
+      "expected": {"status": "error", "message_contains": "requires observed interval boundaries"}
+    },
+    {
+      "id": "interior_gap_beyond_absolute_tolerance",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:bb32c41e711d90ffb5d9d6c4e887ac0f310053549c25eb8750fec2581a8dc53a",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "interval", "time_basis": "absolute", "start_h": 0.0, "end_h": 2.0, "boundary": "inclusive"},
+          "method": "observed_median", "output_space": "linear",
+          "support": {
+            "boundary_support": "observed", "minimum_observations": 3, "maximum_interior_gap_h": 1.0,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [0.0, 1.000000002, 2.0],
+        "values": [1.0, 2.0, 3.0]
+      },
+      "expected": {"status": "error", "message_contains": "interior gap"}
+    },
+    {
+      "id": "policy_clipped_observation_rejected",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:0b849f594bfece22cf23dbed35ee9782bc1542edefb0eb0ed1ce2b4baac76ff7",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "interval", "time_basis": "absolute", "start_h": 0.0, "end_h": 2.0, "boundary": "inclusive"},
+          "method": "observed_median", "output_space": "linear",
+          "support": {
+            "boundary_support": "observed", "minimum_observations": 3, "maximum_interior_gap_h": 1.0,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [0.0, 1.0, 2.0], "values": [1.0, 2.0, 3.0],
+        "policy_clipped": [false, true, false], "bound_kinds": ["exact", "lower", "exact"]
+      },
+      "expected": {"status": "error", "message_contains": "clipped or overflowed"}
+    },
+    {
+      "id": "instrument_overflow_observation_rejected",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:f861287f6d31b10f2767e19b265561efcf90a5e80cbb09984294653aae7e3ba5",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "interval", "time_basis": "absolute", "start_h": 0.0, "end_h": 2.0, "boundary": "inclusive"},
+          "method": "observed_median", "output_space": "linear",
+          "support": {
+            "boundary_support": "observed", "minimum_observations": 3, "maximum_interior_gap_h": 1.0,
+            "positive_floor": null, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [0.0, 1.0, 2.0], "values": [1.0, 2.0, 3.0],
+        "instrument_overflow": [false, true, false], "bound_kinds": ["exact", "upper", "exact"]
+      },
+      "expected": {"status": "error", "message_contains": "clipped or overflowed"}
+    },
+    {
+      "id": "positive_floor_equality_rejected",
+      "kind": "single_trace",
+      "case_payload_digest": "sha256:8520d60dd92bf0c71c55c7a6d91c2271d733d134c79b23a5ef6cb3d44edd20b7",
+      "payload": {
+        "temporal_reduction": {
+          "selection": {"kind": "endpoint", "time_basis": "absolute", "time_h": 1.0, "mode": "exact", "tolerance_h": 0.0},
+          "method": "identity", "output_space": "log2",
+          "support": {
+            "boundary_support": "none", "minimum_observations": 1, "maximum_interior_gap_h": null,
+            "positive_floor": 1e-12, "positive_value_scope": "selected_support", "censored_values": "reject"
+          }
+        },
+        "times_h": [1.0], "values": [1e-12]
+      },
+      "expected": {"status": "error", "message_contains": "positive floor"}
+    }
+  ]
+}
