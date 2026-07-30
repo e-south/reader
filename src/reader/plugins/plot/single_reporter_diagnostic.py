@@ -17,7 +17,7 @@ from reader.workbench.registry import PluginConfig
 
 _DESCRIPTION = (
     "Normalizer, reporter, and reporter-normalizer kinetics with an explicit endpoint or interval reduction, "
-    "raw observation-unit values by condition, and visible normalizer QC."
+    "temporally reduced observation-unit values by condition, and visible normalizer QC."
 )
 
 

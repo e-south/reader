@@ -89,8 +89,8 @@ sample evidence. The diagnostic reads only that canonical
 sample record and renders four approximately square
 panels in one row: normalizer kinetics, reporter kinetics, their ratio
 kinetics, and the ratio reduced by the declared condition. The reduction panel
-keeps raw observation-unit values visible and shows the normalizer on a labeled
-QC axis rather than treating it as an objective.
+keeps temporally reduced observation-unit values visible and shows the
+normalizer on a labeled QC axis rather than treating it as an objective.
 
 Temporal reduction is analysis policy, not plot configuration. The neutral
 contract declares an absolute or event-relative time basis, an endpoint or
