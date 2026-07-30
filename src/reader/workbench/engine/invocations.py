@@ -340,15 +340,14 @@ class InvocationLedger:
 def capture_revision_snapshot(store: Any) -> dict[str, dict[str, Any]]:
     if not store.catalog_exists():
         return {}
-    records = store.iter_latest_records()
-    revision_counts = store.revision_counts(record.record_id for record in records)
+    snapshot = store.catalog_snapshot()
     return {
         record.record_id: {
             "record_id": record.record_id,
-            "revision": revision_counts[record.record_id],
+            "revision": snapshot.revision_counts[record.record_id],
             "revision_digest": record_revision_digest(record, outputs_dir=store.root),
         }
-        for record in records
+        for record in snapshot.latest_records
     }
 
 

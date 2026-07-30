@@ -38,6 +38,33 @@ def test_response_window_summary_matrix_selects_and_labels_rows() -> None:
     ]
 
 
+def test_response_window_summary_matrix_applies_explicit_identity_filters() -> None:
+    summary = response_window_summary_matrix(
+        _designs_frame(),
+        primary_reduction_id="event",
+        experiment_ids=["source_b"],
+        design_ids=["design_b"],
+        maximum_rows=1,
+    )
+
+    assert summary.row_labels == ("source_b :: design_b",)
+    assert summary.values.tolist() == [[offset + 1.0 for offset in range(len(COMPONENT_COLUMNS))]]
+
+
+def test_response_window_summary_matrix_rejects_selection_over_row_budget() -> None:
+    designs = pd.concat(
+        [_designs_frame().iloc[[0]].assign(design_id=f"design_{index}") for index in range(3)],
+        ignore_index=True,
+    )
+
+    with pytest.raises(ValueError, match=r"selected 3 rows.*maximum_rows=2.*experiment_ids.*design_ids"):
+        response_window_summary_matrix(
+            designs,
+            primary_reduction_id="event",
+            maximum_rows=2,
+        )
+
+
 def test_response_window_summary_matrix_rejects_empty_selection() -> None:
     with pytest.raises(ValueError, match="no non-reference rows for reduction 'missing'"):
         response_window_summary_matrix(_designs_frame(), primary_reduction_id="missing")

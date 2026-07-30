@@ -15,7 +15,7 @@ import pyarrow.parquet as pq
 from reader.errors import RecordError
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 
-from .evidence import ArtifactEvidence, RecordInputEvidence
+from .evidence import ArtifactEvidence, RecordInputEvidence, SourceExperimentResolver
 from .identity import BuildIdentity, digest_json, is_sha256_digest
 
 RECORD_SCHEMA_VERSION = 6
@@ -543,6 +543,7 @@ def record_from_dict(
     *,
     outputs_dir: Path,
     experiment_root: Path | None = None,
+    source_experiment_resolver: SourceExperimentResolver | None = None,
 ) -> DataFrameArtifactRecord | FileBundleRecord:
     if not isinstance(payload, dict):
         raise RecordError("record payload must be a JSON object")
@@ -624,7 +625,14 @@ def record_from_dict(
     )
     try:
         evidence_root = (experiment_root or outputs_dir.parent).resolve(strict=False)
-        parsed_inputs = tuple(RecordInputEvidence.from_dict(item, experiment_root=evidence_root) for item in inputs)
+        parsed_inputs = tuple(
+            RecordInputEvidence.from_dict(
+                item,
+                experiment_root=evidence_root,
+                source_experiment_resolver=source_experiment_resolver,
+            )
+            for item in inputs
+        )
     except (TypeError, ValueError, RecordError) as exc:
         raise RecordError(f"record {record_id!r} has invalid provenance input: {exc}") from exc
     if kind == "dataframe_artifact":

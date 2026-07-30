@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from reader.errors import RecordError
-from reader.workbench.experiments import ExperimentCatalog
+from reader.workbench.experiments import ExperimentCatalog, ExperimentLocation
 from reader.workbench.graph import FileRef, InputRef, RecordRef, ResourceRef, SourceRecordRef
 
 from .identity import is_sha256_digest
@@ -20,6 +21,7 @@ _DISCOVERY_POLICIES = frozenset(
         "source_record",
     }
 )
+SourceExperimentResolver = Callable[[str], ExperimentLocation]
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,13 @@ class RecordInputEvidence:
         return base
 
     @classmethod
-    def from_dict(cls, payload: Any, *, experiment_root: Path) -> RecordInputEvidence:
+    def from_dict(
+        cls,
+        payload: Any,
+        *,
+        experiment_root: Path,
+        source_experiment_resolver: SourceExperimentResolver | None = None,
+    ) -> RecordInputEvidence:
         if not isinstance(payload, dict):
             raise RecordError("record input evidence must be a JSON object")
         kind = payload.get("kind")
@@ -173,7 +181,10 @@ class RecordInputEvidence:
             if any(not isinstance(value, str) or not value for value in (resource_id, experiment_id, record_id)):
                 raise RecordError("source record input evidence requires resource, experiment, and record identities")
             try:
-                location = ExperimentCatalog.from_experiment_root(experiment_root).resolve(experiment_id)
+                resolver = source_experiment_resolver
+                if resolver is None:
+                    resolver = ExperimentCatalog.from_experiment_root(experiment_root).resolve
+                location = resolver(experiment_id)
             except Exception as exc:
                 raise RecordError(f"Could not resolve source experiment {experiment_id!r}: {exc}") from exc
             return cls(

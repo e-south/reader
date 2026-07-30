@@ -12,6 +12,9 @@ from reader.workbench.registry import PluginConfig
 
 class ResponseWindowSummaryCfg(PluginConfig):
     primary_reduction_id: str = Field(min_length=1)
+    experiment_ids: list[str] | None = Field(default=None, min_length=1)
+    design_ids: list[str] | None = Field(default=None, min_length=1)
+    maximum_rows: int = Field(default=64, ge=1)
     title: str = Field(default="Response-window summary", min_length=1)
     filename: str = Field(default="response_window_summary", min_length=1)
     format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["png"], min_length=1)
@@ -33,6 +36,9 @@ class ResponseWindowSummaryPlot(FigurePlotPlugin):
         figure = render_response_window_summary(
             inputs["designs"],
             primary_reduction_id=cfg.primary_reduction_id,
+            experiment_ids=cfg.experiment_ids,
+            design_ids=cfg.design_ids,
+            maximum_rows=cfg.maximum_rows,
             title=cfg.title,
         )
         return [
