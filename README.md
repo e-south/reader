@@ -14,21 +14,17 @@ The distribution and import package are named `reader-workbench` and
 
 ## Install
 
-The `1.0.0` PyPI release is prepared but not published yet. From a checkout,
-install Reader as a command-line tool:
+Install Reader as a command-line tool:
 
 ```bash
-uv tool install .
+uv tool install reader-workbench
 ```
 
-Or install it into an active Python environment from the checkout:
+Or install it into an active Python environment:
 
 ```bash
-python -m pip install .
+python -m pip install reader-workbench
 ```
-
-After the first release, replace `.` with the distribution name
-`reader-workbench`.
 
 The installed command is `reader`:
 
