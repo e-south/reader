@@ -25,14 +25,33 @@ def response_window_summary_matrix(
     designs: pd.DataFrame,
     *,
     primary_reduction_id: str,
+    experiment_ids: list[str] | tuple[str, ...] | None = None,
+    design_ids: list[str] | tuple[str, ...] | None = None,
+    maximum_rows: int = 64,
 ) -> ResponseWindowSummaryMatrix:
     """Select one reduction's non-reference designs and validate plot values."""
 
+    experiment_selection = _identity_filter(experiment_ids, label="experiment_ids")
+    design_selection = _identity_filter(design_ids, label="design_ids")
+    if isinstance(maximum_rows, bool) or not isinstance(maximum_rows, int) or maximum_rows < 1:
+        raise ValueError("response-window summary maximum_rows must be a positive integer")
     selected = designs.loc[
         designs["reduction_id"].astype(str).eq(primary_reduction_id) & ~designs["is_reference"].astype(bool)
     ].copy()
+    if experiment_selection is not None:
+        selected = selected.loc[selected["experiment_id"].astype(str).isin(experiment_selection)]
+    if design_selection is not None:
+        selected = selected.loc[selected["design_id"].astype(str).isin(design_selection)]
     if selected.empty:
-        raise ValueError(f"response-window plot has no non-reference rows for reduction {primary_reduction_id!r}")
+        raise ValueError(
+            f"response-window plot has no non-reference rows for reduction {primary_reduction_id!r} "
+            "under the configured experiment_ids/design_ids filters"
+        )
+    if len(selected) > maximum_rows:
+        raise ValueError(
+            f"response-window summary selected {len(selected)} rows, exceeding maximum_rows={maximum_rows}; "
+            "configure experiment_ids/design_ids or raise maximum_rows explicitly"
+        )
 
     selected = selected.sort_values(["experiment_id", "design_id"], kind="stable")
     row_labels = tuple(selected["experiment_id"].astype(str) + " :: " + selected["design_id"].astype(str))
@@ -52,10 +71,19 @@ def render_response_window_summary(
     *,
     primary_reduction_id: str,
     title: str,
+    experiment_ids: list[str] | tuple[str, ...] | None = None,
+    design_ids: list[str] | tuple[str, ...] | None = None,
+    maximum_rows: int = 64,
 ):
     """Render the selected response and anchored-magnitude components."""
 
-    summary = response_window_summary_matrix(designs, primary_reduction_id=primary_reduction_id)
+    summary = response_window_summary_matrix(
+        designs,
+        primary_reduction_id=primary_reduction_id,
+        experiment_ids=experiment_ids,
+        design_ids=design_ids,
+        maximum_rows=maximum_rows,
+    )
     with use_style(
         {
             "axes_grid": False,
@@ -88,6 +116,17 @@ def render_response_window_summary(
         axes[0].set_ylabel("source :: design")
         figure.suptitle(title)
     return figure
+
+
+def _identity_filter(values: list[str] | tuple[str, ...] | None, *, label: str) -> tuple[str, ...] | None:
+    if values is None:
+        return None
+    normalized = tuple(str(value).strip() for value in values)
+    if not normalized or any(not value for value in normalized):
+        raise ValueError(f"response-window summary {label} must contain non-empty identities")
+    if len(normalized) != len(set(normalized)):
+        raise ValueError(f"response-window summary {label} must not contain duplicates")
+    return normalized
 
 
 __all__ = [

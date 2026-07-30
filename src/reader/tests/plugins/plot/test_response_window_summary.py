@@ -31,6 +31,9 @@ def _designs_frame() -> pd.DataFrame:
 def test_response_window_summary_plot_adapts_figure_metadata() -> None:
     cfg = ResponseWindowSummaryCfg(
         primary_reduction_id="event",
+        experiment_ids=["source_b"],
+        design_ids=["design_b"],
+        maximum_rows=1,
         title="Selected response window",
         filename="summary",
         format=["png", "pdf"],
@@ -50,7 +53,6 @@ def test_response_window_summary_plot_adapts_figure_metadata() -> None:
     assert rendered[0].fig.get_suptitle() == "Selected response window"
     assert [axis.get_title() for axis in rendered[0].fig.axes[:2]] == ["Response", "Anchored magnitude"]
     assert [tick.get_text() for tick in rendered[0].fig.axes[0].get_yticklabels()] == [
-        "source_a :: design_a",
         "source_b :: design_b",
     ]
     plt.close(rendered[0].fig)

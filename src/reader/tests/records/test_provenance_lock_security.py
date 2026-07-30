@@ -84,7 +84,7 @@ def test_catalog_snapshot_does_not_mask_a_protected_body_error(
         experiment_root=tmp_path,
     )
 
-    def _fail_inside_scope() -> dict[str, object]:
+    def _fail_inside_scope(**_kwargs) -> dict[str, object]:
         raise NotImplementedError("body failure remains visible")
 
     monkeypatch.setattr(store, "_read_catalog", _fail_inside_scope)

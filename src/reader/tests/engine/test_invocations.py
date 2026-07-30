@@ -538,6 +538,47 @@ def test_capture_revision_snapshot_rejects_malformed_catalog_lineage(tmp_path: P
         capture_revision_snapshot(store)
 
 
+def test_capture_revision_snapshot_uses_one_atomic_catalog_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    store.persist_dataframe(
+        producer_id="ingest",
+        producer_plugin="ingest/synthetic",
+        out_name="df",
+        record_id="ingest/df",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:test",
+    )
+    snapshot_calls = 0
+    original_snapshot = store.catalog_snapshot
+
+    def counted_snapshot():
+        nonlocal snapshot_calls
+        snapshot_calls += 1
+        return original_snapshot()
+
+    monkeypatch.setattr(store, "catalog_snapshot", counted_snapshot)
+    monkeypatch.setattr(
+        store,
+        "iter_latest_records",
+        lambda *args, **kwargs: pytest.fail("snapshot must not combine separate catalog reads"),
+    )
+    monkeypatch.setattr(
+        store,
+        "revision_counts",
+        lambda *args, **kwargs: pytest.fail("snapshot must not combine separate catalog reads"),
+    )
+
+    revisions = capture_revision_snapshot(store)
+
+    assert snapshot_calls == 1
+    assert revisions["ingest/df"]["revision"] == 1
+
+
 def test_declared_input_projection_is_typed_relative_and_deterministic(tmp_path: Path) -> None:
     step = PluginStep(
         kind="pipeline",

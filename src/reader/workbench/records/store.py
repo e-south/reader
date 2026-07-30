@@ -16,6 +16,7 @@ import pandas as pd
 
 from reader.contracts import ContractCatalog, ContractId
 from reader.errors import ProvenanceEpochChangedError, RecordError
+from reader.workbench.experiments import ExperimentCatalog
 from reader.workbench.graph import FileRef, ProvenanceInput, RecipeSource, RecordRef, ResourceRef, SourceRecordRef
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from reader.workbench.paths import resolve_confined_sink_root
@@ -32,7 +33,7 @@ from reader.workbench.records.model import (
     verify_record_artifact_integrity,
 )
 
-from .evidence import RecordInputEvidence, capture_artifact_evidence
+from .evidence import RecordInputEvidence, SourceExperimentResolver, capture_artifact_evidence
 from .identity import BuildIdentity, current_build_identity, digest_json
 from .locking import ProvenanceFileLock, provenance_lock_scope
 from .model import record_revision_digest
@@ -164,11 +165,17 @@ class RecordStore:
     def catalog_snapshot(self) -> RecordCatalogSnapshot:
         """Read one internally consistent catalog projection for inspection surfaces."""
 
+        source_experiment_resolver = self._source_experiment_resolver()
         with self._catalog_lock_scope(operation="inspect the record catalog"):
-            catalog = self._read_catalog()
+            catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
             epoch_id = str(catalog["provenance_epoch_id"])
             records = tuple(
-                self._materialize(record_id, payload) for record_id, payload in sorted(catalog["latest"].items())
+                self._materialize(
+                    record_id,
+                    payload,
+                    source_experiment_resolver=source_experiment_resolver,
+                )
+                for record_id, payload in sorted(catalog["latest"].items())
             )
             revision_counts = {record_id: len(revisions) for record_id, revisions in sorted(catalog["history"].items())}
         return RecordCatalogSnapshot(
@@ -221,7 +228,22 @@ class RecordStore:
             if digest_json(self._read_catalog()) != catalog_digest:
                 raise RecordError("The record catalog changed concurrently; retry from the current catalog state.")
 
-    def _read_catalog(self) -> dict[str, Any]:
+    def _source_experiment_resolver(self) -> SourceExperimentResolver:
+        experiment_catalog: ExperimentCatalog | None = None
+
+        def resolve(experiment_id: str):
+            nonlocal experiment_catalog
+            if experiment_catalog is None:
+                experiment_catalog = ExperimentCatalog.from_experiment_root(self.experiment_root)
+            return experiment_catalog.resolve(experiment_id)
+
+        return resolve
+
+    def _read_catalog(
+        self,
+        *,
+        source_experiment_resolver: SourceExperimentResolver | None = None,
+    ) -> dict[str, Any]:
         self._validate_catalog_roots()
         if self.records_path.is_symlink():
             raise RecordError("records.json must not be a symlink")
@@ -268,7 +290,10 @@ class RecordStore:
             raise RecordError("records.json must include 'latest' and 'history' objects")
         if not isinstance(data["latest"], dict) or not isinstance(data["history"], dict):
             raise RecordError("records.json 'latest' and 'history' must be JSON objects")
-        self._validate_catalog_lineage(data)
+        self._validate_catalog_lineage(
+            data,
+            source_experiment_resolver=source_experiment_resolver or self._source_experiment_resolver(),
+        )
         if (
             self._bound_provenance_epoch_id is not None
             and data["provenance_epoch_id"] != self._bound_provenance_epoch_id
@@ -279,7 +304,12 @@ class RecordStore:
             )
         return data
 
-    def _validate_catalog_lineage(self, catalog: dict[str, Any]) -> None:
+    def _validate_catalog_lineage(
+        self,
+        catalog: dict[str, Any],
+        *,
+        source_experiment_resolver: SourceExperimentResolver,
+    ) -> None:
         latest = catalog["latest"]
         history = catalog["history"]
         latest_ids = set(latest)
@@ -300,8 +330,16 @@ class RecordStore:
             if not revisions:
                 raise RecordError(f"records.json history for latest record {record_id!r} must be non-empty")
             for payload in revisions:
-                self._materialize(record_id, payload)
-            self._materialize(record_id, latest[record_id])
+                self._materialize(
+                    record_id,
+                    payload,
+                    source_experiment_resolver=source_experiment_resolver,
+                )
+            self._materialize(
+                record_id,
+                latest[record_id],
+                source_experiment_resolver=source_experiment_resolver,
+            )
             if revisions[-1] != latest[record_id]:
                 raise RecordError(
                     f"records.json history for {record_id!r} must end with the exact latest record payload"
@@ -351,8 +389,19 @@ class RecordStore:
             if staged_path is not None:
                 staged_path.unlink(missing_ok=True)
 
-    def _materialize(self, record_id: str, payload: dict[str, Any]) -> DataFrameArtifactRecord | FileBundleRecord:
-        record = record_from_dict(payload, outputs_dir=self.root, experiment_root=self.experiment_root)
+    def _materialize(
+        self,
+        record_id: str,
+        payload: dict[str, Any],
+        *,
+        source_experiment_resolver: SourceExperimentResolver | None = None,
+    ) -> DataFrameArtifactRecord | FileBundleRecord:
+        record = record_from_dict(
+            payload,
+            outputs_dir=self.root,
+            experiment_root=self.experiment_root,
+            source_experiment_resolver=source_experiment_resolver or self._source_experiment_resolver(),
+        )
         if record.record_id != record_id:
             raise RecordError(
                 f"records.json entry key {record_id!r} does not match payload record_id {record.record_id!r}"
@@ -517,10 +566,15 @@ class RecordStore:
         kind: WorkbenchRecordKind | None = None,
         producer_kind: WorkbenchProducerKind | None = None,
     ) -> tuple[DataFrameArtifactRecord | FileBundleRecord, ...]:
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         out: list[DataFrameArtifactRecord | FileBundleRecord] = []
         for record_id, payload in sorted(catalog["latest"].items()):
-            record = self._materialize(record_id, payload)
+            record = self._materialize(
+                record_id,
+                payload,
+                source_experiment_resolver=source_experiment_resolver,
+            )
             if kind is not None and record.kind != kind:
                 continue
             if producer_kind is not None and record.producer.kind != producer_kind:
@@ -529,11 +583,19 @@ class RecordStore:
         return tuple(out)
 
     def record_history(self, record_id: str) -> tuple[DataFrameArtifactRecord | FileBundleRecord, ...]:
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         history = catalog["history"].get(record_id, [])
         if not isinstance(history, list):
             raise RecordError(f"records.json history for {record_id!r} must be a list")
-        return tuple(self._materialize(record_id, payload) for payload in history)
+        return tuple(
+            self._materialize(
+                record_id,
+                payload,
+                source_experiment_resolver=source_experiment_resolver,
+            )
+            for payload in history
+        )
 
     def revision_counts(self, record_ids: Iterable[str] | None = None) -> dict[str, int]:
         catalog = self._read_catalog()
@@ -551,21 +613,31 @@ class RecordStore:
         return counts
 
     def latest_dataframe(self, record_id: str) -> DataFrameArtifactRecord | None:
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         payload = catalog["latest"].get(record_id)
         if payload is None:
             return None
-        record = self._materialize(record_id, payload)
+        record = self._materialize(
+            record_id,
+            payload,
+            source_experiment_resolver=source_experiment_resolver,
+        )
         if not isinstance(record, DataFrameArtifactRecord):
             raise RecordError(f"Record {record_id!r} exists but is not a dataframe artifact")
         return record
 
     def latest_record(self, record_id: str) -> DataFrameArtifactRecord | FileBundleRecord | None:
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         payload = catalog["latest"].get(record_id)
         if payload is None:
             return None
-        return self._materialize(record_id, payload)
+        return self._materialize(
+            record_id,
+            payload,
+            source_experiment_resolver=source_experiment_resolver,
+        )
 
     def read_dataframe(self, record_id: str) -> DataFrameArtifactRecord:
         record = self.latest_dataframe(record_id)
@@ -622,13 +694,18 @@ class RecordStore:
         self.ensure_layout()
         base_name = f"{producer_id}.{producer_plugin.replace('/', '_')}"
         base_step_dir = self.artifacts_dir / base_name
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         provenance_epoch_id = str(catalog["provenance_epoch_id"])
         catalog_digest = digest_json(catalog)
         previous_payload = catalog["latest"].get(record_id)
         previous_record = None
         if previous_payload is not None:
-            previous_record = self._materialize(record_id, previous_payload)
+            previous_record = self._materialize(
+                record_id,
+                previous_payload,
+                source_experiment_resolver=source_experiment_resolver,
+            )
             if not isinstance(previous_record, DataFrameArtifactRecord):
                 raise RecordError(
                     f"Record id {record_id!r} is already used by a non-dataframe record; choose a unique id."
@@ -784,12 +861,17 @@ class RecordStore:
         effective_build_identity = build_identity or current_build_identity()
         record_inputs = self._require_captured_inputs(inputs)
         self.ensure_layout()
-        catalog = self._read_catalog()
+        source_experiment_resolver = self._source_experiment_resolver()
+        catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
         provenance_epoch_id = str(catalog["provenance_epoch_id"])
         catalog_digest = digest_json(catalog)
         previous_payload = catalog["latest"].get(record_id)
         if previous_payload is not None:
-            previous_record = self._materialize(record_id, previous_payload)
+            previous_record = self._materialize(
+                record_id,
+                previous_payload,
+                source_experiment_resolver=source_experiment_resolver,
+            )
             if isinstance(previous_record, DataFrameArtifactRecord):
                 raise RecordError(f"Record id {record_id!r} is already used by a dataframe record; choose a unique id.")
         record = FileBundleRecord(

@@ -12,6 +12,7 @@ from reader.protocols.builtins import builtin_protocol_catalog
 from reader.tests.support import base_reader_config, write_config
 from reader.workbench.decl import load_workbench_decl
 from reader.workbench.engine import run_spec
+from reader.workbench.engine.invocations import capture_revision_snapshot
 from reader.workbench.experiments import ExperimentCatalog
 from reader.workbench.graph import ProvenanceInput, SourceRecordRef
 from reader.workbench.records import RecordStore, SourceRecordCollection, resolve_source_record, verify_record_store
@@ -193,6 +194,62 @@ def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: P
             config_digest="sha256:aggregate-a",
         )
     assert aggregate_store.latest_dataframe("collect/vec8") is None
+
+
+def test_catalog_snapshot_builds_one_source_experiment_index_per_operation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_config, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
+    source_ref = SourceRecordRef(
+        resource_id="first",
+        experiment_id="source-a",
+        record_id="vec8/df",
+        experiment_root=source_config.parent,
+        outputs_dir=source_store.root,
+    )
+    resolved = resolve_source_record(source_ref, contracts=builtin_contract_catalog())
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_store = RecordStore(
+        aggregate_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=aggregate_root,
+    )
+    captured = aggregate_store.capture_inputs(
+        [ProvenanceInput(label=f"sources[{index}]", ref=source_ref) for index in range(6)],
+        resolved_inputs={"source": resolved},
+    )
+    aggregate_store.persist_dataframe(
+        producer_id="collect",
+        producer_plugin="transform/sfxi_vec8_collection",
+        out_name="vec8",
+        record_id="collect/vec8",
+        df=_vec8("aggregate"),
+        contract_id="sfxi.vec8.v3",
+        inputs=captured,
+        config_digest="sha256:aggregate-a",
+    )
+    build_calls = 0
+    original_build_index = ExperimentCatalog._build_index
+
+    def counted_build_index(catalog: ExperimentCatalog):
+        nonlocal build_calls
+        build_calls += 1
+        return original_build_index(catalog)
+
+    monkeypatch.setattr(ExperimentCatalog, "_build_index", counted_build_index)
+
+    first = capture_revision_snapshot(aggregate_store)
+    assert first["collect/vec8"]["revision"] == 1
+    assert build_calls == 1
+
+    duplicate = tmp_path / "experiments" / "duplicate" / "source-a-copy"
+    duplicate.mkdir(parents=True)
+    write_config(duplicate, base_reader_config(experiment_id="source-a"))
+
+    with pytest.raises(RecordError, match="ambiguous"):
+        capture_revision_snapshot(aggregate_store)
+    assert build_calls == 2
 
 
 def test_capture_rejects_corrupt_exact_source_revision_without_output_mutation(tmp_path: Path) -> None:
