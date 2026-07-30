@@ -76,7 +76,7 @@ def test_unsupported_long_tail_evidence_accepts_generic_protocol(tmp_path: Path)
     assert spec.evidence.data_class == "unsupported_long_tail_assay"
 
 
-@pytest.mark.parametrize("replicate_kind", ["biological", "technical", "mixed", "not_applicable"])
+@pytest.mark.parametrize("replicate_kind", ["biological", "technical", "mixed", "unknown", "not_applicable"])
 def test_evidence_accepts_the_declared_replicate_kinds(tmp_path: Path, replicate_kind: str) -> None:
     payload = _config_with_evidence()
     payload["evidence"]["replicate_kind"] = replicate_kind
@@ -87,6 +87,25 @@ def test_evidence_accepts_the_declared_replicate_kinds(tmp_path: Path, replicate
 
     assert spec.evidence is not None
     assert spec.evidence.replicate_kind == replicate_kind
+
+
+def test_evidence_preserves_unknown_replication_without_an_invented_identity(tmp_path: Path) -> None:
+    payload = _config_with_evidence()
+    payload["evidence"]["replicate_kind"] = "unknown"
+    payload["evidence"].pop("replicate_identity_field")
+
+    spec, declaration = load_models(write_config(tmp_path / "unknown-without-identity.yaml", payload))
+
+    assert spec.evidence is not None
+    assert spec.evidence.replicate_kind == "unknown"
+    assert spec.evidence.replicate_identity_field is None
+    assert declaration.experiment_semantics.evidence is not None
+    assert declaration.experiment_semantics.evidence.to_payload() == {
+        "data_class": "plate_reader_screen",
+        "data_class_reason": "Well-level plate-reader measurements with an explicit sample map.",
+        "replicate_kind": "unknown",
+        "replicate_identity_field": None,
+    }
 
 
 def test_evidence_rejects_unknown_fields_and_invalid_identity_combinations(tmp_path: Path) -> None:

@@ -296,8 +296,8 @@ def _single_reporter_interval_policy() -> dict:
 
 def _single_reporter_aggregation_policy() -> dict:
     return {
-        "technical_replicate_statistic": "median",
-        "replicate_center_statistic": "median",
+        "within_unit_statistic": "median",
+        "across_unit_statistic": "median",
     }
 
 
@@ -383,6 +383,44 @@ def test_single_reporter_diagnostic_requires_one_valid_temporal_reduction(
     )
 
     with pytest.raises(ConfigError, match="diagnostic"):
+        protocol.compile()
+
+
+def test_single_reporter_diagnostic_rejects_retired_technical_aggregation_fields() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": _single_reporter_interval_policy(),
+                "replicate_aggregation": {
+                    "technical_replicate_statistic": "median",
+                    "replicate_center_statistic": "median",
+                },
+            },
+            outputs={"plots": {"profile": "none", "include": ["single_reporter_diagnostic"]}},
+        )
+    )
+
+    with pytest.raises(ConfigError, match="unknown fields"):
+        protocol.compile()
+
+
+def test_single_reporter_screen_rejects_retired_aggregation_fields_without_diagnostic() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": _single_reporter_interval_policy(),
+                "replicate_aggregation": {
+                    "technical_replicate_statistic": "median",
+                    "replicate_center_statistic": "median",
+                },
+            },
+            outputs={"plots": {"profile": "none", "include": []}},
+        )
+    )
+
+    with pytest.raises(ConfigError, match="unknown fields"):
         protocol.compile()
 
 

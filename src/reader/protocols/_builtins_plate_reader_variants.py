@@ -95,7 +95,7 @@ def build_plate_reader_variant_protocol(
             ),
             field(
                 "replicate_aggregation",
-                "Optional technical-replicate and across-replicate aggregation policy for temporal diagnostics.",
+                "Optional within-unit and across-unit aggregation policy for temporal diagnostics.",
                 allow_unknown=True,
                 allow_none=True,
                 default=None,

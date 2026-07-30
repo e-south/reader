@@ -207,6 +207,8 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
 
 def compile_plate_reader_single_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
+    if analysis.get("temporal_reduction") is not None or analysis.get("replicate_aggregation") is not None:
+        _single_reporter_diagnostic_policy(protocol)
     reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
     normalizer_channel = _analysis_channel(analysis, key="normalizer_channel", default="OD600")
     if reporter_channel == normalizer_channel:
@@ -717,7 +719,8 @@ def _single_reporter_diagnostic_policy(protocol: Any) -> tuple[dict[str, object]
     if raw_temporal is None or raw_aggregation is None:
         raise ConfigError(
             "plate_reader/single_reporter_screen requires protocol.analysis.temporal_reduction and "
-            "protocol.analysis.replicate_aggregation when single_reporter_diagnostic is selected"
+            "protocol.analysis.replicate_aggregation together when either policy is authored or "
+            "single_reporter_diagnostic is selected"
         )
     try:
         temporal = TemporalReductionSpec.from_mapping(raw_temporal)

@@ -68,8 +68,8 @@ def test_engine_persists_single_reporter_diagnostic_for_canonical_notebook_disco
                 },
             },
             "replicate_aggregation": {
-                "technical_replicate_statistic": "median",
-                "replicate_center_statistic": "median",
+                "within_unit_statistic": "median",
+                "across_unit_statistic": "median",
             },
         },
         protocol_outputs={

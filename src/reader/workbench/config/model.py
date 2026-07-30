@@ -36,7 +36,7 @@ class ExperimentSpec(BaseModel):
         return lifecycle
 
 
-ReplicateKind = Literal["biological", "technical", "mixed", "not_applicable"]
+ReplicateKind = Literal["biological", "technical", "mixed", "unknown", "not_applicable"]
 
 
 class EvidenceSpec(BaseModel):
