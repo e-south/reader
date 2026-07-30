@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from reader.errors import ConfigError
@@ -14,7 +15,6 @@ from reader.workbench.decl.model import (
     RecordInputDecl,
     RecordOutputDecl,
 )
-from reader.workbench.recipes.registry import resolve_recipe_steps
 
 from .common import (
     _analysis_bool,
@@ -25,8 +25,8 @@ from .common import (
     _deep_merge,
     _input_mapping,
     _step,
-    default_notebook_call,
 )
+from .plate_reader_pipeline import compose_dual_reporter_pipeline, compose_single_reporter_pipeline
 
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
 
@@ -49,19 +49,15 @@ def compile_plate_reader_response_window(protocol: Any):
             with_=analysis,
         ),
     )
-    primary_reduction_id = _primary_reduction_id(analysis)
-    selected_plots = protocol.select_plot_outputs(allowed={"response_window_summary"})
+    primary_reduction = _primary_reduction_config(analysis)
+    selected_plots = protocol.select_plot_outputs(allowed={"response_window_summary", "response_window_diagnostic"})
     plots = tuple(
-        _step(
-            id="response_window_summary",
-            plugin="plot/response_window_summary",
-            reads={"designs": RecordInputDecl(record_id="response_window/designs")},
-            with_=_deep_merge(
-                {"primary_reduction_id": primary_reduction_id},
-                protocol.plot_view_config(figure_id="response_window_summary"),
-            ),
+        _response_window_plot_output(
+            protocol,
+            output_id=output_id,
+            primary_reduction=primary_reduction,
         )
-        for _ in selected_plots
+        for output_id in selected_plots
     )
     selected_exports = protocol.select_export_outputs(
         defaults=("designs_table", "events_table"),
@@ -83,27 +79,72 @@ def compile_plate_reader_response_window(protocol: Any):
         )
         for artifact_id in selected_exports
     )
-    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         pipeline=pipeline,
         plots=plots,
         exports=exports,
-        notebooks=(default_notebook_call(template),),
         semantic_program=protocol.descriptor.semantic_program(),
     )
 
 
-def _primary_reduction_id(analysis: dict[str, Any]) -> str:
+def _response_window_plot_output(
+    protocol: Any,
+    *,
+    output_id: str,
+    primary_reduction: dict[str, Any],
+) -> PluginStepDecl:
+    settings = protocol.plot_view_config(figure_id=output_id)
+    compiler_owned = {"primary_reduction_id", "pre_window_duration_h"}
+    overridden = sorted(compiler_owned.intersection(settings))
+    if overridden:
+        raise ConfigError(
+            f"protocol.outputs.plots.views.{output_id} cannot override compiler-owned fields {overridden}; "
+            "mark exactly one protocol.analysis.reductions entry as primary instead"
+        )
+    primary_reduction_id = str(primary_reduction["id"])
+    if output_id == "response_window_summary":
+        return _step(
+            id=output_id,
+            plugin="plot/response_window_summary",
+            reads={"designs": RecordInputDecl(record_id="response_window/designs")},
+            with_=_deep_merge({"primary_reduction_id": primary_reduction_id}, settings),
+        )
+    if output_id == "response_window_diagnostic":
+        for key in ("source_experiment_id", "design_id"):
+            value = settings.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"protocol.outputs.plots.views.{output_id}.{key} must be a non-empty string")
+        return _step(
+            id=output_id,
+            plugin="plot/response_window_diagnostic",
+            reads={
+                "designs": RecordInputDecl(record_id="response_window/designs"),
+                "traces": RecordInputDecl(record_id="response_window/traces"),
+            },
+            with_=_deep_merge(
+                {
+                    "primary_reduction_id": primary_reduction_id,
+                    "pre_window_duration_h": primary_reduction.get("pre_window_duration_h"),
+                },
+                settings,
+            ),
+        )
+    raise ConfigError(f"Unsupported response-window plot output {output_id!r}")
+
+
+def _primary_reduction_config(analysis: dict[str, Any]) -> dict[str, Any]:
     reductions = analysis.get("reductions", ())
-    primary = [item.get("id") for item in reductions if isinstance(item, dict) and item.get("role") == "primary"]
-    if len(primary) != 1 or not isinstance(primary[0], str) or not primary[0].strip():
+    primary = [item for item in reductions if isinstance(item, dict) and item.get("role") == "primary"]
+    if len(primary) != 1 or not isinstance(primary[0].get("id"), str) or not primary[0]["id"].strip():
         raise ConfigError("protocol.analysis.reductions must declare exactly one primary reduction id")
-    return primary[0].strip()
+    result = dict(primary[0])
+    result["id"] = result["id"].strip()
+    return result
 
 
 def compile_plate_reader_dual_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
+    include_fold_change = _configured_fold_change_enabled(protocol, analysis=analysis)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -112,15 +153,15 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
     include_crosstalk_export = _config_bool(crosstalk_cfg, key="export", default=include_crosstalk_pairs)
     ingest_channels = _configured_ingest_channels(protocol, required=("OD600", "CFP", "YFP"))
     pipeline = list(
-        _plate_reader_base_steps(
-            measurement="yfp_cfp",
+        compose_dual_reporter_pipeline(
             ingest_channels=ingest_channels,
-            blank_cfg=blank_cfg,
-            overflow_cfg=overflow_cfg,
+            blank_config=blank_cfg,
+            overflow_config=overflow_cfg,
         )
     )
     if include_fold_change:
         _configured_fold_change_target(protocol, expected="YFP/CFP")
+        _configured_fold_change_report_times(protocol)
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     if include_crosstalk_pairs:
         if not include_fold_change:
@@ -148,12 +189,10 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
     )
     exports = [_plate_reader_export_output(protocol, output_id=deliverable_id) for deliverable_id in selected_exports]
 
-    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
-        notebooks=(default_notebook_call(template),),
         semantic_program=_plate_reader_semantic_program(
             protocol,
             include_crosstalk_pairs=include_crosstalk_pairs,
@@ -170,7 +209,7 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
         raise ConfigError(
             "plate_reader/single_reporter_screen requires distinct reporter_channel and normalizer_channel."
         )
-    include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
+    include_fold_change = _configured_fold_change_enabled(protocol, analysis=analysis)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -181,16 +220,17 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
     )
 
     pipeline = list(
-        _plate_reader_single_reporter_base_steps(
+        compose_single_reporter_pipeline(
             ingest_channels=ingest_channels,
             reporter_channel=reporter_channel,
             normalizer_channel=normalizer_channel,
-            blank_cfg=blank_cfg,
-            overflow_cfg=overflow_cfg,
+            blank_config=blank_cfg,
+            overflow_config=overflow_cfg,
         )
     )
     if include_fold_change:
         _configured_fold_change_target(protocol, expected=ratio_label)
+        _configured_fold_change_report_times(protocol)
         pipeline.append(
             _plate_reader_single_reporter_fold_change_step(
                 reporter_channel=reporter_channel,
@@ -213,12 +253,10 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
     if selected_exports:
         raise ConfigError("plate_reader/single_reporter_screen does not currently compile export artifacts.")
 
-    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=(),
-        notebooks=(default_notebook_call(template),),
         semantic_program=_plate_reader_single_reporter_semantic_program(
             protocol,
             reporter_channel=reporter_channel,
@@ -261,10 +299,42 @@ def _configured_fold_change_target(protocol: Any, *, expected: str) -> str:
     return target
 
 
+def _configured_fold_change_enabled(protocol: Any, *, analysis: dict[str, Any]) -> bool:
+    if "include_fold_change" in analysis:
+        return _analysis_bool(analysis, key="include_fold_change", default=False)
+    fold_change = _input_mapping(protocol, key="fold_change")
+    return "report_times" in fold_change
+
+
+def _configured_fold_change_report_times(protocol: Any) -> tuple[float, ...]:
+    fold_change = _input_mapping(protocol, key="fold_change")
+    configured = fold_change.get("report_times")
+    where = f"protocol.inputs.fold_change.report_times for {protocol.id!r}"
+    if not isinstance(configured, list) or not configured:
+        raise ConfigError(f"{where} must be an explicit non-empty list of finite hours")
+    report_times: list[float] = []
+    for value in configured:
+        if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value)):
+            raise ConfigError(f"{where} must contain only finite numbers")
+        report_times.append(float(value))
+    return tuple(report_times)
+
+
+def _require_plot_time(*, settings: dict[str, Any], output_id: str, key: str) -> float:
+    where = f"protocol.outputs.plots.views.{output_id}.{key}"
+    if key not in settings:
+        raise ConfigError(f"{where} must be explicit")
+    value = settings[key]
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value)):
+        raise ConfigError(f"{where} must be a finite number")
+    return float(value)
+
+
 def _plate_reader_plot_output_ids(*, measurement: str) -> set[str]:
     if measurement != "yfp_cfp":
         raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
     return {
+        "dual_reporter_triptych",
         "raw_kinetics",
         "endpoint_by_condition",
         "endpoint_by_design",
@@ -286,106 +356,6 @@ def _plate_reader_single_reporter_plot_output_ids() -> set[str]:
         "subject_comparison",
         "value_distributions",
     }
-
-
-def _plate_reader_base_steps(
-    *,
-    measurement: str,
-    ingest_channels: list[str],
-    blank_cfg: dict[str, Any],
-    overflow_cfg: dict[str, Any],
-    base_recipe: str = "plate_reader/dual_reporter_screen_base",
-) -> tuple[PluginStepDecl, ...]:
-    if measurement != "yfp_cfp":
-        raise ConfigError(f"Unsupported plate-reader measurement {measurement!r}")
-    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(resolve_recipe_steps(base_recipe))
-    return tuple(
-        _with_pipeline_overrides(
-            steps,
-            ingest_channels=ingest_channels,
-            blank_cfg=blank_cfg,
-            overflow_cfg=overflow_cfg,
-        )
-    )
-
-
-def _plate_reader_single_reporter_base_steps(
-    *,
-    ingest_channels: list[str],
-    reporter_channel: str,
-    normalizer_channel: str,
-    blank_cfg: dict[str, Any],
-    overflow_cfg: dict[str, Any],
-    base_recipe: str = "plate_reader/single_reporter_screen_base",
-) -> tuple[PluginStepDecl, ...]:
-    ratio_label = _single_reporter_ratio_label(
-        reporter_channel=reporter_channel,
-        normalizer_channel=normalizer_channel,
-    )
-    steps = list(resolve_recipe_steps("plate_reader/synergy_h1")) + list(
-        resolve_recipe_steps(
-            base_recipe,
-            with_args={
-                "reporter_channel": reporter_channel,
-                "normalizer_channel": normalizer_channel,
-            },
-        )
-    )
-    return tuple(
-        _with_pipeline_overrides(
-            steps,
-            ingest_channels=ingest_channels,
-            blank_cfg=blank_cfg,
-            overflow_cfg=overflow_cfg,
-            ratio_name=ratio_label,
-            ratio_numerator=reporter_channel,
-            ratio_denominator=normalizer_channel,
-        )
-    )
-
-
-def _with_pipeline_overrides(
-    steps: list[PluginStepDecl],
-    *,
-    ingest_channels: list[str] | None = None,
-    blank_cfg: dict[str, Any],
-    overflow_cfg: dict[str, Any],
-    ratio_name: str | None = None,
-    ratio_numerator: str | None = None,
-    ratio_denominator: str | None = None,
-) -> list[PluginStepDecl]:
-    normalized: list[PluginStepDecl] = []
-    for step in steps:
-        with_block = dict(step.with_ or {})
-        if step.id == "ingest" and ingest_channels is not None:
-            with_block = _deep_merge(with_block, {"channels": ingest_channels})
-        if step.id == "blank" and blank_cfg:
-            with_block = _deep_merge(with_block, blank_cfg)
-        if step.id == "overflow" and overflow_cfg:
-            with_block = _deep_merge(with_block, overflow_cfg)
-        if step.id == "ratio_reporter_normalizer":
-            ratio_overrides = {
-                key: value
-                for key, value in {
-                    "name": ratio_name,
-                    "numerator": ratio_numerator,
-                    "denominator": ratio_denominator,
-                }.items()
-                if value is not None
-            }
-            if ratio_overrides:
-                with_block = _deep_merge(with_block, ratio_overrides)
-        normalized.append(
-            PluginStepDecl(
-                id=step.id,
-                plugin=step.plugin,
-                reads=dict(step.reads or {}),
-                writes=dict(step.writes or {}),
-                with_=with_block,
-                source_recipe=step.source_recipe,
-            )
-        )
-    return normalized
 
 
 def _plate_reader_fold_change_step(*, measurement: str) -> PluginStepDecl:
@@ -451,6 +421,34 @@ def _plate_reader_crosstalk_pairs_step(*, config: dict[str, Any]) -> PluginStepD
 def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
     plot_reads = _plate_reader_plot_reads(measurement=measurement)
+    if output_id == "dual_reporter_triptych":
+        if "snapshot_time_h" not in settings:
+            raise ConfigError("protocol.outputs.plots.views.dual_reporter_triptych.snapshot_time_h must be explicit")
+        snapshot_time_h = settings["snapshot_time_h"]
+        if (
+            isinstance(snapshot_time_h, bool)
+            or not isinstance(snapshot_time_h, int | float)
+            or not math.isfinite(float(snapshot_time_h))
+        ):
+            raise ConfigError(
+                "protocol.outputs.plots.views.dual_reporter_triptych.snapshot_time_h must be a finite number"
+            )
+        defaults = {
+            "design_column": "design_id",
+            "treatment_column": "treatment",
+            "time_column": "time",
+            "growth_channel": "OD600",
+            "ratio_channel": "YFP/CFP",
+            "snapshot_channel": "YFP/CFP",
+            "snapshot_time_mode": "nearest",
+            "snapshot_time_tolerance_h": 0.51,
+        }
+        return _step(
+            id="dual_reporter_triptych",
+            plugin="plot/dual_reporter_triptych",
+            reads={"df": plot_reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
     if output_id == "raw_kinetics":
         defaults = {
             "partition": {"by": "design_id"},
@@ -465,11 +463,11 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_condition":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "x": "treatment",
             "y": ["OD600", "YFP/OD600"],
             "partition": {"by": "design_id"},
-            "time": 14.0,
         }
         return _step(
             id="endpoint_by_condition",
@@ -478,11 +476,11 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_design":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "x": "design_id",
             "y": "YFP/OD600",
             "hue": "treatment",
-            "time": 14.0,
         }
         return _step(
             id="endpoint_by_design",
@@ -491,11 +489,11 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "state_summary":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "x": "treatment_alias",
             "y": ["OD600", "CFP/OD600", "YFP/OD600", "YFP/CFP"],
             "partition": {"by": "design_id_alias"},
-            "time": 14.0,
         }
         return _step(
             id="state_summary",
@@ -504,6 +502,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "intensity_overview":
+        _require_plot_time(settings=settings, output_id=output_id, key="snap_time")
         defaults = {
             "partition": {"by": "design_id"},
             "ts_channel": "YFP/OD600",
@@ -511,7 +510,6 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             "ts_add_sheet_line": True,
             "ts_mark_snap_time": True,
             "snap_channel": "YFP/OD600",
-            "snap_time": 14.0,
         }
         return _step(
             id="intensity_overview",
@@ -520,6 +518,7 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "ratio_overview":
+        _require_plot_time(settings=settings, output_id=output_id, key="snap_time")
         defaults = {
             "partition": {"by": "design_id_alias"},
             "ts_channel": "OD600",
@@ -528,7 +527,6 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             "ts_mark_snap_time": True,
             "snap_x": "treatment_alias",
             "snap_channel": "YFP/CFP",
-            "snap_time": 14.0,
         }
         return _step(
             id="ratio_overview",
@@ -545,9 +543,9 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "ratio_heatmap":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "channel": "YFP/CFP",
-            "time": 14.0,
             "x": "treatment_alias",
             "y": "design_id_alias",
         }
@@ -558,9 +556,9 @@ def _plate_reader_plot_output(protocol: Any, *, output_id: str, measurement: str
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "support_heatmap":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "channel": "CFP/OD600",
-            "time": 14.0,
             "x": "treatment_alias",
             "y": "design_id_alias",
         }
@@ -600,11 +598,11 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_condition":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "x": "treatment",
             "y": [normalizer_channel, ratio_label],
             "partition": {"by": "design_id"},
-            "time": 14.0,
         }
         return _step(
             id="endpoint_by_condition",
@@ -613,11 +611,11 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "endpoint_by_design":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
         defaults = {
             "x": "design_id",
             "y": ratio_label,
             "hue": "treatment",
-            "time": 14.0,
         }
         return _step(
             id="endpoint_by_design",
@@ -626,6 +624,7 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "intensity_overview":
+        _require_plot_time(settings=settings, output_id=output_id, key="snap_time")
         defaults = {
             "partition": {"by": "design_id"},
             "ts_channel": ratio_label,
@@ -633,7 +632,6 @@ def _plate_reader_single_reporter_plot_output(
             "ts_add_sheet_line": True,
             "ts_mark_snap_time": True,
             "snap_channel": ratio_label,
-            "snap_time": 14.0,
         }
         return _step(
             id="intensity_overview",
@@ -642,6 +640,7 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     if output_id == "subject_comparison":
+        _require_plot_time(settings=settings, output_id=output_id, key="snap_time")
         defaults = {
             "ts_channel": normalizer_channel,
             "ts_hue": "treatment",
@@ -649,7 +648,6 @@ def _plate_reader_single_reporter_plot_output(
             "snap_x": "design_id",
             "snap_channel": ratio_label,
             "snap_hue": "treatment",
-            "snap_time": 14.0,
             "square_panels": True,
             "title": "Subject comparison",
         }

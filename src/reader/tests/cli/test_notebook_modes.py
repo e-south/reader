@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 import reader.workbench.cli as cli
-from reader.tests.support import base_reader_config, default_notebook_name, write_config
+from reader.tests.support import base_reader_config, cytometry_test_gating_policy, default_notebook_name, write_config
 from reader.workbench.cli import app
 
 
@@ -135,10 +135,11 @@ def test_notebook_name_rejects_absolute_path(tmp_path: Path) -> None:
     assert not outside.exists()
 
 
-def test_notebook_auto_selects_cytometry_preset_from_protocol(monkeypatch, tmp_path: Path) -> None:
+def test_notebook_auto_selects_canonical_eda_for_cytometry_protocol(monkeypatch, tmp_path: Path) -> None:
     cfg = base_reader_config(
         experiment_id="exp_nb",
         protocol_id="cytometry/flow_panel",
+        protocol_inputs={"gating": cytometry_test_gating_policy()},
         resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
     )
     cfg_path = write_config(tmp_path, cfg)
@@ -151,10 +152,12 @@ def test_notebook_auto_selects_cytometry_preset_from_protocol(monkeypatch, tmp_p
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
-    assert "Cytometry" in nb_path.read_text(encoding="utf-8")
+    content = nb_path.read_text(encoding="utf-8")
+    assert "collect_notebook_deliverables" in content
+    assert "notebook/cytometry" not in content
 
 
-def test_notebook_auto_selects_sfxi_template_from_protocol(monkeypatch, tmp_path: Path) -> None:
+def test_notebook_auto_selects_canonical_eda_for_sfxi_protocol(monkeypatch, tmp_path: Path) -> None:
     cfg = base_reader_config(
         experiment_id="exp_nb",
         protocol_id="logic/sfxi_screen",
@@ -170,7 +173,9 @@ def test_notebook_auto_selects_sfxi_template_from_protocol(monkeypatch, tmp_path
     result = runner.invoke(app, ["notebook", str(cfg_path), "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
-    assert "SFXI" in nb_path.read_text(encoding="utf-8")
+    notebook = nb_path.read_text(encoding="utf-8")
+    assert "build_notebook_deliverable_selector" in notebook
+    assert "SFXI 8-vector review" not in notebook
 
 
 def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> None:

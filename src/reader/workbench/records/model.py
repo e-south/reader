@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
 from collections import Counter
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from reader.errors import RecordError
 from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
@@ -14,8 +18,8 @@ from reader.workbench.ontology import WorkbenchProducerKind, WorkbenchRecordKind
 from .evidence import ArtifactEvidence, RecordInputEvidence
 from .identity import BuildIdentity, digest_json, is_sha256_digest
 
-RECORD_SCHEMA_VERSION = 5
-_V5_BASE_FIELDS = {
+RECORD_SCHEMA_VERSION = 6
+_V6_BASE_FIELDS = {
     "schema_version",
     "record_id",
     "kind",
@@ -24,7 +28,7 @@ _V5_BASE_FIELDS = {
     "inputs",
     "config_digest",
 }
-_V5_DATAFRAME_FIELDS = _V5_BASE_FIELDS | {
+_V6_DATAFRAME_FIELDS = _V6_BASE_FIELDS | {
     "contract_id",
     "path",
     "content_digest",
@@ -33,14 +37,15 @@ _V5_DATAFRAME_FIELDS = _V5_BASE_FIELDS | {
     "build_identity",
     "size_bytes",
 }
-_V5_FILE_BUNDLE_REQUIRED_FIELDS = _V5_BASE_FIELDS | {
+_V6_FILE_BUNDLE_REQUIRED_FIELDS = _V6_BASE_FIELDS | {
     "files",
     "description",
     "file_evidence",
     "producer_config_digest",
     "build_identity",
 }
-_V5_FILE_BUNDLE_FIELDS = _V5_FILE_BUNDLE_REQUIRED_FIELDS | {"path_descriptions"}
+_V6_FILE_BUNDLE_FIELDS = _V6_FILE_BUNDLE_REQUIRED_FIELDS | {"path_descriptions"}
+_SOURCE_RECIPE_FIELDS = {"recipe", "with"}
 
 
 @dataclass(frozen=True)
@@ -57,29 +62,16 @@ class RecordProducer:
     kind: WorkbenchProducerKind
     id: str
     plugin: str | None = None
-    template: str | None = None
     source_recipe: RecordRecipeSource | None = None
 
     def __post_init__(self) -> None:
-        if self.kind == "notebook":
-            if not isinstance(self.template, str) or not self.template:
-                raise RecordError("notebook producers must include a non-empty template id")
-            if self.plugin is not None:
-                raise RecordError("notebook producers must not include a plugin id")
-            if self.source_recipe is not None:
-                raise RecordError("notebook producers must not include recipe provenance")
-            return
+        if self.kind not in {"pipeline", "plot", "export"}:
+            raise RecordError(f"record producers must use pipeline, plot, or export kind; got {self.kind!r}")
         if not isinstance(self.plugin, str) or not self.plugin:
             raise RecordError("pipeline/plot/export producers must include a non-empty plugin id")
-        if self.template is not None:
-            raise RecordError("pipeline/plot/export producers must not include a template id")
 
     def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {"kind": self.kind, "id": self.id}
-        if self.kind == "notebook":
-            payload["template"] = self.template or ""
-        else:
-            payload["plugin"] = self.plugin or ""
+        payload: dict[str, Any] = {"kind": self.kind, "id": self.id, "plugin": self.plugin or ""}
         if self.source_recipe is not None:
             payload["source_recipe"] = self.source_recipe.to_dict()
         return payload
@@ -121,20 +113,35 @@ class DataFrameArtifactRecord(WorkbenchRecord):
                 f"DataFrameArtifactRecord schema_version must be {RECORD_SCHEMA_VERSION} (got {self.schema_version!r})"
             )
         if not self.producer_config_digest:
-            raise RecordError("schema-v5 dataframe records require producer_config_digest")
+            raise RecordError("schema-v6 dataframe records require producer_config_digest")
         if self.build_identity is None:
-            raise RecordError("schema-v5 dataframe records require build_identity")
+            raise RecordError("schema-v6 dataframe records require build_identity")
         if not isinstance(self.size_bytes, int) or self.size_bytes < 0:
-            raise RecordError("schema-v5 dataframe records require non-negative size_bytes")
+            raise RecordError("schema-v6 dataframe records require non-negative size_bytes")
         if not is_sha256_digest(self.content_digest):
-            raise RecordError("schema-v5 dataframe records require a sha256 content_digest")
+            raise RecordError("schema-v6 dataframe records require a sha256 content_digest")
         if not is_sha256_digest(self.code_digest):
-            raise RecordError("schema-v5 dataframe records require a sha256 code_digest")
+            raise RecordError("schema-v6 dataframe records require a sha256 code_digest")
 
-    def load_dataframe(self) -> pd.DataFrame:
-        self.verify_content_digest()
+    def load_dataframe(self, *, row_limit: int | None = None) -> pd.DataFrame:
+        if row_limit is not None and (isinstance(row_limit, bool) or not isinstance(row_limit, int) or row_limit < 1):
+            raise RecordError("row_limit must be a positive integer")
         if self.path.suffix.lower() == ".parquet":
-            return pd.read_parquet(self.path)
+            if row_limit is not None:
+                return _read_verified_parquet_rows(
+                    self.path,
+                    record_id=self.record_id,
+                    expected_size=self.size_bytes or 0,
+                    expected_digest=self.content_digest,
+                    row_limit=row_limit,
+                )
+            content = _read_verified_artifact_bytes(
+                self.path,
+                record_id=self.record_id,
+                expected_size=self.size_bytes or 0,
+                expected_digest=self.content_digest,
+            )
+            return pd.read_parquet(BytesIO(content))
         raise RecordError(f"Record {self.record_id} is not a parquet dataframe: {self.path}")
 
     def verify_content_digest(self) -> None:
@@ -174,6 +181,102 @@ def _verify_artifact_file(
         raise RecordError(
             f"Record {record_id} content digest mismatch for {path}: expected {expected_digest}, got {actual_digest}"
         )
+
+
+def _read_verified_artifact_bytes(
+    path: Path,
+    *,
+    record_id: str,
+    expected_size: int,
+    expected_digest: str,
+) -> bytes:
+    """Read, verify, and return one immutable buffer from one open descriptor."""
+
+    try:
+        with path.open("rb") as artifact:
+            artifact_stat = os.fstat(artifact.fileno())
+            if not stat.S_ISREG(artifact_stat.st_mode):
+                raise RecordError(f"Record {record_id} artifact is not a regular file: {path}")
+            content = artifact.read()
+    except FileNotFoundError as exc:
+        raise RecordError(f"Record {record_id} artifact is missing: {path}") from exc
+    except IsADirectoryError as exc:
+        raise RecordError(f"Record {record_id} artifact is not a regular file: {path}") from exc
+    except RecordError:
+        raise
+    except OSError as exc:
+        raise RecordError(f"Record {record_id} artifact could not be read: {path}: {exc}") from exc
+    actual_size = len(content)
+    if actual_size != expected_size:
+        raise RecordError(
+            f"Record {record_id} content digest mismatch for {path}: "
+            f"artifact size changed from {expected_size} to {actual_size} bytes"
+        )
+    actual_digest = "sha256:" + hashlib.sha256(content).hexdigest()
+    if actual_digest != expected_digest:
+        raise RecordError(
+            f"Record {record_id} content digest mismatch for {path}: expected {expected_digest}, got {actual_digest}"
+        )
+    return content
+
+
+def _read_verified_parquet_rows(
+    path: Path,
+    *,
+    record_id: str,
+    expected_size: int,
+    expected_digest: str,
+    row_limit: int,
+) -> pd.DataFrame:
+    """Verify one open parquet descriptor and materialize at most ``row_limit`` rows."""
+
+    try:
+        with path.open("rb") as artifact:
+            artifact_stat = os.fstat(artifact.fileno())
+            if not stat.S_ISREG(artifact_stat.st_mode):
+                raise RecordError(f"Record {record_id} artifact is not a regular file: {path}")
+            if artifact_stat.st_size != expected_size:
+                raise RecordError(
+                    f"Record {record_id} content digest mismatch for {path}: "
+                    f"artifact size changed from {expected_size} to {artifact_stat.st_size} bytes"
+                )
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+                digest.update(chunk)
+            actual_digest = "sha256:" + digest.hexdigest()
+            if actual_digest != expected_digest:
+                raise RecordError(
+                    f"Record {record_id} content digest mismatch for {path}: "
+                    f"expected {expected_digest}, got {actual_digest}"
+                )
+            artifact.seek(0)
+            parquet_file = pq.ParquetFile(artifact)
+            first_batch = next(parquet_file.iter_batches(batch_size=row_limit), None)
+            dataframe = (
+                parquet_file.schema_arrow.empty_table().to_pandas() if first_batch is None else first_batch.to_pandas()
+            )
+            final_stat = os.fstat(artifact.fileno())
+            if (
+                final_stat.st_dev,
+                final_stat.st_ino,
+                final_stat.st_size,
+                final_stat.st_mtime_ns,
+            ) != (
+                artifact_stat.st_dev,
+                artifact_stat.st_ino,
+                artifact_stat.st_size,
+                artifact_stat.st_mtime_ns,
+            ):
+                raise RecordError(f"Record {record_id} artifact changed while it was being read: {path}")
+            return dataframe
+    except FileNotFoundError as exc:
+        raise RecordError(f"Record {record_id} artifact is missing: {path}") from exc
+    except IsADirectoryError as exc:
+        raise RecordError(f"Record {record_id} artifact is not a regular file: {path}") from exc
+    except RecordError:
+        raise
+    except OSError as exc:
+        raise RecordError(f"Record {record_id} artifact could not be read: {path}: {exc}") from exc
 
 
 def sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -287,15 +390,15 @@ class FileBundleRecord(WorkbenchRecord):
         object.__setattr__(self, "description", description)
         object.__setattr__(self, "path_descriptions", path_descriptions)
         if not self.producer_config_digest:
-            raise RecordError("schema-v5 file-bundle records require producer_config_digest")
+            raise RecordError("schema-v6 file-bundle records require producer_config_digest")
         if self.build_identity is None:
-            raise RecordError("schema-v5 file-bundle records require build_identity")
+            raise RecordError("schema-v6 file-bundle records require build_identity")
         evidence = tuple(self.file_evidence)
         if len(evidence) != len(self.files):
-            raise RecordError("schema-v5 file-bundle records must include evidence for every file")
+            raise RecordError("schema-v6 file-bundle records must include evidence for every file")
         evidence_paths = [item.relative_path for item in evidence]
         if len(set(evidence_paths)) != len(evidence_paths):
-            raise RecordError("schema-v5 file-bundle records contain duplicate evidence paths")
+            raise RecordError("schema-v6 file-bundle records contain duplicate evidence paths")
         object.__setattr__(self, "file_evidence", evidence)
 
     def description_for(self, path: Path) -> str | None:
@@ -455,9 +558,12 @@ def record_from_dict(
     if kind not in {"dataframe_artifact", "file_bundle"}:
         raise RecordError(f"record {record_id!r} has unknown kind {kind!r}")
     if schema_version != RECORD_SCHEMA_VERSION:
-        raise RecordError(f"record payload schema_version must be {RECORD_SCHEMA_VERSION} (got {schema_version!r})")
-    allowed = _V5_DATAFRAME_FIELDS if kind == "dataframe_artifact" else _V5_FILE_BUNDLE_FIELDS
-    required = _V5_DATAFRAME_FIELDS if kind == "dataframe_artifact" else _V5_FILE_BUNDLE_REQUIRED_FIELDS
+        raise RecordError(
+            f"record payload schema_version must be {RECORD_SCHEMA_VERSION} (got {schema_version!r}); "
+            "regenerate the catalog with `reader run <config|dir|index> --reset-records`"
+        )
+    allowed = _V6_DATAFRAME_FIELDS if kind == "dataframe_artifact" else _V6_FILE_BUNDLE_FIELDS
+    required = _V6_DATAFRAME_FIELDS if kind == "dataframe_artifact" else _V6_FILE_BUNDLE_REQUIRED_FIELDS
     unknown = sorted(set(payload) - allowed)
     missing = sorted(required - set(payload))
     if unknown or missing:
@@ -466,29 +572,39 @@ def record_from_dict(
             details.append("unknown=" + ", ".join(unknown))
         if missing:
             details.append("missing=" + ", ".join(missing))
-        raise RecordError(f"schema-v5 record payload has unknown or missing fields: {'; '.join(details)}")
+        raise RecordError(f"schema-v6 record payload has unknown or missing fields: {'; '.join(details)}")
     if not isinstance(producer_payload, dict):
         raise RecordError(f"record {record_id!r} must include producer metadata")
     producer_kind = producer_payload.get("kind")
     producer_id = producer_payload.get("id")
     producer_plugin = producer_payload.get("plugin")
-    producer_template = producer_payload.get("template")
     source_recipe_payload = producer_payload.get("source_recipe")
-    if producer_kind not in {"pipeline", "plot", "export", "notebook"}:
+    unknown_producer_fields = sorted(set(producer_payload) - {"kind", "id", "plugin", "source_recipe"})
+    if unknown_producer_fields:
+        raise RecordError(f"record {record_id!r} producer has unknown fields: {', '.join(unknown_producer_fields)}")
+    if producer_kind not in {"pipeline", "plot", "export"}:
         raise RecordError(f"record {record_id!r} has invalid producer kind {producer_kind!r}")
     if not isinstance(producer_id, str) or not producer_id:
         raise RecordError(f"record {record_id!r} must include producer.id")
-    if producer_kind == "notebook":
-        if not isinstance(producer_template, str) or not producer_template:
-            raise RecordError(f"record {record_id!r} must include producer.template")
-    elif not isinstance(producer_plugin, str) or not producer_plugin:
+    if not isinstance(producer_plugin, str) or not producer_plugin:
         raise RecordError(f"record {record_id!r} must include producer.plugin")
     source_recipe = None
     if source_recipe_payload is not None:
         if not isinstance(source_recipe_payload, dict):
             raise RecordError(f"record {record_id!r} must include producer.source_recipe as an object")
-        recipe_name = source_recipe_payload.get("recipe")
-        with_block = source_recipe_payload.get("with", {}) or {}
+        unknown_source_recipe_fields = sorted(set(source_recipe_payload) - _SOURCE_RECIPE_FIELDS)
+        missing_source_recipe_fields = sorted(_SOURCE_RECIPE_FIELDS - set(source_recipe_payload))
+        if unknown_source_recipe_fields or missing_source_recipe_fields:
+            details = []
+            if unknown_source_recipe_fields:
+                details.append("unknown=" + ", ".join(unknown_source_recipe_fields))
+            if missing_source_recipe_fields:
+                details.append("missing=" + ", ".join(missing_source_recipe_fields))
+            raise RecordError(
+                f"record {record_id!r} producer.source_recipe has unknown or missing fields: {'; '.join(details)}"
+            )
+        recipe_name = source_recipe_payload["recipe"]
+        with_block = source_recipe_payload["with"]
         if not isinstance(recipe_name, str) or not recipe_name:
             raise RecordError(f"record {record_id!r} must include producer.source_recipe.recipe")
         if not isinstance(with_block, dict):
@@ -504,7 +620,6 @@ def record_from_dict(
         kind=producer_kind,
         id=producer_id,
         plugin=producer_plugin if isinstance(producer_plugin, str) else None,
-        template=producer_template if isinstance(producer_template, str) else None,
         source_recipe=source_recipe,
     )
     try:

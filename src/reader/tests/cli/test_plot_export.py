@@ -35,7 +35,11 @@ def _base_config() -> dict:
         protocol_inputs={"fold_change": {"report_times": [14.0]}},
         protocol_analysis={"crosstalk_pairs": {"enabled": True, "export": True}},
         protocol_outputs={
-            "plots": {"profile": "none", "include": ["raw_kinetics", "endpoint_by_condition"]},
+            "plots": {
+                "profile": "none",
+                "include": ["raw_kinetics", "endpoint_by_condition"],
+                "views": {"endpoint_by_condition": {"time": 14.0}},
+            },
             "exports": {"include": ["crosstalk_pairs_table"]},
         },
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
@@ -63,11 +67,21 @@ def _logic_plot_config() -> dict:
 
 
 def _dual_reporter_profile_config(profile: str) -> dict:
+    views = {
+        "ratio_screen": {
+            "state_summary": {"time": 14.0},
+            "ratio_overview": {"snap_time": 14.0},
+        },
+        "heatmap_review": {
+            "ratio_heatmap": {"time": 14.0},
+            "support_heatmap": {"time": 14.0},
+        },
+    }
     return base_reader_config(
         experiment_id=f"exp_{profile}",
         protocol_id="plate_reader/dual_reporter_screen",
         protocol_inputs={"fold_change": {"report_times": [14.0]}},
-        protocol_outputs={"plots": {"profile": profile}},
+        protocol_outputs={"plots": {"profile": profile, "views": views[profile]}},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
 
@@ -553,18 +567,38 @@ def test_validate_no_files_skips_checks(tmp_path: Path) -> None:
     assert result.exit_code == 0
 
 
-def test_plot_notebook_scaffold(tmp_path: Path) -> None:
+def test_notebook_scaffold_has_no_parallel_plot_selection_surface(tmp_path: Path) -> None:
     cfg = write_config(tmp_path, _base_config())
     runner = CliRunner()
-    result = runner.invoke(
+    notebook_help = runner.invoke(app, ["notebook", "--help"])
+    plot_help = runner.invoke(app, ["plot", "--help"])
+
+    assert notebook_help.exit_code == 0
+    assert "--only" not in _plain(notebook_help.output)
+    assert "--exclude" not in _plain(notebook_help.output)
+    assert plot_help.exit_code == 0
+    assert "--only" in _plain(plot_help.output)
+    assert "--exclude" in _plain(plot_help.output)
+
+    removed_option = runner.invoke(
         app,
-        ["notebook", str(cfg), "--template", "notebook/eda", "--only", "raw_kinetics", "--mode", "none"],
+        ["notebook", str(cfg), "--only", "raw_kinetics", "--mode", "none"],
+        env={"COLUMNS": "200"},
     )
+    assert removed_option.exit_code != 0
+    assert "No such option '--only'" in _plain(removed_option.output)
+    assert not (tmp_path / "outputs").exists()
+
+    result = runner.invoke(app, ["notebook", str(cfg), "--mode", "none"])
     assert result.exit_code == 0
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     assert nb_path.exists()
     content = nb_path.read_text(encoding="utf-8")
-    assert "PLOT_SPECS" not in content
+    assert "records(experiment)" in content
+    assert "revision=_revision" in content
+    assert "revision_digest=_revision_digest" in content
+    assert "read_artifact(" in content
+    assert "verify(experiment)" in content
     assert content.count("build_notebook_deliverable_selector(mo, deliverables)") == 1
     assert content.count("render_notebook_deliverable_viewport(") == 1
     assert 'label="Dataset (dataframe record)"' not in content

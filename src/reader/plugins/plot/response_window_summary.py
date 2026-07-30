@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from reader.plotting.sinks import PlotFigure
@@ -9,11 +11,11 @@ from reader.workbench.registry import PluginConfig
 
 
 class ResponseWindowSummaryCfg(PluginConfig):
-    primary_reduction_id: str
-    title: str = "Response-window summary"
-    filename: str = "response_window_summary"
-    format: list[str] = Field(default_factory=lambda: ["png"])
-    dpi: int = 300
+    primary_reduction_id: str = Field(min_length=1)
+    title: str = Field(default="Response-window summary", min_length=1)
+    filename: str = Field(default="response_window_summary", min_length=1)
+    format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["png"], min_length=1)
+    dpi: int = Field(default=300, ge=1)
 
 
 class ResponseWindowSummaryPlot(FigurePlotPlugin):

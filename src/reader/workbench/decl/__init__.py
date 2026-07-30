@@ -3,13 +3,11 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
-    "build": {"bind_recipe_steps", "build_workbench_decl", "load_workbench_decl"},
+    "build": {"build_workbench_decl", "load_workbench_decl"},
     "model": {
         "ExperimentDecl",
         "FileInputDecl",
         "InputBindingDecl",
-        "NotebookDecl",
-        "NotebookTemplateCallDecl",
         "PipelineDecl",
         "PluginStepDecl",
         "RecipeSourceDecl",

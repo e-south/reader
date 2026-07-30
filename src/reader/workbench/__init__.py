@@ -6,7 +6,6 @@ _EXPORTS = {
     "graph": {
         "FileRef",
         "InputRef",
-        "NotebookTemplateCall",
         "OutputRef",
         "PluginStep",
         "ProvenanceInput",
@@ -33,7 +32,6 @@ _EXPORTS = {
         "WorkbenchItemKind",
         "WorkbenchPluginStepKind",
         "WorkbenchProducerKind",
-        "WorkbenchRecipeSemantics",
         "WorkbenchRecordKind",
         "WorkbenchSurfaceSemantics",
         "get_workbench_surface_semantics",

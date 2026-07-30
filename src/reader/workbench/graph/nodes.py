@@ -60,20 +60,7 @@ class PluginStep:
         return payload
 
 
-@dataclass(frozen=True)
-class NotebookTemplateCall:
-    id: str
-    template: str
-
-    @property
-    def semantics(self) -> WorkbenchSurfaceSemantics:
-        return get_workbench_surface_semantics("notebook")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "template": self.template}
-
-
-WorkbenchItem = PluginStep | NotebookTemplateCall
+WorkbenchItem = PluginStep
 
 
 @dataclass(frozen=True)
@@ -81,7 +68,6 @@ class Workbench:
     pipeline: tuple[PluginStep, ...] = ()
     plots: tuple[PluginStep, ...] = ()
     exports: tuple[PluginStep, ...] = ()
-    notebooks: tuple[NotebookTemplateCall, ...] = ()
 
     def by_kind(self, kind: WorkbenchItemKind) -> tuple[WorkbenchItem, ...]:
         if kind == "pipeline":
@@ -90,10 +76,10 @@ class Workbench:
             return self.plots
         if kind == "export":
             return self.exports
-        return self.notebooks
+        raise ValueError(f"Unknown workbench item kind {kind!r}")
 
     def all_specs(self) -> tuple[WorkbenchItem, ...]:
-        return self.pipeline + self.plots + self.exports + self.notebooks
+        return self.pipeline + self.plots + self.exports
 
     def plugin_steps(self) -> tuple[PluginStep, ...]:
         return self.pipeline + self.plots + self.exports
@@ -106,7 +92,6 @@ class Workbench:
             "pipeline": len(self.pipeline),
             "plot": len(self.plots),
             "export": len(self.exports),
-            "notebook": len(self.notebooks),
         }
 
 
@@ -114,4 +99,4 @@ def ensure_unique_workbench_ids(*collections: Sequence[WorkbenchItem]) -> None:
     ids: list[str] = [item.id for collection in collections for item in collection if item.id]
     dupes = sorted(item_id for item_id, count in Counter(ids).items() if count > 1)
     if dupes:
-        raise ConfigError(f"Duplicate step/spec id(s) across pipeline/plots/exports/notebooks: {dupes}")
+        raise ConfigError(f"Duplicate step/spec id(s) across pipeline/plots/exports: {dupes}")

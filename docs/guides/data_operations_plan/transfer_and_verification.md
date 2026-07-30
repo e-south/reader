@@ -64,8 +64,8 @@ Verification is complete only when it proves:
 
 - the config schema and protocol binding are valid;
 - declared files/resources exist or the experiment is intentionally non-active;
-- the compiled pipeline, plots, exports, and notebooks match the intended data
-  class;
+- the compiled pipeline, plots, and exports match the intended data class;
+- the fixed EDA notebook can open the resulting verified record catalog;
 - `outputs/manifests/records.json` records the generated dataframe and
   file-bundle evidence;
 - `reader verify` confirms the recorded files and their input evidence still

@@ -24,7 +24,6 @@ from reader.workbench import PluginSemantics, resolve_workbench
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.decl.model import (
     ExperimentDecl,
-    NotebookDecl,
     PipelineDecl,
     PluginStepDecl,
     RecordInputDecl,
@@ -208,7 +207,6 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
                 ),
             )
         ),
-        notebooks=NotebookDecl(specs=()),
     )
 
     reg = Registry(contracts=builtin_contract_catalog())

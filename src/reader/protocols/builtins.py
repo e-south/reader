@@ -28,7 +28,6 @@ from .model import (
     ProtocolFactorSpec,
     ProtocolFigureSpec,
     ProtocolMetricSpec,
-    ProtocolNotebookPolicy,
     ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolRankingSpec,
@@ -57,10 +56,13 @@ def _field(
     children: tuple[ProtocolConfigFieldSpec, ...] = (),
     allow_unknown: bool = False,
     default: object = _MISSING,
+    example: object = _MISSING,
 ) -> ProtocolConfigFieldSpec:
     kwargs: dict[str, object] = {}
     if default is not _MISSING:
         kwargs["default"] = default
+    if example is not _MISSING:
+        kwargs["example"] = example
     return ProtocolConfigFieldSpec(
         key=key,
         summary=summary,
@@ -94,17 +96,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             summary="Generic protocol leaves ranking to the domain-specific analysis layer.",
         ),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/eda",
-                allowed_templates=(
-                    "notebook/basic",
-                    "notebook/eda",
-                    "notebook/dual_reporter_triptych",
-                    "notebook/cytometry",
-                    "notebook/sfxi_eda",
-                ),
-                summary="Generic workbenches default to the shared progressive-disclosure deliverable explorer.",
-            ),
             compiler=compile_generic_protocol,
         ),
     ),
@@ -140,11 +131,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         default_plot_profile="collection_overview",
         artifacts=(ProtocolArtifactSpec(id="vec8_table", summary="CSV table of the collected vec8 rows."),),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/eda",
-                allowed_templates=("notebook/eda", "notebook/basic", "notebook/sfxi_eda"),
-                summary="Record collections use the shared progressive-disclosure deliverable workbench.",
-            ),
             compiler=compile_logic_sfxi_vec8_collection,
         ),
     ),
@@ -240,6 +226,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Primary event-relative response and anchored-magnitude components.",
                 primary=True,
             ),
+            ProtocolFigureSpec(
+                id="response_window_diagnostic",
+                kind="kinetics",
+                summary="Focused trajectories and reduced components for one source design.",
+            ),
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
@@ -254,11 +245,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolArtifactSpec(id="events_table", summary="CSV of source event intervals."),
         ),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/eda",
-                allowed_templates=("notebook/eda", "notebook/basic"),
-                summary="Event-relative collections use the shared progressive-disclosure workbench.",
-            ),
             compiler=compile_plate_reader_response_window,
         ),
     ),
@@ -348,9 +334,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 children=(
                     _field(
                         "report_times",
-                        "Report times in hours for fold-change snapshots.",
+                        "Explicit report times in hours for fold-change snapshots.",
                         kind="number_list",
-                        default=[14.0],
                     ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
                     _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
@@ -385,7 +370,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
         ),
         analysis_fields=(
-            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=False),
             _field(
                 "preprocessing",
                 "Pre-ingest cleanup policy for blanks and overflow.",
@@ -608,6 +593,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 primary=True,
             ),
             ProtocolFigureSpec(
+                id="dual_reporter_triptych",
+                kind="kinetics",
+                summary="Per-design growth and reporter-ratio kinetics with an explicitly timed endpoint summary.",
+            ),
+            ProtocolFigureSpec(
                 id="endpoint_by_condition",
                 kind="summary",
                 summary="Endpoint comparison grouped by treatment/condition.",
@@ -655,7 +645,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         plot_profiles=(
             ProtocolPlotProfileSpec(
                 id="screen_overview",
-                summary="Balanced default set for screen-style plate-reader experiments.",
+                summary="Endpoint screen view; each selected endpoint time must be authored explicitly.",
                 figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
             ),
             ProtocolPlotProfileSpec(
@@ -674,7 +664,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 figures=("ratio_heatmap", "support_heatmap"),
             ),
         ),
-        default_plot_profile="screen_overview",
+        default_plot_profile="kinetics_qc",
         artifacts=(
             ProtocolArtifactSpec(
                 id="crosstalk_pairs_table",
@@ -692,15 +682,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             profiles=("yfp_cfp_crosstalk",),
         ),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/eda",
-                allowed_templates=(
-                    "notebook/eda",
-                    "notebook/dual_reporter_triptych",
-                    "notebook/basic",
-                ),
-                summary="Dual-reporter plate-reader screens default to the EDA notebook with plot support.",
-            ),
             plugin_defaults=(
                 ProtocolPluginDefaultsSpec(
                     plugin="ingest/synergy_h1",
@@ -841,9 +822,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
                     _field(
                         "report_times",
-                        "Report times in hours for fold-change snapshots.",
+                        "Explicit report times in hours for fold-change snapshots.",
                         kind="number_list",
-                        default=[14.0],
                     ),
                     _field("time_tolerance", "Nearest-time tolerance in hours.", kind="number", default=0.51),
                     _field("agg", "Replicate aggregator.", kind="string", choices=("median", "mean"), default="median"),
@@ -934,7 +914,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
         ),
         analysis_fields=(
-            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=False),
             _field("include_vec8", "Build the vec8 summary table.", kind="bool", default=True),
             _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
             _field(
@@ -1136,6 +1116,14 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Logic symmetry geometry over the configured response channel.",
             ),
             ProtocolFigureSpec(
+                id="sfxi_diagnostic",
+                kind="summary",
+                summary=(
+                    "Per-design growth and response trajectories beside the persisted vec8 components "
+                    "at the persisted selection time."
+                ),
+            ),
+            ProtocolFigureSpec(
                 id="sfxi_vec8_heatmap",
                 kind="summary",
                 summary="Heatmap over per-design SFXI vec8 logic shape and reference-normalized intensity.",
@@ -1143,8 +1131,13 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
+                id="kinetics_qc",
+                summary="Time-series QC without selecting a scientific endpoint.",
+                figures=("raw_kinetics",),
+            ),
+            ProtocolPlotProfileSpec(
                 id="logic_overview",
-                summary="Default SFXI overview with kinetics and endpoint summaries.",
+                summary="SFXI kinetics and endpoint summaries with explicitly authored plot times.",
                 figures=(
                     "raw_kinetics",
                     "endpoint_by_condition",
@@ -1158,6 +1151,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 figures=("logic_symmetry",),
             ),
             ProtocolPlotProfileSpec(
+                id="logic_diagnostic",
+                summary="Record-driven per-design trajectory and vec8 review.",
+                figures=("sfxi_diagnostic",),
+            ),
+            ProtocolPlotProfileSpec(
                 id="logic_full",
                 summary="Full logic review with kinetics and symmetry geometry.",
                 figures=(
@@ -1166,11 +1164,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "endpoint_by_design",
                     "intensity_overview",
                     "logic_symmetry",
+                    "sfxi_diagnostic",
                     "sfxi_vec8_heatmap",
                 ),
             ),
         ),
-        default_plot_profile="logic_overview",
+        default_plot_profile="kinetics_qc",
         artifacts=(
             ProtocolArtifactSpec(
                 id="logic_summary_workbook",
@@ -1178,16 +1177,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
         ),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/sfxi_eda",
-                allowed_templates=(
-                    "notebook/sfxi_eda",
-                    "notebook/dual_reporter_triptych",
-                    "notebook/eda",
-                    "notebook/basic",
-                ),
-                summary="SFXI logic screens default to the vec8-aware notebook scaffold.",
-            ),
             plugin_defaults=(
                 ProtocolPluginDefaultsSpec(
                     plugin="ingest/synergy_h1",
@@ -1341,6 +1330,160 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     ),
                 ),
             ),
+            _field(
+                "gating",
+                "Explicit cytometry gating, fluorescence threshold, grouping, and QC policy.",
+                required=True,
+                children=(
+                    _field(
+                        "cells_enabled",
+                        "Whether to apply the rectangular cells gate.",
+                        kind="bool",
+                        required=True,
+                        example=False,
+                    ),
+                    _field(
+                        "cells_x_channel",
+                        "X channel for the cells gate.",
+                        kind="string",
+                        required=True,
+                        example="<cells-x-channel>",
+                    ),
+                    _field(
+                        "cells_y_channel",
+                        "Y channel for the cells gate.",
+                        kind="string",
+                        required=True,
+                        example="<cells-y-channel>",
+                    ),
+                    _field(
+                        "cells_x_range",
+                        "Closed two-value range for the cells-gate X channel.",
+                        kind="number_list",
+                        required=True,
+                        example=[0.0, 1.0],
+                    ),
+                    _field(
+                        "cells_y_range",
+                        "Closed two-value range for the cells-gate Y channel.",
+                        kind="number_list",
+                        required=True,
+                        example=[0.0, 1.0],
+                    ),
+                    _field(
+                        "singlets_enabled",
+                        "Whether to apply the singlet-ratio gate after the cells gate.",
+                        kind="bool",
+                        required=True,
+                        example=False,
+                    ),
+                    _field(
+                        "singlet_x_channel",
+                        "Denominator channel for the singlet ratio (Y / X).",
+                        kind="string",
+                        required=True,
+                        example="<singlet-denominator-channel>",
+                    ),
+                    _field(
+                        "singlet_y_channel",
+                        "Numerator channel for the singlet ratio (Y / X).",
+                        kind="string",
+                        required=True,
+                        example="<singlet-numerator-channel>",
+                    ),
+                    _field(
+                        "singlet_ratio_range",
+                        "Closed two-value range for the singlet ratio.",
+                        kind="number_list",
+                        required=True,
+                        example=[0.0, 1.0],
+                    ),
+                    _field(
+                        "fluorescence_channel",
+                        "Fluorescence channel summarized after gating.",
+                        kind="string",
+                        required=True,
+                        example="<fluorescence-channel>",
+                    ),
+                    _field(
+                        "threshold_mode",
+                        "Positive-event threshold policy.",
+                        kind="string",
+                        choices=("manual", "from_control_quantile"),
+                        required=True,
+                        example="manual",
+                    ),
+                    _field(
+                        "threshold_value",
+                        "Manual fluorescence threshold; null for control-quantile policy.",
+                        kind="number",
+                        required=True,
+                        allow_none=True,
+                        example=0.0,
+                    ),
+                    _field(
+                        "threshold_group_column",
+                        "Metadata column containing the threshold control; null for manual policy.",
+                        kind="string",
+                        required=True,
+                        allow_none=True,
+                        example=None,
+                    ),
+                    _field(
+                        "threshold_control_value",
+                        "Exact control value used for threshold estimation; null for manual policy.",
+                        kind="string",
+                        required=True,
+                        allow_none=True,
+                        example=None,
+                    ),
+                    _field(
+                        "threshold_quantile",
+                        "Control quantile used as the fluorescence threshold; null for manual policy.",
+                        kind="number",
+                        required=True,
+                        allow_none=True,
+                        example=None,
+                    ),
+                    _field(
+                        "group_column",
+                        "Metadata column for group summaries; explicit null disables group summaries.",
+                        kind="string",
+                        required=True,
+                        allow_none=True,
+                        example=None,
+                    ),
+                    _field(
+                        "minimum_final_events",
+                        "Minimum retained singlet events required per sample.",
+                        kind="integer",
+                        required=True,
+                        example=0,
+                    ),
+                    _field(
+                        "minimum_final_percent",
+                        "Minimum percentage of input events retained per sample.",
+                        kind="number",
+                        required=True,
+                        example=0.0,
+                    ),
+                    _field(
+                        "maximum_nonpositive_percent",
+                        "Maximum allowed percentage of nonpositive fluorescence values per sample.",
+                        kind="number",
+                        required=True,
+                        example=100.0,
+                    ),
+                    _field(
+                        "nonpositive_scope",
+                        "Event population used for nonpositive-fluorescence QC.",
+                        kind="string",
+                        choices=("all_events", "gated_events"),
+                        required=True,
+                        example="all_events",
+                    ),
+                ),
+            ),
         ),
         analysis_fields=(),
         factors=(
@@ -1353,12 +1496,49 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             direction="higher_is_better",
             summary="Use domain-defined cytometry comparisons and gating summaries for ranking.",
         ),
-        execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/cytometry",
-                allowed_templates=("notebook/cytometry", "notebook/basic"),
-                summary="Flow-cytometry panels default to the cytometry EDA notebook scaffold.",
+        figures=(
+            ProtocolFigureSpec(
+                id="gating_diagnostic",
+                kind="diagnostic",
+                summary="Configured cells, singlets, fluorescence, and final-retention diagnostics.",
+                primary=True,
             ),
+        ),
+        plot_profiles=(
+            ProtocolPlotProfileSpec(
+                id="gating_review",
+                summary="Primary record-driven cytometry gating and fluorescence review.",
+                figures=("gating_diagnostic",),
+            ),
+        ),
+        default_plot_profile="gating_review",
+        artifacts=(
+            ProtocolArtifactSpec(
+                id="gate_definition_table",
+                summary="CSV projection of the resolved gate and threshold policy.",
+                default=True,
+            ),
+            ProtocolArtifactSpec(
+                id="sample_stats_table",
+                summary="CSV projection of per-sample cytometry statistics.",
+                default=True,
+            ),
+            ProtocolArtifactSpec(
+                id="group_stats_table",
+                summary="CSV projection of configured group-level cytometry statistics.",
+                default=True,
+            ),
+            ProtocolArtifactSpec(
+                id="qc_table",
+                summary="CSV projection of per-sample cytometry QC decisions.",
+                default=True,
+            ),
+            ProtocolArtifactSpec(
+                id="gated_events_table",
+                summary="Optional CSV projection of retained cytometry events.",
+            ),
+        ),
+        execution=ProtocolExecutionPlan(
             plugin_defaults=(
                 ProtocolPluginDefaultsSpec(
                     plugin="ingest/flow_cytometer",
@@ -1384,6 +1564,32 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "key": binding_value("metadata.key", "sample_id"),
                         "require_columns": binding_value("metadata.require_columns", []),
                         "require_non_null": binding_value("metadata.require_non_null", False),
+                    },
+                ),
+                ProtocolPluginDefaultsSpec(
+                    plugin="transform/cytometry_gating",
+                    summary="Cytometry gates and QC are explicit experiment parameters compiled into typed records.",
+                    with_={
+                        "cells_enabled": binding_value("gating.cells_enabled"),
+                        "cells_x_channel": binding_value("gating.cells_x_channel"),
+                        "cells_y_channel": binding_value("gating.cells_y_channel"),
+                        "cells_x_range": binding_value("gating.cells_x_range"),
+                        "cells_y_range": binding_value("gating.cells_y_range"),
+                        "singlets_enabled": binding_value("gating.singlets_enabled"),
+                        "singlet_x_channel": binding_value("gating.singlet_x_channel"),
+                        "singlet_y_channel": binding_value("gating.singlet_y_channel"),
+                        "singlet_ratio_range": binding_value("gating.singlet_ratio_range"),
+                        "fluorescence_channel": binding_value("gating.fluorescence_channel"),
+                        "threshold_mode": binding_value("gating.threshold_mode"),
+                        "threshold_value": binding_value("gating.threshold_value"),
+                        "threshold_group_column": binding_value("gating.threshold_group_column"),
+                        "threshold_control_value": binding_value("gating.threshold_control_value"),
+                        "threshold_quantile": binding_value("gating.threshold_quantile"),
+                        "group_column": binding_value("gating.group_column"),
+                        "minimum_final_events": binding_value("gating.minimum_final_events"),
+                        "minimum_final_percent": binding_value("gating.minimum_final_percent"),
+                        "maximum_nonpositive_percent": binding_value("gating.maximum_nonpositive_percent"),
+                        "nonpositive_scope": binding_value("gating.nonpositive_scope"),
                     },
                 ),
             ),

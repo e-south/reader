@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from reader.workbench.notebooks.components.overview import (
-    build_design_treatment_summary_rows,
     build_notebook_overview,
     render_notebook_overview_panel,
 )
@@ -31,25 +29,6 @@ class _FakeMarimo:
 
     def vstack(self, items):
         return {"kind": "vstack", "items": list(items)}
-
-
-def test_build_design_treatment_summary_rows_lists_vocabularies_without_pairing() -> None:
-    df = pd.DataFrame(
-        {
-            "design_id": ["design_beta", "design_alpha", None],
-            "treatment": ["condition_b", "condition_a", "condition_b"],
-        }
-    )
-
-    rows, note = build_design_treatment_summary_rows(df)
-
-    assert note == ""
-    assert rows == (
-        {"Category": "Design ID", "Value": "design_alpha"},
-        {"Category": "Design ID", "Value": "design_beta"},
-        {"Category": "Treatment", "Value": "condition_a"},
-        {"Category": "Treatment", "Value": "condition_b"},
-    )
 
 
 def test_build_notebook_overview_requires_identity_and_protocol(tmp_path: Path) -> None:
@@ -92,42 +71,33 @@ def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: 
     assert overview.experiment_title == "2026-01-02 · Sfxi Four State Panel"
 
 
-def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> None:
+def test_render_notebook_overview_panel_is_assay_neutral_and_uses_lazy_accordion(tmp_path: Path) -> None:
     mo = _FakeMarimo()
     overview = build_notebook_overview(
-        experiment_id="exp_sfxi",
-        experiment_title="SFXI run",
-        protocol_id="logic/sfxi_screen",
+        experiment_id="generic_run",
+        experiment_title="Generic run",
+        protocol_id="workbench/generic",
         experiment_root=tmp_path,
         outputs_dir=tmp_path / "outputs",
         notebooks_dir=tmp_path / "outputs" / "notebooks",
-        pipeline_step_ids=("ingest", "sfxi_vec8"),
+        pipeline_step_ids=("ingest", "normalize"),
     )
 
-    panel = render_notebook_overview_panel(
-        mo,
-        overview,
-        design_treatment_rows=({"Category": "Design ID", "Value": "reference"},),
-    )
+    panel = render_notebook_overview_panel(mo, overview)
 
     assert panel["kind"] == "vstack"
-    assert panel["items"][0] == {"kind": "markdown", "text": "# SFXI run"}
+    assert panel["items"][0] == {"kind": "markdown", "text": "# Generic run"}
     assert panel["items"][1]["rows"] == [
-        {"Field": "Experiment ID", "Value": "exp_sfxi"},
-        {"Field": "Protocol", "Value": "logic/sfxi_screen"},
+        {"Field": "Experiment ID", "Value": "generic_run"},
+        {"Field": "Protocol", "Value": "workbench/generic"},
         {"Field": "Pipeline steps", "Value": 2},
     ]
     assert mo.accordion_calls == [
         {
             "sections": {
-                "Design/treatment scope": {
-                    "kind": "table",
-                    "rows": [{"Category": "Design ID", "Value": "reference"}],
-                    "page_size": 1,
-                },
                 "Pipeline": {
                     "kind": "table",
-                    "rows": [{"Order": 1, "Step ID": "ingest"}, {"Order": 2, "Step ID": "sfxi_vec8"}],
+                    "rows": [{"Order": 1, "Step ID": "ingest"}, {"Order": 2, "Step ID": "normalize"}],
                     "page_size": 2,
                 },
                 "Paths": {
@@ -144,3 +114,27 @@ def test_render_notebook_overview_panel_uses_lazy_accordion(tmp_path: Path) -> N
             "lazy": True,
         }
     ]
+
+
+def test_render_notebook_overview_panel_accepts_semantic_detail_sections(tmp_path: Path) -> None:
+    mo = _FakeMarimo()
+    overview = build_notebook_overview(
+        experiment_id="exp",
+        experiment_title="Experiment",
+        protocol_id="workbench/generic",
+        experiment_root=tmp_path,
+        outputs_dir=tmp_path / "outputs",
+        notebooks_dir=tmp_path / "outputs" / "notebooks",
+        pipeline_step_ids=(),
+    )
+    scope = mo.md("Protocol-owned context")
+
+    render_notebook_overview_panel(
+        mo,
+        overview,
+        detail_sections={"Assay context": scope},
+    )
+
+    sections = mo.accordion_calls[-1]["sections"]
+    assert list(sections) == ["Assay context", "Pipeline", "Paths"]
+    assert sections["Assay context"] is scope

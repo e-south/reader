@@ -65,8 +65,6 @@ protocol:
       include:
       - raw_kinetics
       - logic_symmetry
-    notebook:
-      template: notebook/eda
 resources:
   sample_map:
     kind: file

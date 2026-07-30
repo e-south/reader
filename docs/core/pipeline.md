@@ -157,7 +157,7 @@ The protocol block is split by role:
 - `protocol.analysis`
   Analysis toggles and protocol policy choices.
 - `protocol.outputs`
-  Notebook, plot, and export selection.
+  Plot and export selection.
 
 ## Plot and export choices
 
@@ -184,6 +184,11 @@ Users do not select plugins directly. They choose:
 Unknown keys in the public config fail fast, including misspelled protocol
 keys, unknown plot or export blocks, and malformed annotation collections.
 
+Reader does not choose a scientific endpoint. The neutral plate-reader starter
+selects kinetics and QC views only. Enabling fold-change requires explicit
+`protocol.inputs.fold_change.report_times`; selecting an endpoint figure
+requires its `time` or `snap_time` under `protocol.outputs.plots.views`.
+
 ## Plate-reader example
 
 ```yaml
@@ -202,12 +207,11 @@ protocol:
       treatment_column: treatment
       group_by: [design_id]
   analysis:
+    include_fold_change: true
     crosstalk_pairs:
       enabled: true
       export: true
   outputs:
-    notebook:
-      template: notebook/eda
     plots:
       profile: heatmap_review
       views:
@@ -238,8 +242,6 @@ protocol:
   analysis:
     include_export: true
   outputs:
-    notebook:
-      template: notebook/sfxi_eda
     plots:
       profile: logic_geometry
     exports:
@@ -247,6 +249,9 @@ protocol:
 ```
 
 ## Cytometry example
+
+The gating policy is required and has no scientific defaults. Replace the
+example channel names and bounds with values declared for the experiment.
 
 ```yaml
 protocol:
@@ -258,7 +263,38 @@ protocol:
     metadata:
       require_columns: [design_id, treatment]
       require_non_null: true
+    gating:
+      cells_enabled: true
+      cells_x_channel: FSC-A
+      cells_y_channel: SSC-A
+      cells_x_range: [100.0, 100000.0]
+      cells_y_range: [100.0, 100000.0]
+      singlets_enabled: true
+      singlet_x_channel: FSC-H
+      singlet_y_channel: FSC-A
+      singlet_ratio_range: [0.8, 1.2]
+      fluorescence_channel: GFP-A
+      threshold_mode: manual
+      threshold_value: 1000.0
+      threshold_group_column: null
+      threshold_control_value: null
+      threshold_quantile: null
+      group_column: treatment
+      minimum_final_events: 100
+      minimum_final_percent: 1.0
+      maximum_nonpositive_percent: 5.0
+      nonpositive_scope: all_events
+  outputs:
+    plots:
+      profile: gating_review
+    exports:
+      include: [gate_definition_table, sample_stats_table, group_stats_table, qc_table]
 ```
+
+The transform persists the resolved gate, gated events, per-sample statistics,
+optional group statistics, and QC. The diagnostic plot and CSV exports consume
+those records through the same lifecycle; the notebook does not recompute or
+publish cytometry results.
 
 ## Inspect the config
 

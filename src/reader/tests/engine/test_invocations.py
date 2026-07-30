@@ -19,7 +19,6 @@ from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.decl.model import (
     ExperimentDecl,
-    NotebookDecl,
     PipelineDecl,
     PluginStepDecl,
     SurfaceDecl,
@@ -112,7 +111,6 @@ def _synthetic_decl_and_runtime(tmp_path: Path) -> tuple[WorkbenchDecl, ReaderRu
         ),
         plots=SurfaceDecl(),
         exports=SurfaceDecl(),
-        notebooks=NotebookDecl(),
     )
     registry = Registry(contracts=builtin_contract_catalog())
     registry.register(
@@ -774,17 +772,23 @@ def test_run_spec_preserves_committed_records_when_success_result_cannot_be_conf
     assert raised.value.produced_record_revisions[0]["record_id"] == "ingest/df"
 
 
-def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_path: Path) -> None:
+def test_run_spec_reset_records_replaces_schema_v5_catalog_before_full_rerun(tmp_path: Path) -> None:
     decl, runtime = _synthetic_decl_and_runtime(tmp_path)
     records_path = tmp_path / "outputs" / "manifests" / "records.json"
     records_path.parent.mkdir(parents=True)
-    retired_record = {"schema_version": 4, "record_id": "legacy/df"}
+    retired_record = {
+        "schema_version": 5,
+        "record_id": "notebook:legacy-review",
+        "kind": "file_bundle",
+        "producer": {"kind": "notebook", "id": "legacy-review", "template": "notebook/eda"},
+    }
     records_path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
-                "latest": {"legacy/df": retired_record},
-                "history": {"legacy/df": [retired_record]},
+                "schema_version": 4,
+                "provenance_epoch_id": "11111111-1111-4111-8111-111111111111",
+                "latest": {"notebook:legacy-review": retired_record},
+                "history": {"notebook:legacy-review": [retired_record]},
             }
         ),
         encoding="utf-8",
@@ -804,7 +808,7 @@ def test_run_spec_reset_records_replaces_retired_catalog_before_full_rerun(tmp_p
     catalog = json.loads(records_path.read_text(encoding="utf-8"))
     assert result.status == "succeeded"
     assert set(catalog["latest"]) == {"ingest/df"}
-    assert catalog["latest"]["ingest/df"]["schema_version"] == 5
+    assert catalog["latest"]["ingest/df"]["schema_version"] == 6
 
 
 def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
@@ -930,7 +934,6 @@ def test_run_spec_rejects_symlinked_outputs_before_log_or_manifest_write(tmp_pat
         pipeline=PipelineDecl(),
         plots=SurfaceDecl(),
         exports=SurfaceDecl(),
-        notebooks=NotebookDecl(),
     )
 
     with pytest.raises(ConfigError, match="outputs.*symlink|symlink.*outputs"):

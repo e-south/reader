@@ -73,7 +73,7 @@ uv run reader inspect <config|dir|index>
 `records` is the catalog view. `verify` checks the current config, source files,
 upstream record revisions, generated files, recorded digests, and invocation
 lifecycle. A zero exit status is the machine-checkable proof that current
-schema-v5 records still match those inputs and outputs and that every recorded
+schema-v6 records still match those inputs and outputs and that every recorded
 attempt has one unambiguous terminal result.
 
 For a human review, also inspect:

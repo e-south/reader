@@ -1,4 +1,4 @@
-from .nodes import NotebookTemplateCall, PluginStep, RecipeSource, Workbench, ensure_unique_workbench_ids
+from .nodes import PluginStep, RecipeSource, Workbench, ensure_unique_workbench_ids
 from .normalize import materialize_workbench, normalize_input_binding, resolve_workbench, select_workbench_specs
 from .refs import (
     FileRef,
@@ -22,7 +22,6 @@ from .refs import (
 __all__ = [
     "FileRef",
     "InputRef",
-    "NotebookTemplateCall",
     "OutputRef",
     "PluginStep",
     "ProvenanceInput",

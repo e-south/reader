@@ -7,6 +7,7 @@ import yaml
 from rich import box
 from rich.table import Table
 
+from reader.errors import ConfigError
 from reader.protocols import ProtocolBinding
 from reader.protocols.model import ProtocolAnalysisChoiceRef, ProtocolBindingValueRef
 
@@ -49,6 +50,8 @@ def _protocol_field_payload(field, *, prefix: str = "") -> dict[str, object]:
     }
     if field.has_default:
         payload["default"] = deepcopy(field.default)
+    if field.has_example:
+        payload["example"] = deepcopy(field.example)
     if field.choices:
         payload["choices"] = list(field.choices)
     if field.children:
@@ -130,6 +133,8 @@ _EXAMPLE_OMIT = object()
 
 
 def _protocol_field_example_value(field) -> object:
+    if field.has_example:
+        return deepcopy(field.example)
     if field.kind == "mapping":
         example: dict[str, object] = {}
         for child in field.children:
@@ -163,11 +168,6 @@ def _protocol_surface_example(fields) -> dict[str, object]:
 
 def protocol_authoring_output_payload(descriptor) -> dict[str, object]:
     return {
-        "notebook_policy": {
-            "default_template": descriptor.execution.notebook.default_template,
-            "allowed_templates": list(descriptor.execution.notebook.allowed_templates),
-            "summary": descriptor.execution.notebook.summary,
-        },
         "default_plot_profile": descriptor.default_plot_profile,
         "plot_profiles": [
             {
@@ -206,9 +206,7 @@ def protocol_example_document(descriptor) -> dict[str, object]:
     if analysis:
         protocol_block["analysis"] = analysis
 
-    outputs: dict[str, object] = {
-        "notebook": {"template": descriptor.execution.notebook.default_template},
-    }
+    outputs: dict[str, object] = {}
     if descriptor.plot_profiles or descriptor.figures:
         plots: dict[str, object] = {}
         if descriptor.default_plot_profile is not None:
@@ -276,20 +274,31 @@ def protocol_runtime_defaults_payload(plugin_defaults) -> list[dict[str, object]
 
 
 def protocol_descriptor_payload(descriptor, *, runtime) -> dict[str, object]:
-    bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
-    compiled_plan = bound_protocol.compile()
-    semantic_program = compiled_plan.semantic_program
-    record_producers = record_producer_map(compiled_plan.pipeline, runtime=runtime)
-    compiled_payload = compiled_workbench_payload(
-        bound_protocol=bound_protocol,
-        pipeline_steps=compiled_plan.pipeline,
-        plot_steps=compiled_plan.plots,
-        export_steps=compiled_plan.exports,
-        notebook_steps=compiled_plan.notebooks,
-        runtime=runtime,
-        record_producers=record_producers,
-    )
-    compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
+    try:
+        bound_protocol = runtime.bind_protocol(ProtocolBinding(id=descriptor.protocol))
+    except ConfigError as exc:
+        semantic_program = descriptor.semantic_program()
+        compiled_payload = {
+            "status": "requires_authoring",
+            "reason": str(exc),
+            "pipeline": [],
+            "plots": [],
+            "exports": [],
+            "semantic_program": semantic_program_payload(semantic_program),
+        }
+    else:
+        compiled_plan = bound_protocol.compile()
+        semantic_program = compiled_plan.semantic_program
+        record_producers = record_producer_map(compiled_plan.pipeline, runtime=runtime)
+        compiled_payload = compiled_workbench_payload(
+            bound_protocol=bound_protocol,
+            pipeline_steps=compiled_plan.pipeline,
+            plot_steps=compiled_plan.plots,
+            export_steps=compiled_plan.exports,
+            runtime=runtime,
+            record_producers=record_producers,
+        )
+        compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return {
         "protocol": descriptor.protocol,
         "domain": descriptor.domain,

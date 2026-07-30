@@ -249,7 +249,7 @@ def experiment_readiness_payload(
         next_steps = [
             {
                 "command": reader_command("verify", job_path, "--format", "json"),
-                "description": "Inspect missing or stale evidence, then rerun affected surfaces to emit schema-v5 records.",
+                "description": "Inspect missing or stale evidence, then rerun affected surfaces to emit schema-v6 records.",
             }
         ]
     elif records_available:
@@ -325,8 +325,8 @@ def experiment_readiness_payload(
             "verify": records_catalog,
             "plot": plot_ready and bool(workbench.plots),
             "export": export_ready and bool(workbench.exports),
-            "notebook_scaffold": bool(workbench.notebooks),
-            "notebook_read_records": verified_records and bool(workbench.notebooks),
+            "notebook_scaffold": True,
+            "notebook_read_records": verified_records,
         },
         "errors": errors,
         "next_steps": next_steps,

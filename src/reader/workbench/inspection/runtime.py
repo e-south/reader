@@ -22,15 +22,12 @@ def selected_plan_payload(*, spec: ReaderSpec, decl: WorkbenchDecl, runtime: Rea
     workbench = resolve_workbench(decl)
     plot_ids = [spec_decl.id for spec_decl in workbench.plots]
     export_ids = [spec_decl.id for spec_decl in workbench.exports]
-    notebook_templates = [notebook.template for notebook in workbench.notebooks]
     pipeline_ids = [step.id for step in workbench.pipeline]
     return {
         "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile or "—",
-        "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template or "—",
         "pipeline": {"count": len(pipeline_ids), "ids": pipeline_ids},
         "plots": {"count": len(plot_ids), "ids": plot_ids},
         "exports": {"count": len(export_ids), "ids": export_ids},
-        "notebooks": {"count": len(notebook_templates), "templates": notebook_templates},
     }
 
 
@@ -40,9 +37,8 @@ def selected_plan_summary(selected: dict[str, object] | None) -> str:
     pipeline = dict(selected["pipeline"])
     plots = dict(selected["plots"])
     exports = dict(selected["exports"])
-    notebooks = dict(selected["notebooks"])
     profile = str(selected.get("plot_profile") or "—")
-    return f"{profile} • {pipeline['count']} st • {plots['count']} pl • {exports['count']} ex • {notebooks['count']} nb"
+    return f"{profile} • {pipeline['count']} st • {plots['count']} pl • {exports['count']} ex"
 
 
 def generated_summary(generated: dict[str, int]) -> str:
@@ -61,7 +57,6 @@ def implementation_plan_payload(
     pipeline_steps,
     plot_steps,
     export_steps,
-    notebook_steps,
 ) -> dict[str, object]:
     return {
         "protocol": bound_protocol.id,
@@ -71,7 +66,6 @@ def implementation_plan_payload(
         "pipeline_flow": [step.id for step in pipeline_steps],
         "plots": [step.id for step in plot_steps],
         "exports": [step.id for step in export_steps],
-        "notebooks": [step.template for step in notebook_steps],
     }
 
 
@@ -81,7 +75,6 @@ def compiled_workbench_payload(
     pipeline_steps,
     plot_steps,
     export_steps,
-    notebook_steps,
     runtime: ReaderRuntime,
     record_producers,
 ) -> dict[str, object]:
@@ -109,7 +102,6 @@ def compiled_workbench_payload(
             )
             for step in export_steps
         ],
-        "notebooks": [{"id": step.id, "template": step.template} for step in notebook_steps],
     }
 
 
@@ -134,10 +126,7 @@ def workbench_record_verification_scope(workbench, *, runtime: ReaderRuntime) ->
     record_ids = set(record_producer_map(workbench.plugin_steps(), runtime=runtime))
     record_ids.update(f"plot:{step.id}" for step in workbench.plots)
     record_ids.update(f"export:{step.id}" for step in workbench.exports)
-    return RecordVerificationScope(
-        record_ids=frozenset(record_ids),
-        notebook_templates=frozenset(step.template for step in workbench.notebooks),
-    )
+    return RecordVerificationScope(record_ids=frozenset(record_ids))
 
 
 def pipeline_step_payload(step, *, runtime: ReaderRuntime, record_producers=None) -> dict[str, object]:

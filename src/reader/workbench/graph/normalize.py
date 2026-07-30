@@ -14,7 +14,7 @@ from reader.workbench.decl import (
     WorkbenchDecl,
 )
 from reader.workbench.experiment import ResourceCatalog
-from reader.workbench.graph.nodes import NotebookTemplateCall, PluginStep, Workbench, ensure_unique_workbench_ids
+from reader.workbench.graph.nodes import PluginStep, Workbench, ensure_unique_workbench_ids
 from reader.workbench.graph.refs import (
     FileRef,
     InputRef,
@@ -26,16 +26,14 @@ from reader.workbench.graph.refs import (
 )
 from reader.workbench.ontology import WorkbenchPluginStepKind, get_workbench_surface_semantics
 from reader.workbench.paths import resolve_path_within_root
-from reader.workbench.templates import resolve_notebook_template_descriptor
 
 
 def resolve_workbench(decl: WorkbenchDecl) -> Workbench:
     pipeline = tuple(_resolve_plugin_steps(decl, kind="pipeline", specs=decl.pipeline.steps))
     plots = tuple(_resolve_plugin_steps(decl, kind="plot", specs=decl.plots.specs))
     exports = tuple(_resolve_plugin_steps(decl, kind="export", specs=decl.exports.specs))
-    notebooks = tuple(_resolve_notebook_specs(decl))
-    ensure_unique_workbench_ids(pipeline, plots, exports, notebooks)
-    return Workbench(pipeline=pipeline, plots=plots, exports=exports, notebooks=notebooks)
+    ensure_unique_workbench_ids(pipeline, plots, exports)
+    return Workbench(pipeline=pipeline, plots=plots, exports=exports)
 
 
 def materialize_workbench(decl: WorkbenchDecl) -> dict[str, list[dict[str, Any]]]:
@@ -44,17 +42,16 @@ def materialize_workbench(decl: WorkbenchDecl) -> dict[str, list[dict[str, Any]]
         "pipeline": [item.to_dict() for item in workbench.pipeline],
         "plots": [item.to_dict() for item in workbench.plots],
         "exports": [item.to_dict() for item in workbench.exports],
-        "notebooks": [item.to_dict() for item in workbench.notebooks],
     }
 
 
 def select_workbench_specs(
-    specs: list[PluginStep] | list[NotebookTemplateCall],
+    specs: list[PluginStep],
     *,
     only: list[str],
     exclude: list[str],
     kind_label: str,
-) -> list[PluginStep] | list[NotebookTemplateCall]:
+) -> list[PluginStep]:
     ids = [item.id for item in specs]
     available = set(ids)
     if only:
@@ -177,27 +174,4 @@ def _resolve_plugin_steps(
                 source_recipe=step.source_recipe,
             )
         )
-    return resolved
-
-
-def _resolve_notebook_specs(decl: WorkbenchDecl) -> list[NotebookTemplateCall]:
-    semantics = get_workbench_surface_semantics("notebook")
-    raw_specs = list(decl.notebooks.specs or [])
-    if not raw_specs:
-        return []
-
-    seen: set[str] = set()
-    resolved: list[NotebookTemplateCall] = []
-    for entry in raw_specs:
-        step_id = entry.id
-        if not step_id or not isinstance(step_id, str):
-            raise ConfigError(f"Every {semantics.section} spec must include an id.")
-        template = entry.template
-        if not template or not isinstance(template, str):
-            raise ConfigError(f"{semantics.section} {step_id}: template must be a non-empty string")
-        descriptor = resolve_notebook_template_descriptor(template)
-        if step_id in seen:
-            raise ConfigError(f"{semantics.section} contains duplicate spec id(s): {step_id}")
-        seen.add(step_id)
-        resolved.append(NotebookTemplateCall(id=step_id, template=descriptor.template))
     return resolved

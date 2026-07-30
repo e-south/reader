@@ -5,20 +5,19 @@ from pathlib import Path
 import pytest
 
 from reader.errors import ConfigError
-from reader.protocols import BUILTIN_PROTOCOLS, BoundProtocol, ProtocolBinding, builtin_protocol_catalog
+from reader.protocols import BUILTIN_PROTOCOLS, ProtocolBinding, builtin_protocol_catalog
 from reader.protocols.model import (
     CompiledProtocolPlan,
     ProtocolDescriptor,
     ProtocolExecutionPlan,
     ProtocolMetricSpec,
-    ProtocolNotebookPolicy,
     ProtocolSemanticExecution,
     ProtocolSemanticNode,
     ProtocolSemanticProfileSpec,
     ProtocolSemanticProgram,
 )
 from reader.protocols.semantic_coverage import _semantic_program
-from reader.workbench.decl.model import NotebookTemplateCallDecl
+from reader.tests.support import cytometry_test_gating_policy
 from reader.workbench.experiment import AnnotationSemantics, ExperimentSemantics, OutputLayout, ResourceCatalog
 
 
@@ -37,8 +36,18 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
 def test_builtin_protocols_do_not_expose_relaxed_runtime_contracts() -> None:
     for descriptor in BUILTIN_PROTOCOLS:
         assert all(field.key != "strict" for field in descriptor.analysis_fields)
-        compiled = builtin_protocol_catalog().bind(ProtocolBinding(id=descriptor.protocol)).compile()
+        inputs = {"gating": cytometry_test_gating_policy()} if descriptor.protocol == "cytometry/flow_panel" else {}
+        compiled = builtin_protocol_catalog().bind(ProtocolBinding(id=descriptor.protocol, inputs=inputs)).compile()
         assert "strict" not in compiled.runtime
+
+
+def test_cytometry_singlet_ratio_authoring_describes_y_over_x() -> None:
+    descriptor = builtin_protocol_catalog().resolve("cytometry/flow_panel")
+    gating = next(field for field in descriptor.input_fields if field.key == "gating")
+    fields = {field.key: field for field in gating.children}
+
+    assert fields["singlet_x_channel"].summary == "Denominator channel for the singlet ratio (Y / X)."
+    assert fields["singlet_y_channel"].summary == "Numerator channel for the singlet ratio (Y / X)."
 
 
 def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:
@@ -69,11 +78,6 @@ def test_semantic_program_rejects_profile_scoped_missing_dependencies() -> None:
             ),
         ),
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/basic",
-                allowed_templates=("notebook/basic",),
-                summary="Test notebook policy.",
-            ),
             compiler=lambda protocol: CompiledProtocolPlan(semantic_program=protocol.semantic_program()),
         ),
     )
@@ -119,27 +123,6 @@ def test_bound_protocol_semantic_program_applies_execution_overrides_without_cha
     assert compiled_metrics["OD"].execution.step_ids == ("ingest",)
 
 
-def test_bound_protocol_compile_injects_default_notebook_when_compiler_omits_notebooks() -> None:
-    descriptor = ProtocolDescriptor(
-        protocol="test/default_notebook",
-        domain="generic",
-        family="test_protocol",
-        summary="Compiler notebook fallback contract.",
-        execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/basic",
-                allowed_templates=("notebook/basic", "notebook/eda"),
-                summary="Notebook policy.",
-            ),
-            compiler=lambda protocol: CompiledProtocolPlan(semantic_program=protocol.semantic_program()),
-        ),
-    )
-
-    compiled = BoundProtocol(descriptor=descriptor).compile()
-
-    assert compiled.notebooks == (NotebookTemplateCallDecl(id="default", template="notebook/basic"),)
-
-
 def test_logic_sfxi_screen_can_compile_vec8_heatmap_plot() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
@@ -156,6 +139,206 @@ def test_logic_sfxi_screen_can_compile_vec8_heatmap_plot() -> None:
     assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
 
 
+def test_logic_sfxi_screen_compiles_a_record_driven_diagnostic() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            inputs={"state_map_ref": "states", "time_column": "elapsed_h"},
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["sfxi_diagnostic"],
+                    "views": {"sfxi_diagnostic": {"design_ids": ["design-a"], "format": ["png"]}},
+                }
+            },
+        )
+    )
+
+    compiled = protocol.compile()
+    diagnostic = next(step for step in compiled.plots if step.id == "sfxi_diagnostic")
+
+    assert diagnostic.plugin == "plot/sfxi_diagnostic"
+    assert diagnostic.reads["df"].record_id == "promote_to_tidy_plus_map/df"
+    assert diagnostic.reads["vec8"].record_id == "sfxi_vec8/vec8"
+    assert diagnostic.with_["state_map_ref"] == "states"
+    assert diagnostic.with_["time_column"] == "elapsed_h"
+    assert diagnostic.with_["response_channel"] == "YFP/CFP"
+    assert diagnostic.with_["design_ids"] == ["design-a"]
+    assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
+
+
+@pytest.mark.parametrize("key", ["growth_channel", "response_channel", "state_map_ref", "time_column"])
+def test_logic_sfxi_diagnostic_rejects_compiler_owned_overrides(key: str) -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="logic/sfxi_screen",
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["sfxi_diagnostic"],
+                    "views": {"sfxi_diagnostic": {key: "override"}},
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="cannot override compiler-owned settings"):
+        protocol.compile()
+
+
+def test_response_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/response_window",
+            outputs={
+                "plots": {
+                    "include": ["response_window_diagnostic"],
+                    "views": {
+                        "response_window_diagnostic": {
+                            "source_experiment_id": "trace-source",
+                            "design_id": "design-a",
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    compiled = protocol.compile()
+    diagnostic = next(step for step in compiled.plots if step.id == "response_window_diagnostic")
+
+    assert diagnostic.plugin == "plot/response_window_diagnostic"
+    assert diagnostic.reads["designs"].record_id == "response_window/designs"
+    assert diagnostic.reads["traces"].record_id == "response_window/traces"
+    assert diagnostic.with_["primary_reduction_id"] == "primary"
+    assert diagnostic.with_["pre_window_duration_h"] is None
+    assert diagnostic.with_["source_experiment_id"] == "trace-source"
+    assert diagnostic.with_["design_id"] == "design-a"
+
+
+def test_dual_reporter_screen_compiles_triptych_from_persisted_ratio_record() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/dual_reporter_screen",
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["dual_reporter_triptych"],
+                    "views": {
+                        "dual_reporter_triptych": {
+                            "snapshot_time_h": 8.0,
+                            "snapshot_time_tolerance_h": 0.25,
+                            "treatment_order_ref": "conditions",
+                            "format": ["png", "pdf"],
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    compiled = protocol.compile()
+    triptych = next(step for step in compiled.plots if step.id == "dual_reporter_triptych")
+
+    assert triptych.plugin == "plot/dual_reporter_triptych"
+    assert triptych.reads["df"].record_id == "ratio_yfp_od600/df"
+    assert triptych.with_ == {
+        "design_column": "design_id",
+        "treatment_column": "treatment",
+        "time_column": "time",
+        "growth_channel": "OD600",
+        "ratio_channel": "YFP/CFP",
+        "snapshot_channel": "YFP/CFP",
+        "snapshot_time_h": 8.0,
+        "snapshot_time_mode": "nearest",
+        "snapshot_time_tolerance_h": 0.25,
+        "treatment_order_ref": "conditions",
+        "format": ["png", "pdf"],
+    }
+
+
+def test_dual_reporter_screen_requires_explicit_triptych_snapshot_time() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/dual_reporter_screen",
+            outputs={"plots": {"profile": "none", "include": ["dual_reporter_triptych"]}},
+        )
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match=r"protocol\.outputs\.plots\.views\.dual_reporter_triptych\.snapshot_time_h must be explicit",
+    ):
+        protocol.compile()
+
+
+def test_response_window_diagnostic_requires_an_explicit_record_identity() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/response_window",
+            outputs={"plots": {"include": ["response_window_diagnostic"]}},
+        )
+    )
+
+    with pytest.raises(ConfigError, match="source_experiment_id must be a non-empty string"):
+        protocol.compile()
+
+
+def test_response_window_plot_cannot_override_the_primary_reduction() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/response_window",
+            outputs={
+                "plots": {
+                    "views": {
+                        "response_window_summary": {"primary_reduction_id": "secondary"},
+                    }
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="cannot override compiler-owned fields"):
+        protocol.compile()
+
+
+def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/response_window",
+            analysis={
+                "reductions": [
+                    {
+                        "id": "delta",
+                        "window_start_event_h": 0.5,
+                        "window_end_event_h": 1.0,
+                        "method": "geometric_time_mean",
+                        "response_basis": "post_minus_pre",
+                        "pre_window_duration_h": 1.5,
+                        "role": "primary",
+                    }
+                ]
+            },
+            outputs={
+                "plots": {
+                    "include": ["response_window_diagnostic"],
+                    "views": {
+                        "response_window_diagnostic": {
+                            "source_experiment_id": "trace-source",
+                            "design_id": "design-a",
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "response_window_diagnostic")
+
+    assert diagnostic.with_["primary_reduction_id"] == "delta"
+    assert diagnostic.with_["pre_window_duration_h"] == 1.5
+
+
 def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
     protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
 
@@ -163,6 +346,20 @@ def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
 
     assert vec8.formula == "v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star"
     assert protocol.descriptor.ranking is None
+
+
+def test_logic_sfxi_semantics_do_not_reference_the_retired_response_block() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
+    program = protocol.compile().semantic_program
+
+    compiled_paths = {
+        path
+        for node in (*program.controls, *program.windows, *program.metrics)
+        if node.execution is not None
+        for path in node.execution.config_paths
+    }
+
+    assert "protocol.inputs.response" not in compiled_paths
 
 
 def test_logic_sfxi_screen_exposes_a_concrete_dual_reporter_adapter() -> None:
@@ -188,11 +385,55 @@ def test_logic_sfxi_screen_rejects_fold_change_target_outside_its_compiled_adapt
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
             id="logic/sfxi_screen",
-            inputs={"fold_change": {"target": "A/B"}},
+            inputs={"fold_change": {"target": "A/B", "report_times": [8.0]}},
+            analysis={"include_fold_change": True},
         )
     )
 
     with pytest.raises(ConfigError, match="must match the compiled assay ratio 'YFP/CFP'"):
+        protocol.compile()
+
+
+@pytest.mark.parametrize(
+    "protocol_id",
+    [
+        "plate_reader/dual_reporter_screen",
+        "plate_reader/single_reporter_screen",
+        "logic/sfxi_screen",
+    ],
+)
+def test_plate_reader_fold_change_requires_explicit_report_times(protocol_id: str) -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id=protocol_id, analysis={"include_fold_change": True}))
+
+    with pytest.raises(ConfigError, match="fold_change.report_times.*explicit non-empty list"):
+        protocol.compile()
+
+
+@pytest.mark.parametrize(
+    ("protocol_id", "figure_id", "time_key"),
+    [
+        ("plate_reader/dual_reporter_screen", "endpoint_by_condition", "time"),
+        ("plate_reader/dual_reporter_screen", "intensity_overview", "snap_time"),
+        ("plate_reader/single_reporter_screen", "endpoint_by_design", "time"),
+        ("plate_reader/single_reporter_screen", "subject_comparison", "snap_time"),
+    ],
+)
+def test_plate_reader_endpoint_plots_require_explicit_time(
+    protocol_id: str,
+    figure_id: str,
+    time_key: str,
+) -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id=protocol_id,
+            outputs={"plots": {"profile": "none", "include": [figure_id]}},
+        )
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match=rf"protocol.outputs.plots.views.{figure_id}.{time_key} must be explicit",
+    ):
         protocol.compile()
 
 

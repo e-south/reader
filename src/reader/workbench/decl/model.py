@@ -71,17 +71,6 @@ class SurfaceDecl:
 
 
 @dataclass(frozen=True)
-class NotebookTemplateCallDecl:
-    id: str
-    template: str
-
-
-@dataclass(frozen=True)
-class NotebookDecl:
-    specs: tuple[NotebookTemplateCallDecl, ...] = ()
-
-
-@dataclass(frozen=True)
 class WorkbenchDecl:
     experiment: ExperimentDecl
     experiment_semantics: ExperimentSemantics
@@ -89,5 +78,4 @@ class WorkbenchDecl:
     pipeline: PipelineDecl
     plots: SurfaceDecl
     exports: SurfaceDecl
-    notebooks: NotebookDecl
     config_digest: str = ""

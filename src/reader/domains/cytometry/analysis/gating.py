@@ -21,34 +21,37 @@ def analyze_events(
     *,
     gate: GateSpec,
     threshold: ThresholdSpec,
+    group_column: str | None = None,
 ) -> CytometryAnalysis:
     """Apply sequential gates and compute per-sample and group summaries in Polars."""
 
-    gate_columns = (
-        gate.cells_x_channel,
-        gate.cells_y_channel,
-        gate.singlet_x_channel,
-        gate.singlet_y_channel,
-        threshold.channel,
-        "sample_id",
-    )
-    _require_columns(event_table, gate_columns)
-    _validate_interval("cells X", gate.cells_x_range)
-    _validate_interval("cells Y", gate.cells_y_range)
-    _validate_interval("singlet ratio", gate.singlet_ratio_range)
-
-    cells_x = pl.col(gate.cells_x_channel).cast(pl.Float64, strict=False)
-    cells_y = pl.col(gate.cells_y_channel).cast(pl.Float64, strict=False)
-    singlet_x = pl.col(gate.singlet_x_channel).cast(pl.Float64, strict=False)
-    singlet_y = pl.col(gate.singlet_y_channel).cast(pl.Float64, strict=False)
-    cells_mask = cells_x.is_finite() & cells_y.is_finite()
+    required_columns = [threshold.channel, "sample_id"]
     if gate.cells_enabled:
-        cells_mask &= cells_x.is_between(*gate.cells_x_range, closed="both")
-        cells_mask &= cells_y.is_between(*gate.cells_y_range, closed="both")
-    ratio = singlet_y / singlet_x
-    singlet_mask = ratio.is_finite()
+        required_columns.extend((gate.cells_x_channel, gate.cells_y_channel))
     if gate.singlets_enabled:
-        singlet_mask &= ratio.is_between(*gate.singlet_ratio_range, closed="both")
+        required_columns.extend((gate.singlet_x_channel, gate.singlet_y_channel))
+    _require_columns(event_table, required_columns)
+
+    cells_mask = pl.lit(True)
+    if gate.cells_enabled:
+        _validate_interval("cells X", gate.cells_x_range)
+        _validate_interval("cells Y", gate.cells_y_range)
+        cells_x = pl.col(gate.cells_x_channel).cast(pl.Float64, strict=False)
+        cells_y = pl.col(gate.cells_y_channel).cast(pl.Float64, strict=False)
+        cells_mask = (
+            cells_x.is_finite()
+            & cells_y.is_finite()
+            & cells_x.is_between(*gate.cells_x_range, closed="both")
+            & cells_y.is_between(*gate.cells_y_range, closed="both")
+        )
+
+    singlet_mask = pl.lit(True)
+    if gate.singlets_enabled:
+        _validate_interval("singlet ratio", gate.singlet_ratio_range)
+        singlet_x = pl.col(gate.singlet_x_channel).cast(pl.Float64, strict=False)
+        singlet_y = pl.col(gate.singlet_y_channel).cast(pl.Float64, strict=False)
+        ratio = singlet_y / singlet_x
+        singlet_mask = ratio.is_finite() & ratio.is_between(*gate.singlet_ratio_range, closed="both")
 
     cells_mask_column = "__reader_cells_mask"
     gate_mask_column = "__reader_gate_mask"
@@ -60,7 +63,19 @@ def analyze_events(
     if gated_events.is_empty():
         raise CytometryAnalysisError("No events remain after gating. Adjust ranges.")
 
-    metadata_columns = [column for column in _METADATA_COLUMNS if column in event_table.columns]
+    if group_column is not None:
+        if not isinstance(group_column, str) or not group_column.strip():
+            raise CytometryAnalysisError("Group column must be a non-empty string or null.")
+        group_column = group_column.strip()
+        _require_columns(event_table, (group_column,))
+    metadata_columns = list(
+        dict.fromkeys(
+            (
+                *[column for column in _METADATA_COLUMNS if column in event_table.columns],
+                *([group_column] if group_column else []),
+            )
+        )
+    )
     counts = work.group_by("sample_id", maintain_order=True).agg(
         *[pl.col(column).first().alias(column) for column in metadata_columns],
         pl.len().alias("n_total_events"),
@@ -99,10 +114,6 @@ def analyze_events(
     )
     stats_sample = counts.join(sample_stats, on="sample_id", how="left")
 
-    group_column = next(
-        (column for column in ("treatment", "design_id") if column in stats_sample.columns),
-        None,
-    )
     stats_group = None
     if group_column is not None:
         stats_group = stats_sample.group_by(group_column, maintain_order=True).agg(

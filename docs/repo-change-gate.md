@@ -43,24 +43,15 @@ uv run reader maintain docs
 uv run ruff check .
 uv run ruff format . --check
 uv run pytest -q
-uv run pytest -q -m smoke
-uv run pytest -q -m repo_matrix
-uv run pytest -q -m active_experiments
 uv run pytest -q -m integration
 git diff --check
 ```
 
-`uv run pytest -q` is the portable default test run: it excludes only the
-local data-backed active-experiment lane while still covering ordinary
-integration checks and the repo-wide config sweep. The excluded lane depends
-on raw experiment inputs that are intentionally absent from a clean checkout;
-its single deselection is therefore expected, not a hidden failure. Run
-`uv run pytest -q -m active_experiments` from a workbench that has those local
-inputs before publishing runtime or record-contract changes. Use
-`uv run pytest -q -m repo_matrix` when a change mainly touches repository
-config invariants and `uv run pytest -q -m integration` for the complete
-portable integration selection. Use the smallest subset that matches the risk
-of the change and explain any omission.
+`uv run pytest -q` is the portable default suite. Use `-m integration` for the
+cross-surface subset. Local experiments are ignored workbench data rather than
+a pytest lane: name the experiment and run its actual `validate`, dry-run,
+execution, verification, and deliverable commands when data-backed dogfood is
+required. Explain any omission.
 
 ## Related Docs
 

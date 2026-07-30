@@ -76,7 +76,7 @@ def run_spec(
     pipeline_steps = list(workbench.pipeline)
     plot_steps = list(plot_specs) if plot_specs is not None else list(workbench.plots)
     export_steps = list(export_specs) if export_specs is not None else list(workbench.exports)
-    ensure_unique_workbench_ids(pipeline_steps, plot_steps, export_steps, workbench.notebooks)
+    ensure_unique_workbench_ids(pipeline_steps, plot_steps, export_steps)
 
     if not include_pipeline:
         if resume_from or until:

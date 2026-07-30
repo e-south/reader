@@ -69,7 +69,13 @@ def test_run_spec_dry_run_validates_effective_plot_overrides(tmp_path) -> None:
             protocol_id="plate_reader/single_reporter_screen",
             protocol_inputs={"fold_change": {"report_times": [14.0]}},
             protocol_analysis={"reporter_channel": "RFP", "normalizer_channel": "OD600"},
-            protocol_outputs={"plots": {"profile": "none", "include": ["subject_comparison"]}},
+            protocol_outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["subject_comparison"],
+                    "views": {"subject_comparison": {"snap_time": 14.0}},
+                }
+            },
             resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         ),
     )

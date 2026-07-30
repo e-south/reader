@@ -99,7 +99,7 @@ Within each readiness block, `records.catalog` reports whether `records.json`
 exists and `records.available` reports whether it contains usable current
 records. `records.verification` reports `ok`, `unverifiable`, `failed`, or
 `null` when no current records exist. A valid catalog-schema-v4 envelope whose
-record-schema-v5 payloads differ from the current config or build identity is
+record-schema-v6 payloads differ from the current config or build identity is
 `catalog_ready`; verified current evidence is `records_ready`. An empty catalog
 is runnable, and an invalid or artifact-drifted catalog is blocked.
 
@@ -123,7 +123,7 @@ indexes only target the default `uv run reader ls` experiment list.
 
 If `--root` is omitted, `uv run reader` auto-detects the nearest `experiments/` directory.
 
-Inspect plugins, protocols, and notebook templates:
+Inspect plugins and protocols:
 
 ```bash
 uv run reader plugins
@@ -138,7 +138,6 @@ uv run reader protocols --family screen_analysis
 uv run reader dop classes
 uv run reader dop classes --protocol plate_reader/single_reporter_screen --format json
 uv run reader dop ready-specs --format json
-uv run reader notebook --list-templates
 ```
 
 Scaffold a new experiment from a protocol:
@@ -303,10 +302,10 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 
 In JSON mode, `uv run reader records` keeps experiment identity at the top of
 `data`, then adds the record-manifest path, a summary by record kind and
-producer, and the latest record entries. Current record-schema-v5 payloads bind
+producer, and the latest record entries. Current record-schema-v6 payloads bind
 the complete config identity, Reader build identity, typed input evidence,
 exact upstream revisions, and generated-file evidence. File bundles include
-one typed description for every path. Non-v5 record payloads are rejected as
+one typed description for every path. Non-v6 record payloads are rejected as
 an invalid catalog and must be reproduced from source inputs. `--all` adds
 revision counts rather than dumping every stored revision. Use `reader verify`
 to prove the current catalog rather than treating `records` as an integrity
@@ -452,21 +451,16 @@ for the source and provenance rules.
 
 ## Notebooks
 
-Scaffold a marimo notebook (no pipeline execution). Template selection is
-ordered and protocol-constrained: explicit `--template`, then the first
-compiled notebook spec from `config.yaml`, then the bound protocol default.
-The selected template must be allowed by the protocol.
+Scaffold Reader's canonical Marimo notebook (no pipeline execution).
 
 Notebooks are written under `outputs/notebooks/`.
 
+`notebook/eda` is the fixed scaffold: one RecordStore-backed
+deliverable selector and one viewport. Assay-specific computation and rendering
+belong in normal protocol-owned transform, plot, and export steps.
+
 ```bash
 uv run reader notebook CONFIG|DIR|INDEX
-```
-
-Choose a template explicitly:
-
-```bash
-uv run reader notebook CONFIG|DIR|INDEX --template notebook/eda
 ```
 
 Name the notebook explicitly:
@@ -492,16 +486,10 @@ Runtime notes:
 - For agent review, prefer `--mode run --headless`, then open the printed URL in the in-app browser.
 - Static HTML export can catch execution failures, but it does not validate live widget behavior. Use a served Marimo app for dropdown, slider, export-button, and chart-rerender checks.
 
-See templates:
-
-```bash
-uv run reader notebook --list-templates
-```
-
 Overwrite an existing notebook:
 
 ```bash
-uv run reader notebook CONFIG|DIR|INDEX --template notebook/basic --force
+uv run reader notebook CONFIG|DIR|INDEX --force
 ```
 
 Create a new notebook with a numeric suffix if the name already exists:
@@ -516,12 +504,13 @@ Regenerate a notebook in-place:
 uv run reader notebook CONFIG|DIR|INDEX --refresh
 ```
 
-Filter plots injected into a template that declares plot-filter capability
-(currently `notebook/eda`):
+Select persisted plots through the experiment protocol or the plot command.
+The canonical EDA notebook does not own a second plot-selection or publication
+surface:
 
 ```bash
-uv run reader notebook CONFIG|DIR|INDEX --template notebook/eda --only raw_kinetics
-uv run reader notebook CONFIG|DIR|INDEX --template notebook/eda --exclude value_distributions
+uv run reader plot CONFIG|DIR|INDEX --only raw_kinetics
+uv run reader plot CONFIG|DIR|INDEX --exclude value_distributions
 ```
 
 ---

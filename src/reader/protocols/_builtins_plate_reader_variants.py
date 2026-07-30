@@ -17,7 +17,6 @@ from .model import (
     ProtocolExecutionPlan,
     ProtocolFigureSpec,
     ProtocolMetricSpec,
-    ProtocolNotebookPolicy,
     ProtocolPlotProfileSpec,
     ProtocolPluginDefaultsSpec,
     ProtocolResourceSpec,
@@ -87,7 +86,7 @@ def build_plate_reader_variant_protocol(
                 kind="string",
                 default="OD600",
             ),
-            field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=True),
+            field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=False),
             preprocessing_field,
         ),
         factors=dual_reporter_protocol.factors,
@@ -200,7 +199,7 @@ def build_plate_reader_variant_protocol(
         plot_profiles=(
             ProtocolPlotProfileSpec(
                 id="screen_overview",
-                summary="Balanced default view for single-reporter experiments.",
+                summary="Endpoint screen view; each selected endpoint time must be authored explicitly.",
                 figures=("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
             ),
             ProtocolPlotProfileSpec(
@@ -209,13 +208,8 @@ def build_plate_reader_variant_protocol(
                 figures=("raw_kinetics", "value_distributions"),
             ),
         ),
-        default_plot_profile="screen_overview",
+        default_plot_profile="kinetics_qc",
         execution=ProtocolExecutionPlan(
-            notebook=ProtocolNotebookPolicy(
-                default_template="notebook/eda",
-                allowed_templates=("notebook/eda", "notebook/basic"),
-                summary="Single-reporter experiments default to the general EDA notebook.",
-            ),
             plugin_defaults=(
                 ProtocolPluginDefaultsSpec(
                     plugin="ingest/synergy_h1",

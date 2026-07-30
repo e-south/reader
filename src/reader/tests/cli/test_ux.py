@@ -18,6 +18,7 @@ from reader.tests.support import (
     build_decl,
     cli_error_data,
     cli_success_data,
+    cytometry_test_gating_policy,
     default_notebook_name,
     record_successful_invocation,
     write_config,
@@ -60,6 +61,7 @@ def _base_config() -> dict:
         protocol_id="plate_reader/dual_reporter_screen",
         protocol_inputs={"fold_change": {"report_times": [14.0]}},
         protocol_analysis={
+            "include_fold_change": True,
             "crosstalk_pairs": {"enabled": True, "export": True},
         },
         protocol_outputs={
@@ -395,6 +397,7 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
             protocol_inputs={
                 "ingest": {"auto_roots": ["./inputs"]},
                 "metadata": {"require_columns": ["design_id", "treatment"]},
+                "gating": cytometry_test_gating_policy(),
             },
             resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
         ),
@@ -480,29 +483,21 @@ def test_next_steps_commands_are_clean(tmp_path: Path) -> None:
     assert not any("--edit" in cmd for cmd in commands)
 
 
-def test_next_steps_prefers_config_notebook_template(tmp_path: Path) -> None:
-    cfg = _base_config()
-    cfg["protocol"]["outputs"]["notebook"] = {"template": "notebook/basic"}
-    spec = ReaderSpec.load(write_config(tmp_path / "config.yaml", cfg))
-    steps = build_next_steps(build_decl(spec), job_label="1")
-    notes = [desc for _, desc in steps]
-    assert any("template notebook/basic" in desc for desc in notes)
-
-
-def test_next_steps_uses_protocol_default_notebook(tmp_path: Path) -> None:
+def test_next_steps_names_the_canonical_notebook(tmp_path: Path) -> None:
     cfg = base_reader_config(
         experiment_id="exp",
         protocol_id="cytometry/flow_panel",
         protocol_inputs={
             "ingest": {"auto_roots": ["./inputs"]},
             "metadata": {"require_columns": ["design_id", "treatment"]},
+            "gating": cytometry_test_gating_policy(),
         },
         resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
     )
     tmp_cfg = write_config(tmp_path, cfg)
     spec = ReaderSpec.load(tmp_cfg)
     notes = [desc for _, desc in build_next_steps(build_decl(spec), job_label="1")]
-    assert any("template notebook/cytometry" in desc for desc in notes)
+    assert any("canonical experiment notebook" in desc for desc in notes)
 
 
 def test_steps_json_surfaces_pipeline_bindings(tmp_path: Path) -> None:
@@ -704,7 +699,6 @@ def test_protocols_command_lists_builtin_protocols() -> None:
     assert "Protocol:" in result.output
     assert "plate_reader/dual_reporter_screen" in result.output
     assert "Dual-reporter plate-reader panel protocol" in result.output
-    assert "notebook/eda" in result.output
     assert "Inputs" in result.output
     assert "ingest.mode" in result.output
     assert "Analysis" in result.output
@@ -735,7 +729,7 @@ def test_protocols_command_can_render_example_config() -> None:
     assert "Starter YAML" in result.output
     assert "schema: reader/v8" in result.output
     assert "id: plate_reader/dual_reporter_screen" in result.output
-    assert "profile: screen_overview" in result.output
+    assert "profile: kinetics_qc" in result.output
     assert "CFP:433,475: CFP" in result.output
     assert "YFP:500,530: YFP" in result.output
     assert "channels:" not in result.output
@@ -784,31 +778,12 @@ def test_single_reporter_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) 
     assert spec.protocol.inputs["ingest"]["channel_map"] is None
 
 
-def test_notebook_list_templates_command_shows_semantics() -> None:
+def test_notebook_cli_rejects_removed_template_selection_options() -> None:
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["notebook", "--list-templates"])
-    assert result.exit_code == 0
-    assert "Notebook templates" in result.output
-    assert "notebook/cytometry" in result.output
-    assert "Dual-reporter" in result.output
-    assert "cytometry" in result.output
-    assert "record_explorer" in result.output
-
-
-def test_notebook_list_templates_respects_protocol(tmp_path: Path) -> None:
-    cfg = base_reader_config(
-        experiment_id="exp",
-        protocol_id="logic/sfxi_screen",
-        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
-    )
-    cfg_path = write_config(tmp_path, cfg)
-    runner = CliRunner()
-    result = runner.invoke(cli.app, ["notebook", str(cfg_path), "--list-templates"])
-    assert result.exit_code == 0
-    assert "Notebook templates: logic/sfxi_screen" in result.output
-    assert "SFXI vec8" in result.output
-    assert "yes" in result.output
-    assert "notebook/cytometry" not in result.output
+    listed = runner.invoke(cli.app, ["notebook", "--list-templates"])
+    selected = runner.invoke(cli.app, ["notebook", "--template", "notebook/eda"])
+    assert listed.exit_code == 2
+    assert selected.exit_code == 2
 
 
 def test_demo_command_lists_expected_workbench_lifecycle() -> None:
@@ -962,9 +937,9 @@ def test_plugins_command_can_filter_by_protocol(monkeypatch) -> None:
     assert "well-posit" in output
     assert "ion sample" in output
     assert "maps" in output
-    assert "Summarize" in output
-    assert "nearest-ti" in output
-    assert "fold-chang" in output
+    assert "Summarize" not in output
+    assert "nearest-ti" not in output
+    assert "fold-chang" not in output
     assert "validator" not in output
 
 
@@ -980,7 +955,7 @@ def test_protocols_command_can_emit_json() -> None:
     assert metrics["Ratio"]["value_space"] == "linear_ratio"
     assert metrics["Ratio"]["unit"] == "ratio"
     assert metrics["Ratio"]["comparable_group"] == "primary_ratio_linear"
-    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_fold_change"
+    assert payload["semantics"]["program"]["active_profile"] == "yfp_cfp_raw"
     assert payload["semantics"]["program"]["controls"] == []
     assert payload["semantics"]["program"]["windows"] == []
     assert payload["semantics"]["program"]["ranking"] is None
@@ -988,8 +963,8 @@ def test_protocols_command_can_emit_json() -> None:
     assert compiled_metrics["OD"]["execution"]["status"] == "compiled"
     assert compiled_metrics["Ratio"]["execution"]["step_ids"] == ["ratio_yfp_cfp"]
     assert compiled_program["summary"]["descriptive_only"] == 0
-    assert compiled_metrics["FC"]["execution"]["step_ids"] == ["fold_change__yfp_over_cfp"]
-    assert compiled_metrics["log2FC"]["execution"]["record_ids"] == ["fold_change__yfp_over_cfp/table"]
+    assert "FC" not in compiled_metrics
+    assert "log2FC" not in compiled_metrics
     assert payload["authoring"]["starter_config"]["schema"] == "reader/v8"
     assert payload["implementation"]["compiled"]["pipeline"][0]["id"] == "ingest"
     assert any(item["id"] == "screen_overview" for item in payload["authoring"]["outputs"]["plot_profiles"])
@@ -1074,7 +1049,11 @@ def test_plate_reader_single_reporter_compiler_derives_channels_from_analysis() 
         ProtocolBinding(
             id="plate_reader/single_reporter_screen",
             inputs={"fold_change": {"report_times": [14.0]}},
-            analysis={"reporter_channel": "mCherry", "normalizer_channel": "OD700"},
+            analysis={
+                "reporter_channel": "mCherry",
+                "normalizer_channel": "OD700",
+                "include_fold_change": True,
+            },
         )
     )
 
@@ -1106,6 +1085,7 @@ def test_cytometry_protocol_rejects_unsupported_plot_selection(tmp_path: Path) -
             protocol_inputs={
                 "ingest": {"auto_roots": ["./inputs"]},
                 "metadata": {"require_columns": ["design_id", "treatment"]},
+                "gating": cytometry_test_gating_policy(),
             },
             protocol_outputs={"plots": {"include": ["cytometry_qc"]}},
             resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
@@ -1116,7 +1096,7 @@ def test_cytometry_protocol_rejects_unsupported_plot_selection(tmp_path: Path) -
     result = runner.invoke(cli.app, ["explain", str(cfg)])
 
     assert result.exit_code != 0
-    assert "cytometry/flow_panel does not currently compile plot outputs" in result.output
+    assert "unknown deliverable" in result.output
     assert "cytometry_qc" in result.output
 
 

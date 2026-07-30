@@ -8,7 +8,6 @@ from reader.workbench.commands import reader_command
 from reader.workbench.decl import WorkbenchDecl
 from reader.workbench.graph import ensure_unique_workbench_ids, resolve_workbench
 from reader.workbench.inspection.reports import workflow_explain_renderables
-from reader.workbench.templates import require_notebook_template_for_protocol
 
 from ._shared import collect_categories
 
@@ -31,18 +30,12 @@ def build_next_steps(
     workbench = resolve_workbench(decl)
     plot_specs = list(workbench.plots)
     export_specs = list(workbench.exports)
-    notebook_specs = list(workbench.notebooks)
-    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
-    notebook_template = bound_protocol.resolve_notebook_template(
-        configured_template=(notebook_specs[0].template if notebook_specs else None)
-    )
-    require_notebook_template_for_protocol(notebook_template, protocol=bound_protocol)
     steps.append((_cmd("records"), "Review generated records"))
     if plot_specs and include_plot:
         steps.append((_cmd("plot"), "Save plot files to outputs/plots"))
     if export_specs and include_export:
         steps.append((_cmd("export"), "Write export files to outputs/exports"))
-    steps.append((_cmd("notebook"), f"Open a notebook (template {notebook_template})"))
+    steps.append((_cmd("notebook"), "Open the canonical experiment notebook"))
     return steps
 
 
@@ -61,8 +54,7 @@ def explain(
     pipeline_steps = list(workbench.pipeline)
     plot_specs = list(plot_specs) if plot_specs is not None else list(workbench.plots)
     export_specs = list(export_specs) if export_specs is not None else list(workbench.exports)
-    notebook_specs = list(workbench.notebooks)
-    ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs, notebook_specs)
+    ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs)
     categories = collect_categories(list(workbench.plugin_steps()))
     if "plot" in categories:
         ensure_mpl_cache_dir()
@@ -75,7 +67,6 @@ def explain(
         pipeline_steps=pipeline_steps,
         plot_specs=plot_specs,
         export_specs=export_specs,
-        notebook_specs=notebook_specs,
         registry=registry,
     ):
         console.print(renderable)

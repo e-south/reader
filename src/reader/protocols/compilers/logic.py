@@ -18,15 +18,16 @@ from .common import (
     _analysis_options,
     _deep_merge,
     _step,
-    default_notebook_call,
 )
 from .plate_reader import (
+    _configured_fold_change_enabled,
+    _configured_fold_change_report_times,
     _configured_fold_change_target,
     _configured_ingest_channels,
-    _plate_reader_base_steps,
     _plate_reader_fold_change_step,
     _plate_reader_plot_output,
 )
+from .plate_reader_pipeline import compose_dual_reporter_pipeline
 
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
 SFXI_SCREEN_LOGIC_CHANNEL = "YFP/CFP"
@@ -65,19 +66,17 @@ def compile_logic_sfxi_vec8_collection(protocol: Any):
         )
         for _ in selected_exports
     )
-    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         pipeline=pipeline,
         plots=plots,
         exports=exports,
-        notebooks=(default_notebook_call(template),),
         semantic_program=protocol.descriptor.semantic_program(),
     )
 
 
 def compile_logic_sfxi_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    include_fold_change = _analysis_bool(analysis, key="include_fold_change", default=True)
+    include_fold_change = _configured_fold_change_enabled(protocol, analysis=analysis)
     include_vec8 = _analysis_bool(analysis, key="include_vec8", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
@@ -85,15 +84,15 @@ def compile_logic_sfxi_screen(protocol: Any):
 
     ingest_channels = _configured_ingest_channels(protocol, required=("OD600", "CFP", "YFP"))
     pipeline = list(
-        _plate_reader_base_steps(
-            measurement="yfp_cfp",
+        compose_dual_reporter_pipeline(
             ingest_channels=ingest_channels,
-            blank_cfg=blank_cfg,
-            overflow_cfg=overflow_cfg,
+            blank_config=blank_cfg,
+            overflow_config=overflow_cfg,
         )
     )
     if include_fold_change:
         _configured_fold_change_target(protocol, expected=SFXI_SCREEN_LOGIC_CHANNEL)
+        _configured_fold_change_report_times(protocol)
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     default_exports = (
         ("logic_summary_workbook",)
@@ -111,11 +110,15 @@ def compile_logic_sfxi_screen(protocol: Any):
             "endpoint_by_design",
             "intensity_overview",
             "logic_symmetry",
+            "sfxi_diagnostic",
             "sfxi_vec8_heatmap",
         },
     )
     requires_vec8 = (
-        include_vec8 or "sfxi_vec8_heatmap" in selected_plot_ids or "logic_summary_workbook" in selected_exports
+        include_vec8
+        or "sfxi_diagnostic" in selected_plot_ids
+        or "sfxi_vec8_heatmap" in selected_plot_ids
+        or "logic_summary_workbook" in selected_exports
     )
     requires_logic_symmetry = "logic_symmetry" in selected_plot_ids
     requires_promoted_df = requires_vec8 or requires_logic_symmetry
@@ -129,12 +132,10 @@ def compile_logic_sfxi_screen(protocol: Any):
     plots = [_logic_plot_output(protocol, output_id=output_id) for output_id in selected_plot_ids]
     exports = [_logic_export_output(protocol, output_id=output_id) for output_id in selected_exports]
 
-    template = protocol.resolve_notebook_template(configured_template=protocol.configured_notebook_template())
     return CompiledProtocolPlan(
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
-        notebooks=(default_notebook_call(template),),
         semantic_program=_logic_semantic_program(protocol, include_vec8=requires_vec8),
     )
 
@@ -188,6 +189,32 @@ def _sfxi_vec8_heatmap_defaults(protocol: Any) -> dict[str, Any]:
 
 def _logic_plot_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
+    if output_id == "sfxi_diagnostic":
+        reserved = {"growth_channel", "response_channel", "state_map_ref", "time_column"}
+        overridden = sorted(reserved.intersection(settings))
+        if overridden:
+            raise ConfigError(
+                "protocol.outputs.plots.views.sfxi_diagnostic cannot override compiler-owned settings: "
+                + ", ".join(overridden)
+            )
+        inputs = protocol.effective_inputs()
+        return _step(
+            id="sfxi_diagnostic",
+            plugin="plot/sfxi_diagnostic",
+            reads={
+                "df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
+                "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
+            },
+            with_=_deep_merge(
+                {
+                    "growth_channel": "OD600",
+                    "response_channel": SFXI_SCREEN_LOGIC_CHANNEL,
+                    "state_map_ref": inputs.get("state_map_ref", "induction_logic"),
+                    "time_column": inputs.get("time_column", "time"),
+                },
+                settings,
+            ),
+        )
     if output_id == "sfxi_vec8_heatmap":
         return _step(
             id="sfxi_vec8_heatmap",

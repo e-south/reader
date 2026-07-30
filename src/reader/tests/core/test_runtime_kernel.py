@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib
 import subprocess
 import sys
@@ -43,7 +44,6 @@ def test_bound_protocol_applies_executable_defaults() -> None:
     assert cfg["target_time_h"] == 10.0
     assert cfg["state_map_ref"] == "induction_logic"
     assert cfg["reference"] == {"design_id": "CUSTOM", "stat": "median"}
-    assert protocol.default_notebook_template == "notebook/sfxi_eda"
 
 
 def test_runtime_composition_only_lives_in_runtime_package() -> None:
@@ -78,6 +78,29 @@ def test_runtime_composition_only_lives_in_runtime_package() -> None:
     assert not builtin_violations, f"builtin_contract_catalog() escaped runtime root: {builtin_violations}"
     assert not protocol_violations, f"builtin_protocol_catalog() escaped runtime root: {protocol_violations}"
     assert not plugin_violations, f"load_plugin_catalog() escaped runtime root: {plugin_violations}"
+
+
+def test_workbench_does_not_import_concrete_plugin_implementations() -> None:
+    workbench_root = Path(__file__).resolve().parents[2] / "workbench"
+    violations: list[str] = []
+
+    for path in workbench_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported = tuple(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported = (node.module or "",)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if node.value.startswith("reader.plugins."):
+                    violations.append(str(path.relative_to(workbench_root.parent)))
+                continue
+            else:
+                continue
+            if any(name == "reader.plugins" or name.startswith("reader.plugins.") for name in imported):
+                violations.append(str(path.relative_to(workbench_root.parent)))
+
+    assert not violations, "workbench imports concrete reader.plugins modules: " + ", ".join(sorted(violations))
 
 
 def test_plot_registry_import_does_not_eager_load_snapshot_heatmap_domain_module() -> None:
@@ -157,8 +180,6 @@ def test_cli_import_does_not_eager_load_protocol_or_notebook_bootstrap() -> None
         "reader.workbench.cli",
         "reader.protocols.model",
         "reader.protocols.builtins",
-        "reader.workbench.templates",
-        "reader.workbench.templates.catalog",
         "reader.workbench.notebooks",
         "reader.workbench.notebooks.scaffold",
         "yaml",
@@ -166,7 +187,6 @@ def test_cli_import_does_not_eager_load_protocol_or_notebook_bootstrap() -> None
     saved_modules = {name: sys.modules.get(name) for name in module_names}
     saved_attrs = {
         "cli": getattr(reader.workbench, "cli", None),
-        "templates": getattr(reader.workbench, "templates", None),
         "notebooks": getattr(reader.workbench, "notebooks", None),
     }
     had_attrs = {name: hasattr(reader.workbench, name) for name in saved_attrs}
@@ -181,8 +201,6 @@ def test_cli_import_does_not_eager_load_protocol_or_notebook_bootstrap() -> None
 
         assert "reader.protocols.model" not in sys.modules
         assert "reader.protocols.builtins" not in sys.modules
-        assert "reader.workbench.templates" not in sys.modules
-        assert "reader.workbench.templates.catalog" not in sys.modules
         assert "reader.workbench.notebooks" not in sys.modules
         assert "reader.workbench.notebooks.scaffold" not in sys.modules
         assert "yaml" not in sys.modules

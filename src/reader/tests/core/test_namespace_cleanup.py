@@ -19,6 +19,7 @@ import pytest
         "reader.workbench.semantics",
         "reader.workbench.notebooks.catalog",
         "reader.workbench.notebooks.templates",
+        "reader.workbench.recipes",
         "reader.workbench.resources",
     ],
 )

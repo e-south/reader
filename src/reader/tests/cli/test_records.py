@@ -135,9 +135,11 @@ def test_records_rejects_retired_record_schemas(tmp_path) -> None:
     json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
 
     assert text_result.exit_code == 1
-    assert "schema_version must be 5" in text_result.output
+    assert "schema_version must be 6" in text_result.output
+    assert "--reset-records" in text_result.output
     assert json_result.exit_code == 1
-    assert "schema_version must be 5" in json_result.output
+    assert "schema_version must be 6" in json_result.output
+    assert "--reset-records" in json_result.output
 
 
 def test_records_all_shows_revision_counts(tmp_path) -> None:

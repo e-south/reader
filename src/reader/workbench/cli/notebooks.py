@@ -13,20 +13,14 @@ from reader.workbench.paths import resolve_confined_sink_root, resolve_path_with
 from . import shared
 from ._lazy import load as _load
 from .helpers import (
-    bind_decl_protocol,
     default_notebook_name,
     infer_job_path,
     load_job_models,
     next_available_path,
-    spec_to_dict,
-    template_requirements_satisfied,
 )
 from .shared import (
     NOTEBOOK_MODE_OPTION,
-    NOTEBOOK_PLOT_EXCLUDE_OPTION,
-    NOTEBOOK_PLOT_ONLY_OPTION,
     app,
-    table,
 )
 
 
@@ -152,52 +146,14 @@ def _scaffold_notebook(
     *,
     job: str | None,
     name: str | None,
-    template_name: str | None,
-    list_templates: bool,
     overwrite: bool,
     new: bool,
     refresh: bool,
     mode: str,
-    plot_only: list[str] | None,
-    plot_exclude: list[str] | None,
     headless: bool,
     port: int | None,
 ) -> None:
     try:
-        templates = _load("reader.workbench.templates")
-        if list_templates:
-            runtime = _load("reader.runtime").builtin_runtime()
-            bound_protocol = None
-            title = "Notebook templates"
-            descriptors = templates.builtin_notebook_template_catalog().all()
-            selected_template = None
-            if job is not None:
-                job_path = infer_job_path(job)
-                _, decl = load_job_models(job_path)
-                bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
-                workbench = _load("reader.workbench.graph").resolve_workbench(decl)
-                configured_notebook = workbench.notebooks[0] if workbench.notebooks else None
-                selected_template = bound_protocol.resolve_notebook_template(
-                    explicit_template=template_name,
-                    configured_template=(configured_notebook.template if configured_notebook is not None else None),
-                )
-                title = f"Notebook templates: {bound_protocol.id}"
-                descriptors = templates.compatible_notebook_templates(protocol=bound_protocol)
-            listing = table(title)
-            listing.add_column("Name", style="accent")
-            listing.add_column("Domain")
-            listing.add_column("Family")
-            if bound_protocol is not None:
-                listing.add_column("Scaffold", justify="center")
-            listing.add_column("Description")
-            for descriptor in descriptors:
-                row = [descriptor.template, descriptor.domain, descriptor.family]
-                if bound_protocol is not None:
-                    row.append("yes" if descriptor.template == selected_template else "")
-                row.append(descriptor.summary)
-                listing.add_row(*row)
-            shared.console.print(Panel(listing, border_style="accent", box=box.ROUNDED))
-            return
         if overwrite and new:
             raise typer.BadParameter("--overwrite cannot be combined with --new.")
         if refresh:
@@ -208,29 +164,8 @@ def _scaffold_notebook(
         job_path = infer_job_path(job)
         exp_dir = job_path.parent
         _, decl = load_job_models(job_path)
-        runtime = _load("reader.runtime").builtin_runtime()
-        bound_protocol = bind_decl_protocol(decl=decl, runtime=runtime)
-        workbench = _load("reader.workbench.graph").resolve_workbench(decl)
-        plot_specs = list(workbench.plots)
-        notebook_specs = list(workbench.notebooks)
-        configured_notebook = notebook_specs[0] if notebook_specs and not template_name else None
-        selected_template = bound_protocol.resolve_notebook_template(
-            explicit_template=template_name,
-            configured_template=(configured_notebook.template if configured_notebook is not None else None),
-        )
-        descriptor = templates.require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
-        if (plot_only or plot_exclude) and not descriptor.capabilities.supports_plot_filters:
-            raise typer.BadParameter(
-                f"--only/--exclude are not supported with template {descriptor.template}. "
-                "Choose a template that declares plot-filter capability."
-            )
         layout = decl.experiment_semantics.layout
         outputs_dir = layout.outputs_dir
-        if not template_requirements_satisfied(selected_template, decl, outputs_dir, runtime=runtime):
-            raise typer.BadParameter(
-                f"Template {descriptor.template} does not satisfy its declared requirements for this experiment. "
-                "Check pipeline assets or existing dataframe records."
-            )
         notebooks_cfg = layout.notebooks_subdir
         notebook_root = outputs_dir if notebooks_cfg in ("", ".", "./") else outputs_dir / str(notebooks_cfg)
         try:
@@ -253,25 +188,17 @@ def _scaffold_notebook(
                 overwrite = False
         has_fcs = any(path.suffix.lower() == ".fcs" for path in exp_dir.rglob("*.fcs"))
         existed = target.exists()
-        plot_specs_payload = None
-        if descriptor.capabilities.inject_plot_specs:
-            selected = _load("reader.workbench.spec_overrides").select_surface_specs(
-                plot_specs, only=plot_only or [], exclude=plot_exclude or [], kind="plot spec"
-            )
-            plot_specs_payload = [spec_to_dict(spec) for spec in selected]
         target, created = _load("reader.workbench.notebooks").write_experiment_notebook(
             target,
             experiment_root=decl.experiment.root,
             notebooks_root=nb_dir,
-            template=selected_template,
             overwrite=overwrite,
-            plot_specs=plot_specs_payload,
         )
         if created:
             if existed and overwrite:
-                status = f"✓ Notebook overwritten: [path]{target}[/path]\n[muted]template[/muted]: {selected_template}"
+                status = f"✓ Notebook overwritten: [path]{target}[/path]"
             else:
-                status = f"✓ Notebook created: [path]{target}[/path]\n[muted]template[/muted]: {selected_template}"
+                status = f"✓ Notebook created: [path]{target}[/path]"
             border_style = "ok"
         else:
             action = "opening existing" if mode_value != "none" else "using existing"
@@ -298,12 +225,6 @@ def notebook(
         "--name",
         help="Notebook filename (created under outputs/notebooks). Defaults to EDA_YYYYMMDD.py.",
     ),
-    template_name: str | None = typer.Option(
-        None,
-        "--template",
-        help="Notebook template (defaults to the protocol default or protocol.outputs.notebook.template).",
-    ),
-    list_templates: bool = typer.Option(False, "--list-templates", help="List notebook templates and exit."),
     overwrite: bool = typer.Option(
         False,
         "--overwrite",
@@ -333,20 +254,14 @@ def notebook(
         help="Preferred loopback port. Defaults to a reader-managed clean port starting at 2718.",
     ),
     mode: str = NOTEBOOK_MODE_OPTION,
-    only: list[str] = NOTEBOOK_PLOT_ONLY_OPTION,
-    exclude: list[str] = NOTEBOOK_PLOT_EXCLUDE_OPTION,
 ):
     _scaffold_notebook(
         job=job,
         name=name,
-        template_name=template_name,
-        list_templates=list_templates,
         overwrite=overwrite,
         new=new,
         refresh=refresh,
         headless=headless,
         port=port,
         mode=mode,
-        plot_only=only,
-        plot_exclude=exclude,
     )

@@ -19,35 +19,32 @@ from reader.protocols.compiler import (
     compile_plate_reader_single_reporter_screen,
 )
 from reader.runtime import builtin_runtime
+from reader.tests.support.configs import cytometry_test_gating_policy
 
 COMPILED_PLAN_FIXTURES = {
     "cytometry/flow_panel": {
-        "pipeline": ("ingest_cytometer", "merge_metadata"),
-        "plots": (),
-        "exports": (),
-        "notebooks": ("notebook/cytometry",),
-        "sha256": "ac959669362453c4d69d38ae0c2f93c4590cb8c964f84b3f716127d49d70aea8",  # pragma: allowlist secret
+        "pipeline": ("ingest_cytometer", "merge_metadata", "cytometry_gating"),
+        "plots": ("gating_diagnostic",),
+        "exports": ("gate_definition_table", "sample_stats_table", "group_stats_table", "qc_table"),
+        "sha256": "e7f4b07b7be7f5a501fa2f490b4f5b49428c98c7847a170b5596cb72f5456b32",  # pragma: allowlist secret
     },
     "workbench/generic": {
         "pipeline": (),
         "plots": (),
         "exports": (),
-        "notebooks": ("notebook/eda",),
-        "sha256": "b72e51a22f39565a96d01d12c59af55106372cd62a6615cf11f32234916808d1",  # pragma: allowlist secret
+        "sha256": "52c1d07c2c98b97b45bae1be25c9feb15324c8bbcbd50a58e3acde727d604e7d",  # pragma: allowlist secret
     },
     "logic/sfxi_vec8_collection": {
         "pipeline": ("collect_vec8",),
         "plots": ("vec8_collection_heatmap",),
         "exports": ("vec8_table",),
-        "notebooks": ("notebook/eda",),
-        "sha256": "c9d8cd1ee3a7ccea54c2dd62a5bd87156ffc53f20f9c491734fb089e98ab4b85",  # pragma: allowlist secret
+        "sha256": "a36f3c77035b4109821176f88a2b748d65a9e4cc3bc12bd6d4bf9073c5fd5791",  # pragma: allowlist secret
     },
     "plate_reader/response_window": {
         "pipeline": ("response_window",),
         "plots": ("response_window_summary",),
         "exports": ("designs_table", "events_table"),
-        "notebooks": ("notebook/eda",),
-        "sha256": "8f4704b99ac1991ebe29f390d37a8cc35db1d384848291e55899cd2e07e334fc",  # pragma: allowlist secret
+        "sha256": "7854877f7e398ec3bc5fa9ad0271cf08a7f7c51900fcd667d70ca131e47af3f8",  # pragma: allowlist secret
     },
     "logic/sfxi_screen": {
         "pipeline": (
@@ -59,14 +56,12 @@ COMPILED_PLAN_FIXTURES = {
             "ratio_yfp_cfp",
             "ratio_cfp_od600",
             "ratio_yfp_od600",
-            "fold_change__yfp_over_cfp",
             "promote_to_tidy_plus_map",
             "sfxi_vec8",
         ),
-        "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+        "plots": ("raw_kinetics",),
         "exports": ("logic_summary_workbook",),
-        "notebooks": ("notebook/sfxi_eda",),
-        "sha256": "e24d37ec7835d755978399f11925545d79ebe20e5c7505b9392ab26b658e1936",  # pragma: allowlist secret
+        "sha256": "5f777e90d9e10d049cf857bc25fef3b0c6bcdd248eedefed415e53f6ce14802e",  # pragma: allowlist secret
     },
     "plate_reader/dual_reporter_screen": {
         "pipeline": (
@@ -78,12 +73,10 @@ COMPILED_PLAN_FIXTURES = {
             "ratio_yfp_cfp",
             "ratio_cfp_od600",
             "ratio_yfp_od600",
-            "fold_change__yfp_over_cfp",
         ),
-        "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+        "plots": ("raw_kinetics", "value_distributions"),
         "exports": (),
-        "notebooks": ("notebook/eda",),
-        "sha256": "5cf5e44f4ddb9b14a0dd683b4dc39a0195eb01fe927daa475f4d75fbe635afee",  # pragma: allowlist secret
+        "sha256": "6926b5da669fa492527d836ea8235158780df833b509a37ea5d816a962bd12d5",  # pragma: allowlist secret
     },
     "plate_reader/single_reporter_screen": {
         "pipeline": (
@@ -93,12 +86,10 @@ COMPILED_PLAN_FIXTURES = {
             "blank",
             "overflow",
             "ratio_reporter_normalizer",
-            "fold_change__single_reporter",
         ),
-        "plots": ("raw_kinetics", "endpoint_by_condition", "endpoint_by_design", "intensity_overview"),
+        "plots": ("raw_kinetics", "value_distributions"),
         "exports": (),
-        "notebooks": ("notebook/eda",),
-        "sha256": "11f578bca98e09f8f2c009f4e4abb78cbcb57ab57db60cf7ead280122c32f395",  # pragma: allowlist secret
+        "sha256": "6738f08ad41b1e62e3c85a14a39f99e3ef86c24398a2bc2c1034664916fd7a7d",  # pragma: allowlist secret
     },
 }
 
@@ -130,13 +121,13 @@ def _plan_digest(plan) -> str:
 @pytest.mark.parametrize("protocol_id", sorted(COMPILED_PLAN_FIXTURES))
 def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str) -> None:
     runtime = builtin_runtime()
-    plan = runtime.bind_protocol(ProtocolBinding(id=protocol_id)).compile()
+    inputs = {"gating": cytometry_test_gating_policy()} if protocol_id == "cytometry/flow_panel" else {}
+    plan = runtime.bind_protocol(ProtocolBinding(id=protocol_id, inputs=inputs)).compile()
     expected = COMPILED_PLAN_FIXTURES[protocol_id]
 
     assert tuple(step.id for step in plan.pipeline) == expected["pipeline"]
     assert tuple(step.id for step in plan.plots) == expected["plots"]
     assert tuple(step.id for step in plan.exports) == expected["exports"]
-    assert tuple(step.template for step in plan.notebooks) == expected["notebooks"]
     assert _plan_digest(plan) == expected["sha256"]
 
 

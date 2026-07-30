@@ -63,7 +63,7 @@ exclude = ["reader.tests", "reader.tests.*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"reader.workbench.templates.builtins" = ["*.marimo.py.txt"]
+"reader.workbench.notebooks" = ["*.marimo.py.txt"]
 
 [dependency-groups]
 dev = [
@@ -117,15 +117,10 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "-ra",
-  "-m",
-  "not active_experiments",
 ]
 
 markers = [
-  "active_experiments: local data-backed end-to-end matrix selected explicitly because raw experiment inputs are not shipped in a clean checkout",
   "integration: cross-surface integration coverage",
-  "repo_matrix: repo-wide config and metadata sweeps kept in the default lane",
-  "smoke: representative real-experiment runtime coverage kept in the default test lane",
 ]
 
 norecursedirs = [

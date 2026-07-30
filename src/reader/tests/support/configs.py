@@ -39,6 +39,33 @@ def default_notebook_name() -> str:
     return f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
 
 
+def cytometry_test_gating_policy() -> dict:
+    """Return one explicit, synthetic gating policy for protocol tests."""
+
+    return {
+        "cells_enabled": True,
+        "cells_x_channel": "FSC-A",
+        "cells_y_channel": "SSC-A",
+        "cells_x_range": [100.0, 100_000.0],
+        "cells_y_range": [100.0, 100_000.0],
+        "singlets_enabled": True,
+        "singlet_x_channel": "FSC-H",
+        "singlet_y_channel": "FSC-A",
+        "singlet_ratio_range": [0.8, 1.2],
+        "fluorescence_channel": "GFP-A",
+        "threshold_mode": "manual",
+        "threshold_value": 1_000.0,
+        "threshold_group_column": None,
+        "threshold_control_value": None,
+        "threshold_quantile": None,
+        "group_column": "treatment",
+        "minimum_final_events": 100,
+        "minimum_final_percent": 1.0,
+        "maximum_nonpositive_percent": 5.0,
+        "nonpositive_scope": "all_events",
+    }
+
+
 def base_reader_config(
     *,
     experiment_id: str = "exp_001",

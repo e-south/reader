@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
@@ -7,6 +8,9 @@ from reader.domains.plate_reader.plots.dual_reporter_triptych import (
     build_dual_reporter_triptych_chart,
     build_triptych_data,
     summarize_design_context,
+)
+from reader.domains.plate_reader.plots.dual_reporter_triptych_render import (
+    render_dual_reporter_triptych,
 )
 
 
@@ -163,6 +167,44 @@ def test_dual_reporter_triptych_chart_uses_square_panels_and_full_treatment_doma
     assert point_layer["mark"]["fill"] == "white"
     assert point_layer["mark"]["stroke"] == "#94a3b8"
     assert point_layer["encoding"]["xOffset"]["field"] == "replicate_index"
+
+
+def test_dual_reporter_triptych_renders_static_three_panel_figure() -> None:
+    data = build_triptych_data(
+        _dual_reporter_df(),
+        time_col="time",
+        treatment_col="treatment",
+        growth_channel="OD600",
+        ratio_channel="YFP/CFP",
+        snapshot_channel="YFP/CFP",
+        snapshot_time=1.0,
+        treatment_order=["water", "EtOH"],
+    )
+
+    figure = render_dual_reporter_triptych(
+        data,
+        time_col="time",
+        treatment_col="treatment",
+        acquisition_transition_time_h=0.5,
+        title="pTest",
+        colors=["#334155", "#2563eb"],
+    )
+
+    assert len(figure.axes) == 3
+    assert [axis.get_title() for axis in figure.axes] == [
+        "OD600 kinetics",
+        "YFP/CFP kinetics",
+        "YFP/CFP snapshot at 1 h",
+    ]
+    assert figure.get_suptitle() == "pTest"
+    assert [tick.get_text() for tick in figure.axes[2].get_xticklabels()] == ["water", "EtOH"]
+    assert len(figure.axes[2].collections) == 2
+    assert {tuple(collection.get_edgecolors()[0]) for collection in figure.axes[2].collections} == {
+        (0.2, 0.2549019607843137, 0.3333333333333333, 1.0),
+        (0.1450980392156863, 0.38823529411764707, 0.9215686274509803, 1.0),
+    }
+
+    plt.close(figure)
 
 
 def test_dual_reporter_triptych_design_context_summarizes_identity_columns() -> None:

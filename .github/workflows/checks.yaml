@@ -43,6 +43,8 @@ jobs:
             --disable-pip
       - name: Verify documentation
         run: uv run --locked reader maintain docs
+      - name: Verify agent skills
+        run: uv run --locked reader maintain skills
       - name: Lint
         run: uv run --locked ruff check .
       - name: Check formatting
@@ -51,6 +53,8 @@ jobs:
         run: uv run --locked python -m compileall -q src/reader
       - name: Build distributions
         run: uv build --no-sources
+      - name: Smoke-test built wheel
+        run: uv run --isolated --no-project --with ./dist/*.whl reader --version
       - name: Verify distribution metadata
         run: uv run --locked twine check dist/*
 

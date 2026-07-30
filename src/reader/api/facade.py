@@ -24,11 +24,14 @@ from reader.workbench.inspection.experiments import (
 )
 from reader.workbench.inspection.results import record_catalog_payload
 from reader.workbench.inspection.runtime import workbench_record_verification_scope
-from reader.workbench.notebooks import write_experiment_notebook
+from reader.workbench.notebooks import CANONICAL_NOTEBOOK_ID, write_experiment_notebook
 from reader.workbench.paths import resolve_confined_sink_root
-from reader.workbench.records import DataFrameArtifactRecord, record_revision_digest, verify_record_store
-from reader.workbench.templates import require_notebook_template_for_protocol
+from reader.workbench.records import (
+    DataFrameArtifactRecord,
+    verify_record_store,
+)
 
+from ._record_reads import resolve_record_revision
 from .models import (
     DataFrameRecordResult,
     Experiment,
@@ -144,20 +147,11 @@ def notebook(
     experiment: Experiment,
     *,
     name: str | None = None,
-    template: str | None = None,
     overwrite: bool = False,
 ) -> NotebookResult:
-    """Generate one protocol-compatible notebook inside the experiment outputs."""
+    """Generate Reader's canonical notebook inside the experiment outputs."""
 
     decl = experiment._declaration
-    workbench = resolve_workbench(decl)
-    bound_protocol = experiment._runtime.bind_protocol(decl.experiment_semantics.protocol)
-    configured = workbench.notebooks[0].template if workbench.notebooks else None
-    selected_template = bound_protocol.resolve_notebook_template(
-        explicit_template=template,
-        configured_template=configured,
-    )
-    descriptor = require_notebook_template_for_protocol(selected_template, protocol=bound_protocol)
     target_name = name or f"EDA_{datetime.now().strftime('%Y%m%d')}.py"
     candidate = Path(target_name)
     if (
@@ -182,19 +176,16 @@ def notebook(
         )
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
-    plot_specs = [step.to_dict() for step in workbench.plots] if descriptor.capabilities.inject_plot_specs else None
     path, created = write_experiment_notebook(
         notebooks_root / target_name,
         experiment_root=decl.experiment.root,
         notebooks_root=notebooks_root,
-        template=selected_template,
         overwrite=overwrite,
-        plot_specs=plot_specs,
     )
     return NotebookResult(
         experiment=experiment.identity,
         path=str(path),
-        template=selected_template,
+        template=CANONICAL_NOTEBOOK_ID,
         created=created,
     )
 
@@ -283,33 +274,26 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
     )
 
 
-def read_dataframe(experiment: Experiment, record_id: str) -> DataFrameRecordResult:
-    """Load and content-digest/contract-validate the latest dataframe revision."""
+def read_dataframe(
+    experiment: Experiment,
+    record_id: str,
+    *,
+    revision: int | None = None,
+    revision_digest: str | None = None,
+    row_limit: int | None = None,
+) -> DataFrameRecordResult:
+    """Load and validate an exact dataframe revision, optionally bounded by rows."""
 
-    if not isinstance(record_id, str) or not record_id.strip():
-        raise RecordError("record_id must be a non-empty string")
-    if record_id != record_id.strip():
-        raise RecordError("record_id must not contain leading or trailing whitespace")
-
-    decl = experiment._declaration
-    layout = decl.experiment_semantics.layout
-    store = experiment._runtime.record_store(
-        layout.outputs_dir,
-        plots_subdir=layout.plots_subdir,
-        exports_subdir=layout.exports_subdir,
-        experiment_root=decl.experiment.root,
-        create=False,
+    store, record, record_revision = resolve_record_revision(
+        experiment,
+        record_id,
+        revision=revision,
+        revision_digest=revision_digest,
+        missing_label="Dataframe record",
     )
-    if not store.catalog_exists():
-        raise RecordError(f"Record catalog is missing for experiment {decl.experiment.id!r}: {store.records_path}")
-
-    history = store.record_history(record_id)
-    if not history:
-        raise RecordError(f"Dataframe record {record_id!r} is missing; produce it in an earlier step.")
-    record = history[-1]
     if not isinstance(record, DataFrameArtifactRecord):
         raise RecordError(f"Record {record_id!r} exists but is not a dataframe artifact")
-    dataframe = record.load_dataframe()
+    dataframe = record.load_dataframe() if row_limit is None else record.load_dataframe(row_limit=row_limit)
     try:
         store.contracts.validate(
             dataframe,
@@ -322,11 +306,7 @@ def read_dataframe(experiment: Experiment, record_id: str) -> DataFrameRecordRes
         ) from exc
     return DataFrameRecordResult(
         experiment=experiment.identity,
-        record=RecordRevision(
-            record_id=record.record_id,
-            revision=len(history),
-            revision_digest=record_revision_digest(record, outputs_dir=store.root),
-        ),
+        record=record_revision,
         contract_id=record.contract_id,
         content_digest=record.content_digest,
         dataframe=dataframe,

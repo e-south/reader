@@ -1,98 +1,79 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+import hashlib
+from mimetypes import guess_type
 from pathlib import Path
-from typing import Any
 
-from reader.workbench.engine.artifacts import ArtifactWrite
-from reader.workbench.engine.artifacts import publish_artifact_bundle as _publish
-from reader.workbench.engine.invocations import InvocationLedger
-from reader.workbench.records import current_build_identity
-from reader.workbench.templates import require_notebook_template_for_protocol
+from reader.errors import RecordError
+from reader.workbench.records import (
+    FileBundleRecord,
+    record_to_dict,
+    verify_record_artifact_integrity,
+)
 
-from .models import ApiResult, Experiment, ExperimentIdentity, RecordRevision
-
-
-@dataclass(frozen=True)
-class ArtifactSpec:
-    """One confined file to materialize inside an experiment-owned bundle."""
-
-    relative_path: str | Path
-    description: str
-    writer: Callable[[Path], None] = field(repr=False, compare=False)
+from ._record_reads import resolve_record_revision
+from .models import ArtifactFileResult, Experiment
 
 
-@dataclass(frozen=True)
-class ArtifactBundleResult(ApiResult):
-    """A ledger-backed, manifest-backed artifact-bundle publication."""
-
-    experiment: ExperimentIdentity
-    invocation_id: str
-    provenance_epoch_id: str
-    record: RecordRevision
-    paths: tuple[str, ...]
-    ledger_path: str
-
-
-def publish_artifact_bundle(
+def read_artifact(
     experiment: Experiment,
-    *,
     record_id: str,
-    producer_id: str,
-    template: str,
-    upstream_records: Mapping[str, str],
-    producer_config: Mapping[str, Any],
-    description: str,
-    artifacts: Sequence[ArtifactSpec],
-) -> ArtifactBundleResult:
-    """Publish interactive deliverables through Reader's canonical provenance path."""
+    *,
+    revision: int,
+    revision_digest: str,
+    path: str,
+) -> ArtifactFileResult:
+    """Read verified bytes for one file in an exact file-bundle record revision."""
 
-    decl = experiment._declaration
-    runtime = experiment._runtime
-    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
-    descriptor = require_notebook_template_for_protocol(template, protocol=bound_protocol)
-    writes = tuple(
-        ArtifactWrite(
-            relative_path=Path(item.relative_path),
-            description=item.description,
-            writer=item.writer,
-        )
-        for item in artifacts
+    if revision is None or revision_digest is None:
+        raise RecordError("read_artifact requires both revision and revision_digest")
+    if not isinstance(path, str) or not path.strip() or path != path.strip():
+        raise RecordError("path must be one non-empty outputs-relative artifact path")
+    requested_path = Path(path)
+    if requested_path.is_absolute() or ".." in requested_path.parts or requested_path == Path("."):
+        raise RecordError("path must be one confined outputs-relative artifact path")
+    normalized_path = requested_path.as_posix()
+    if normalized_path != path:
+        raise RecordError("path must use the canonical outputs-relative artifact path from records()")
+
+    store, record, bound_revision = resolve_record_revision(
+        experiment,
+        record_id,
+        revision=revision,
+        revision_digest=revision_digest,
+        missing_label="File-bundle record",
     )
-    layout = decl.experiment_semantics.layout
-    store = runtime.record_store(
-        layout.outputs_dir,
-        plots_subdir=layout.plots_subdir,
-        exports_subdir=layout.exports_subdir,
-        experiment_root=decl.experiment.root,
-        create=False,
-    )
-    publication = _publish(
-        store=store,
-        ledger=InvocationLedger.for_store(store=store),
-        config_digest=decl.config_digest,
-        build_identity=current_build_identity(),
-        producer_id=producer_id,
-        producer_template=descriptor.template,
-        record_id=record_id,
-        upstream_records=upstream_records,
-        producer_config=producer_config,
-        description=description,
-        artifacts=writes,
-    )
-    return ArtifactBundleResult(
+    if not isinstance(record, FileBundleRecord):
+        raise RecordError(f"Record {record_id!r} exists but is not a file bundle")
+    payload = record_to_dict(record, outputs_dir=store.root)
+    raw_files = payload.get("files")
+    encoded_files = raw_files if isinstance(raw_files, list) else []
+    try:
+        file_index = encoded_files.index(normalized_path)
+    except ValueError as exc:
+        raise RecordError(
+            f"Artifact {normalized_path!r} is not part of record {record_id!r} revision {revision}."
+        ) from exc
+
+    verify_record_artifact_integrity(record, outputs_dir=store.root)
+    evidence_by_path = {item.relative_path.as_posix(): item for item in record.file_evidence}
+    evidence = evidence_by_path[normalized_path]
+    try:
+        content = record.files[file_index].read_bytes()
+    except OSError as exc:
+        raise RecordError(f"Artifact {normalized_path!r} could not be read after verification.") from exc
+    actual_digest = "sha256:" + hashlib.sha256(content).hexdigest()
+    if len(content) != evidence.size_bytes or actual_digest != evidence.content_digest:
+        raise RecordError(f"Artifact {normalized_path!r} changed while it was being read; refresh and retry.")
+    return ArtifactFileResult(
         experiment=experiment.identity,
-        invocation_id=publication.invocation_id,
-        provenance_epoch_id=publication.provenance_epoch_id,
-        record=RecordRevision(
-            record_id=publication.record.record_id,
-            revision=publication.revision,
-            revision_digest=publication.revision_digest,
-        ),
-        paths=tuple(str(path) for path in publication.record.files),
-        ledger_path=str(publication.ledger_path),
+        record=bound_revision,
+        relative_path=normalized_path,
+        media_type=guess_type(normalized_path)[0] or "application/octet-stream",
+        content_digest=evidence.content_digest,
+        size_bytes=evidence.size_bytes,
+        content=content,
     )
 
 
-__all__ = ["ArtifactBundleResult", "ArtifactSpec", "publish_artifact_bundle"]
+__all__ = ["ArtifactFileResult", "read_artifact"]

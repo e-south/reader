@@ -30,8 +30,10 @@ Built-in plugin implementations live under
   write file-bundle export artifacts
 
 Built-in registration is explicit in
-[`src/reader/workbench/assets/plugin_manifest.py`](../../src/reader/workbench/assets/plugin_manifest.py).
-The runtime does not discover built-ins by scanning package trees.
+[`src/reader/plugins/catalog.py`](../../src/reader/plugins/catalog.py), with
+category manifests beside the implementations under `reader.plugins`. The
+runtime injects those descriptors into the generic workbench registry; it does
+not discover built-ins by scanning package trees.
 
 The registry has a `reader.plugins` entry-point hook for coordinated
 maintainer integrations. It is not a standalone public plugin SDK: the current
@@ -52,7 +54,9 @@ A good plugin is thin orchestration.
   [`src/reader/plugins/ingest/discovery_policy.py`](../../src/reader/plugins/ingest/discovery_policy.py)
   or [`src/reader/plugins/ingest/_discovery.py`](../../src/reader/plugins/ingest/_discovery.py),
   not duplicated across adapters.
-- Keep plugin metadata in the asset manifest and ontology types:
+- Keep built-in plugin metadata in the plugin-owned catalog and shared ontology
+  types:
+  [`src/reader/plugins/catalog.py`](../../src/reader/plugins/catalog.py),
   [`src/reader/workbench/assets/types.py`](../../src/reader/workbench/assets/types.py)
   and [`src/reader/workbench/ontology.py`](../../src/reader/workbench/ontology.py).
 - Keep protocol-facing defaults and output selection in
@@ -71,8 +75,8 @@ The maintainer path is:
    may instead expose a `reader.plugins` entry point that resolves to an
    `AssetDescriptor`.
 3. Wire it into a
-   [`protocol compiler`](../../src/reader/protocols/compiler.py) or recipe so
-   the protocol owns when it runs and what semantic output it represents.
+   [`protocol compiler`](../../src/reader/protocols/compiler.py) so the protocol
+   owns when it runs and what semantic output it represents.
 4. Expose it through protocol inputs, analysis knobs, plot profiles, or export
    artifacts rather than raw plugin ids in user config.
 

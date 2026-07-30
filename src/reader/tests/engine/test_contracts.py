@@ -268,7 +268,6 @@ def test_missing_file_resolver_rejects_unknown_ports(tmp_path: Path) -> None:
     plugin = InvalidFileResolverPlugin()
     plugin.bind_runtime(
         descriptor=SimpleNamespace(
-            kind="plugin",
             cls=InvalidFileResolverPlugin,
             plugin_id="ingest/invalid_resolver",
             name="ingest/invalid_resolver",
@@ -301,7 +300,6 @@ def test_missing_file_resolver_rejects_path_outside_experiment(tmp_path: Path) -
     plugin = OutsideFileResolverPlugin()
     plugin.bind_runtime(
         descriptor=SimpleNamespace(
-            kind="plugin",
             cls=OutsideFileResolverPlugin,
             plugin_id="ingest/outside_resolver",
             name="ingest/outside_resolver",
@@ -338,7 +336,6 @@ def test_missing_file_resolver_accepts_confined_file_set(tmp_path: Path) -> None
     plugin = FileSetResolverPlugin()
     plugin.bind_runtime(
         descriptor=SimpleNamespace(
-            kind="plugin",
             cls=FileSetResolverPlugin,
             plugin_id="ingest/file_set_resolver",
             name="ingest/file_set_resolver",

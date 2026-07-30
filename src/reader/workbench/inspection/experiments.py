@@ -148,7 +148,6 @@ def bound_experiment_surface_context(
         {
             **experiment_identity_payload(job_path=job_path, decl=decl, protocol_id=bound_protocol.id),
             "plot_profile": spec.protocol.outputs.plots.profile or bound_protocol.default_plot_profile,
-            "notebook_template": spec.protocol.outputs.notebook.template or bound_protocol.default_notebook_template,
         },
         experiment_authoring_payload(
             inputs=spec.protocol.inputs,
@@ -175,7 +174,6 @@ def experiment_explain_payload(
     pipeline_steps = list(workbench.pipeline)
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
-    notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
     semantic_program = decl.experiment_semantics.protocol_program
     compiled_payload = compiled_workbench_payload(
@@ -183,7 +181,6 @@ def experiment_explain_payload(
         pipeline_steps=pipeline_steps,
         plot_steps=plot_steps,
         export_steps=export_steps,
-        notebook_steps=notebook_steps,
         runtime=runtime,
         record_producers=record_producers,
     )
@@ -199,7 +196,6 @@ def experiment_explain_payload(
                 pipeline_steps=pipeline_steps,
                 plot_steps=plot_steps,
                 export_steps=export_steps,
-                notebook_steps=notebook_steps,
             ),
             compiled=compiled_payload,
         ),
@@ -264,7 +260,6 @@ def experiment_steps_payload(
         pipeline_steps=pipeline_steps,
         plot_steps=[],
         export_steps=[],
-        notebook_steps=[],
     )
     plan_payload["pipeline_count"] = len(pipeline_steps)
     semantic_program = decl.experiment_semantics.protocol_program
@@ -274,7 +269,6 @@ def experiment_steps_payload(
         ],
         "plots": [],
         "exports": [],
-        "notebooks": [],
     }
     compiled_payload["semantic_program"] = semantic_program_payload(semantic_program)
     return experiment_surface_payload(
@@ -305,7 +299,6 @@ def experiment_config_json_payload(
     pipeline_steps = list(workbench.pipeline)
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
-    notebook_steps = list(workbench.notebooks)
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
     semantic_program = decl.experiment_semantics.protocol_program
     compiled_payload = compiled_workbench_payload(
@@ -313,7 +306,6 @@ def experiment_config_json_payload(
         pipeline_steps=pipeline_steps,
         plot_steps=plot_steps,
         export_steps=export_steps,
-        notebook_steps=notebook_steps,
         runtime=runtime,
         record_producers=record_producers,
     )
@@ -329,7 +321,6 @@ def experiment_config_json_payload(
                 pipeline_steps=pipeline_steps,
                 plot_steps=plot_steps,
                 export_steps=export_steps,
-                notebook_steps=notebook_steps,
             ),
             compiled=compiled_payload,
         ),
@@ -386,14 +377,12 @@ def experiment_inspect_payload(
     pipeline_steps = list(workbench.pipeline)
     plot_steps = list(workbench.plots)
     export_steps = list(workbench.exports)
-    notebook_steps = list(workbench.notebooks)
     semantic_program = decl.experiment_semantics.protocol_program
     compiled_payload = compiled_workbench_payload(
         bound_protocol=bound_protocol,
         pipeline_steps=pipeline_steps,
         plot_steps=plot_steps,
         export_steps=export_steps,
-        notebook_steps=notebook_steps,
         runtime=runtime,
         record_producers=record_producers,
     )
@@ -422,7 +411,6 @@ def experiment_inspect_payload(
                 pipeline_steps=pipeline_steps,
                 plot_steps=plot_steps,
                 export_steps=export_steps,
-                notebook_steps=notebook_steps,
             ),
             compiled=compiled_payload,
             inputs={

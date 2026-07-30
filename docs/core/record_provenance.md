@@ -3,15 +3,15 @@ doc_id: reader-record-provenance
 surface: contract-reference
 owner: reader-maintainers
 last_verified: 2026-07-29
-summary: Catalog-v4 epochs, schema-v5 record evidence, verification, and recovery.
+summary: Catalog-v4 epochs, schema-v6 record evidence, verification, and recovery.
 ---
 
 # Record provenance and verification
 
-Reader writes catalog schema v4 with schema-v5 dataframe and file-bundle
+Reader writes catalog schema v4 with schema-v6 dataframe and file-bundle
 records. The catalog owns one canonical `provenance_epoch_id`; its active
 invocation ledger is
-`outputs/manifests/invocations/<provenance_epoch_id>.jsonl`. A current v5
+`outputs/manifests/invocations/<provenance_epoch_id>.jsonl`. A current v6
 record binds together:
 
 - the normalized complete `reader/v8` config digest;
@@ -41,7 +41,7 @@ uv run reader verify <config|dir|index> --format json
 `records_ready` means every current record passed verification against the
 current config, Reader build, sources, exact upstream revisions, and generated
 files. `catalog_ready` means a valid catalog-schema-v4 envelope with
-record-schema-v5 payloads exists but its recorded
+record-schema-v6 payloads exists but its recorded
 config or Reader build differs from the current environment. A digest,
 missing-file, exact-upstream-revision, or invalid-schema failure is `blocked`.
 
@@ -55,8 +55,9 @@ and reports the incomplete provenance rather than inventing a terminal state.
 
 ## Invalid catalog recovery
 
-Reader reads and writes catalog schema v4 and record schema v5 only. An older
-catalog or record payload is invalid, not a degraded compatibility mode.
+Reader reads and writes catalog schema v4 and record schema v6 only. A
+catalog containing schema-v5 or older record payloads is invalid, not a
+degraded compatibility mode.
 Replace the generated catalog and perform a complete pipeline rerun from
 staged source inputs:
 
@@ -74,5 +75,6 @@ current evidence.
 
 Verification is scoped to records owned by the current compiled workbench.
 Records from removed pipeline, plot, or export surfaces do not make the current
-declaration unverifiable. Notebook bundles remain in scope while their template
-is still declared.
+declaration unverifiable. Reader's fixed canonical notebook is a generated,
+read-only viewport over verified records. The notebook file itself is operator
+scaffolding, not a `RecordStore`-published file-bundle record.

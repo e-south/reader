@@ -87,6 +87,7 @@ Local commands:
 - `uv run reader maintain docs`: docs links and routing integrity
 - `uv run pytest -q`: portable default test run
 - `uv run pytest -q -m integration`: portable cross-surface integration tests
-- `uv run pytest -q -m active_experiments`: optional local data-backed checks;
-  requires ignored experiment inputs and is not part of public CI
+- named `reader validate`, dry-run, execution, verification, and deliverable
+  commands against one ignored local experiment when data-backed dogfood is in
+  scope
 - `git diff --check`: whitespace and merge-marker hygiene

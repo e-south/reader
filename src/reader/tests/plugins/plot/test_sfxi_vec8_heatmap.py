@@ -16,7 +16,6 @@ from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.decl.model import (
     ExperimentDecl,
-    NotebookDecl,
     PipelineDecl,
     PluginStepDecl,
     RecordInputDecl,
@@ -144,7 +143,6 @@ def test_sfxi_vec8_heatmap_runtime_persists_plot_bundle_record(tmp_path: Path) -
             )
         ),
         exports=SurfaceDecl(specs=()),
-        notebooks=NotebookDecl(specs=()),
     )
 
     run_spec(

@@ -49,27 +49,11 @@ def build_notebook_overview(
     )
 
 
-def build_design_treatment_summary_rows(df: Any) -> tuple[tuple[dict[str, str], ...], str]:
-    if df is None:
-        return (), "No dataset selected yet."
-    columns = set(getattr(df, "columns", []))
-    missing = [col for col in ("design_id", "treatment") if col not in columns]
-    if missing:
-        return (), f"Missing column(s): {', '.join(missing)}."
-
-    rows = [{"Category": "Design ID", "Value": value} for value in _unique_column_values(df, "design_id")]
-    rows.extend({"Category": "Treatment", "Value": value} for value in _unique_column_values(df, "treatment"))
-    if not rows:
-        return (), "No non-empty design or treatment values found."
-    return tuple(rows), ""
-
-
 def render_notebook_overview_panel(
     mo: Any,
     overview: NotebookOverview,
     *,
-    design_treatment_rows: Sequence[Mapping[str, Any]],
-    design_treatment_note: str = "",
+    detail_sections: Mapping[str, Any] | None = None,
     include_heading: bool = True,
 ) -> Any:
     at_a_glance_rows = (
@@ -91,50 +75,28 @@ def render_notebook_overview_panel(
             "Value": _path_label(overview.notebooks_dir, base=overview.experiment_root),
         },
     )
-    detail_sections = {
-        "Design/treatment scope": _render_table(
-            mo,
-            tuple(dict(row) for row in design_treatment_rows),
-            design_treatment_note or "No design/treatment summary is available.",
-        ),
-        "Pipeline": _render_table(
-            mo,
-            overview.pipeline_rows,
-            "No pipeline steps are declared.",
-        ),
-        "Paths": _render_table(mo, path_rows, "No output paths are available."),
-    }
+    rendered_detail_sections = dict(detail_sections or {})
+    reserved_sections = {"Pipeline", "Paths"}
+    conflicts = sorted(reserved_sections.intersection(rendered_detail_sections))
+    if conflicts:
+        raise ValueError(f"Notebook overview detail sections use reserved names: {', '.join(conflicts)}")
+    rendered_detail_sections.update(
+        {
+            "Pipeline": _render_table(
+                mo,
+                overview.pipeline_rows,
+                "No pipeline steps are declared.",
+            ),
+            "Paths": _render_table(mo, path_rows, "No output paths are available."),
+        }
+    )
     items = [
         mo.ui.table(list(at_a_glance_rows), page_size=len(at_a_glance_rows)),
-        mo.accordion(detail_sections, multiple=True, lazy=True),
+        mo.accordion(rendered_detail_sections, multiple=True, lazy=True),
     ]
     if include_heading:
         items.insert(0, mo.md(f"# {overview.experiment_title}"))
     return mo.vstack(items)
-
-
-def _unique_column_values(df: Any, col: str) -> tuple[str, ...]:
-    values: list[Any] = []
-    if hasattr(df, "get_column"):
-        series = df.get_column(col)
-        if hasattr(series, "drop_nulls"):
-            series = series.drop_nulls()
-        if hasattr(series, "unique"):
-            series = series.unique()
-        if hasattr(series, "to_list"):
-            values = series.to_list()
-    elif hasattr(df, "__getitem__"):
-        series = df[col]
-        if hasattr(series, "dropna"):
-            series = series.dropna()
-        if hasattr(series, "unique"):
-            series = series.unique()
-        if hasattr(series, "tolist"):
-            values = series.tolist()
-        elif hasattr(series, "to_list"):
-            values = series.to_list()
-    text_values = [str(value) for value in values if value is not None and str(value).strip()]
-    return tuple(sorted(set(text_values)))
 
 
 def _render_table(mo: Any, rows: tuple[dict[str, Any], ...], empty_text: str) -> Any:

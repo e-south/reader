@@ -4,15 +4,11 @@ from rich.console import Console
 
 from reader.contracts import OutputContractSurface, builtin_contract_catalog
 from reader.protocols import ProtocolBinding, ProtocolSemanticProgram
-from reader.tests.support import base_reader_config, build_decl
 from reader.workbench import PluginSemantics
 from reader.workbench.assets import build_plugin_asset
 from reader.workbench.cli import THEME
-from reader.workbench.config import ReaderSpec
 from reader.workbench.decl.model import (
     ExperimentDecl,
-    NotebookDecl,
-    NotebookTemplateCallDecl,
     PipelineDecl,
     PluginStepDecl,
     RecordInputDecl,
@@ -48,7 +44,6 @@ class _Dummy(Plugin):
 def _workbench_decl(
     *,
     pipeline: tuple[PluginStepDecl, ...] = (),
-    notebooks: tuple[NotebookTemplateCallDecl, ...] = (),
 ) -> WorkbenchDecl:
     semantics = ExperimentSemantics(
         protocol=ProtocolBinding(id="workbench/generic"),
@@ -69,7 +64,6 @@ def _workbench_decl(
         pipeline=PipelineDecl(runtime={}, steps=pipeline),
         plots=SurfaceDecl(specs=()),
         exports=SurfaceDecl(specs=()),
-        notebooks=NotebookDecl(specs=notebooks),
     )
 
 
@@ -166,18 +160,3 @@ def test_registry_catalog_indexes_semantic_fields() -> None:
     assert [item.plugin for item in catalog.filter(category="transform")] == ["transform/dummy"]
     assert [item.plugin for item in catalog.filter(domain="generic")] == ["transform/dummy"]
     assert [item.plugin for item in catalog.filter(family="test_transform")] == ["transform/dummy"]
-
-
-def test_explain_renders_notebook_specs_without_plugin_registry() -> None:
-    spec = ReaderSpec.model_validate(
-        base_reader_config(
-            experiment_id="exp",
-            protocol_outputs={"notebook": {"template": "notebook/eda"}},
-        )
-    )
-    console = Console(theme=THEME, record=True, width=100)
-    explain(build_decl(spec), console=console, registry=None)
-    rendered = console.export_text()
-    assert "Notebooks" in rendered
-    assert "notebook/eda" in rendered
-    assert "record_explorer" in rendered

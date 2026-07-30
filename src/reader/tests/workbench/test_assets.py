@@ -1,46 +1,42 @@
 from __future__ import annotations
 
 import reader.workbench.assets as assets
-from reader.protocols import ProtocolBinding, builtin_protocol_catalog
-from reader.workbench.assets import static_asset_catalog
-from reader.workbench.assets.plugin_manifest import (
-    builtin_plugin_asset_catalog,
-    builtin_plugin_descriptors,
-)
-from reader.workbench.templates import select_default_notebook_template
+from reader.plugins.catalog import builtin_plugin_catalog, builtin_plugin_descriptors
 
 
-def test_select_default_notebook_template_uses_protocol_policy() -> None:
-    protocols = builtin_protocol_catalog()
-    assert (
-        select_default_notebook_template(
-            protocol=protocols.bind(ProtocolBinding(id="plate_reader/dual_reporter_screen"))
-        ).template
-        == "notebook/eda"
-    )
-    assert (
-        select_default_notebook_template(protocol=protocols.bind(ProtocolBinding(id="cytometry/flow_panel"))).template
-        == "notebook/cytometry"
-    )
-    assert (
-        select_default_notebook_template(protocol=protocols.bind(ProtocolBinding(id="workbench/generic"))).template
-        == "notebook/eda"
-    )
-
-
-def test_static_asset_catalog_only_exposes_templates() -> None:
-    catalog = static_asset_catalog()
-    items = catalog.all()
-    assert items
-    assert {item.kind for item in items} == {"template"}
-    assert catalog.resolve("notebook/dual_reporter_triptych", kind="template").kind == "template"
+def test_workbench_asset_surface_is_plugin_only() -> None:
+    assert "static_asset_catalog" not in assets.__all__
+    assert "AssetKind" not in assets.__all__
+    assert not hasattr(assets, "static_asset_catalog")
+    assert not hasattr(assets, "AssetKind")
 
 
 def test_sample_metadata_descriptor_is_not_plate_reader_specific() -> None:
-    descriptor = builtin_plugin_asset_catalog().resolve("transform/sample_metadata", kind="plugin")
+    descriptor = builtin_plugin_catalog().resolve("transform/sample_metadata")
 
+    assert not hasattr(descriptor, "kind")
+    assert not hasattr(descriptor, "template")
+    assert not hasattr(descriptor, "body")
     assert descriptor.domain == "generic"
     assert descriptor.summary == "Attach sample-keyed metadata tables to tidy measurement rows."
+
+
+def test_response_window_diagnostic_descriptor_is_source_design_scoped() -> None:
+    descriptor = builtin_plugin_catalog().resolve("plot/response_window_diagnostic")
+
+    assert descriptor.domain == "plate_reader"
+    assert descriptor.family == "event_relative_diagnostic"
+    assert (
+        descriptor.summary == "Render trajectories and reduced components for one explicitly identified source design."
+    )
+
+
+def test_dual_reporter_triptych_descriptor_is_plate_reader_plot() -> None:
+    descriptor = builtin_plugin_catalog().resolve("plot/dual_reporter_triptych")
+
+    assert descriptor.domain == "plate_reader"
+    assert descriptor.family == "composite_plot"
+    assert descriptor.summary == "Render per-design growth, reporter-ratio, and endpoint panels."
 
 
 def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
@@ -50,8 +46,12 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "ingest/flow_cytometer",
         "ingest/synergy_h1",
         "plot/distributions",
+        "plot/cytometry_diagnostic",
+        "plot/dual_reporter_triptych",
         "plot/logic_symmetry",
+        "plot/response_window_diagnostic",
         "plot/response_window_summary",
+        "plot/sfxi_diagnostic",
         "plot/sfxi_vec8_collection",
         "plot/sfxi_vec8_heatmap",
         "plot/snapshot_barplot",
@@ -62,6 +62,7 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "transform/assay_labels",
         "transform/blank_correction",
         "transform/crosstalk_pairs",
+        "transform/cytometry_gating",
         "transform/fold_change",
         "transform/logic_symmetry",
         "transform/outlier_filter",
@@ -79,3 +80,10 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
 def test_asset_package_does_not_publish_a_duplicate_plugin_template_catalog() -> None:
     assert "build_workbench_asset_catalog" not in assets.__all__
     assert not hasattr(assets, "build_workbench_asset_catalog")
+
+
+def test_asset_package_does_not_publish_template_applicability_as_capabilities() -> None:
+    assert "AssetCapabilities" not in assets.__all__
+    assert "AssetRequirement" not in assets.__all__
+    assert not hasattr(assets, "AssetCapabilities")
+    assert not hasattr(assets, "AssetRequirement")

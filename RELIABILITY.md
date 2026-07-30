@@ -127,9 +127,9 @@ Reliability is incomplete without provenance.
 - generated-file path, size, and SHA-256 evidence
 - optional source-recipe provenance
 
-Reader reads and writes catalog schema v4 containing record-schema-v5 payloads.
+Reader reads and writes catalog schema v4 containing record-schema-v6 payloads.
 `reader verify` checks this evidence against current files and configuration.
-A non-v4 catalog or non-v5 record payload is invalid and must be reproduced
+A non-v4 catalog or non-v6 record payload is invalid and must be reproduced
 from source inputs.
 
 Reader also writes attempt and result events to

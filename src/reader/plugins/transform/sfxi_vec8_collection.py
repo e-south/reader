@@ -21,7 +21,7 @@ class SFXIVec8CollectionTransform(Plugin):
 
     @classmethod
     def output_ports(cls):
-        return {"vec8": dataframe_output("vec8", "sfxi.vec8_collection.v1")}
+        return {"vec8": dataframe_output("vec8", "sfxi.vec8_collection.v2")}
 
     def run(self, ctx, inputs, cfg):
         collection: SourceRecordCollection = inputs["sources"]
@@ -30,6 +30,7 @@ class SFXIVec8CollectionTransform(Plugin):
                 resource_id=item.ref.resource_id,
                 experiment_id=item.ref.experiment_id,
                 record_id=item.ref.record_id,
+                revision_digest=item.revision_digest,
                 frame=item.load_dataframe(),
             )
             for item in collection

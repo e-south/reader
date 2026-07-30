@@ -494,7 +494,6 @@ def config(
             "pipeline": materialized["pipeline"],
             "plots": materialized["plots"],
             "exports": materialized["exports"],
-            "notebooks": materialized["notebooks"],
         }
         typer.echo(_load("yaml").safe_dump(payload, sort_keys=False))
         return

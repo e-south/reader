@@ -5,13 +5,11 @@ from typing import Literal
 
 PluginCategory = Literal["ingest", "transform", "plot", "export", "validator"]
 PluginDomain = Literal["generic", "plate_reader", "cytometry", "logic"]
-WorkbenchItemKind = Literal["pipeline", "plot", "export", "notebook"]
+WorkbenchItemKind = Literal["pipeline", "plot", "export"]
 WorkbenchPluginStepKind = Literal["pipeline", "plot", "export"]
-WorkbenchProducerKind = Literal["pipeline", "plot", "export", "notebook"]
+WorkbenchProducerKind = Literal["pipeline", "plot", "export"]
 WorkbenchRecordKind = Literal["dataframe_artifact", "file_bundle"]
-WorkbenchTemplateKind = Literal["notebook"]
-WorkbenchRecipeKind = Literal["recipe"]
-WorkbenchRefKind = Literal["plugin", "template"]
+WorkbenchRefKind = Literal["plugin"]
 
 KNOWN_PLUGIN_DOMAINS: tuple[PluginDomain, ...] = ("generic", "plate_reader", "cytometry", "logic")
 
@@ -26,30 +24,6 @@ def validate_plugin_domain(domain: str) -> PluginDomain:
 
 @dataclass(frozen=True)
 class PluginSemantics:
-    domain: PluginDomain
-    family: str
-    summary: str
-    tags: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "domain", validate_plugin_domain(self.domain))
-
-
-@dataclass(frozen=True)
-class WorkbenchTemplateSemantics:
-    kind: WorkbenchTemplateKind
-    domain: PluginDomain
-    family: str
-    summary: str
-    tags: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "domain", validate_plugin_domain(self.domain))
-
-
-@dataclass(frozen=True)
-class WorkbenchRecipeSemantics:
-    kind: WorkbenchRecipeKind
     domain: PluginDomain
     family: str
     summary: str
@@ -96,14 +70,6 @@ _WORKBENCH_SURFACE_SEMANTICS: dict[WorkbenchItemKind, WorkbenchSurfaceSemantics]
         items_label="export specs",
         ref_kind="plugin",
         expected_plugin_category="export",
-    ),
-    "notebook": WorkbenchSurfaceSemantics(
-        kind="notebook",
-        section="notebooks",
-        title="Notebooks",
-        item_label="notebook spec",
-        items_label="notebook specs",
-        ref_kind="template",
     ),
 }
 

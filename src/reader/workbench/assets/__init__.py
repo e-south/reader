@@ -3,13 +3,9 @@ from __future__ import annotations
 import importlib
 
 _EXPORTS = {
-    "builtins": {"static_asset_catalog"},
     "types": {
-        "AssetCapabilities",
         "AssetCatalog",
         "AssetDescriptor",
-        "AssetKind",
-        "AssetRequirement",
         "build_plugin_asset",
         "plugin_category_from_id",
     },

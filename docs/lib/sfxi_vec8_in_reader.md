@@ -17,8 +17,9 @@ row per `design_id`. It persists the result as `sfxi_vec8/vec8` under the
 - [Vec8 contract](./sfxi/vec8.md): input requirements, ordered-state
   selection, reference normalization, equations, output columns, and failures.
 - [Experiment workflow](./sfxi/workflow.md): configuration, preflight,
-  execution, records, workbook export, and notebook review.
-- [Plot surfaces](./sfxi/plots.md): per-experiment and aggregate heatmaps.
+  execution, records, workbook export, and canonical EDA review.
+- [Plot surfaces](./sfxi/plots.md): per-design diagnostics plus per-experiment
+  and aggregate heatmaps.
 - [Plate-reader metric outputs](./plate_reader/metric_outputs.md): the shared
   measurement boundary and independent analysis lanes.
 

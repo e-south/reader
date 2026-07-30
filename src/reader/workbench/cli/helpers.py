@@ -26,84 +26,8 @@ def load_job_models(job_path: Path, *, runtime: ReaderRuntime | None = None) -> 
     )
 
 
-def has_sfxi_step(decl: WorkbenchDecl, *, runtime: ReaderRuntime) -> bool:
-    return _load("reader.workbench.engine._shared").pipeline_has_plugin(decl, runtime=runtime, tag="sfxi")
-
-
-def dataframe_record_contracts(
-    outputs_dir: Path,
-    *,
-    runtime: ReaderRuntime,
-    exact: str | None = None,
-    prefix: str | None = None,
-) -> list[str]:
-    contract_catalog = runtime.contracts
-    store = runtime.record_store(outputs_dir, create=False)
-    if not store.catalog_exists():
-        return []
-    records = store.iter_latest_records(kind="dataframe_artifact")
-    matches: list[str] = []
-    for record in records:
-        contract = record.contract_id
-        if exact and contract_catalog.satisfies(actual=contract, expected=exact):
-            matches.append(contract)
-            continue
-        if prefix and contract.startswith(prefix):
-            matches.append(contract)
-    return matches
-
-
-def template_requirements_satisfied(
-    template_name: str,
-    decl: WorkbenchDecl,
-    outputs_dir: Path,
-    *,
-    runtime: ReaderRuntime,
-) -> bool:
-    descriptor = _load("reader.workbench.templates").resolve_notebook_template_descriptor(template_name)
-    requirements = descriptor.capabilities.requires_any
-    if not requirements:
-        return True
-    record_contracts: list[str] | None = None
-    for requirement in requirements:
-        if requirement.plugin and _load("reader.workbench.engine._shared").pipeline_has_plugin(
-            decl, runtime=runtime, plugin=requirement.plugin
-        ):
-            return True
-        if requirement.domain and _load("reader.workbench.engine._shared").pipeline_has_plugin(
-            decl, runtime=runtime, domain=requirement.domain
-        ):
-            return True
-        if requirement.tag and _load("reader.workbench.engine._shared").pipeline_has_plugin(
-            decl, runtime=runtime, tag=requirement.tag
-        ):
-            return True
-        if requirement.record_contract or requirement.record_contract_prefix:
-            if record_contracts is None:
-                record_contracts = dataframe_record_contracts(
-                    outputs_dir,
-                    runtime=runtime,
-                    exact=requirement.record_contract,
-                    prefix=requirement.record_contract_prefix,
-                )
-            else:
-                exact = requirement.record_contract
-                prefix = requirement.record_contract_prefix
-                record_contracts.extend(
-                    dataframe_record_contracts(outputs_dir, runtime=runtime, exact=exact, prefix=prefix)
-                )
-            if record_contracts:
-                return True
-    return False
-
-
 def bind_decl_protocol(*, decl: WorkbenchDecl, runtime: ReaderRuntime):
     return runtime.bind_protocol(decl.experiment_semantics.protocol)
-
-
-def default_protocol_plan(*, descriptor, runtime: ReaderRuntime):
-    bound_protocol = runtime.bind_protocol(_load("reader.protocols").ProtocolBinding(id=descriptor.protocol))
-    return bound_protocol, bound_protocol.compile()
 
 
 def default_notebook_name() -> str:
