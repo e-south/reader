@@ -14,9 +14,11 @@ def test_root_readme_is_a_human_first_landing_page() -> None:
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert text.startswith("# ![Reader")
     assert not text.startswith("# reader\n")
-    assert "uv tool install ." in text
-    assert "python -m pip install ." in text
-    assert "not published yet" in text
+    assert "uv tool install reader-workbench" in text
+    assert "python -m pip install reader-workbench" in text
+    assert "uv tool install ." not in text
+    assert "python -m pip install ." not in text
+    assert "not published yet" not in text
     assert "\nreader demo\n" in text
     assert "\nreader protocols\n" in text
     assert "uv run reader demo" in text
