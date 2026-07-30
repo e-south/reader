@@ -8,13 +8,13 @@ summary: Stable task-oriented Python entrypoints for inspecting, verifying, and 
 
 # Python API
 
-Use `reader.api` when Python code needs Reader results directly. The API owns
+Use `reader_workbench.api` when Python code needs Reader results directly. The API owns
 config loading, protocol binding, and workbench compilation, so callers do not
 need to assemble runtime, declaration, graph, engine, and record objects.
 
 ```python
-from reader import open_experiment
-from reader.api import inspect, notebook, plan, plots, read_artifact, read_dataframe, records, run, validate, verify
+from reader_workbench import open_experiment
+from reader_workbench.api import inspect, notebook, plan, plots, read_artifact, read_dataframe, records, run, validate, verify
 
 experiment = open_experiment("experiments/my_experiment")
 
@@ -84,7 +84,7 @@ are defined.
 
 ## Notebook components and verified artifacts
 
-Generated notebooks import reusable controls from `reader.api.notebooks` and
+Generated notebooks import reusable controls from `reader_workbench.api.notebooks` and
 load data only through `records()`, `read_dataframe()`, `read_artifact()`, and
 `verify()`. Each selector option binds the explicit `revision` and
 `revision_digest` returned by `records()`; a refreshed or invalid selection
@@ -111,7 +111,7 @@ preview = read_artifact(
 ## Plugin discovery
 
 ```python
-from reader.api import describe_plugin, plugins
+from reader_workbench.api import describe_plugin, plugins
 
 catalog = plugins(category="ingest", domain="cytometry")
 descriptor = describe_plugin("ingest/flow_cytometer")
@@ -124,7 +124,7 @@ and maintainer tooling.
 
 ## Boundary
 
-Import public operations from `reader.api` or use `open_experiment` from the
+Import public operations from `reader_workbench.api` or use `open_experiment` from the
 package root. Domain-specific protocols, including record-backed aggregates,
-use these same operations. Modules under `reader.domains`, `reader.runtime`,
-and `reader.workbench` are implementation details.
+use these same operations. Modules under `reader_workbench.domains`, `reader_workbench.runtime`,
+and `reader_workbench.workbench` are implementation details.

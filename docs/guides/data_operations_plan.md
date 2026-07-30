@@ -37,7 +37,7 @@ For the concrete intake workflow, continue with
 [Preflight, run, verify](./preflight_run_verify.md).
 
 Machine-readable inspection is available through the read-only
-[`reader` DOP registry](../../src/reader/workbench/dop/):
+[`reader` DOP registry](../../src/reader_workbench/workbench/dop/):
 
 ```bash
 uv run reader dop classes

@@ -38,7 +38,7 @@ Run:
 ```bash
 uv run reader maintain skills
 uv run reader maintain docs
-uv run pytest -q src/reader/tests/repo/test_docs_routes.py
+uv run pytest -q src/reader_workbench/tests/repo/test_docs_routes.py
 uv run reader dop classes --format json
 uv run reader dop ready-specs --format json
 git diff --check
@@ -47,7 +47,7 @@ git diff --check
 When registry or CLI behavior changes, add:
 
 ```bash
-uv run pytest -q src/reader/tests/workbench/test_dop_registry.py
+uv run pytest -q src/reader_workbench/tests/workbench/test_dop_registry.py
 ```
 
 ## Content-Correctness Checks

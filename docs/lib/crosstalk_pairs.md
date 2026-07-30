@@ -24,7 +24,7 @@ summary: Contract, computation, and output reference for Reader crosstalk-pair r
 This document describes the crosstalk-pair transform compiled by
 `plate_reader/dual_reporter_screen`. Reader owns the generic pairwise math;
 integrations configure it through `reader/v8` and consume its typed record
-through `reader.api` rather than importing implementation modules.
+through `reader_workbench.api` rather than importing implementation modules.
 
 The library computes:
 - Per-design selectivity summary (top-1 vs top-2 treatment response).
@@ -152,7 +152,7 @@ This example finds groups of 3 where **all three pairwise edges pass**:
 ```bash
 uv run python - <<'PY'
 from itertools import combinations
-from reader.api import open_experiment, read_dataframe, verify
+from reader_workbench.api import open_experiment, read_dataframe, verify
 
 experiment = open_experiment("experiments/my_experiment")
 verification = verify(experiment)

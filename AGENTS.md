@@ -3,7 +3,7 @@
 ### What this repo is
 `reader` is a Python package + CLI for working with experimental data. The repo is both:
 1) A **workbench** of experiment directories under `experiments/`, and
-2) A reusable **library/CLI** under `src/reader/` that runs config-driven pipelines across experiments.
+2) A reusable **library/CLI** under `src/reader_workbench/` that runs config-driven pipelines across experiments.
 
 The unit of work is an **experiment directory**:
 - put raw inputs in `inputs/`
@@ -17,8 +17,8 @@ The unit of work is an **experiment directory**:
 - After edits: show a diff summary and list commands run.
 
 ### Repo layout
-- Source code: `src/reader/`
-- Tests: `src/reader/tests/`
+- Source code: `src/reader_workbench/`
+- Tests: `src/reader_workbench/tests/`
 - Docs: `docs/`
 - Skills: `.agents/skills/` (Codex-discoverable repo workflows)
 - Experiments: `experiments/` (experiment directories)
@@ -44,9 +44,9 @@ This project uses `uv`:
 - `uv sync` installs dependencies from the lockfile into `.venv/`
 - `uv run <cmd>` runs commands inside the project environment.
 
-#### Setup (dev + notebooks)
+#### Setup (dev)
 ```bash
-uv sync --locked --group dev --extra notebooks
+uv sync --locked --group dev
 ```
 
 ## Commands

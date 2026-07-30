@@ -19,10 +19,13 @@ uv sync --locked
 ```
 
 This creates or updates `.venv` with Reader and its runtime dependencies.
-Use `uv sync --locked --extra notebooks` when you also want the Marimo
-workbench. The package metadata exposes the same dependency set as the
-`notebooks` extra; the distribution name is `reader-workbench`, while the
-command and import package remain `reader`.
+The distribution name is `reader-workbench`, the Python import package is
+`reader_workbench`, and the installed command is `reader`.
+
+Reader does not currently publish a notebook dependency extra. The released
+Marimo and PyMdown dependency constraints do not provide a resolution Reader
+can safely advertise. Notebook scaffolding remains available; use a separately
+managed and audited Marimo environment for interactive launch.
 
 ## Run the guided demo
 

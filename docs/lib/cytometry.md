@@ -51,7 +51,7 @@ value.
 
 The diagnostic shows configured cells, singlets, fluorescence, and final
 retention. It is descriptive evidence, not an objective function. Downstream
-code should consume exact record revisions through `reader.api`, retain the
+code should consume exact record revisions through `reader_workbench.api`, retain the
 Reader-declared replicate identity, and add study semantics in the owning
 study.
 

@@ -11,7 +11,7 @@ summary: Public Reader v8 configuration reference for experiments, protocols, re
 Reader v8 has three explicit layers:
 
 - config: experiment `config.yaml`
-- protocol: `reader.protocols`
+- protocol: `reader_workbench.protocols`
 - execution: compiled workbench plan
 
 The config should describe assay inputs, analysis choices, and requested outputs
@@ -343,7 +343,7 @@ The flow is:
 That keeps:
 
 - authored config in `config.yaml`
-- assay semantics in `reader.protocols`
+- assay semantics in `reader_workbench.protocols`
 - execution IR in `decl/` and `graph/`
 - plugin mechanics in `plugins/`
 
