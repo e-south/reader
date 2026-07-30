@@ -51,6 +51,11 @@ def test_package_root_exposes_only_the_primary_experiment_entrypoint() -> None:
     assert reader_package.open_experiment.__module__ == "reader_workbench.api.facade"
 
 
+def test_package_root_missing_attribute_names_the_current_import_package() -> None:
+    with pytest.raises(AttributeError, match="module 'reader_workbench' has no attribute 'missing'"):
+        reader_package.__getattr__("missing")
+
+
 def test_open_experiment_accepts_config_or_directory_without_creating_outputs(tmp_path: Path) -> None:
     config_path = _generic_experiment(tmp_path)
 

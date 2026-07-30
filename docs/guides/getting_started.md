@@ -21,6 +21,9 @@ uv sync --locked
 This creates or updates `.venv` with Reader and its runtime dependencies.
 The distribution name is `reader-workbench`, the Python import package is
 `reader_workbench`, and the installed command is `reader`.
+Existing Python integrations should follow the
+[package namespace migration](./package_namespace_migration.md); Reader does
+not provide a compatibility shim for the retired import package.
 
 Reader does not currently publish a notebook dependency extra. The released
 Marimo and PyMdown dependency constraints do not provide a resolution Reader
@@ -83,3 +86,4 @@ not need to run the full maintainer suite before trying Reader.
 - [CLI reference](../core/cli.md)
 - [Configuring `reader/v8`](../core/pipeline.md)
 - [Notebooks](./notebooks.md)
+- [Package namespace migration](./package_namespace_migration.md)

@@ -81,7 +81,7 @@ The minimum verification bundle for workbench-facing changes should include:
 - targeted tests for changed behavior
 - `uv run ruff check .`
 - `uv run ruff format . --check`
-- `uv run python -m compileall src/reader`
+- `test -d src/reader_workbench && uv run python -m compileall -q src/reader_workbench`
 - `git diff --check`
 
 For documentation-only changes, at least verify:

@@ -50,7 +50,7 @@ jobs:
       - name: Check formatting
         run: uv run --locked ruff format --check .
       - name: Compile source
-        run: uv run --locked python -m compileall -q src/reader_workbench
+        run: test -d src/reader_workbench && uv run --locked python -m compileall -q src/reader_workbench
       - name: Build distributions
         run: uv build --no-sources
       - name: Smoke-test built wheel

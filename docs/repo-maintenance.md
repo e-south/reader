@@ -56,6 +56,11 @@ Choose the smallest verification set that still exercises the risk:
 
 The quality bar for those checks is defined in [QUALITY.md](../QUALITY.md).
 
+Release preparation must also apply the
+[package namespace migration](./guides/package_namespace_migration.md) to
+downstream Python consumers and external plugin distributions. The installed
+CLI and persisted wire identities are intentionally unchanged.
+
 For docs and routing changes, start with:
 
 ```bash

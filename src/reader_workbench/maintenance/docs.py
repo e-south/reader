@@ -71,6 +71,12 @@ REQUIRED_LINKS = {
         "./experiment_bootstrap.md",
         "./preflight_run_verify.md",
     },
+    "docs/guides/getting_started.md": {
+        "./package_namespace_migration.md",
+    },
+    "docs/repo-maintenance.md": {
+        "./guides/package_namespace_migration.md",
+    },
     ".agents/skills/reader-data-operations-plan/SKILL.md": {
         "../../../docs/guides/data_operations_plan.md",
         "../../../docs/guides/data_operations_plan/operating_model.md",

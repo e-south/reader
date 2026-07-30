@@ -17,6 +17,6 @@ def __getattr__(name: str) -> Any:
 
         return package_version()
     if name not in __all__:
-        raise AttributeError(f"module 'reader' has no attribute {name!r}")
+        raise AttributeError(f"module 'reader_workbench' has no attribute {name!r}")
     api = import_module("reader_workbench.api")
     return getattr(api, name)

@@ -41,3 +41,18 @@ def test_external_plugin_group_uses_the_distribution_namespace() -> None:
 
     assert 'entry_points(group="reader_workbench.plugins")' in registry
     assert 'entry_points(group="reader.plugins")' not in registry
+
+
+def test_compile_checks_target_the_existing_import_package() -> None:
+    check_surfaces = (
+        REPO_ROOT / "QUALITY.md",
+        REPO_ROOT / ".agents" / "skills" / "reader-workbench-gardening" / "references" / "verification.md",
+        REPO_ROOT / ".github" / "workflows" / "checks.yaml",
+    )
+
+    for path in check_surfaces:
+        text = path.read_text(encoding="utf-8")
+        assert "test -d src/reader_workbench" in text, path
+        assert "compileall -q src/reader_workbench" in text, path
+        assert "compileall src/reader`" not in text, path
+        assert "compileall -q src/reader\n" not in text, path
