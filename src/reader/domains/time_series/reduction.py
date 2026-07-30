@@ -187,7 +187,10 @@ def _reduce_interval(
     support_slice = slice(left_index, right_index + 1)
     support_x = reduction_x[support_slice]
     observed_max_gap = float(np.max(np.diff(support_x))) if len(support_x) > 1 else 0.0
-    if support.maximum_interior_gap_h is not None and observed_max_gap > support.maximum_interior_gap_h:
+    if (
+        support.maximum_interior_gap_h is not None
+        and observed_max_gap > support.maximum_interior_gap_h + _EXACT_TIME_ATOL_H
+    ):
         raise ValueError(f"{trace_id} interior gap {observed_max_gap:g} h exceeds {support.maximum_interior_gap_h:g} h")
     _reject_censored(
         policy=policy[support_slice],
