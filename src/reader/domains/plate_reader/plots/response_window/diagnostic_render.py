@@ -31,7 +31,7 @@ def render_response_window_diagnostic(
     pre_window_duration_h: float | None,
     title: str | None = None,
 ) -> Any:
-    """Render observed traces and persisted component uncertainty in one row."""
+    """Render observed traces, descriptive dispersion, and event sensitivity in one row."""
 
     diagnostic = prepare_response_window_diagnostic(
         traces,
@@ -71,11 +71,12 @@ def render_response_window_diagnostic(
         _draw_component_panel(axes[3], diagnostic=diagnostic)
         axes[3].set_title("Reduced components")
 
-        confidence = diagnostic.confidence_level * 100.0
+        interval_mass_percent = diagnostic.descriptive_interval_mass * 100.0
         metadata = (
-            f"{diagnostic.replicate_stat} center when replicate grids align · "
+            f"{diagnostic.observation_stat} center across within-experiment observations when grids align · "
             f"{diagnostic.reduction_method} / {diagnostic.response_basis} · "
-            f"{confidence:g}% bootstrap CI ({diagnostic.bootstrap_samples} draws) · "
+            f"{interval_mass_percent:g}% descriptive resampling interval "
+            f"({diagnostic.descriptive_resampling_draws} draws) · "
             f"event estimate uncertainty ±{diagnostic.event_time_uncertainty_h:g} h"
         )
         figure.suptitle(f"{title or f'{diagnostic.source_experiment_id} :: {diagnostic.design_id}'}\n{metadata}")
@@ -100,7 +101,7 @@ def render_response_window_diagnostic(
                     [0],
                     color="#64748b",
                     linewidth=1.5,
-                    label=f"{confidence:g}% bootstrap CI",
+                    label=f"{interval_mass_percent:g}% descriptive resampling interval",
                 ),
             ]
         )
@@ -125,7 +126,7 @@ def _draw_trace_panel(axis: Any, *, diagnostic: ResponseWindowDiagnostic, signal
             selected,
             color=STATE_COLORS[state],
             linestyle="-",
-            replicate_stat=diagnostic.replicate_stat,
+            observation_stat=diagnostic.observation_stat,
             gid="response-window-trace",
         )
         if signal_kind == "magnitude" and diagnostic.reference_design_id != diagnostic.design_id:
@@ -137,7 +138,7 @@ def _draw_trace_panel(axis: Any, *, diagnostic: ResponseWindowDiagnostic, signal
                 reference,
                 color=STATE_COLORS[state],
                 linestyle="--",
-                replicate_stat=diagnostic.replicate_stat,
+                observation_stat=diagnostic.observation_stat,
                 gid="response-window-reference-trace",
             )
 
@@ -162,7 +163,7 @@ def _draw_observed_traces(
     *,
     color: str,
     linestyle: str,
-    replicate_stat: str,
+    observation_stat: str,
     gid: str,
 ) -> None:
     traces: list[pd.DataFrame] = []
@@ -191,7 +192,7 @@ def _draw_observed_traces(
                 color="#7c2d12",
                 zorder=4,
             )
-    aligned = _aligned_trace_center(traces, replicate_stat=replicate_stat)
+    aligned = _aligned_trace_center(traces, observation_stat=observation_stat)
     if aligned is None:
         return
     times, values = aligned
@@ -210,7 +211,7 @@ def _draw_observed_traces(
 def _aligned_trace_center(
     traces: list[pd.DataFrame],
     *,
-    replicate_stat: str,
+    observation_stat: str,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     if not traces:
         return None
@@ -218,15 +219,15 @@ def _aligned_trace_center(
     if any(not np.array_equal(times, trace["time_from_event_h"].to_numpy(dtype=float)) for trace in traces[1:]):
         return None
     values = np.vstack([trace["plot_value"].to_numpy(dtype=float) for trace in traces])
-    center = np.mean(values, axis=0) if replicate_stat == "mean" else np.median(values, axis=0)
+    center = np.mean(values, axis=0) if observation_stat == "mean" else np.median(values, axis=0)
     return times, center
 
 
 def _draw_component_panel(axis: Any, *, diagnostic: ResponseWindowDiagnostic) -> None:
     y = np.arange(len(COMPONENT_COLUMNS))
     values = np.asarray(diagnostic.component_values)
-    ci_low = np.asarray(diagnostic.component_ci_low)
-    ci_high = np.asarray(diagnostic.component_ci_high)
+    interval_low = np.asarray(diagnostic.component_descriptive_interval_low)
+    interval_high = np.asarray(diagnostic.component_descriptive_interval_high)
     event_range = np.asarray(diagnostic.component_event_half_range)
     for index, (component, value) in enumerate(zip(COMPONENT_COLUMNS, values, strict=True)):
         state = component[1:]
@@ -239,7 +240,7 @@ def _draw_component_panel(axis: Any, *, diagnostic: ResponseWindowDiagnostic) ->
             linewidth=5.0,
             alpha=0.20,
         )
-        axis.hlines(y[index], ci_low[index], ci_high[index], color=color, linewidth=1.5)
+        axis.hlines(y[index], interval_low[index], interval_high[index], color=color, linewidth=1.5)
         bound_kind = diagnostic.component_bound_kinds[index]
         axis.scatter(
             value,

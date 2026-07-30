@@ -185,7 +185,7 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Mapping[str, Any]) ->
         per_corner_intensity=sel_int.per_corner,
         design_by=cfg.design_by,
         reference_design_id=ref_raw,
-        reference_stat=cfg.reference.stat,
+        reference_stat=cfg.reference.observation_stat,
         eps_ratio=cfg.eps_ratio,
         eps_range=cfg.eps_range,
         eps_ref=cfg.eps_ref,
@@ -258,13 +258,13 @@ def build_vec8_from_tidy(tidy_df: pd.DataFrame, xform_cfg: Mapping[str, Any]) ->
         "reference": {
             "design_id": cfg.reference.design_id,
             "design_id_resolved": ref_raw,
-            "stat": cfg.reference.stat,
+            "observation_stat": cfg.reference.observation_stat,
             "anchors": _anchors_payload(
                 compute_reference_table(
                     sel_int.per_corner,
                     design_by=cfg.design_by,
                     ref_design_id=ref_raw,
-                    stat=cfg.reference.stat,
+                    stat=cfg.reference.observation_stat,
                 )
                 if ref_raw is not None
                 else None,

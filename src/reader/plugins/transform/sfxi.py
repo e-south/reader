@@ -18,7 +18,7 @@ class SFXIResponseBinding(PluginConfig):
 
 class SFXIReferenceBinding(PluginConfig):
     design_id: str = Field(min_length=1)
-    stat: Literal["mean", "median"] = "mean"
+    observation_stat: Literal["mean", "median"] = "mean"
 
 
 class SFXICfg(PluginConfig):

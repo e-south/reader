@@ -35,7 +35,7 @@ _FIG_STYLE_KEYS = {
     "line_width",
     "mean_marker_size",
     "mean_marker_every",
-    "replicate_marker_size",
+    "observation_marker_size",
     "style_legend_loc",
     "style_legend_title",
     "snap_tick_rotation",
@@ -43,7 +43,7 @@ _FIG_STYLE_KEYS = {
     "snap_title",
     "line_alpha",
     "mean_marker_alpha",
-    "replicate_alpha",
+    "observation_alpha",
     "suptitle_y",
 }
 
@@ -71,11 +71,11 @@ def plot_ts_and_snap(
     ts_mark_snap_time: bool = False,
     ts_snap_line_kwargs: dict | None = None,
     ts_log_transform: bool | list[str] = False,
-    ts_ci: float = 95.0,
-    ts_ci_alpha: float = 0.15,
-    ts_ci_boot: int = 100,
-    ts_ci_seed: int = 0,
-    ts_show_replicates: bool = False,
+    ts_observation_interval_mass: float = 0.95,
+    ts_observation_interval_alpha: float = 0.15,
+    ts_observation_resamples: int = 100,
+    ts_observation_seed: int = 0,
+    ts_show_observations: bool = False,
     ts_legend_loc: str = "upper right",
     # snapshot (right)
     snap_x: str = "treatment",
@@ -85,7 +85,7 @@ def plot_ts_and_snap(
     order_snap_hue: list[str] | None = None,
     snap_time: float = 0.0,
     snap_agg: str = "mean",  # "mean" | "median"
-    snap_err: str = "sem",  # "sem" | "iqr" | "none"
+    snap_dispersion: str = "sd",  # "sd" | "iqr" | "none"
     snap_time_tolerance: float = 0.51,
     snap_show_legend: bool = False,
     snap_legend_loc: str = "upper right",
@@ -105,12 +105,12 @@ def plot_ts_and_snap(
     Hue handling:
       • Left  requires `ts_hue`
       • Right uses `snap_hue` if provided; when `snap_hue == ts_hue`, colors are shared
-      • Otherwise snapshot bars are gray with white replicate dots (no legend by default)
+      • Otherwise snapshot bars are gray with white observation dots (no legend by default)
     """
     if snap_agg not in {"mean", "median"}:
         raise ValueError("snap_agg must be 'mean' or 'median'")
-    if snap_err not in {"sem", "iqr", "none"}:
-        raise ValueError("snap_err must be 'sem', 'iqr', or 'none'")
+    if snap_dispersion not in {"sd", "iqr", "none"}:
+        raise ValueError("snap_dispersion must be 'sd', 'iqr', or 'none'")
     if group_layout not in {"separate", "paired_row"}:
         raise ValueError("group_layout must be 'separate' or 'paired_row'")
     if snap_color_by_x and snap_hue is not None:
@@ -202,7 +202,7 @@ def plot_ts_and_snap(
             snap_colors = colors_for(len(hue_levels_snap), palette_book)
             return {h: snap_colors[i % len(snap_colors)] for i, h in enumerate(hue_levels_snap)}
 
-        # ---- Left: time series (mean ± CI) ----
+        # ---- Left: time series with descriptive observation-resampling band ----
         if not ts.empty:
             draw_time_series_panel(
                 ax_ts,
@@ -215,14 +215,14 @@ def plot_ts_and_snap(
                 color_map=color_map,
                 marker_map=marker_map,
                 segment_col=time_series_data.segment_col,
-                show_replicates=ts_show_replicates,
-                ci=ts_ci,
-                ci_alpha=ts_ci_alpha,
-                ci_boot=ts_ci_boot,
-                ci_seed=ts_ci_seed,
+                show_observations=ts_show_observations,
+                observation_interval_mass=ts_observation_interval_mass,
+                observation_interval_alpha=ts_observation_interval_alpha,
+                observation_resamples=ts_observation_resamples,
+                observation_seed=ts_observation_seed,
                 line_alpha=float(fig_kwargs.get("line_alpha", 0.85)),
                 mean_marker_alpha=float(fig_kwargs.get("mean_marker_alpha", 0.75)),
-                replicate_alpha=float(fig_kwargs.get("replicate_alpha", 0.30)),
+                observation_alpha=float(fig_kwargs.get("observation_alpha", 0.30)),
                 add_sheet_lines=ts_add_sheet_line,
                 sheet_lines=time_series_data.sheet_lines,
                 sheet_line_kwargs=ts_sheet_line_kwargs,
@@ -240,7 +240,7 @@ def plot_ts_and_snap(
                 line_width=float(fig_kwargs.get("line_width", 1.8)),
                 mean_marker_size=float(fig_kwargs.get("mean_marker_size", 36.0)),
                 mean_marker_every=int(fig_kwargs.get("mean_marker_every", 1)),
-                replicate_marker_size=float(fig_kwargs.get("replicate_marker_size", 18.0)),
+                observation_marker_size=float(fig_kwargs.get("observation_marker_size", 18.0)),
                 axis_label_size=float(fig_kwargs.get("axis_label_size", 10.0)),
                 tick_label_size=float(fig_kwargs.get("tick_label_size", 8.0)),
                 legend_fontsize=float(fig_kwargs.get("legend_fontsize", 8.0)),
@@ -266,7 +266,7 @@ def plot_ts_and_snap(
             snap_channel=ch_snap,
             snap_time=snap_time,
             snap_time_tolerance=snap_time_tolerance,
-            snap_err=snap_err,
+            snap_dispersion=snap_dispersion,
             order_x=order_x,
             order_snap_hue=order_snap_hue,
             order_hue=order_hue,
@@ -308,7 +308,7 @@ def plot_ts_and_snap(
                 x_col=snap_x_col,
                 hue_col=snap_hue_col,
                 agg=snap_agg,
-                err=snap_err,
+                dispersion=snap_dispersion,
                 palette_book=palette_book,
                 show_legend=snap_show_legend,
                 legend_loc=str(snap_legend_loc),

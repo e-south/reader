@@ -463,8 +463,8 @@ def _annotated_traces() -> pd.DataFrame:
     times = [index * 0.5 for index in range(9)]
     for design_index, design_id in enumerate(("reference", "candidate")):
         for state_index, treatment in enumerate(("none", "a", "b", "a+b")):
-            for replicate in range(2):
-                position = f"{design_id}-{state_index}-{replicate}"
+            for observation_index in range(2):
+                position = f"{design_id}-{state_index}-{observation_index}"
                 for channel_index, channel in enumerate(("response", "magnitude", "growth")):
                     for time in times:
                         rows.append(
@@ -475,7 +475,7 @@ def _annotated_traces() -> pd.DataFrame:
                                 "value": 1.0
                                 + design_index * 0.2
                                 + state_index * 0.1
-                                + replicate * 0.02
+                                + observation_index * 0.02
                                 + channel_index * 0.3
                                 + time * 0.05,
                                 "treatment": treatment,
@@ -552,15 +552,15 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
                     }
                 ],
                 "aggregation": {
-                    "replicate_stat": "median",
-                    "bootstrap_samples": 100,
-                    "confidence_level": 0.9,
+                    "observation_stat": "median",
+                    "descriptive_resampling_draws": 100,
+                    "descriptive_interval_mass": 0.9,
                     "random_seed": 17,
                 },
                 "quality": {
                     "positive_floor": 1.0e-12,
                     "max_interior_gap_h": 0.6,
-                    "min_replicates_per_state": 2,
+                    "min_observations_per_state": 2,
                 },
             },
             protocol_outputs={

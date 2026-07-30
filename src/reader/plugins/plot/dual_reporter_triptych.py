@@ -14,7 +14,7 @@ from reader.workbench.ports import dataframe_input
 from reader.workbench.registry import PluginConfig
 
 _DESCRIPTION = (
-    "Growth and reporter-ratio kinetics with bootstrap confidence intervals, "
+    "Growth and reporter-ratio kinetics with descriptive within-experiment resampling bands, "
     "plus observed endpoint values and mean with sample standard deviation."
 )
 
@@ -31,8 +31,8 @@ class DualReporterTriptychCfg(PluginConfig):
     snapshot_time_tolerance_h: float | None = Field(default=0.51, ge=0.0)
     treatment_order: list[str] | None = None
     treatment_order_ref: str | None = Field(default=None, min_length=1)
-    trajectory_ci: float = Field(default=95.0, gt=0.0, lt=100.0)
-    trajectory_bootstraps: int = Field(default=300, ge=1)
+    trajectory_interval_mass: float = Field(default=0.95, gt=0.0, lt=1.0)
+    trajectory_resamples: int = Field(default=300, ge=1)
     filename_prefix: str = Field(default="dual_reporter_triptych", min_length=1)
     format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["png"], min_length=1)
     dpi: int = Field(default=300, ge=1)
@@ -141,8 +141,8 @@ class DualReporterTriptychPlot(FigurePlotPlugin):
                 snapshot_channel=cfg.snapshot_channel,
                 snapshot_time=float(selected_time),
                 treatment_order=treatment_order,
-                trajectory_ci=cfg.trajectory_ci,
-                trajectory_bootstraps=cfg.trajectory_bootstraps,
+                trajectory_interval_mass=cfg.trajectory_interval_mass,
+                trajectory_resamples=cfg.trajectory_resamples,
             )
             palette_book = getattr(ctx, "palette_book", None)
             colors = palette_book.colors(len(data.treatment_order)) if palette_book is not None else None

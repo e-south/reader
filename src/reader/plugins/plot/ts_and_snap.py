@@ -33,7 +33,7 @@ class TSAndSnapFigureCfg(PluginConfig):
     line_width: float | None = Field(default=None, gt=0)
     mean_marker_size: float | None = Field(default=None, gt=0)
     mean_marker_every: int | None = Field(default=None, ge=1)
-    replicate_marker_size: float | None = Field(default=None, gt=0)
+    observation_marker_size: float | None = Field(default=None, gt=0)
     style_legend_loc: str | None = None
     style_legend_title: str | None = None
     snap_tick_rotation: float | None = None
@@ -41,7 +41,7 @@ class TSAndSnapFigureCfg(PluginConfig):
     snap_title: str | None = None
     line_alpha: float | None = Field(default=None, ge=0, le=1)
     mean_marker_alpha: float | None = Field(default=None, ge=0, le=1)
-    replicate_alpha: float | None = Field(default=None, ge=0, le=1)
+    observation_alpha: float | None = Field(default=None, ge=0, le=1)
     suptitle_y: float | None = None
 
 
@@ -65,11 +65,11 @@ class TSAndSnapCfg(PluginConfig):
     ts_mark_snap_time: bool = False
     ts_snap_line_kwargs: dict[str, Any] = Field(default_factory=dict)
     ts_log_transform: bool | list[str] = False
-    ts_ci: float = 95.0
-    ts_ci_alpha: float = 0.15
-    ts_ci_boot: int = Field(default=100, ge=1)
-    ts_ci_seed: int = 0
-    ts_show_replicates: bool = False
+    ts_observation_interval_mass: float = Field(default=0.95, gt=0.0, lt=1.0)
+    ts_observation_interval_alpha: float = Field(default=0.15, ge=0.0, le=1.0)
+    ts_observation_resamples: int = Field(default=100, ge=1)
+    ts_observation_seed: int = 0
+    ts_show_observations: bool = False
     ts_legend_loc: str = "upper right"
 
     # snapshot (right)
@@ -82,7 +82,7 @@ class TSAndSnapCfg(PluginConfig):
     order_snap_hue_ref: str | None = None
     snap_time: float = Field(..., description="Snapshot time (hours); required for deterministic plotting.")
     snap_agg: Literal["mean", "median"] = "mean"
-    snap_err: Literal["sem", "iqr", "none"] = "sem"
+    snap_dispersion: Literal["sd", "iqr", "none"] = "sd"
     snap_time_tolerance: float = 0.51
     snap_show_legend: bool = False
     snap_legend_loc: str = "upper right"
@@ -182,11 +182,11 @@ class TSAndSnapPlot(FigurePlotPlugin):
             ts_mark_snap_time=cfg.ts_mark_snap_time,
             ts_snap_line_kwargs=cfg.ts_snap_line_kwargs,
             ts_log_transform=cfg.ts_log_transform,
-            ts_ci=cfg.ts_ci,
-            ts_ci_alpha=cfg.ts_ci_alpha,
-            ts_ci_boot=cfg.ts_ci_boot,
-            ts_ci_seed=cfg.ts_ci_seed,
-            ts_show_replicates=cfg.ts_show_replicates,
+            ts_observation_interval_mass=cfg.ts_observation_interval_mass,
+            ts_observation_interval_alpha=cfg.ts_observation_interval_alpha,
+            ts_observation_resamples=cfg.ts_observation_resamples,
+            ts_observation_seed=cfg.ts_observation_seed,
+            ts_show_observations=cfg.ts_show_observations,
             ts_legend_loc=cfg.ts_legend_loc,
             # snap (right)
             snap_x=cfg.snap_x,
@@ -196,7 +196,7 @@ class TSAndSnapPlot(FigurePlotPlugin):
             order_snap_hue=resolved_order_snap_hue,
             snap_time=cfg.snap_time,
             snap_agg=cfg.snap_agg,
-            snap_err=cfg.snap_err,
+            snap_dispersion=cfg.snap_dispersion,
             snap_time_tolerance=cfg.snap_time_tolerance,
             snap_show_legend=cfg.snap_show_legend,
             snap_legend_loc=cfg.snap_legend_loc,

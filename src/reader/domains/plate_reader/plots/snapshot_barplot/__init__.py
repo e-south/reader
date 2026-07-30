@@ -65,7 +65,7 @@ def plot_snapshot_barplot(
     filename: str | None = None,
     palette_book: PaletteBook | None = None,
     agg: str = "mean",
-    err: str = "sem",
+    dispersion: str = "sd",
     time_tolerance: float = 0.51,
     panel_by: _PanelBy = "channel",
     channel_select: str | None = None,
@@ -77,8 +77,8 @@ def plot_snapshot_barplot(
 
     if agg not in {"mean", "median"}:
         raise ValueError("agg must be 'mean' or 'median'")
-    if err not in {"sem", "iqr", "none"}:
-        raise ValueError("err must be 'sem', 'iqr', or 'none'")
+    if dispersion not in {"sd", "iqr", "none"}:
+        raise ValueError("dispersion must be 'sd', 'iqr', or 'none'")
     if file_by not in {"auto", "channel"}:
         raise ValueError("snapshot_barplot: file_by supports only 'auto' or 'channel'")
 
@@ -173,7 +173,7 @@ def plot_snapshot_barplot(
     base_group_cols = [column for column in [group_col, x_col, hue_col, "channel"] if column]
     seen_cols: set[str] = set()
     base_group_cols = [column for column in base_group_cols if not (column in seen_cols or seen_cols.add(column))]
-    stats = summarize_snapshot_values(df=snapped, group_cols=base_group_cols, err=err)
+    stats = summarize_snapshot_values(df=snapped, group_cols=base_group_cols, dispersion=dispersion)
 
     fig_groups = build_figure_groups(
         stats=stats,
@@ -234,7 +234,7 @@ def plot_snapshot_barplot(
                         group_col=group_col,
                         x_col=x_col,
                         agg=agg,
-                        err=err,
+                        dispersion=dispersion,
                     )
                     if selected_channel is not None
                     else (None, None)
@@ -283,7 +283,7 @@ def plot_snapshot_barplot(
                         x_col=x_col,
                         hue_col=hue_col,
                         agg=agg,
-                        err=err,
+                        dispersion=dispersion,
                         palette_book=palette_book,
                         show_legend=show_legend,
                         legend_loc=legend_loc,

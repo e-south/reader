@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
+from pydantic import ValidationError
 
 from reader.domains.logic.logic_symmetry.extract_corners import MappingConfig, resolve_and_aggregate
 from reader.domains.logic.logic_symmetry.prep import prepare_for_logic_symmetry
+from reader.plugins.transform.logic_symmetry import LogicSymmetryCfg
 
 
 def _logic_df() -> pd.DataFrame:
@@ -56,7 +59,7 @@ def test_logic_symmetry_mapping_uses_configured_treatment_column():
             design_by=["design_id"],
             batch_col="batch",
             response_channel="YFP/CFP",
-            replicate_stat="mean",
+            observation_stat="mean",
         ),
     )
 
@@ -66,3 +69,33 @@ def test_logic_symmetry_mapping_uses_configured_treatment_column():
     assert point["b10"] == 2.0
     assert point["b01"] == 3.0
     assert point["b11"] == 4.0
+
+
+def test_logic_symmetry_config_rejects_legacy_replicate_stat() -> None:
+    with pytest.raises(ValidationError, match="replicate_stat"):
+        LogicSymmetryCfg(
+            response_channel="YFP/CFP",
+            state_map_ref="induction_logic",
+            replicate_stat="mean",
+        )
+
+
+def test_logic_symmetry_counts_and_dispersion_are_observation_summaries() -> None:
+    tmap = {"00": "EtOH", "10": "PMS", "01": "Cipro", "11": "NEG"}
+    repeated = pd.concat([_logic_df(), _logic_df().assign(position=lambda frame: frame["position"] + "_2")])
+    points, _ = resolve_and_aggregate(
+        repeated,
+        MappingConfig(
+            treatment_map=tmap,
+            case_sensitive=True,
+            treatment_column="treatment_alias",
+            design_by=["design_id"],
+            batch_col="batch",
+            response_channel="YFP/CFP",
+            observation_stat="mean",
+        ),
+    )
+
+    point = points.iloc[0]
+    assert point[["n00", "n10", "n01", "n11"]].tolist() == [2, 2, 2, 2]
+    assert point[["sd00", "sd10", "sd01", "sd11"]].tolist() == [0.0, 0.0, 0.0, 0.0]

@@ -12,7 +12,7 @@ from reader.domains.plate_reader.ordering import order_levels
 from reader.domains.time_series import (
     EndpointSelection,
     IntervalSelection,
-    ReplicateAggregationSpec,
+    ObservationAggregationSpec,
     TemporalReductionSpec,
     reduce_temporal_trace,
 )
@@ -72,7 +72,7 @@ class SingleReporterDiagnosticData:
     reduced_ratio: pd.DataFrame
     reduced_normalizer: pd.DataFrame
     selection: SingleReporterSelection
-    replicate_aggregation: ReplicateAggregationSpec
+    observation_aggregation: ObservationAggregationSpec
 
 
 def prepare_single_reporter_diagnostics(
@@ -90,7 +90,7 @@ def prepare_single_reporter_diagnostics(
     reporter_channel: str,
     ratio_channel: str,
     temporal_reduction: TemporalReductionSpec,
-    replicate_aggregation: ReplicateAggregationSpec,
+    observation_aggregation: ObservationAggregationSpec,
 ) -> tuple[SingleReporterDiagnosticData, ...]:
     """Prepare one diagnostic contract per resolved presentation partition."""
 
@@ -168,7 +168,7 @@ def prepare_single_reporter_diagnostics(
                 reporter_channel=reporter_channel,
                 ratio_channel=ratio_channel,
                 temporal_reduction=temporal_reduction,
-                replicate_aggregation=replicate_aggregation,
+                observation_aggregation=observation_aggregation,
             )
         )
 
@@ -191,7 +191,7 @@ def _prepare_partition(
     reporter_channel: str,
     ratio_channel: str,
     temporal_reduction: TemporalReductionSpec,
-    replicate_aggregation: ReplicateAggregationSpec,
+    observation_aggregation: ObservationAggregationSpec,
 ) -> SingleReporterDiagnosticData:
     work = frame.copy()
     work["__condition"] = work[condition_column].astype(str)
@@ -214,7 +214,7 @@ def _prepare_partition(
         where=f"partition {group_label!r}",
     )
 
-    within_unit_stat = replicate_aggregation.within_unit_statistic
+    within_unit_stat = observation_aggregation.within_unit_statistic
     kinetics = _reduce_rows(
         work,
         group_columns=["__segment", time_column, "__condition", "__unit", "channel"],
@@ -259,7 +259,7 @@ def _prepare_partition(
         reduced_ratio=reduced[reduced["channel"].astype(str) == ratio_channel].reset_index(drop=True),
         reduced_normalizer=reduced[reduced["channel"].astype(str) == normalizer_channel].reset_index(drop=True),
         selection=SingleReporterSelection(temporal_reduction=temporal_reduction),
-        replicate_aggregation=replicate_aggregation,
+        observation_aggregation=observation_aggregation,
     )
 
 

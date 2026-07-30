@@ -11,7 +11,7 @@ import numpy as np
 ReductionMethod = Literal["geometric_time_mean", "integrated_linear_mean"]
 ResponseBasis = Literal["post_window", "post_minus_pre"]
 ReductionRole = Literal["primary", "sensitivity"]
-ReplicateStat = Literal["mean", "median"]
+ObservationStat = Literal["mean", "median"]
 EventEstimateMethod = Literal["segment_gap_midpoint"]
 
 
@@ -206,50 +206,64 @@ class ReductionSpec:
 
 @dataclass(frozen=True)
 class AggregationSpec:
-    replicate_stat: ReplicateStat
-    bootstrap_samples: int
-    confidence_level: float
+    observation_stat: ObservationStat
+    descriptive_resampling_draws: int
+    descriptive_interval_mass: float
     random_seed: int
 
     @classmethod
     def from_mapping(cls, value: object) -> AggregationSpec:
-        fields = {"replicate_stat", "bootstrap_samples", "confidence_level", "random_seed"}
+        fields = {
+            "observation_stat",
+            "descriptive_resampling_draws",
+            "descriptive_interval_mass",
+            "random_seed",
+        }
         payload = _exact_fields(value, context="aggregation", required=fields)
-        stat = _nonempty(payload["replicate_stat"], context="aggregation.replicate_stat")
+        stat = _nonempty(payload["observation_stat"], context="aggregation.observation_stat")
         if stat not in {"mean", "median"}:
-            raise ValueError(f"aggregation.replicate_stat is unsupported: {stat!r}.")
-        samples = payload["bootstrap_samples"]
+            raise ValueError(f"aggregation.observation_stat is unsupported: {stat!r}.")
+        samples = payload["descriptive_resampling_draws"]
         seed = payload["random_seed"]
         if isinstance(samples, bool) or not isinstance(samples, int) or samples < 100:
-            raise ValueError("aggregation.bootstrap_samples must be an integer of at least 100.")
+            raise ValueError("aggregation.descriptive_resampling_draws must be an integer of at least 100.")
         if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
             raise ValueError("aggregation.random_seed must be a non-negative integer.")
-        level = _finite(payload["confidence_level"], context="aggregation.confidence_level")
+        level = _finite(payload["descriptive_interval_mass"], context="aggregation.descriptive_interval_mass")
         if not 0.5 < level < 1.0:
-            raise ValueError("aggregation.confidence_level must be between 0.5 and 1.0.")
-        return cls(replicate_stat=stat, bootstrap_samples=samples, confidence_level=level, random_seed=seed)
+            raise ValueError("aggregation.descriptive_interval_mass must be between 0.5 and 1.0.")
+        return cls(
+            observation_stat=stat,
+            descriptive_resampling_draws=samples,
+            descriptive_interval_mass=level,
+            random_seed=seed,
+        )
 
 
 @dataclass(frozen=True)
 class QualitySpec:
     positive_floor: float
     max_interior_gap_h: float
-    min_replicates_per_state: int
+    min_observations_per_state: int
 
     @classmethod
     def from_mapping(cls, value: object) -> QualitySpec:
-        fields = {"positive_floor", "max_interior_gap_h", "min_replicates_per_state"}
+        fields = {"positive_floor", "max_interior_gap_h", "min_observations_per_state"}
         payload = _exact_fields(value, context="quality", required=fields)
         floor = _finite(payload["positive_floor"], context="quality.positive_floor")
         gap = _finite(payload["max_interior_gap_h"], context="quality.max_interior_gap_h")
-        replicates = payload["min_replicates_per_state"]
+        observations = payload["min_observations_per_state"]
         if floor <= 0.0:
             raise ValueError("quality.positive_floor must be positive.")
         if gap <= 0.0:
             raise ValueError("quality.max_interior_gap_h must be positive.")
-        if isinstance(replicates, bool) or not isinstance(replicates, int) or replicates < 2:
-            raise ValueError("quality.min_replicates_per_state must be an integer of at least 2.")
-        return cls(positive_floor=floor, max_interior_gap_h=gap, min_replicates_per_state=replicates)
+        if isinstance(observations, bool) or not isinstance(observations, int) or observations < 2:
+            raise ValueError("quality.min_observations_per_state must be an integer of at least 2.")
+        return cls(
+            positive_floor=floor,
+            max_interior_gap_h=gap,
+            min_observations_per_state=observations,
+        )
 
 
 @dataclass(frozen=True)

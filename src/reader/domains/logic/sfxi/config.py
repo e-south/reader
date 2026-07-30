@@ -69,7 +69,7 @@ class SFXIResponseCfg:
 @dataclass(frozen=True)
 class SFXIReferenceCfg:
     design_id: str
-    stat: Literal["mean", "median"] = "mean"
+    observation_stat: Literal["mean", "median"] = "mean"
 
 
 @dataclass(frozen=True)
@@ -159,14 +159,14 @@ def load_sfxi_config(xform_cfg: Mapping[str, Any]) -> SFXIConfig:
         raise ValueError(f"Invalid sfxi.time_mode='{time_mode}'")
     require_all = bool(xform_cfg.get("require_all_corners_per_design", True))
 
-    ref = _sub(xform_cfg, "reference", allowed=frozenset({"design_id", "stat"}))
+    ref = _sub(xform_cfg, "reference", allowed=frozenset({"design_id", "observation_stat"}))
     ref_label = _nonempty_text(ref.get("design_id"), field_name="reference.design_id")
     reference = SFXIReferenceCfg(
         design_id=ref_label,
-        stat=str(ref.get("stat", "mean")).lower() if ref.get("stat") else "mean",
+        observation_stat=(str(ref.get("observation_stat", "mean")).lower() if ref.get("observation_stat") else "mean"),
     )
-    if reference.stat not in {"mean", "median"}:
-        raise ValueError(f"Invalid sfxi.reference.stat='{reference.stat}'")
+    if reference.observation_stat not in {"mean", "median"}:
+        raise ValueError(f"Invalid sfxi.reference.observation_stat='{reference.observation_stat}'")
     # eps / table policy
     eps_ratio = float(xform_cfg.get("eps_ratio", 1e-9))
     eps_range = float(xform_cfg.get("eps_range", 1e-12))

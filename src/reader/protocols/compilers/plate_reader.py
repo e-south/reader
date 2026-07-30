@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from reader.domains.plate_reader.analysis.response_window import ResponseWindowAnalysisSpec
 from reader.domains.time_series import (
-    ReplicateAggregationSpec,
+    ObservationAggregationSpec,
     TemporalReductionSpec,
 )
 from reader.errors import ConfigError
@@ -39,10 +40,14 @@ def compile_plate_reader_response_window(protocol: Any):
     input_names = ("response_records", "magnitude_records", "trajectory_records")
     effective_inputs = protocol.effective_inputs()
     analysis = protocol.effective_analysis()
+    try:
+        ResponseWindowAnalysisSpec.from_mapping(analysis)
+    except ValueError as exc:
+        raise ConfigError(f"invalid plate-reader response-window analysis policy: {exc}") from exc
     resource_ids = {name: tuple(effective_inputs.get(name, ())) for name in input_names}
     writes = {
         name: RecordOutputDecl(record_id=f"response_window/{name}")
-        for name in ("wells", "designs", "bootstrap_draws", "traces", "events")
+        for name in ("wells", "designs", "descriptive_resampling_draws", "traces", "events")
     }
     pipeline = (
         _step(
@@ -207,7 +212,7 @@ def compile_plate_reader_dual_reporter_screen(protocol: Any):
 
 def compile_plate_reader_single_reporter_screen(protocol: Any):
     analysis = _analysis_options(protocol)
-    if analysis.get("temporal_reduction") is not None or analysis.get("replicate_aggregation") is not None:
+    if analysis.get("temporal_reduction") is not None or analysis.get("observation_aggregation") is not None:
         _single_reporter_diagnostic_policy(protocol)
     reporter_channel = _analysis_channel(analysis, key="reporter_channel", default="RFP")
     normalizer_channel = _analysis_channel(analysis, key="normalizer_channel", default="OD600")
@@ -596,7 +601,7 @@ def _plate_reader_single_reporter_plot_output(
             "endpoint_time_h",
             "endpoint_time_tolerance_h",
             "normalizer_channel",
-            "replicate_aggregation",
+            "observation_aggregation",
             "reporter_channel",
             "ratio_channel",
             "summary_stat",
@@ -608,15 +613,15 @@ def _plate_reader_single_reporter_plot_output(
         if overridden:
             raise ConfigError(
                 "protocol.outputs.plots.views.single_reporter_diagnostic cannot override compiler-owned fields "
-                f"{overridden}; configure protocol.analysis temporal_reduction, replicate_aggregation, "
+                f"{overridden}; configure protocol.analysis temporal_reduction, observation_aggregation, "
                 "reporter_channel, and normalizer_channel instead"
             )
-        temporal_reduction, replicate_aggregation = _single_reporter_diagnostic_policy(protocol)
+        temporal_reduction, observation_aggregation = _single_reporter_diagnostic_policy(protocol)
         defaults = {
             **({} if "partition" in settings else {"partition": {"by": "design_id"}}),
             "condition_column": "treatment",
             "temporal_reduction": temporal_reduction,
-            "replicate_aggregation": replicate_aggregation,
+            "observation_aggregation": observation_aggregation,
             "time_column": "time",
             "normalizer_channel": normalizer_channel,
             "reporter_channel": reporter_channel,
@@ -715,16 +720,16 @@ def _plate_reader_single_reporter_plot_output(
 def _single_reporter_diagnostic_policy(protocol: Any) -> tuple[dict[str, object], dict[str, str]]:
     analysis = _analysis_options(protocol)
     raw_temporal = analysis.get("temporal_reduction")
-    raw_aggregation = analysis.get("replicate_aggregation")
+    raw_aggregation = analysis.get("observation_aggregation")
     if raw_temporal is None or raw_aggregation is None:
         raise ConfigError(
             "plate_reader/single_reporter_screen requires protocol.analysis.temporal_reduction and "
-            "protocol.analysis.replicate_aggregation together when either policy is authored or "
+            "protocol.analysis.observation_aggregation together when either policy is authored or "
             "single_reporter_diagnostic is selected"
         )
     try:
         temporal = TemporalReductionSpec.from_mapping(raw_temporal)
-        aggregation = ReplicateAggregationSpec.from_mapping(raw_aggregation)
+        aggregation = ObservationAggregationSpec.from_mapping(raw_aggregation)
     except ValueError as exc:
         raise ConfigError(f"invalid single-reporter diagnostic reduction policy: {exc}") from exc
     if temporal.selection.time_basis != "absolute":

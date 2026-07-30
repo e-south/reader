@@ -21,7 +21,7 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
             "sample map with measured well coverage",
             "channel labels and denominator/ratio meaning",
             "treatment and control semantics",
-            "plate, well, replicate, and design identifiers",
+            "plate and well identifiers, plus any source-declared replicate and design identifiers",
         ),
         stop_conditions=(
             "well coordinates or sample positions conflict",

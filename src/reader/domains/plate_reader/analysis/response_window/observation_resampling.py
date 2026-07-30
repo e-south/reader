@@ -1,17 +1,17 @@
-"""Joint replicate bootstrap primitives for response-window summaries."""
+"""Descriptive resampling primitives for within-experiment observations."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from .contracts import ReplicateStat, ResponseWindowAnalysisSpec
+from .contracts import ObservationStat, ResponseWindowAnalysisSpec
 from .seeds import stable_seed
 from .sources import STATE_ORDER
 
 
-def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
-    """Resample wells jointly across all state response and reference channels."""
+def descriptive_resampling_records(wells: pd.DataFrame, *, request: ResponseWindowAnalysisSpec) -> pd.DataFrame:
+    """Resample observed wells jointly without implying population inference."""
 
     anchor_id = request.source.reference_design_id
     anchor = wells.loc[wells["design_id"].astype(str).eq(anchor_id)]
@@ -24,20 +24,20 @@ def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalys
             response_values = state_wells["response_well"].to_numpy(dtype=float)
             magnitude_values = state_wells["magnitude_well"].to_numpy(dtype=float)
             anchor_values = anchor_wells["magnitude_well"].to_numpy(dtype=float)
-            minimum = request.quality.min_replicates_per_state
+            minimum = request.quality.min_observations_per_state
             if min(len(response_values), len(magnitude_values), len(anchor_values)) < minimum:
-                raise ValueError(f"{design_id}:{state} lacks replicate support for bootstrap draws.")
+                raise ValueError(f"{design_id}:{state} lacks support for within-experiment descriptive resampling.")
             reduction_id = str(state_wells["reduction_id"].iloc[0])
             experiment_id = str(state_wells["experiment_id"].iloc[0])
             rng = np.random.default_rng(
                 stable_seed(request.aggregation.random_seed, experiment_id, str(design_id), state, reduction_id)
             )
-            response_draws, anchored_magnitude_draws = joint_state_bootstrap_draws(
+            response_draws, anchored_magnitude_draws = joint_state_descriptive_resampling_draws(
                 response_values,
                 magnitude_values,
                 anchor_values,
-                samples=request.aggregation.bootstrap_samples,
-                stat=request.aggregation.replicate_stat,
+                samples=request.aggregation.descriptive_resampling_draws,
+                stat=request.aggregation.observation_stat,
                 rng=rng,
                 paired_anchor=str(design_id) == anchor_id,
             )
@@ -53,29 +53,35 @@ def bootstrap_draw_records(wells: pd.DataFrame, *, request: ResponseWindowAnalys
     return pd.concat(records, ignore_index=True)
 
 
-def joint_state_bootstrap_draws(
+def joint_state_descriptive_resampling_draws(
     response_values: np.ndarray,
     magnitude_values: np.ndarray,
     anchor_values: np.ndarray,
     *,
     samples: int,
-    stat: ReplicateStat,
+    stat: ObservationStat,
     rng: np.random.Generator,
     paired_anchor: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Resample paired design wells and either paired or independent reference wells."""
+    """Resample paired observed wells and either paired or independent reference wells."""
 
     response = np.asarray(response_values, dtype=float)
     magnitude = np.asarray(magnitude_values, dtype=float)
     anchor = np.asarray(anchor_values, dtype=float)
+    if stat not in {"mean", "median"}:
+        raise ValueError("joint descriptive resampling requires stat to be 'mean' or 'median'.")
     if response.ndim != 1 or magnitude.ndim != 1 or anchor.ndim != 1:
-        raise ValueError("joint bootstrap inputs must be one-dimensional arrays.")
+        raise ValueError("joint descriptive-resampling inputs must be one-dimensional arrays.")
     if len(response) != len(magnitude) or len(response) == 0 or len(anchor) == 0:
-        raise ValueError("joint bootstrap requires aligned design wells and non-empty reference wells.")
+        raise ValueError(
+            "joint descriptive resampling requires aligned design observations and non-empty reference observations."
+        )
     if samples < 2:
-        raise ValueError("joint bootstrap requires at least two draws.")
+        raise ValueError("joint descriptive resampling requires at least two draws.")
     if paired_anchor and not np.array_equal(magnitude, anchor):
-        raise ValueError("paired reference bootstrap requires identical ordered magnitude and anchor wells.")
+        raise ValueError(
+            "paired reference descriptive resampling requires identical ordered magnitude and anchor observations."
+        )
     design_indexes = rng.integers(0, len(response), size=(samples, len(response)))
     anchor_indexes = design_indexes if paired_anchor else rng.integers(0, len(anchor), size=(samples, len(anchor)))
     aggregate = np.median if stat == "median" else np.mean
@@ -85,28 +91,7 @@ def joint_state_bootstrap_draws(
     return response_draws, magnitude_draws - anchor_draws
 
 
-def symmetric_event_sensitivity_half_width(
-    midpoint: float,
-    lower_bound: float,
-    upper_bound: float,
-) -> float:
-    """Return a midpoint-centered envelope covering both event-bound reductions.
-
-    Response-window reduction is not necessarily linear in event time. The
-    midpoint estimate therefore need not bisect the values obtained at the two
-    event bounds. A symmetric display interval must use the larger absolute
-    deviation from the midpoint, not half the distance between the bound
-    values.
-    """
-
-    values = np.asarray([midpoint, lower_bound, upper_bound], dtype=float)
-    if not np.all(np.isfinite(values)):
-        raise ValueError("event-time sensitivity values must be finite.")
-    return float(max(abs(values[0] - values[1]), abs(values[2] - values[0])))
-
-
 __all__ = [
-    "bootstrap_draw_records",
-    "joint_state_bootstrap_draws",
-    "symmetric_event_sensitivity_half_width",
+    "descriptive_resampling_records",
+    "joint_state_descriptive_resampling_draws",
 ]

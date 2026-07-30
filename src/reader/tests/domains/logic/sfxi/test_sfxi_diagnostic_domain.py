@@ -16,7 +16,7 @@ def _annotated_frame() -> pd.DataFrame:
     for design_index, design_id in enumerate(("design-a", "design-b")):
         for state_index, source_value in enumerate(state_values.values()):
             for time in (0.0, 1.0, 2.0):
-                for replicate in (1, 2):
+                for observation_index in (1, 2):
                     rows.extend(
                         (
                             {
@@ -24,16 +24,16 @@ def _annotated_frame() -> pd.DataFrame:
                                 "treatment_alias": source_value,
                                 "time": time,
                                 "channel": "OD600",
-                                "value": 0.2 + design_index + state_index * 0.1 + time + replicate * 0.01,
-                                "position": f"A{replicate}",
+                                "value": 0.2 + design_index + state_index * 0.1 + time + observation_index * 0.01,
+                                "position": f"A{observation_index}",
                             },
                             {
                                 "design_id": design_id,
                                 "treatment_alias": source_value,
                                 "time": time,
                                 "channel": "response",
-                                "value": 1.0 + design_index + state_index + time + replicate * 0.1,
-                                "position": f"A{replicate}",
+                                "value": 1.0 + design_index + state_index + time + observation_index * 0.1,
+                                "position": f"A{observation_index}",
                             },
                         )
                     )

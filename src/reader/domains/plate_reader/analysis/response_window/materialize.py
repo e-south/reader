@@ -6,6 +6,7 @@ import pandas as pd
 
 from .aggregation import build_design_records
 from .contracts import ReductionSpec, ResponseWindowAnalysisSpec
+from .observation_resampling import descriptive_resampling_records
 from .reduction import (
     combine_bound_kinds,
     invert_bound_kind,
@@ -13,7 +14,6 @@ from .reduction import (
     response_window_temporal_spec,
 )
 from .sources import ExperimentSource
-from .uncertainty import bootstrap_draw_records
 
 
 def materialize_experiment(
@@ -46,7 +46,7 @@ def materialize_experiment(
             event_estimate_h=source.event.interval_end_assay_h,
         )
         well_frames.append(midpoint)
-        draw_frames.append(bootstrap_draw_records(midpoint, request=request))
+        draw_frames.append(descriptive_resampling_records(midpoint, request=request))
         design_frames.append(
             build_design_records(
                 midpoint,
@@ -69,7 +69,7 @@ def materialize_experiment(
         raise ValueError(f"{source.experiment_id}: design record identity is not unique.")
     draw_key = ["experiment_id", "design_id", "reduction_id", "draw_index"]
     if draws.duplicated(subset=draw_key).any():
-        raise ValueError(f"{source.experiment_id}: bootstrap-draw identity is not unique.")
+        raise ValueError(f"{source.experiment_id}: descriptive-resampling draw identity is not unique.")
     traces = _trace_record(source, request=request)
     events = pd.DataFrame.from_records(
         [

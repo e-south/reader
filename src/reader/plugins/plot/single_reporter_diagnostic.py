@@ -8,7 +8,7 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
-from reader.domains.time_series import ReplicateAggregationSpec, TemporalReductionSpec
+from reader.domains.time_series import ObservationAggregationSpec, TemporalReductionSpec
 from reader.plotting.sinks import PlotFigure
 from reader.plotting.utils import slugify
 from reader.plugins.plot._shared import FigurePlotPlugin, PlotPartitionCfg, resolve_plot_partition_cfg
@@ -17,7 +17,7 @@ from reader.workbench.registry import PluginConfig
 
 _DESCRIPTION = (
     "Normalizer, reporter, and reporter-normalizer kinetics with an explicit endpoint or interval reduction, "
-    "raw replicate-unit values by condition, and visible normalizer QC."
+    "temporally reduced observation-unit values by condition, and visible normalizer QC."
 )
 
 
@@ -47,7 +47,7 @@ class SingleReporterDiagnosticCfg(PluginConfig):
     condition_order: list[str] | None = None
     condition_order_ref: str | None = Field(default=None, min_length=1)
     temporal_reduction: dict[str, Any]
-    replicate_aggregation: dict[str, Any]
+    observation_aggregation: dict[str, Any]
     time_column: str = Field(default="time", min_length=1)
     normalizer_channel: str = Field(min_length=1)
     reporter_channel: str = Field(min_length=1)
@@ -74,9 +74,9 @@ class SingleReporterDiagnosticCfg(PluginConfig):
         if len({self.normalizer_channel, self.reporter_channel, self.ratio_channel}) != 3:
             raise ValueError("single_reporter_diagnostic: normalizer, reporter, and ratio channels must be distinct")
         temporal = TemporalReductionSpec.from_mapping(self.temporal_reduction)
-        aggregation = ReplicateAggregationSpec.from_mapping(self.replicate_aggregation)
+        aggregation = ObservationAggregationSpec.from_mapping(self.observation_aggregation)
         self.temporal_reduction = temporal.to_mapping()
-        self.replicate_aggregation = aggregation.to_mapping()
+        self.observation_aggregation = aggregation.to_mapping()
         if self.condition_order is not None and self.condition_order_ref is not None:
             raise ValueError(
                 "single_reporter_diagnostic: condition_order and condition_order_ref are mutually exclusive"
@@ -142,7 +142,7 @@ class SingleReporterDiagnosticPlot(FigurePlotPlugin):
             reporter_channel=cfg.reporter_channel,
             ratio_channel=cfg.ratio_channel,
             temporal_reduction=TemporalReductionSpec.from_mapping(cfg.temporal_reduction),
-            replicate_aggregation=ReplicateAggregationSpec.from_mapping(cfg.replicate_aggregation),
+            observation_aggregation=ObservationAggregationSpec.from_mapping(cfg.observation_aggregation),
         )
         artifact_names = _artifact_names(diagnostics, filename_prefix=cfg.filename_prefix)
         figures: list[PlotFigure] = []

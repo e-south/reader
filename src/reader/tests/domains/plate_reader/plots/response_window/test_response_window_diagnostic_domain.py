@@ -53,9 +53,9 @@ def _designs_frame() -> pd.DataFrame:
                     "reduction_id": reduction_id,
                     "reduction_method": "geometric_time_mean",
                     "response_basis": "post_window",
-                    "replicate_stat": "mean",
-                    "bootstrap_samples": 200,
-                    "confidence_level": 0.9,
+                    "observation_stat": "mean",
+                    "descriptive_resampling_draws": 200,
+                    "descriptive_interval_mass": 0.9,
                     "event_id": "addition",
                     "event_time_uncertainty_h": 0.25,
                     "window_start_event_h": 0.5,
@@ -65,8 +65,8 @@ def _designs_frame() -> pd.DataFrame:
                 for index, component in enumerate(COMPONENT_COLUMNS):
                     value = float(index + offset)
                     row[component] = value
-                    row[f"{component}_ci_low"] = value - 0.25
-                    row[f"{component}_ci_high"] = value + 0.25
+                    row[f"{component}_descriptive_interval_low"] = value - 0.25
+                    row[f"{component}_descriptive_interval_high"] = value + 0.25
                     row[f"{component}_event_half_range"] = 0.1
                     row[f"{component}_bound_kind"] = "exact"
                     row[f"{component}_has_policy_clipping"] = False
@@ -91,8 +91,8 @@ def test_prepare_response_window_diagnostic_selects_one_explicit_subject() -> No
     assert diagnostic.design_id == "design-a"
     assert diagnostic.reference_design_id == "reference"
     assert diagnostic.reduction_id == "primary"
-    assert diagnostic.replicate_stat == "mean"
-    assert diagnostic.confidence_level == 0.9
+    assert diagnostic.observation_stat == "mean"
+    assert diagnostic.descriptive_interval_mass == 0.9
     assert diagnostic.event_time_uncertainty_h == 0.25
     assert diagnostic.window == (0.5, 1.5)
     assert diagnostic.component_values == tuple(float(index) for index in range(8))
@@ -130,7 +130,11 @@ def test_render_response_window_diagnostic_has_four_neutral_panels() -> None:
     assert figure.get_gid() == "response-window-diagnostic"
     assert figure.get_suptitle().startswith("Selected diagnostic\n")
     assert "mean center" in figure.get_suptitle()
-    assert "90% bootstrap CI (200 draws)" in figure.get_suptitle()
+    title_text = figure.get_suptitle()
+    assert "90% descriptive resampling interval (200 draws)" in title_text
+    assert "replicate" not in title_text
+    assert "confidence" not in title_text
+    assert " CI" not in title_text
     assert [axis.get_title() for axis in figure.axes] == [
         "Growth traces",
         "Response traces",
@@ -217,10 +221,10 @@ def test_aligned_trace_center_honors_stat_and_rejects_unaligned_grids() -> None:
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [9.0, 10.0]}),
     ]
 
-    _, mean = _aligned_trace_center(traces, replicate_stat="mean")
-    _, median = _aligned_trace_center(traces, replicate_stat="median")
+    _, mean = _aligned_trace_center(traces, observation_stat="mean")
+    _, median = _aligned_trace_center(traces, observation_stat="median")
     unaligned = [*traces[:2], pd.DataFrame({"time_from_event_h": [0.1, 1.1], "plot_value": [9.0, 10.0]})]
 
     assert mean.tolist() == pytest.approx([4.0, 5.0])
     assert median.tolist() == pytest.approx([2.0, 3.0])
-    assert _aligned_trace_center(unaligned, replicate_stat="mean") is None
+    assert _aligned_trace_center(unaligned, observation_stat="mean") is None

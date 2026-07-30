@@ -10,7 +10,7 @@ AggregationStatistic = Literal["mean", "median"]
 
 
 @dataclass(frozen=True)
-class ReplicateAggregationSpec:
+class ObservationAggregationSpec:
     """Separate within-unit observation reduction from the across-unit center."""
 
     within_unit_statistic: AggregationStatistic
@@ -19,20 +19,20 @@ class ReplicateAggregationSpec:
     def __post_init__(self) -> None:
         for field_name in ("within_unit_statistic", "across_unit_statistic"):
             if getattr(self, field_name) not in {"mean", "median"}:
-                raise ValueError(f"replicate_aggregation.{field_name} must be 'mean' or 'median'")
+                raise ValueError(f"observation_aggregation.{field_name} must be 'mean' or 'median'")
 
     @classmethod
-    def from_mapping(cls, value: object) -> ReplicateAggregationSpec:
+    def from_mapping(cls, value: object) -> ObservationAggregationSpec:
         if not isinstance(value, Mapping):
-            raise ValueError("replicate_aggregation must be a mapping")
+            raise ValueError("observation_aggregation must be a mapping")
         payload = {str(key): item for key, item in value.items()}
         expected = {"within_unit_statistic", "across_unit_statistic"}
         unknown = sorted(set(payload) - expected)
         missing = sorted(expected - set(payload))
         if unknown:
-            raise ValueError(f"replicate_aggregation has unknown fields: {unknown}")
+            raise ValueError(f"observation_aggregation has unknown fields: {unknown}")
         if missing:
-            raise ValueError(f"replicate_aggregation is missing required fields: {missing}")
+            raise ValueError(f"observation_aggregation is missing required fields: {missing}")
         return cls(
             within_unit_statistic=_statistic(
                 payload["within_unit_statistic"],
@@ -53,8 +53,8 @@ class ReplicateAggregationSpec:
 
 def _statistic(value: object, *, field: str) -> AggregationStatistic:
     if value not in {"mean", "median"}:
-        raise ValueError(f"replicate_aggregation.{field} must be 'mean' or 'median'")
+        raise ValueError(f"observation_aggregation.{field} must be 'mean' or 'median'")
     return value  # type: ignore[return-value]
 
 
-__all__ = ["AggregationStatistic", "ReplicateAggregationSpec"]
+__all__ = ["AggregationStatistic", "ObservationAggregationSpec"]

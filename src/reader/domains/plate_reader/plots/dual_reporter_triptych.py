@@ -12,12 +12,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reader.domains.plate_reader.plots.common import bootstrap_mean_interval
+from reader.domains.plate_reader.plots.common import descriptive_mean_resampling_interval
 
 DEFAULT_TRIPTYCH_PANEL_SIZE = 260
 DEFAULT_TRIPTYCH_SPACING = 16
-DEFAULT_TRAJECTORY_CI = 95.0
-DEFAULT_TRAJECTORY_BOOTSTRAPS = 300
+DEFAULT_TRAJECTORY_INTERVAL_MASS = 0.95
+DEFAULT_TRAJECTORY_RESAMPLES = 300
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class DualReporterTriptychData:
     growth_channel: str
     ratio_channel: str
     snapshot_channel: str
-    trajectory_ci: float
+    trajectory_interval_mass: float
 
 
 def build_triptych_data(
@@ -46,8 +46,8 @@ def build_triptych_data(
     snapshot_time: float,
     treatment_order: list[str] | tuple[str, ...] | None = None,
     time_atol: float = 1e-9,
-    trajectory_ci: float = DEFAULT_TRAJECTORY_CI,
-    trajectory_bootstraps: int = DEFAULT_TRAJECTORY_BOOTSTRAPS,
+    trajectory_interval_mass: float = DEFAULT_TRAJECTORY_INTERVAL_MASS,
+    trajectory_resamples: int = DEFAULT_TRAJECTORY_RESAMPLES,
 ) -> DualReporterTriptychData:
     """Prepare the neutral dual-reporter triptych data contract.
 
@@ -56,10 +56,10 @@ def build_triptych_data(
     a snapshot channel.
     """
     snapshot_channel = snapshot_channel or ratio_channel
-    if not 0.0 < float(trajectory_ci) < 100.0:
-        raise ValueError("dual_reporter_triptych: trajectory_ci must lie strictly between 0 and 100")
-    if int(trajectory_bootstraps) < 1:
-        raise ValueError("dual_reporter_triptych: trajectory_bootstraps must be positive")
+    if not 0.0 < float(trajectory_interval_mass) < 1.0:
+        raise ValueError("dual_reporter_triptych: trajectory_interval_mass must lie strictly between 0 and 1")
+    if int(trajectory_resamples) < 1:
+        raise ValueError("dual_reporter_triptych: trajectory_resamples must be positive")
     required_channels = [growth_channel, ratio_channel, snapshot_channel]
     _require_columns(df, ["channel", "value", time_col, treatment_col], where="dual_reporter_triptych")
 
@@ -85,8 +85,8 @@ def build_triptych_data(
         "time_col": time_col,
         "treatment_col": treatment_col,
         "order": order,
-        "ci": float(trajectory_ci),
-        "ci_boot": int(trajectory_bootstraps),
+        "interval_mass": float(trajectory_interval_mass),
+        "resamples": int(trajectory_resamples),
     }
     od600_time = _summarize_time(work, channel=growth_channel, **summary_options)
     ratio_time = _summarize_time(work, channel=ratio_channel, **summary_options)
@@ -110,7 +110,7 @@ def build_triptych_data(
         growth_channel=str(growth_channel),
         ratio_channel=str(ratio_channel),
         snapshot_channel=str(snapshot_channel),
-        trajectory_ci=float(trajectory_ci),
+        trajectory_interval_mass=float(trajectory_interval_mass),
     )
 
 
@@ -330,8 +330,8 @@ def _summarize_time(
     time_col: str,
     treatment_col: str,
     order: list[str],
-    ci: float,
-    ci_boot: int,
+    interval_mass: float,
+    resamples: int,
 ) -> pd.DataFrame:
     work = df[df["channel"].astype(str) == str(channel)].copy()
     if work.empty:
@@ -340,7 +340,12 @@ def _summarize_time(
     records: list[dict[str, object]] = []
     for (time_value, treatment), series in work.groupby([time_col, treatment_col], dropna=False, sort=True)["value"]:
         values = series.to_numpy(dtype=float, copy=False)
-        mean, lower, upper = bootstrap_mean_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
+        mean, lower, upper = descriptive_mean_resampling_interval(
+            values,
+            interval_mass=interval_mass,
+            resamples=resamples,
+            rng=rng,
+        )
         records.append(
             {
                 time_col: time_value,
@@ -369,13 +374,13 @@ def _summarize_snapshot(
     work = df[df["channel"].astype(str) == str(channel)].copy()
     if work.empty:
         empty_stats = pd.DataFrame(columns=[treatment_col, "y_mean", "y_sd", "y_n", "y_lo", "y_hi"])
-        empty_points = pd.DataFrame(columns=[treatment_col, "value", "replicate_index"])
+        empty_points = pd.DataFrame(columns=[treatment_col, "value", "observation_index"])
         return empty_stats, empty_points
     mask = (work[time_col] - float(snapshot_time)).abs() <= float(time_atol)
     snapped = work[mask].copy()
     if snapped.empty:
         empty_stats = pd.DataFrame(columns=[treatment_col, "y_mean", "y_sd", "y_n", "y_lo", "y_hi"])
-        empty_points = pd.DataFrame(columns=[treatment_col, "value", "replicate_index"])
+        empty_points = pd.DataFrame(columns=[treatment_col, "value", "observation_index"])
         return empty_stats, empty_points
     stats = snapped.groupby(treatment_col, dropna=False)["value"].agg(["mean", "std", "count"]).reset_index()
     stats = stats.rename(columns={"mean": "y_mean", "std": "y_sd", "count": "y_n"})
@@ -392,7 +397,7 @@ def _summarize_snapshot(
         order=order,
         extra_sort=[*stable_identity, "__source_order"],
     )
-    points["replicate_index"] = points.groupby(treatment_col, sort=False).cumcount()
+    points["observation_index"] = points.groupby(treatment_col, sort=False).cumcount()
     points = points.drop(columns="__source_order")
     return stats, points
 
@@ -495,7 +500,7 @@ def _snapshot_chart(
             .mark_point(filled=True, fill="white", stroke="#94a3b8", strokeWidth=1.2, size=52)
             .encode(
                 x=alt.X(f"{treatment_col}:N", sort=order, scale=alt.Scale(domain=order), axis=axis),
-                xOffset=alt.XOffset("replicate_index:O"),
+                xOffset=alt.XOffset("observation_index:O"),
                 y=alt.Y("value:Q"),
                 tooltip=[
                     alt.Tooltip(f"{treatment_col}:N", title="Treatment"),

@@ -18,12 +18,12 @@ def _state_summary_columns() -> list[ColumnRule]:
             [
                 ColumnRule(f"r{state}", "float"),
                 ColumnRule(f"b{state}", "float"),
-                ColumnRule(f"r{state}_bootstrap_sd", "float", nonnegative=True),
-                ColumnRule(f"b{state}_bootstrap_sd", "float", nonnegative=True),
-                ColumnRule(f"r{state}_ci_low", "float"),
-                ColumnRule(f"r{state}_ci_high", "float"),
-                ColumnRule(f"b{state}_ci_low", "float"),
-                ColumnRule(f"b{state}_ci_high", "float"),
+                ColumnRule(f"r{state}_descriptive_resampling_sd", "float", nonnegative=True),
+                ColumnRule(f"b{state}_descriptive_resampling_sd", "float", nonnegative=True),
+                ColumnRule(f"r{state}_descriptive_interval_low", "float"),
+                ColumnRule(f"r{state}_descriptive_interval_high", "float"),
+                ColumnRule(f"b{state}_descriptive_interval_low", "float"),
+                ColumnRule(f"b{state}_descriptive_interval_high", "float"),
                 ColumnRule(f"r{state}_event_half_range", "float", nonnegative=True),
                 ColumnRule(f"b{state}_event_half_range", "float", nonnegative=True),
                 ColumnRule(f"r{state}_event_sensitivity_has_policy_clipping", "bool"),
@@ -88,8 +88,11 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         allow_extra_columns=False,
     ),
     DataFrameContract(
-        id="plate_reader.response_window.designs.v3",
-        description="Four-condition response and fluorescence summary with state-level censor bounds.",
+        id="plate_reader.response_window.designs.v4",
+        description=(
+            "Four-condition response and fluorescence summary with within-experiment observation counts, "
+            "descriptive resampling intervals, and state-level censor bounds."
+        ),
         columns=[
             ColumnRule("experiment_id", "string"),
             ColumnRule("design_id", "string"),
@@ -98,20 +101,23 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("reduction_method", "string", allowed_values=_REDUCTION_METHODS),
             ColumnRule("response_basis", "string", allowed_values=_RESPONSE_BASES),
             ColumnRule("reduction_role", "string", allowed_values=_REDUCTION_ROLES),
-            ColumnRule("replicate_stat", "string", allowed_values=["mean", "median"]),
-            ColumnRule("bootstrap_samples", "int", nonnegative=True),
-            ColumnRule("confidence_level", "float", nonnegative=True),
+            ColumnRule("observation_stat", "string", allowed_values=["mean", "median"]),
+            ColumnRule("descriptive_resampling_draws", "int", nonnegative=True),
+            ColumnRule("descriptive_interval_mass", "float", nonnegative=True),
             ColumnRule("event_id", "string"),
             ColumnRule("event_time_estimate_assay_h", "float", nonnegative=True),
             ColumnRule("event_time_uncertainty_h", "float", nonnegative=True),
             ColumnRule("window_start_event_h", "float", nonnegative=True),
             ColumnRule("window_end_event_h", "float", nonnegative=True),
             ColumnRule("is_reference", "bool"),
-            ColumnRule("min_replicates_per_state", "int", nonnegative=True),
+            ColumnRule("positive_floor", "float", nonnegative=True),
+            ColumnRule("allowed_max_interior_gap_h", "float", nonnegative=True),
+            ColumnRule("required_min_observations_per_state", "int", nonnegative=True),
+            ColumnRule("min_observation_count_per_state", "int", nonnegative=True),
             ColumnRule("min_observed_points_per_trace", "int", nonnegative=True),
-            ColumnRule("max_interior_gap_h", "float", nonnegative=True),
+            ColumnRule("max_observed_interior_gap_h", "float", nonnegative=True),
             ColumnRule("min_pre_observed_points_per_trace", "int", nonnegative=True),
-            ColumnRule("max_pre_interior_gap_h", "float", nonnegative=True),
+            ColumnRule("max_pre_observed_interior_gap_h", "float", nonnegative=True),
             *_state_summary_columns(),
         ],
         unique_keys=[["experiment_id", "design_id", "reduction_id"]],
@@ -120,8 +126,11 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         allow_extra_columns=False,
     ),
     DataFrameContract(
-        id="plate_reader.response_window.bootstrap_draws.v2",
-        description="Joint replicate-bootstrap draw over eight response-window components.",
+        id="plate_reader.response_window.descriptive_resampling_draws.v3",
+        description=(
+            "Joint descriptive resampling draw over eight response-window components from "
+            "within-experiment observations."
+        ),
         columns=[
             ColumnRule("experiment_id", "string"),
             ColumnRule("design_id", "string"),
@@ -132,7 +141,7 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         ],
         unique_keys=[["experiment_id", "design_id", "reduction_id", "draw_index"]],
         domain="plate_reader",
-        kind="response-window-bootstrap-draw",
+        kind="response-window-descriptive-resampling-draw",
         allow_extra_columns=False,
     ),
     DataFrameContract(

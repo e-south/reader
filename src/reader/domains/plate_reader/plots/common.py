@@ -55,40 +55,44 @@ def plot_figure(
     return PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi)
 
 
-def bootstrap_mean_interval(
+def descriptive_mean_resampling_interval(
     values: np.ndarray,
     *,
-    ci: float,
-    ci_boot: int,
+    interval_mass: float,
+    resamples: int,
     rng: np.random.Generator,
 ) -> tuple[float, float, float]:
+    """Summarize observed rows without claiming population coverage."""
+
+    mass = _interval_mass(interval_mass)
+    draws = _resample_count(resamples)
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if finite.size == 0:
         return (math.nan, math.nan, math.nan)
     mean = float(finite.mean())
-    if float(ci) <= 0 or finite.size <= 1:
+    if finite.size <= 1:
         return mean, mean, mean
-    alpha = max(0.0, min(0.5, (100.0 - float(ci)) / 200.0))
-    if alpha == 0.0:
-        return mean, mean, mean
+    alpha = (1.0 - mass) / 2.0
     if finite.size <= 3:
-        boot_means = finite[_ordered_bootstrap_indices(finite.size)].mean(axis=1)
+        resampled_means = finite[_ordered_resampling_indices(finite.size)].mean(axis=1)
     else:
-        samples = rng.integers(0, finite.size, size=(max(1, int(ci_boot)), finite.size))
-        boot_means = finite[samples].mean(axis=1)
-    lower, upper = np.quantile(boot_means, [alpha, 1.0 - alpha])
+        samples = rng.integers(0, finite.size, size=(draws, finite.size))
+        resampled_means = finite[samples].mean(axis=1)
+    lower, upper = np.quantile(resampled_means, [alpha, 1.0 - alpha])
     return mean, float(lower), float(upper)
 
 
-def bootstrap_linear_interval(
+def descriptive_linear_resampling_interval(
     groups: Iterable[np.ndarray | list[float] | tuple[float, ...]],
     *,
     coefficients: Iterable[float],
-    ci: float,
-    ci_boot: int,
+    interval_mass: float,
+    resamples: int,
     rng: np.random.Generator,
 ) -> tuple[float, float, float]:
+    mass = _interval_mass(interval_mass)
+    draws = _resample_count(resamples)
     finite_groups: list[np.ndarray] = []
     coeffs = [float(value) for value in coefficients]
     for group in groups:
@@ -98,16 +102,13 @@ def bootstrap_linear_interval(
             return (math.nan, math.nan, math.nan)
         finite_groups.append(values)
     if len(finite_groups) != len(coeffs):
-        raise ValueError("bootstrap_linear_interval: groups and coefficients must have the same length")
+        raise ValueError("descriptive_linear_resampling_interval: groups and coefficients must have the same length")
 
     mean = float(sum(coeff * values.mean() for coeff, values in zip(coeffs, finite_groups, strict=True)))
-    if float(ci) <= 0 or all(values.size <= 1 for values in finite_groups):
+    if all(values.size <= 1 for values in finite_groups):
         return mean, mean, mean
-    alpha = max(0.0, min(0.5, (100.0 - float(ci)) / 200.0))
-    if alpha == 0.0:
-        return mean, mean, mean
+    alpha = (1.0 - mass) / 2.0
 
-    draws = max(1, int(ci_boot))
     boot_values = np.zeros(draws, dtype=float)
     for coeff, values in zip(coeffs, finite_groups, strict=True):
         if values.size == 1:
@@ -117,6 +118,19 @@ def bootstrap_linear_interval(
         boot_values += coeff * values[sample_index].mean(axis=1)
     lower, upper = np.quantile(boot_values, [alpha, 1.0 - alpha])
     return mean, float(lower), float(upper)
+
+
+def _interval_mass(value: float) -> float:
+    mass = float(value)
+    if not math.isfinite(mass) or not 0.0 < mass < 1.0:
+        raise ValueError("descriptive interval mass must lie strictly between 0 and 1")
+    return mass
+
+
+def _resample_count(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("descriptive resample count must be a positive integer")
+    return value
 
 
 def shared_numeric_limits(
@@ -150,9 +164,9 @@ def shared_numeric_limits(
 
 
 @lru_cache(maxsize=4)
-def _ordered_bootstrap_indices(size: int) -> np.ndarray:
+def _ordered_resampling_indices(size: int) -> np.ndarray:
     if size <= 0:
-        raise ValueError("bootstrap sample size must be positive")
+        raise ValueError("resampling size must be positive")
     grids = np.indices((size,) * size, dtype=np.intp)
     return grids.reshape(size, -1).T
 
@@ -256,9 +270,9 @@ def _bbox_outside_axes_penalty(bbox: Any, axes_bbox: Any) -> float:
 __all__ = [
     "alias_column",
     "annotate_points_smart",
-    "bootstrap_linear_interval",
     "best_subplot_grid",
-    "bootstrap_mean_interval",
+    "descriptive_linear_resampling_interval",
+    "descriptive_mean_resampling_interval",
     "colors_for",
     "plot_figure",
     "pretty_name",

@@ -121,7 +121,10 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
     ),
     DataFrameContract(
         id="logic_symmetry.v1",
-        description="Logic-symmetry per design and batch summary with four-state metrics and coordinates.",
+        description=(
+            "Logic-symmetry per design and batch summary with four-state observation counts, dispersion, "
+            "metrics, and coordinates."
+        ),
         columns=[
             ColumnRule("design_id", "string", required=False, allow_nan=True),
             ColumnRule("genotype", "string", required=False, allow_nan=True),

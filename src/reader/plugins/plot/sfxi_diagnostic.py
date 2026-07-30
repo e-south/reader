@@ -18,8 +18,8 @@ class SFXIDiagnosticCfg(PluginConfig):
     growth_channel: str = Field(default="OD600", min_length=1)
     response_channel: str = Field(default="YFP/CFP", min_length=1)
     design_ids: list[str] | None = None
-    trajectory_ci: float = Field(default=95.0, gt=0.0, lt=100.0)
-    trajectory_bootstraps: int = Field(default=300, ge=1)
+    trajectory_interval_mass: float = Field(default=0.95, gt=0.0, lt=1.0)
+    trajectory_resamples: int = Field(default=300, ge=1)
     time_atol: float = Field(default=1e-9, ge=0.0)
     title: str | None = Field(default=None, min_length=1)
     filename: str = Field(default="sfxi_diagnostic", min_length=1)
@@ -63,8 +63,8 @@ class SFXIDiagnosticPlot(FigurePlotPlugin):
             response_channel=cfg.response_channel,
             design_ids=cfg.design_ids,
             time_atol=cfg.time_atol,
-            trajectory_ci=cfg.trajectory_ci,
-            trajectory_bootstraps=cfg.trajectory_bootstraps,
+            trajectory_interval_mass=cfg.trajectory_interval_mass,
+            trajectory_resamples=cfg.trajectory_resamples,
         )
         filenames = [_design_filename(cfg.filename, item.design_id) for item in prepared]
         if len(set(filenames)) != len(filenames):

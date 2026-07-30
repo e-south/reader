@@ -30,7 +30,7 @@ protocol:
     state_map_ref: logic_states
     reference:
       design_id: reference
-      stat: mean
+      observation_stat: mean
     target_time_h: 12.0
     time_mode: nearest
     time_tolerance_h: 0.5
@@ -115,9 +115,9 @@ The diagnostic is a normal plot step. It reads the manifest-backed
 `promote_to_tidy_plus_map/df` and `sfxi_vec8/vec8` records, renders one artifact
 per persisted design by default, and uses each vec8 row's `time_selected_h` as
 the trajectory marker. The first two panels show growth and response
-trajectories with bootstrap intervals. The remaining panels show the persisted
-logic-shape and relative-intensity components on separate scales. It does not
-choose a new time or recompute vec8.
+trajectories with descriptive resampling intervals. The remaining panels show
+the persisted logic-shape and relative-intensity components on separate scales.
+It does not choose a new time or recompute vec8.
 
 The canonical `notebook/eda` workbench discovers the resulting plot bundle and
 the vec8 dataframe through the record catalog. Use `reader export` when a

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-from ..common import bootstrap_mean_interval
+from ..common import descriptive_mean_resampling_interval
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
 
@@ -32,9 +32,9 @@ def _summarize_time_series_lines(
     hue_col: str,
     hue_levels: Sequence[str],
     segment_col: str | None,
-    ci: float,
-    ci_boot: int,
-    ci_seed: int,
+    observation_interval_mass: float,
+    observation_resamples: int,
+    observation_seed: int,
     style_col: str | None = None,
     style_levels: Sequence[str] | None = None,
 ) -> dict[str | tuple[str, str], pd.DataFrame]:
@@ -63,7 +63,7 @@ def _summarize_time_series_lines(
         group_columns.append(active_style_col)
     group_columns.extend([active_segment_col, x_col])
     grouped = plot_data.groupby(group_columns, dropna=False, sort=True)["value"]
-    rng = np.random.default_rng(int(ci_seed))
+    rng = np.random.default_rng(int(observation_seed))
 
     if active_style_col is None:
         summary_keys: list[str | tuple[str, str]] = [str(hue) for hue in hue_levels]
@@ -89,7 +89,12 @@ def _summarize_time_series_lines(
         values = values[~np.isnan(values)]
         if values.size == 0:
             continue
-        mean, lower, upper = bootstrap_mean_interval(values, ci=ci, ci_boot=ci_boot, rng=rng)
+        mean, lower, upper = descriptive_mean_resampling_interval(
+            values,
+            interval_mass=observation_interval_mass,
+            resamples=observation_resamples,
+            rng=rng,
+        )
         payload[x_col].append(x_value)
         payload["segment"].append(str(segment_id))
         payload["mean"].append(mean)
@@ -115,14 +120,14 @@ def draw_time_series_panel(
     color_map: dict[str, str],
     marker_map: dict[str, str],
     segment_col: str | None,
-    show_replicates: bool,
-    ci: float,
-    ci_alpha: float,
-    ci_boot: int,
-    ci_seed: int,
+    show_observations: bool,
+    observation_interval_mass: float,
+    observation_interval_alpha: float,
+    observation_resamples: int,
+    observation_seed: int,
     line_alpha: float,
     mean_marker_alpha: float,
-    replicate_alpha: float,
+    observation_alpha: float,
     add_sheet_lines: bool,
     sheet_lines: list[float] | None,
     sheet_line_kwargs: dict | None,
@@ -137,7 +142,7 @@ def draw_time_series_panel(
     line_width: float = 1.8,
     mean_marker_size: float = 36.0,
     mean_marker_every: int = 1,
-    replicate_marker_size: float = 18.0,
+    observation_marker_size: float = 18.0,
     axis_label_size: float = 10.0,
     tick_label_size: float = 8.0,
     legend_fontsize: float = 8.0,
@@ -152,14 +157,14 @@ def draw_time_series_panel(
     ax.yaxis.grid(True, which="major")
     ax.xaxis.grid(True, which="major")
 
-    if show_replicates:
+    if show_observations:
         for hue in hue_levels:
             rr = data[data[hue_col].astype(str) == str(hue)]
             ax.scatter(
                 rr[x_col],
                 rr["value"],
-                s=replicate_marker_size,
-                alpha=replicate_alpha,
+                s=observation_marker_size,
+                alpha=observation_alpha,
                 zorder=3,
                 linewidths=0.0,
                 edgecolors="none",
@@ -173,9 +178,9 @@ def draw_time_series_panel(
         hue_col=hue_col,
         hue_levels=hue_levels,
         segment_col=segment_col,
-        ci=ci,
-        ci_boot=ci_boot,
-        ci_seed=ci_seed,
+        observation_interval_mass=observation_interval_mass,
+        observation_resamples=observation_resamples,
+        observation_seed=observation_seed,
         style_col=style_col,
         style_levels=style_levels,
     )
@@ -196,12 +201,12 @@ def draw_time_series_panel(
             if mm is None or mm.empty:
                 continue
             for _, segment_df in mm.groupby("segment", sort=False):
-                if float(ci) > 0:
+                if float(observation_interval_mass) > 0:
                     ax.fill_between(
                         segment_df[x_col],
                         segment_df["lower"],
                         segment_df["upper"],
-                        alpha=float(ci_alpha),
+                        alpha=float(observation_interval_alpha),
                         color=color_map[hue],
                         linewidth=0.0,
                         zorder=1,

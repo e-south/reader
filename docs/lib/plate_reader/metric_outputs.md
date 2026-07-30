@@ -38,9 +38,10 @@ The lanes may read compatible source records, but one output is never inferred
 from filenames or relabeled as another record schema. They are separately
 addressable and independently validatable. When a coordinate is derived from
 the same verified source revision and selected rows with the same time basis or
-event origin, temporal operator and support, ratio order, grouping, technical
-aggregation, reference operation, and numerical tolerance, that shared reduced
-coordinate must be numerically identical. Historical SFXI vec8 normally does
+event origin, temporal operator and support, ratio order, grouping,
+within-experiment observation aggregation, reference operation, and numerical
+tolerance, that shared reduced coordinate must be numerically identical.
+Historical SFXI vec8 normally does
 not meet that identity: it uses one acquisition-time snapshot, per-design logic
 scaling, and corner-specific intensity normalization. Downstream interpretation
 remains a consumer concern.
@@ -88,8 +89,8 @@ sample evidence. The diagnostic reads only that canonical
 sample record and renders four approximately square
 panels in one row: normalizer kinetics, reporter kinetics, their ratio
 kinetics, and the ratio reduced by the declared condition. The reduction panel
-keeps raw replicate-unit values visible and shows the normalizer on a labeled
-QC axis rather than treating it as an objective.
+keeps temporally reduced observation-unit values visible and shows the
+normalizer on a labeled QC axis rather than treating it as an objective.
 
 Temporal reduction is analysis policy, not plot configuration. The neutral
 contract declares an absolute or event-relative time basis, an endpoint or
@@ -117,7 +118,7 @@ protocol:
         positive_floor: null
         positive_value_scope: selected_support
         censored_values: reject
-    replicate_aggregation:
+    observation_aggregation:
       within_unit_statistic: median
       across_unit_statistic: median
   outputs:
@@ -135,15 +136,16 @@ protocol:
 
 When `evidence.replicate_identity_field` is declared, the plot reduces
 observations within that explicitly named unit before comparing conditions. If
-it is absent, each well position remains a separate plot unit. Neither a well
-position nor spatial proximity establishes whether observations are biological
-or technical replicates. Use `replicate_kind: unknown` when the source does not
-declare that relationship. Here, `replicate_kind` describes relationships among
-units or observations inside one experiment record. A downstream study may
-separately treat several plate experiments as biological replicate blocks. The
-compiler owns the temporal and aggregation
-policies plus the reporter, normalizer, ratio, and time-channel bindings; a
-plot view owns only partitioning, condition presentation, and figure options.
+it is absent, the replicate-kind declaration applies to the experiment and each
+well position remains a separate within-experiment plot unit. Thus a study in
+which each physical plate is a biological replicate can declare
+`replicate_kind: biological` on every plate experiment without inventing a
+within-plate identity field. Neither a well position nor spatial proximity
+establishes technical replication. Use `replicate_kind: unknown` when the kind
+is not established, and omit the identity field when no grouping relationship
+is established. The compiler owns the temporal and aggregation policies plus
+the reporter, normalizer, ratio, and time-channel bindings; a plot view owns
+only partitioning, condition presentation, and figure options.
 
 This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study
@@ -151,8 +153,9 @@ objective. A downstream study may validate and select such a policy while the
 Reader plot stays reusable across single-reporter assays. The same neutral
 temporal contract also underlies response-window trace reduction, but the
 response-window protocol separately owns event estimation, interpolation,
-reference anchoring, log2 output, and uncertainty. Matching source data and
-nominal bounds imply matching values only when every reduction and support
+reference anchoring, log2 output, descriptive resampling, and event-time
+sensitivity. Matching source data and nominal bounds imply matching values only
+when every reduction and support
 setting also matches.
 
 ## Continue by task

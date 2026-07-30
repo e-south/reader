@@ -44,7 +44,7 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("response_window",),
         "plots": ("response_window_summary",),
         "exports": ("designs_table", "events_table"),
-        "sha256": "7854877f7e398ec3bc5fa9ad0271cf08a7f7c51900fcd667d70ca131e47af3f8",  # pragma: allowlist secret
+        "sha256": "8c05d7c289b87964300ba32eac10cb1eb4cbebe8d182d66338560a32436812fa",  # pragma: allowlist secret
     },
     "logic/sfxi_screen": {
         "pipeline": (

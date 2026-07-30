@@ -18,6 +18,34 @@ class ExperimentEvidence:
     replicate_kind: ReplicateKind
     replicate_identity_field: str | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.data_class, str):
+            raise TypeError("data_class must be a string")
+        if not isinstance(self.data_class_reason, str):
+            raise TypeError("data_class_reason must be a string")
+        if not isinstance(self.replicate_kind, str):
+            raise TypeError("replicate_kind must be a string")
+        if self.replicate_identity_field is not None and not isinstance(self.replicate_identity_field, str):
+            raise TypeError("replicate_identity_field must be a string when provided")
+        data_class = self.data_class.strip()
+        data_class_reason = self.data_class_reason.strip()
+        replicate_identity_field = (
+            self.replicate_identity_field.strip() if self.replicate_identity_field is not None else None
+        )
+        if not data_class:
+            raise ValueError("data_class must be a non-empty string")
+        if not data_class_reason:
+            raise ValueError("data_class_reason must be a non-empty string")
+        if self.replicate_kind not in {"biological", "technical", "mixed", "unknown", "not_applicable"}:
+            raise ValueError(f"unsupported replicate_kind: {self.replicate_kind!r}")
+        if self.replicate_identity_field is not None and not replicate_identity_field:
+            raise ValueError("replicate_identity_field must be a non-empty string when provided")
+        if self.replicate_kind == "not_applicable" and self.replicate_identity_field is not None:
+            raise ValueError("replicate_identity_field cannot be set when replicate_kind is not_applicable")
+        object.__setattr__(self, "data_class", data_class)
+        object.__setattr__(self, "data_class_reason", data_class_reason)
+        object.__setattr__(self, "replicate_identity_field", replicate_identity_field)
+
     def to_payload(self) -> dict[str, str | None]:
         return {
             "data_class": self.data_class,

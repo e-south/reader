@@ -34,12 +34,12 @@ def plot_time_series(
     log_transform: bool | list[str],
     time_window: list[float] | None,
     palette_book: PaletteBook | None,
-    ci: float = 95.0,
-    ci_alpha: float = 0.15,
-    ci_boot: int = 100,
-    ci_seed: int = 0,
+    observation_interval_mass: float = 0.95,
+    observation_interval_alpha: float = 0.15,
+    observation_resamples: int = 100,
+    observation_seed: int = 0,
     legend_loc: str = "upper right",
-    show_replicates: bool = False,
+    show_observations: bool = False,
     filename: str | None = None,
     xlabel: str | None = None,
     ylabel_map: Mapping[str, str] | None = None,
@@ -48,20 +48,21 @@ def plot_time_series(
 ) -> list[PlotFigure]:
     """
     Time-series plotting with one figure per group (default: per genotype[(_alias)]),
-    subplots across channels, mean lines with CI bands, and *vertical gray background
+    subplots across channels, mean lines with descriptive within-experiment
+    resampling bands, and *vertical gray background
     grid bands* behind the time axis (alternating between tick intervals).
     """
     xcol = alias_column(df, x)
     line_alpha = float((fig_kwargs or {}).get("line_alpha", 0.85))
     mean_marker_alpha = float((fig_kwargs or {}).get("mean_marker_alpha", 0.75))
-    replicate_alpha = float((fig_kwargs or {}).get("replicate_alpha", 0.30))
+    observation_alpha = float((fig_kwargs or {}).get("observation_alpha", 0.30))
     axis_label_size = float((fig_kwargs or {}).get("axis_label_size", 10.0))
     title_fontsize = float((fig_kwargs or {}).get("title_fontsize", axis_label_size))
     tick_label_size = float((fig_kwargs or {}).get("tick_label_size", 8.0))
     legend_fontsize = float((fig_kwargs or {}).get("legend_fontsize", 8.0))
     legend_marker_size = float((fig_kwargs or {}).get("legend_marker_size", 7.0))
     mean_marker_size = float((fig_kwargs or {}).get("mean_marker_size", 36.0))
-    replicate_marker_size = float((fig_kwargs or {}).get("replicate_marker_size", 18.0))
+    observation_marker_size = float((fig_kwargs or {}).get("observation_marker_size", 18.0))
     line_width = float((fig_kwargs or {}).get("line_width", 1.8))
 
     require_columns(df, [xcol, "channel", "value"], where="time_series")
@@ -173,7 +174,7 @@ def plot_time_series(
             )
             axes = np.atleast_1d(axes).ravel()
 
-            # Optional rasterization threshold for heavy artists (replicate dots)
+            # Optional rasterization threshold for heavy artists (observation dots)
             rz = (fig_kwargs or {}).get("rasterize_zorder", None)
             if rz is not None:
                 for ax in axes:
@@ -205,14 +206,14 @@ def plot_time_series(
                     color_map=color_map,
                     marker_map=marker_map,
                     segment_col=segment_col,
-                    show_replicates=show_replicates,
-                    ci=ci,
-                    ci_alpha=ci_alpha,
-                    ci_boot=ci_boot,
-                    ci_seed=ci_seed,
+                    show_observations=show_observations,
+                    observation_interval_mass=observation_interval_mass,
+                    observation_interval_alpha=observation_interval_alpha,
+                    observation_resamples=observation_resamples,
+                    observation_seed=observation_seed,
                     line_alpha=line_alpha,
                     mean_marker_alpha=mean_marker_alpha,
-                    replicate_alpha=replicate_alpha,
+                    observation_alpha=observation_alpha,
                     add_sheet_lines=bool(sheet_lines),
                     sheet_lines=sheet_lines,
                     sheet_line_kwargs=sheet_line_kwargs,
@@ -228,7 +229,7 @@ def plot_time_series(
                     legend_label_map=legend_label_map,
                     line_width=line_width,
                     mean_marker_size=mean_marker_size,
-                    replicate_marker_size=replicate_marker_size,
+                    observation_marker_size=observation_marker_size,
                     axis_label_size=axis_label_size,
                     tick_label_size=tick_label_size,
                     legend_fontsize=legend_fontsize,

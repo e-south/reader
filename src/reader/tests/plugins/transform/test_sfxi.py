@@ -82,7 +82,7 @@ def test_sfxi_plugin_matches_build_vec8_from_tidy():
     cfg = SFXICfg(
         response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
         state_map_ref="screen",
-        reference={"design_id": "REF", "stat": "mean"},
+        reference={"design_id": "REF", "observation_stat": "mean"},
         target_time_h=12.0,
     )
     df = _input_df()
@@ -101,7 +101,7 @@ def test_sfxi_transform_rejects_noncanonical_ordered_state_space() -> None:
     cfg = SFXICfg(
         response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
         state_map_ref="screen",
-        reference={"design_id": "REF", "stat": "mean"},
+        reference={"design_id": "REF", "observation_stat": "mean"},
         target_time_h=12.0,
     )
 
@@ -113,7 +113,7 @@ def test_sfxi_plugin_logs_flat_logic_warning_on_canonical_path(caplog: pytest.Lo
     cfg = SFXICfg(
         response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
         state_map_ref="screen",
-        reference={"design_id": "REF", "stat": "mean"},
+        reference={"design_id": "REF", "observation_stat": "mean"},
         target_time_h=12.0,
     )
     frame = _input_df()
@@ -168,3 +168,29 @@ def test_sfxi_domain_config_rejects_unknown_nested_settings(section: str, unknow
 
     with pytest.raises(ValueError, match=rf"sfxi\.{section} has unsupported setting"):
         load_sfxi_config(config)
+
+
+def test_sfxi_reference_rejects_legacy_stat_key() -> None:
+    with pytest.raises(ValueError, match=r"sfxi\.reference has unsupported setting: stat"):
+        load_sfxi_config(
+            {
+                "response": {"logic_channel": "logic", "intensity_channel": "intensity"},
+                "treatment_map": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+                "reference": {"design_id": "reference", "stat": "mean"},
+            }
+        )
+
+
+def test_sfxi_logs_undeclared_rows_as_observations(caplog: pytest.LogCaptureFixture) -> None:
+    cfg = SFXICfg(
+        response={"logic_channel": "YFP/CFP", "intensity_channel": "YFP/OD600"},
+        state_map_ref="screen",
+        reference={"design_id": "REF", "observation_stat": "mean"},
+        target_time_h=12.0,
+    )
+
+    with caplog.at_level(logging.INFO, logger="reader.tests.sfxi"):
+        SFXITransform().run(_ctx(), {"df": _input_df()}, cfg)
+
+    assert "observations (logic)=[1, 1, 1, 1]" in caplog.text
+    assert "replicate" not in caplog.text.lower()

@@ -95,7 +95,7 @@ def compute_shared_ylim(
     group_col: str | None,
     x_col: str,
     agg: str,
-    err: str,
+    dispersion: str,
 ) -> tuple[float | None, float | None]:
     if panel_by not in {"group", "x"} or len(panels) <= 1:
         return None, None
@@ -109,13 +109,16 @@ def compute_shared_ylim(
         )
         value_min = float(values.min()) if not values.empty else None
         value_max = float(values.max()) if not values.empty else None
-        if err == "sem" and "sem" in sbar_sub.columns:
-            top = (
-                pd.to_numeric(sbar_sub[agg], errors="coerce") + pd.to_numeric(sbar_sub["sem"], errors="coerce")
-            ).dropna()
+        if dispersion == "sd" and "std" in sbar_sub.columns:
+            center = pd.to_numeric(sbar_sub[agg], errors="coerce")
+            spread = pd.to_numeric(sbar_sub["std"], errors="coerce")
+            bottom = (center - spread).dropna()
+            top = (center + spread).dropna()
+            if not bottom.empty:
+                value_min = min(value_min if value_min is not None else np.inf, float(bottom.min()))
             if not top.empty:
                 value_max = max(value_max or -np.inf, float(top.max()))
-        elif err == "iqr" and {"q1", "q3"}.issubset(sbar_sub.columns):
+        elif dispersion == "iqr" and {"q1", "q3"}.issubset(sbar_sub.columns):
             if agg == "median":
                 top = pd.to_numeric(sbar_sub["q3"], errors="coerce").dropna()
                 if not top.empty:
@@ -128,10 +131,10 @@ def compute_shared_ylim(
                 if not top.empty:
                     value_max = max(value_max or -np.inf, float(top.max()))
         if not srep_sub.empty and "value" in srep_sub.columns:
-            replicate_values = pd.to_numeric(srep_sub["value"], errors="coerce").dropna()
-            if not replicate_values.empty:
-                value_min = min(value_min if value_min is not None else float("inf"), float(replicate_values.min()))
-                value_max = max(value_max if value_max is not None else float("-inf"), float(replicate_values.max()))
+            observation_values = pd.to_numeric(srep_sub["value"], errors="coerce").dropna()
+            if not observation_values.empty:
+                value_min = min(value_min if value_min is not None else float("inf"), float(observation_values.min()))
+                value_max = max(value_max if value_max is not None else float("-inf"), float(observation_values.max()))
         return value_min, value_max
 
     low_values: list[float] = []
@@ -162,4 +165,4 @@ def compute_shared_ylim(
     y_lo = min(0.0, float(np.nanmin(low_values))) if low_values else 0.0
     y_hi = float(np.nanmax(high_values))
     pad = 0.05 * (y_hi - y_lo if y_hi > y_lo else max(1.0, y_hi or 1.0))
-    return y_lo, y_hi + pad
+    return (y_lo - pad if y_lo < 0.0 else 0.0), y_hi + pad

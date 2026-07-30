@@ -59,7 +59,7 @@ def test_dual_reporter_triptych_builds_three_panel_data() -> None:
     assert set(result.ratio_time["treatment"]) == {"water", "EtOH"}
     assert list(result.snapshot_stats["treatment"]) == ["water", "EtOH"]
     assert result.snapshot_points.shape[0] == 4
-    assert result.trajectory_ci == 95.0
+    assert result.trajectory_interval_mass == 0.95
     first_interval = result.od600_time.iloc[0]
     assert first_interval["y_mean"] - first_interval["y_sd"] < first_interval["y_lo"]
     assert first_interval["y_hi"] < first_interval["y_mean"] + first_interval["y_sd"]
@@ -94,9 +94,9 @@ def test_dual_reporter_triptych_offsets_snapshot_points_by_well_not_value() -> N
     )
 
     water = result.snapshot_points.loc[result.snapshot_points["treatment"].eq("water")]
-    assert water[["position", "value", "replicate_index"]].to_dict("records") == [
-        {"position": "A1", "value": 9.0, "replicate_index": 0},
-        {"position": "A2", "value": 1.0, "replicate_index": 1},
+    assert water[["position", "value", "observation_index"]].to_dict("records") == [
+        {"position": "A1", "value": 9.0, "observation_index": 0},
+        {"position": "A2", "value": 1.0, "observation_index": 1},
     ]
 
 
@@ -166,7 +166,7 @@ def test_dual_reporter_triptych_chart_uses_square_panels_and_full_treatment_doma
     point_layer = next(layer for layer in snapshot_layers if layer["mark"]["type"] == "point")
     assert point_layer["mark"]["fill"] == "white"
     assert point_layer["mark"]["stroke"] == "#94a3b8"
-    assert point_layer["encoding"]["xOffset"]["field"] == "replicate_index"
+    assert point_layer["encoding"]["xOffset"]["field"] == "observation_index"
 
 
 def test_dual_reporter_triptych_renders_static_three_panel_figure() -> None:

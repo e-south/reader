@@ -1,4 +1,4 @@
-"""SFXI selection: time picking + cornerization + replicate aggregation."""
+"""SFXI selection: time picking and corner-level observation aggregation."""
 
 from __future__ import annotations
 

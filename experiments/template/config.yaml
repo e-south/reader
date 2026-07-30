@@ -15,7 +15,7 @@ protocol:
       auto_pick: single
     reference:
       design_id: REF
-      stat: mean
+      observation_stat: mean
     design_by:
     - design_id
     state_map_ref: logic_states
@@ -27,7 +27,7 @@ protocol:
     include_export: false
     logic_symmetry:
       batch_col: batch
-      replicate_stat: mean
+      observation_stat: mean
     preprocessing:
       blank:
         method: subtract
@@ -52,7 +52,7 @@ protocol:
             rc:
               savefig_dpi: 300
         logic_symmetry:
-          uncertainty: halo
+          dispersion: halo
           encodings:
             size_by: log_r
             alpha_by: batch

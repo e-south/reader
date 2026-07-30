@@ -131,7 +131,7 @@ def test_single_reporter_diagnostic_plugin_uses_semantic_partition_and_declared_
         condition_column="condition_alias",
         condition_order_ref="conditions",
         temporal_reduction=_interval_policy(),
-        replicate_aggregation=_aggregation_policy(),
+        observation_aggregation=_aggregation_policy(),
         normalizer_channel="OD",
         reporter_channel="reporter",
         ratio_channel="reporter/OD",
@@ -161,14 +161,14 @@ def test_single_reporter_diagnostic_config_requires_compiler_owned_reduction_pol
 
     with pytest.raises(ValidationError, match="temporal_reduction"):
         SingleReporterDiagnosticCfg(**common)
-    with pytest.raises(ValidationError, match="replicate_aggregation"):
+    with pytest.raises(ValidationError, match="observation_aggregation"):
         SingleReporterDiagnosticCfg(temporal_reduction=_endpoint_policy(), **common)
 
 
 def test_single_reporter_diagnostic_fails_when_declared_replicate_identity_is_missing() -> None:
     cfg = SingleReporterDiagnosticCfg(
         temporal_reduction=_endpoint_policy(),
-        replicate_aggregation=_aggregation_policy(),
+        observation_aggregation=_aggregation_policy(),
         normalizer_channel="OD",
         reporter_channel="reporter",
         ratio_channel="reporter/OD",

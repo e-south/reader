@@ -38,12 +38,15 @@ def test_bound_protocol_applies_executable_defaults() -> None:
         )
     )
 
-    cfg = protocol.effective_plugin_config(plugin_id="transform/sfxi", step_with={"reference": {"stat": "median"}})
+    cfg = protocol.effective_plugin_config(
+        plugin_id="transform/sfxi",
+        step_with={"reference": {"observation_stat": "median"}},
+    )
 
     assert cfg["time_mode"] == "nearest"
     assert cfg["target_time_h"] == 10.0
     assert cfg["state_map_ref"] == "induction_logic"
-    assert cfg["reference"] == {"design_id": "CUSTOM", "stat": "median"}
+    assert cfg["reference"] == {"design_id": "CUSTOM", "observation_stat": "median"}
 
 
 def test_runtime_composition_only_lives_in_runtime_package() -> None:

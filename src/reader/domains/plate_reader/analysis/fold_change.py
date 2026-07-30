@@ -22,7 +22,7 @@ class FoldChangeAnalysisSpec:
     target: str
     report_times: tuple[float, ...]
     time_tolerance: float = 0.51
-    agg: Literal["median", "mean"] = "median"
+    observation_stat: Literal["median", "mean"] = "median"
     treatment_column: str = "treatment"
     group_by: tuple[str, ...] = ("design_id",)
     use_global_baseline: bool = False
@@ -165,7 +165,7 @@ def compute_fold_change_table(
             snapped.assign(time_used=pd.to_numeric(snapped["time"], errors="coerce"))
             .groupby([*group_cols, treatment_col], dropna=False)
             .agg(
-                val=("value", spec.agg),
+                val=("value", spec.observation_stat),
                 n=("value", "count"),
                 time_used=("time_used", "median"),
                 **agg_extras,

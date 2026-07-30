@@ -55,8 +55,8 @@ def prepare_sfxi_diagnostics(
     response_channel: str,
     design_ids: Sequence[str] | None = None,
     time_atol: float = 1e-9,
-    trajectory_ci: float = 95.0,
-    trajectory_bootstraps: int = 300,
+    trajectory_interval_mass: float = 0.95,
+    trajectory_resamples: int = 300,
 ) -> tuple[SFXIDiagnosticData, ...]:
     """Prepare one diagnostic per persisted vec8 design.
 
@@ -144,8 +144,8 @@ def prepare_sfxi_diagnostics(
             snapshot_time=selected_time_h,
             treatment_order=STATE_ORDER,
             time_atol=float(time_atol),
-            trajectory_ci=float(trajectory_ci),
-            trajectory_bootstraps=int(trajectory_bootstraps),
+            trajectory_interval_mass=float(trajectory_interval_mass),
+            trajectory_resamples=int(trajectory_resamples),
         )
         logic_components = {
             state: _finite_scalar(vec8_row[column], field=f"{design_id}.{column}")

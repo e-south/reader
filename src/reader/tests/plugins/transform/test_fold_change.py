@@ -4,6 +4,8 @@ import logging
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
+from pydantic import ValidationError
 
 from reader.plugins.transform.fold_change import FoldChange, FoldChangeCfg
 
@@ -39,3 +41,14 @@ def test_fold_change_plugin_emits_expected_table():
     assert table["baseline_value"].tolist() == ["control", "control"]
     assert table["FC"].tolist() == [1.0, 2.5]
     assert table["design_id"].tolist() == ["D1", "D1"]
+
+
+def test_fold_change_config_rejects_legacy_aggregation_key() -> None:
+    with pytest.raises(ValidationError, match="agg"):
+        FoldChangeCfg(target="YFP/CFP", report_times=[8.0], agg="mean")
+
+
+def test_fold_change_config_names_the_observation_statistic() -> None:
+    cfg = FoldChangeCfg(target="YFP/CFP", report_times=[8.0], observation_stat="mean")
+
+    assert cfg.observation_stat == "mean"

@@ -28,7 +28,7 @@ class ResponseWindowDiagnosticPlot(FigurePlotPlugin):
     def input_ports(cls):
         return {
             "traces": dataframe_input("traces", "plate_reader.response_window.traces.v3"),
-            "designs": dataframe_input("designs", "plate_reader.response_window.designs.v3"),
+            "designs": dataframe_input("designs", "plate_reader.response_window.designs.v4"),
         }
 
     def render(self, ctx, inputs, cfg: ResponseWindowDiagnosticCfg):

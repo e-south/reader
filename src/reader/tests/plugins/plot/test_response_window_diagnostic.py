@@ -40,8 +40,8 @@ def _designs_frame() -> pd.DataFrame:
     for index, component in enumerate(components):
         value = float(index)
         values[component] = value
-        values[f"{component}_ci_low"] = value - 0.25
-        values[f"{component}_ci_high"] = value + 0.25
+        values[f"{component}_descriptive_interval_low"] = value - 0.25
+        values[f"{component}_descriptive_interval_high"] = value + 0.25
         values[f"{component}_event_half_range"] = 0.1
         values[f"{component}_bound_kind"] = "exact"
         values[f"{component}_has_policy_clipping"] = False
@@ -57,9 +57,9 @@ def _designs_frame() -> pd.DataFrame:
                 "reduction_id": "primary",
                 "reduction_method": "geometric_time_mean",
                 "response_basis": "post_window",
-                "replicate_stat": "median",
-                "bootstrap_samples": 100,
-                "confidence_level": 0.95,
+                "observation_stat": "median",
+                "descriptive_resampling_draws": 100,
+                "descriptive_interval_mass": 0.95,
                 "event_id": "addition",
                 "event_time_uncertainty_h": 0.25,
                 "window_start_event_h": 0.25,
@@ -75,7 +75,7 @@ def test_response_window_diagnostic_declares_record_contracts() -> None:
     ports = ResponseWindowDiagnosticPlot.input_ports()
 
     assert ports["traces"].contract == "plate_reader.response_window.traces.v3"
-    assert ports["designs"].contract == "plate_reader.response_window.designs.v3"
+    assert ports["designs"].contract == "plate_reader.response_window.designs.v4"
 
 
 def test_response_window_diagnostic_adapts_figure_metadata() -> None:
@@ -105,5 +105,10 @@ def test_response_window_diagnostic_adapts_figure_metadata() -> None:
     }
     assert rendered[0].fig is rendered[1].fig
     assert rendered[0].fig.get_suptitle().startswith("Selected diagnostic\n")
-    assert "median center" in rendered[0].fig.get_suptitle()
+    title = rendered[0].fig.get_suptitle()
+    assert "median center across within-experiment observations" in title
+    assert "descriptive resampling interval" in title
+    assert "replicate" not in title
+    assert "confidence" not in title
+    assert " CI" not in title
     plt.close(rendered[0].fig)

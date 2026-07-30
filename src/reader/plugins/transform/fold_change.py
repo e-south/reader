@@ -22,7 +22,7 @@ class FoldChangeCfg(PluginConfig):
     target: str  # e.g., "YFP/CFP" or "YFP/OD600"
     report_times: list[float]  # e.g., [8.0, 14.0]
     time_tolerance: float = 0.51  # nearest-time selection tolerance (h)
-    agg: Literal["median", "mean"] = "median"  # replicate aggregator
+    observation_stat: Literal["median", "mean"] = "median"
 
     # Grouping and labels
     treatment_column: str = "treatment"  # we will prefer '<col>_alias' when present
@@ -64,7 +64,7 @@ class FoldChange(Plugin):
             target=cfg.target,
             report_times=tuple(cfg.report_times),
             time_tolerance=cfg.time_tolerance,
-            agg=cfg.agg,
+            observation_stat=cfg.observation_stat,
             treatment_column=cfg.treatment_column,
             group_by=tuple(cfg.group_by),
             use_global_baseline=cfg.use_global_baseline,

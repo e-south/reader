@@ -20,7 +20,7 @@ class MappingConfig:
     design_by: list[str]
     batch_col: str
     response_channel: str
-    replicate_stat: str  # "mean" | "median"
+    observation_stat: str  # "mean" | "median"
 
 
 def _assert_required_columns(df: pd.DataFrame, cfg: MappingConfig) -> None:
@@ -43,7 +43,7 @@ def _assert_required_columns(df: pd.DataFrame, cfg: MappingConfig) -> None:
         raise ValueError(f"response_channel '{cfg.response_channel}' not present in 'channel' column")
 
 
-def _rep_agg(series: pd.Series, how: str) -> float:
+def _observation_aggregate(series: pd.Series, how: str) -> float:
     if how == "median":
         return float(series.median())
     return float(series.mean())
@@ -138,7 +138,7 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
     group_cols = cfg.design_by + [cfg.batch_col, "corner"]
     _fail_if_multiple_times(df, group_cols)
 
-    # Aggregate replicates per corner at that unique time
+    # Aggregate observations per corner at that unique time.
     agg_rows = []
     for keys, g in df.groupby(group_cols, dropna=False):
         # There is exactly one time by construction; keep it
@@ -147,7 +147,7 @@ def resolve_and_aggregate(df: pd.DataFrame, cfg: MappingConfig) -> tuple[pd.Data
         if val.empty:
             key_str = ", ".join(f"{c}={k!r}" for c, k in zip(group_cols, keys, strict=False))
             raise ValueError(f"Non-numeric or missing 'value' for group: {key_str}")
-        mean_or_med = _rep_agg(val, cfg.replicate_stat)
+        mean_or_med = _observation_aggregate(val, cfg.observation_stat)
         sd = _sd(val)
         n = int(val.size)
         record = dict(zip(group_cols, keys, strict=False))

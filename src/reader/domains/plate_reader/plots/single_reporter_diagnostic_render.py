@@ -138,7 +138,7 @@ def _draw_kinetics_panel(
         summary = grouped.agg(
             center=lambda values: _center(
                 values,
-                statistic=data.replicate_aggregation.across_unit_statistic,
+                statistic=data.observation_aggregation.across_unit_statistic,
             ),
             lower=lambda values: float(np.quantile(np.asarray(values, dtype=float), 0.25)),
             upper=lambda values: float(np.quantile(np.asarray(values, dtype=float), 0.75)),
@@ -223,7 +223,7 @@ def _draw_reduction_panel(
         )
         ratio_center = _center(
             ratio_values,
-            statistic=data.replicate_aggregation.across_unit_statistic,
+            statistic=data.observation_aggregation.across_unit_statistic,
         )
         ratio_line = axis.hlines(ratio_center, index - 0.22, index + 0.02, color=color, linewidth=2.4, zorder=4)
         ratio_line.set_gid("single-reporter-ratio-center")
@@ -239,7 +239,7 @@ def _draw_reduction_panel(
         )
         normalizer_center = _center(
             normalizer_values,
-            statistic=data.replicate_aggregation.across_unit_statistic,
+            statistic=data.observation_aggregation.across_unit_statistic,
         )
         qc_line = qc_axis.hlines(
             normalizer_center,

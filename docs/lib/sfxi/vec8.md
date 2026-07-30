@@ -83,12 +83,13 @@ select different times, Reader stops with an error.
 
 ## Corner aggregation
 
-At the selected time, Reader groups replicate rows by `design_by` and corner.
+At the selected time, Reader groups observation rows by `design_by` and corner.
 For each group it records:
 
 - `y_mean`: mean of numeric values
-- `y_sd`: sample standard deviation, or `0.0` for one numeric replicate
-- `y_n`: number of numeric values
+- `y_sd`: observation dispersion as sample standard deviation, or `0.0` for
+  one numeric observation
+- `y_n`: numeric observation count
 
 The wide intermediate table contains `b00..b11`, `sd00..sd11`, and
 `n00..n11`. With `require_all_corners_per_design: true`, the default, any
@@ -127,6 +128,10 @@ in this order:
 There is no implicit reference and no partial alias matching. The resolved raw
 design row provides one intensity anchor `A_i` per corner. Missing reference
 rows or anchors are errors.
+
+`protocol.inputs.reference.observation_stat` selects `mean` or `median` for
+combining the available reference observations. It does not classify positions
+as technical or biological replicates.
 
 For sample intensity mean `I_i`:
 

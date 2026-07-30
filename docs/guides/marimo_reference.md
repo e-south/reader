@@ -141,11 +141,12 @@ Use lazy accordions or tabs for supporting detail. Keep the primary result and
 its interpretation boundary visible without opening every panel. Do not bury a
 blocking validation error inside a collapsed section.
 
-When a compact endpoint panel has observed replicate values, show those values
-as neutral hollow points and the published aggregate as a short line. Name the
-interval statistic explicitly. Do not use a bar as a redundant encoding of an
-aggregate, combine independent uncertainty sources into one error bar, or draw
-pseudo-replicates for a quantity defined from independent sample aggregates.
+When a compact endpoint panel has source-declared replicate values, show those
+values as neutral hollow points and the published aggregate as a short line.
+Name the interval statistic explicitly. Do not use a bar as a redundant
+encoding of an aggregate, combine independent uncertainty sources into one
+error bar, or draw pseudo-replicates for a quantity defined from independent
+sample aggregates.
 
 Use `experiment.title` as the visible notebook title when it is authored. If it
 is absent, Reader derives a deterministic display title from `experiment.id`;
