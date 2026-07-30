@@ -7,7 +7,11 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from reader.domains.plate_reader.plots.common import descriptive_mean_resampling_interval
+from reader.domains.logic.logic_symmetry import render_logic_symmetry, summarize_logic_symmetry
+from reader.domains.plate_reader.plots.common import (
+    descriptive_linear_resampling_interval,
+    descriptive_mean_resampling_interval,
+)
 from reader.domains.plate_reader.plots.dual_reporter_triptych import build_triptych_data
 from reader.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader.domains.plate_reader.plots.snapshot_barplot.planning import compute_shared_ylim
@@ -51,6 +55,23 @@ def test_observation_aggregation_retires_replicate_named_contract() -> None:
     assert "ReplicateAggregationSpec" not in __import__("reader.domains.time_series", fromlist=["*"]).__all__
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (None, "must be a mapping"),
+        ({"within_unit_statistic": "mean", "across_unit_statistic": "mean", "extra": "mean"}, "unknown fields"),
+        ({"within_unit_statistic": "mean"}, "missing required fields"),
+        ({"within_unit_statistic": "mode", "across_unit_statistic": "mean"}, "within_unit_statistic"),
+    ],
+)
+def test_observation_aggregation_fails_fast_on_malformed_policies(
+    payload: object,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        ObservationAggregationSpec.from_mapping(payload)
+
+
 def test_single_reporter_config_rejects_retired_replicate_aggregation_key() -> None:
     common = {
         "temporal_reduction": _temporal_reduction(),
@@ -90,6 +111,12 @@ def test_plot_configs_reject_replicate_and_inferential_interval_keys() -> None:
         TimeSeriesCfg(ci=95.0, ci_boot=25, show_replicates=True)
     with pytest.raises(ValidationError, match="replicate_alpha|replicate_marker_size"):
         TimeSeriesCfg(fig={"replicate_alpha": 0.2, "replicate_marker_size": 8.0})
+    with pytest.raises(ValidationError, match="figsize values must be positive"):
+        TimeSeriesCfg(fig={"figsize": (-1.0, 2.0)})
+    with pytest.raises(ValidationError, match="left must be less"):
+        TimeSeriesCfg(fig={"left": 0.8, "right": 0.2})
+    with pytest.raises(ValidationError, match="bottom must be less"):
+        TimeSeriesCfg(fig={"bottom": 0.8, "top": 0.2})
 
     TSAndSnapCfg(
         ts_channel="OD",
@@ -151,11 +178,45 @@ def test_dual_reporter_points_use_observation_identity_language() -> None:
     assert "replicate_index" not in data.snapshot_points.columns
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"trajectory_interval_mass": 95.0}, "interval_mass"),
+        ({"trajectory_resamples": 0}, "resamples"),
+    ],
+)
+def test_dual_reporter_domain_rejects_invalid_descriptive_interval_policy(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    kwargs: dict[str, object] = {
+        "time_col": "time",
+        "treatment_col": "treatment",
+        "snapshot_time": 1.0,
+    }
+    kwargs.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        build_triptych_data(pd.DataFrame(), **kwargs)  # type: ignore[arg-type]
+
+
 def test_snapshot_plot_uses_descriptive_dispersion_contract() -> None:
     params = signature(plot_snapshot_barplot).parameters
 
     assert "dispersion" in params
     assert "err" not in params
+
+    with pytest.raises(ValueError, match="dispersion"):
+        plot_snapshot_barplot(
+            df=pd.DataFrame(),
+            x="condition",
+            y="signal",
+            hue=None,
+            group_on=None,
+            pool_sets=None,
+            time=1.0,
+            dispersion="sem",
+        )
 
 
 def test_descriptive_resampling_rejects_percentage_scale_interval_mass() -> None:
@@ -166,6 +227,54 @@ def test_descriptive_resampling_rejects_percentage_scale_interval_mass() -> None
             resamples=10,
             rng=np.random.default_rng(0),
         )
+
+
+def test_descriptive_resampling_handles_observed_rows_without_inferential_claims() -> None:
+    mean, lower, upper = descriptive_mean_resampling_interval(
+        np.asarray([1.0, 2.0, 3.0, 4.0]),
+        interval_mass=0.9,
+        resamples=20,
+        rng=np.random.default_rng(0),
+    )
+    contrast, contrast_lower, contrast_upper = descriptive_linear_resampling_interval(
+        [np.asarray([2.0, 4.0, 6.0]), np.asarray([1.0, 3.0])],
+        coefficients=[1.0, -1.0],
+        interval_mass=0.9,
+        resamples=20,
+        rng=np.random.default_rng(1),
+    )
+
+    assert mean == 2.5
+    assert contrast == 2.0
+    assert np.isfinite([lower, upper, contrast_lower, contrast_upper]).all()
+    assert lower <= upper
+    assert contrast_lower <= contrast_upper
+
+
+def test_descriptive_linear_resampling_validates_shape_and_draw_count() -> None:
+    kwargs = {
+        "interval_mass": 0.9,
+        "rng": np.random.default_rng(0),
+    }
+    with pytest.raises(ValueError, match="same length"):
+        descriptive_linear_resampling_interval(
+            [np.asarray([1.0, 2.0])], coefficients=[1.0, -1.0], resamples=10, **kwargs
+        )
+    with pytest.raises(ValueError, match="positive integer"):
+        descriptive_linear_resampling_interval([np.asarray([1.0, 2.0])], coefficients=[1.0], resamples=0, **kwargs)
+
+
+def test_logic_symmetry_domain_rejects_invalid_observation_contracts() -> None:
+    state_map = {"00": "none", "10": "a", "01": "b", "11": "a+b"}
+    with pytest.raises(ValueError, match="observation_stat"):
+        summarize_logic_symmetry(
+            pd.DataFrame(),
+            response_channel="signal",
+            treatment_map=state_map,
+            observation_stat="mode",
+        )
+    with pytest.raises(ValueError, match="dispersion"):
+        render_logic_symmetry(pd.DataFrame(), dispersion="confidence")
 
 
 def test_snapshot_shared_limits_include_lower_standard_deviation_extent() -> None:

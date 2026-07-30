@@ -119,6 +119,32 @@ def test_analysis_exposes_observation_and_descriptive_resampling_policy() -> Non
     assert not hasattr(spec.quality, "min_replicates_per_state")
 
 
+@pytest.mark.parametrize(
+    ("section", "field", "value", "message"),
+    [
+        ("aggregation", "observation_stat", "mode", "observation_stat is unsupported"),
+        ("aggregation", "descriptive_resampling_draws", 99, "integer of at least 100"),
+        ("aggregation", "descriptive_resampling_draws", True, "integer of at least 100"),
+        ("aggregation", "descriptive_interval_mass", 0.5, "between 0.5 and 1.0"),
+        ("quality", "min_observations_per_state", 1, "integer of at least 2"),
+        ("quality", "min_observations_per_state", True, "integer of at least 2"),
+    ],
+)
+def test_analysis_rejects_invalid_observation_reduction_values(
+    section: str,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    payload = _payload()
+    section_payload = payload[section]
+    assert isinstance(section_payload, dict)
+    section_payload[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        ResponseWindowAnalysisSpec.from_mapping(payload)
+
+
 def test_protocol_and_transform_publish_only_observation_named_surfaces() -> None:
     descriptor = builtin_protocol_catalog().resolve("plate_reader/response_window")
     fields = {field.key: field for field in descriptor.analysis_fields}

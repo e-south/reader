@@ -68,6 +68,8 @@ def joint_state_descriptive_resampling_draws(
     response = np.asarray(response_values, dtype=float)
     magnitude = np.asarray(magnitude_values, dtype=float)
     anchor = np.asarray(anchor_values, dtype=float)
+    if stat not in {"mean", "median"}:
+        raise ValueError("joint descriptive resampling requires stat to be 'mean' or 'median'.")
     if response.ndim != 1 or magnitude.ndim != 1 or anchor.ndim != 1:
         raise ValueError("joint descriptive-resampling inputs must be one-dimensional arrays.")
     if len(response) != len(magnitude) or len(response) == 0 or len(anchor) == 0:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from reader.domains.plate_reader.analysis.response_window.contracts import ResponseWindowAnalysisSpec
 from reader.domains.plate_reader.analysis.response_window.observation_resampling import (
@@ -51,6 +52,68 @@ def test_reference_descriptive_resampling_draws_keep_anchored_magnitude_at_zero(
         draws[magnitude_columns].to_numpy(dtype=float),
         np.zeros((request.aggregation.descriptive_resampling_draws, len(STATE_ORDER))),
     )
+
+
+def test_descriptive_resampling_requires_declared_observation_support() -> None:
+    request = ResponseWindowAnalysisSpec.from_mapping(_payload())
+    wells = pd.DataFrame.from_records(
+        [
+            {
+                "experiment_id": "20260101_example",
+                "design_id": "reference",
+                "state": "00",
+                "position": "A1",
+                "reduction_id": request.primary_reduction.id,
+                "response_well": 1.0,
+                "magnitude_well": 1.0,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="lacks support"):
+        descriptive_resampling_records(wells, request=request)
+
+
+@pytest.mark.parametrize(
+    ("response", "magnitude", "anchor", "samples", "paired_anchor", "message"),
+    [
+        (np.ones((1, 2)), np.ones(2), np.ones(2), 10, False, "one-dimensional"),
+        (np.ones(2), np.ones(1), np.ones(2), 10, False, "aligned design observations"),
+        (np.ones(2), np.ones(2), np.asarray([]), 10, False, "non-empty reference observations"),
+        (np.ones(2), np.ones(2), np.ones(2), 1, False, "at least two draws"),
+        (np.ones(2), np.ones(2), np.zeros(2), 10, True, "identical ordered magnitude"),
+    ],
+)
+def test_joint_descriptive_resampling_rejects_invalid_inputs(
+    response: np.ndarray,
+    magnitude: np.ndarray,
+    anchor: np.ndarray,
+    samples: int,
+    paired_anchor: bool,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        joint_state_descriptive_resampling_draws(
+            response,
+            magnitude,
+            anchor,
+            samples=samples,
+            stat="median",
+            rng=np.random.default_rng(0),
+            paired_anchor=paired_anchor,
+        )
+
+
+def test_joint_descriptive_resampling_rejects_an_unknown_observation_statistic() -> None:
+    with pytest.raises(ValueError, match="stat to be 'mean' or 'median'"):
+        joint_state_descriptive_resampling_draws(
+            np.ones(2),
+            np.ones(2),
+            np.ones(2),
+            samples=10,
+            stat="mode",  # type: ignore[arg-type]
+            rng=np.random.default_rng(0),
+        )
 
 
 def test_stable_seed_includes_experiment_identity() -> None:
