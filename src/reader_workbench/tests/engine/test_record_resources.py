@@ -23,7 +23,7 @@ from reader_workbench.workbench.records import (
 )
 
 
-def _vec8(prefix: str, *, shift: float = 0.0) -> pd.DataFrame:
+def _vector(prefix: str, *, shift: float = 0.0) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "design_id": [f"{prefix}-1", f"{prefix}-2"],
@@ -55,12 +55,12 @@ def _source(workspace: Path, *, experiment_id: str, prefix: str) -> tuple[Path, 
     )
     store = RecordStore(root / "outputs", contracts=builtin_contract_catalog(), experiment_root=root)
     store.persist_dataframe(
-        producer_id="vec8",
-        producer_plugin="transform/sfxi",
-        out_name="vec8",
-        record_id="vec8/df",
-        df=_vec8(prefix),
-        contract_id="sfxi.vec8.v3",
+        producer_id="vector",
+        producer_plugin="transform/four_state_vector",
+        out_name="vector",
+        record_id="vector/df",
+        df=_vector(prefix),
+        contract_id="logic.four_state_vector.v1",
         inputs=(),
         config_digest=f"sha256:{experiment_id}",
     )
@@ -68,17 +68,17 @@ def _source(workspace: Path, *, experiment_id: str, prefix: str) -> tuple[Path, 
 
 
 def _aggregate_config(workspace: Path) -> Path:
-    root = workspace / "experiments" / "aggregates" / "vec8-review"
+    root = workspace / "experiments" / "aggregates" / "vector-review"
     root.mkdir(parents=True)
     return write_config(
         root,
         base_reader_config(
-            experiment_id="vec8-review",
-            protocol_id="logic/sfxi_vec8_collection",
+            experiment_id="vector-review",
+            protocol_id="logic/four_state_vector_collection",
             protocol_inputs={"record_resources": ["first", "second"]},
             resources={
-                "first": {"kind": "record", "experiment": "source-a", "record": "vec8/df"},
-                "second": {"kind": "record", "experiment": "source-b", "record": "vec8/df"},
+                "first": {"kind": "record", "experiment": "source-a", "record": "vector/df"},
+                "second": {"kind": "record", "experiment": "source-b", "record": "vector/df"},
             },
         ),
     )
@@ -98,9 +98,9 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
         experiment_root=config.parent,
         create=False,
     )
-    record = aggregate_store.latest_dataframe("collect_vec8/vec8")
+    record = aggregate_store.latest_dataframe("four_state_vector_collection/vectors")
     assert record is not None
-    assert record.contract_id == "sfxi.vec8_collection.v2"
+    assert record.contract_id == "logic.four_state_vector_collection.v1"
     collection_frame = record.load_dataframe()
     assert collection_frame[
         ["source_resource_id", "source_experiment_id", "source_record_id"]
@@ -108,22 +108,22 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
         {
             "source_resource_id": "first",
             "source_experiment_id": "source-a",
-            "source_record_id": "vec8/df",
+            "source_record_id": "vector/df",
         },
         {
             "source_resource_id": "second",
             "source_experiment_id": "source-b",
-            "source_record_id": "vec8/df",
+            "source_record_id": "vector/df",
         },
     ]
     assert [(item.ref.experiment_id, item.ref.record_id) for item in record.inputs] == [
-        ("source-a", "vec8/df"),
-        ("source-b", "vec8/df"),
+        ("source-a", "vector/df"),
+        ("source-b", "vector/df"),
     ]
     assert all(item.discovery_policy == "source_record" for item in record.inputs)
     assert not (config.parent / "outputs" / "sources").exists()
-    assert aggregate_store.latest_record("plot:vec8_collection_heatmap") is not None
-    assert aggregate_store.latest_record("export:vec8_table") is not None
+    assert aggregate_store.latest_record("plot:four_state_vector_heatmap") is not None
+    assert aggregate_store.latest_record("export:vector_table") is not None
 
     verification = verify_record_store(
         aggregate_store,
@@ -133,12 +133,12 @@ def test_record_collection_runs_through_engine_record_store_and_verifier(tmp_pat
     assert verification["status"] == "ok"
 
     first_store.persist_dataframe(
-        producer_id="vec8",
-        producer_plugin="transform/sfxi",
-        out_name="vec8",
-        record_id="vec8/df",
-        df=_vec8("a", shift=0.25),
-        contract_id="sfxi.vec8.v3",
+        producer_id="vector",
+        producer_plugin="transform/four_state_vector",
+        out_name="vector",
+        record_id="vector/df",
+        df=_vector("a", shift=0.25),
+        contract_id="logic.four_state_vector.v1",
         inputs=(),
         config_digest="sha256:source-a-updated",
     )
@@ -157,7 +157,7 @@ def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: P
     source_ref = SourceRecordRef(
         resource_id="first",
         experiment_id="source-a",
-        record_id="vec8/df",
+        record_id="vector/df",
         experiment_root=source_config.parent,
         outputs_dir=source_store.root,
     )
@@ -165,12 +165,12 @@ def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: P
     collection = SourceRecordCollection((resolved,))
 
     source_store.persist_dataframe(
-        producer_id="vec8",
-        producer_plugin="transform/sfxi",
-        out_name="vec8",
-        record_id="vec8/df",
-        df=_vec8("a", shift=0.5),
-        contract_id="sfxi.vec8.v3",
+        producer_id="vector",
+        producer_plugin="transform/four_state_vector",
+        out_name="vector",
+        record_id="vector/df",
+        df=_vector("a", shift=0.5),
+        contract_id="logic.four_state_vector.v1",
         inputs=(),
         config_digest="sha256:source-a-updated",
     )
@@ -190,15 +190,15 @@ def test_source_evidence_keeps_the_revision_resolved_for_computation(tmp_path: P
     with pytest.raises(RecordError, match="changed after input evidence was captured"):
         aggregate_store.persist_dataframe(
             producer_id="collect",
-            producer_plugin="transform/sfxi_vec8_collection",
-            out_name="vec8",
-            record_id="collect/vec8",
-            df=_vec8("aggregate"),
-            contract_id="sfxi.vec8.v3",
+            producer_plugin="transform/four_state_vector_collection",
+            out_name="vector",
+            record_id="collect/vector",
+            df=_vector("aggregate"),
+            contract_id="logic.four_state_vector.v1",
             inputs=captured,
             config_digest="sha256:aggregate-a",
         )
-    assert aggregate_store.latest_dataframe("collect/vec8") is None
+    assert aggregate_store.latest_dataframe("collect/vector") is None
 
 
 def test_catalog_snapshot_builds_one_source_experiment_index_per_operation(
@@ -209,7 +209,7 @@ def test_catalog_snapshot_builds_one_source_experiment_index_per_operation(
     source_ref = SourceRecordRef(
         resource_id="first",
         experiment_id="source-a",
-        record_id="vec8/df",
+        record_id="vector/df",
         experiment_root=source_config.parent,
         outputs_dir=source_store.root,
     )
@@ -226,11 +226,11 @@ def test_catalog_snapshot_builds_one_source_experiment_index_per_operation(
     )
     aggregate_store.persist_dataframe(
         producer_id="collect",
-        producer_plugin="transform/sfxi_vec8_collection",
-        out_name="vec8",
-        record_id="collect/vec8",
-        df=_vec8("aggregate"),
-        contract_id="sfxi.vec8.v3",
+        producer_plugin="transform/four_state_vector_collection",
+        out_name="vector",
+        record_id="collect/vector",
+        df=_vector("aggregate"),
+        contract_id="logic.four_state_vector.v1",
         inputs=captured,
         config_digest="sha256:aggregate-a",
     )
@@ -245,7 +245,7 @@ def test_catalog_snapshot_builds_one_source_experiment_index_per_operation(
     monkeypatch.setattr(ExperimentCatalog, "_build_index", counted_build_index)
 
     first = capture_revision_snapshot(aggregate_store)
-    assert first["collect/vec8"]["revision"] == 1
+    assert first["collect/vector"]["revision"] == 1
     assert build_calls == 1
 
     duplicate = tmp_path / "experiments" / "duplicate" / "source-a-copy"
@@ -262,7 +262,7 @@ def test_capture_rejects_corrupt_exact_source_revision_without_output_mutation(t
     source_ref = SourceRecordRef(
         resource_id="first",
         experiment_id="source-a",
-        record_id="vec8/df",
+        record_id="vector/df",
         experiment_root=source_config.parent,
         outputs_dir=source_store.root,
     )
@@ -292,7 +292,7 @@ def test_persistence_rechecks_source_artifact_before_output_mutation(tmp_path: P
     source_ref = SourceRecordRef(
         resource_id="first",
         experiment_id="source-a",
-        record_id="vec8/df",
+        record_id="vector/df",
         experiment_root=source_config.parent,
         outputs_dir=source_store.root,
     )
@@ -313,11 +313,11 @@ def test_persistence_rechecks_source_artifact_before_output_mutation(tmp_path: P
     with pytest.raises(RecordError, match="changed after input evidence was captured"):
         aggregate_store.persist_dataframe(
             producer_id="collect",
-            producer_plugin="transform/sfxi_vec8_collection",
-            out_name="vec8",
-            record_id="collect/vec8",
-            df=_vec8("aggregate"),
-            contract_id="sfxi.vec8.v3",
+            producer_plugin="transform/four_state_vector_collection",
+            out_name="vector",
+            record_id="collect/vector",
+            df=_vector("aggregate"),
+            contract_id="logic.four_state_vector.v1",
             inputs=captured,
             config_digest="sha256:aggregate-a",
         )
@@ -329,7 +329,7 @@ def test_corrupt_source_artifact_fails_run_before_aggregate_output_mutation(tmp_
     _, source_store = _source(tmp_path, experiment_id="source-a", prefix="a")
     _source(tmp_path, experiment_id="source-b", prefix="b")
     config = _aggregate_config(tmp_path)
-    source_store.read_dataframe("vec8/df").path.write_bytes(b"corrupt parquet")
+    source_store.read_dataframe("vector/df").path.write_bytes(b"corrupt parquet")
     decl = load_workbench_decl(config, protocols=builtin_protocol_catalog())
 
     with pytest.raises(ConfigError, match="content digest mismatch"):
@@ -353,7 +353,7 @@ def test_verify_rejects_corrupt_source_artifact_without_catalog_advancement(tmp_
     source_ref = SourceRecordRef(
         resource_id="first",
         experiment_id="source-a",
-        record_id="vec8/df",
+        record_id="vector/df",
         experiment_root=source_config.parent,
         outputs_dir=source_store.root,
     )
@@ -361,7 +361,7 @@ def test_verify_rejects_corrupt_source_artifact_without_catalog_advancement(tmp_
         source_ref,
         contracts=builtin_contract_catalog(),
     ).revision_digest
-    source_store.read_dataframe("vec8/df").path.write_bytes(b"corrupt parquet")
+    source_store.read_dataframe("vector/df").path.write_bytes(b"corrupt parquet")
 
     verification = verify_record_store(
         aggregate_store,
@@ -377,10 +377,12 @@ def test_verify_rejects_corrupt_source_artifact_without_catalog_advancement(tmp_
     )
 
 
-def test_vec8_collection_contract_is_not_a_single_source_vec8() -> None:
+def test_vector_collection_contract_is_not_a_single_source_vector() -> None:
     contracts = builtin_contract_catalog()
 
-    assert not contracts.satisfies(actual="sfxi.vec8_collection.v1", expected="sfxi.vec8.v3")
+    assert not contracts.satisfies(
+        actual="logic.four_state_vector_collection.v1", expected="logic.four_state_vector.v1"
+    )
 
 
 def test_missing_source_record_fails_before_aggregate_output_mutation(tmp_path: Path) -> None:
@@ -393,7 +395,7 @@ def test_missing_source_record_fails_before_aggregate_output_mutation(tmp_path: 
         aggregate_root,
         base_reader_config(
             experiment_id="aggregate-a",
-            protocol_id="logic/sfxi_vec8_collection",
+            protocol_id="logic/four_state_vector_collection",
             protocol_inputs={"record_resources": ["source"]},
             resources={"source": {"kind": "record", "experiment": "source-a", "record": "missing/df"}},
         ),
@@ -413,13 +415,13 @@ def test_self_source_output_collision_fails_before_record_or_ledger_mutation(tmp
         aggregate_root,
         base_reader_config(
             experiment_id="aggregate-a",
-            protocol_id="logic/sfxi_vec8_collection",
+            protocol_id="logic/four_state_vector_collection",
             protocol_inputs={"record_resources": ["self"]},
             resources={
                 "self": {
                     "kind": "record",
                     "experiment": "aggregate-a",
-                    "record": "collect_vec8/vec8",
+                    "record": "four_state_vector_collection/vectors",
                 }
             },
         ),
@@ -431,11 +433,11 @@ def test_self_source_output_collision_fails_before_record_or_ledger_mutation(tmp
     )
     store.persist_dataframe(
         producer_id="seed",
-        producer_plugin="transform/sfxi",
-        out_name="vec8",
-        record_id="collect_vec8/vec8",
-        df=_vec8("seed"),
-        contract_id="sfxi.vec8.v3",
+        producer_plugin="transform/four_state_vector",
+        out_name="vector",
+        record_id="four_state_vector_collection/vectors",
+        df=_vector("seed"),
+        contract_id="logic.four_state_vector.v1",
         inputs=(),
         config_digest="sha256:seed",
     )
@@ -612,6 +614,6 @@ def test_repository_has_no_aggregate_counter_control_plane() -> None:
 
     assert not (package_root / "api" / "response_window").exists()
     assert not (package_root / "runtime" / "response_window.py").exists()
-    assert not (package_root / "runtime" / "sfxi_vec8_aggregate.py").exists()
+    assert not (package_root / "runtime" / "four_state_collection.py").exists()
     assert not (package_root / "workbench" / "cli" / "response_window.py").exists()
     assert not (package_root / "domains" / "plate_reader" / "evidence" / "response_window").exists()

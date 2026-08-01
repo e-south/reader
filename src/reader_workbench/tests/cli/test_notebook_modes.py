@@ -162,10 +162,10 @@ def test_notebook_auto_selects_canonical_eda_for_cytometry_protocol(monkeypatch,
     assert "notebook/cytometry" not in content
 
 
-def test_notebook_auto_selects_canonical_eda_for_sfxi_protocol(monkeypatch, tmp_path: Path) -> None:
+def test_notebook_auto_selects_canonical_eda_for_four_state_vector_protocol(monkeypatch, tmp_path: Path) -> None:
     cfg = base_reader_config(
         experiment_id="exp_nb",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
     )
     cfg_path = write_config(tmp_path, cfg)
@@ -180,7 +180,7 @@ def test_notebook_auto_selects_canonical_eda_for_sfxi_protocol(monkeypatch, tmp_
     nb_path = tmp_path / "outputs" / "notebooks" / default_notebook_name()
     notebook = nb_path.read_text(encoding="utf-8")
     assert "build_notebook_deliverable_selector" in notebook
-    assert "SFXI 8-vector review" not in notebook
+    assert "four-state vector 8-vector review" not in notebook
 
 
 def test_notebook_launch_failure_prints_help(monkeypatch, tmp_path: Path) -> None:

@@ -12,8 +12,8 @@ from reader_workbench.protocols import ProtocolBinding
 from reader_workbench.protocols.compiler import (
     compile_cytometry_flow_panel,
     compile_generic_protocol,
-    compile_logic_sfxi_screen,
-    compile_logic_sfxi_vec8_collection,
+    compile_logic_four_state_vector_collection,
+    compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
     compile_plate_reader_response_window,
     compile_plate_reader_single_reporter_screen,
@@ -32,13 +32,13 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": (),
         "plots": (),
         "exports": (),
-        "sha256": "52c1d07c2c98b97b45bae1be25c9feb15324c8bbcbd50a58e3acde727d604e7d",  # pragma: allowlist secret
+        "sha256": "44224f270075c123c58bca16d9802acb533856b2c9eb3ed62cb177a435934398",  # pragma: allowlist secret
     },
-    "logic/sfxi_vec8_collection": {
-        "pipeline": ("collect_vec8",),
-        "plots": ("vec8_collection_heatmap",),
-        "exports": ("vec8_table",),
-        "sha256": "a36f3c77035b4109821176f88a2b748d65a9e4cc3bc12bd6d4bf9073c5fd5791",  # pragma: allowlist secret
+    "logic/four_state_vector_collection": {
+        "pipeline": ("four_state_vector_collection",),
+        "plots": ("four_state_vector_heatmap",),
+        "exports": ("vector_table",),
+        "sha256": "a16bdb145fec593f20aa7adfcfd291b469c46240ba17d24e439c8aa3bb62d124",  # pragma: allowlist secret
     },
     "plate_reader/response_window": {
         "pipeline": ("response_window",),
@@ -46,7 +46,7 @@ COMPILED_PLAN_FIXTURES = {
         "exports": ("designs_table", "events_table"),
         "sha256": "8c05d7c289b87964300ba32eac10cb1eb4cbebe8d182d66338560a32436812fa",  # pragma: allowlist secret
     },
-    "logic/sfxi_screen": {
+    "logic/four_state_vector_screen": {
         "pipeline": (
             "ingest",
             "merge_map",
@@ -57,11 +57,11 @@ COMPILED_PLAN_FIXTURES = {
             "ratio_cfp_od600",
             "ratio_yfp_od600",
             "promote_to_tidy_plus_map",
-            "sfxi_vec8",
+            "four_state_vector",
         ),
         "plots": ("raw_kinetics",),
         "exports": ("logic_summary_workbook",),
-        "sha256": "5f777e90d9e10d049cf857bc25fef3b0c6bcdd248eedefed415e53f6ce14802e",  # pragma: allowlist secret
+        "sha256": "189798460052f35ea53e7f9cc81c30ad911d4d4cb1333188e5699a375d0f8ac0",  # pragma: allowlist secret
     },
     "plate_reader/dual_reporter_screen": {
         "pipeline": (
@@ -137,8 +137,8 @@ def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str
     [
         compile_cytometry_flow_panel,
         compile_generic_protocol,
-        compile_logic_sfxi_screen,
-        compile_logic_sfxi_vec8_collection,
+        compile_logic_four_state_vector_screen,
+        compile_logic_four_state_vector_collection,
         compile_plate_reader_dual_reporter_screen,
         compile_plate_reader_response_window,
         compile_plate_reader_single_reporter_screen,

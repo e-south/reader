@@ -29,13 +29,13 @@ def _ctx(tmp_path: Path) -> RunContext:
 def test_export_xlsx_writes_readable_file(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
     df = pd.DataFrame({"col_a": [1, 2], "col_b": [3.0, 4.0]})
-    cfg = ExportXlsxCfg(path="vec8.xlsx", sheet_name="vec8", index=False)
+    cfg = ExportXlsxCfg(path="vector.xlsx", sheet_name="vector", index=False)
 
     out = ExportXlsx().run(ctx, {"df": df}, cfg)
     out_path = Path(out["artifact"])
     assert out_path.exists()
 
-    back = pd.read_excel(out_path, sheet_name="vec8")
+    back = pd.read_excel(out_path, sheet_name="vector")
     assert list(back.columns) == ["col_a", "col_b"]
     assert back.shape == (2, 2)
 

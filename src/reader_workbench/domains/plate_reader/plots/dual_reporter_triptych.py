@@ -51,7 +51,7 @@ def build_triptych_data(
 ) -> DualReporterTriptychData:
     """Prepare the neutral dual-reporter triptych data contract.
 
-    This is intentionally independent of SFXI semantics. It only requires a
+    This is intentionally independent of four-state vector semantics. It only requires a
     tidy dual-reporter dataframe with channels for growth, ratio kinetics, and
     a snapshot channel.
     """

@@ -64,13 +64,13 @@ def test_response_window_dependencies_point_outward_from_core() -> None:
     assert "reader_workbench.domains.plate_reader.evidence" not in plot_source
 
 
-def test_response_window_domain_has_no_sfxi_or_workbench_imports() -> None:
+def test_response_window_domain_has_no_four_state_vector_or_workbench_imports() -> None:
     source = "\n".join(
         path.read_text(encoding="utf-8")
         for package in (ANALYSIS_PACKAGE, PLOT_PACKAGE)
         for path in package.rglob("*.py")
     )
-    assert "reader_workbench.domains.logic.sfxi" not in source
+    assert "reader_workbench.domains.logic.four_state_vector" not in source
     assert "reader_workbench.workbench" not in source
 
 

@@ -13,8 +13,8 @@ from ._builtins_plate_reader_variants import build_plate_reader_variant_protocol
 from .compiler import (
     compile_cytometry_flow_panel,
     compile_generic_protocol,
-    compile_logic_sfxi_screen,
-    compile_logic_sfxi_vec8_collection,
+    compile_logic_four_state_vector_collection,
+    compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
     compile_plate_reader_response_window,
 )
@@ -95,21 +95,16 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             ProtocolFactorSpec(name="time", role="time", summary="Observation axis when present.", required=False),
         ),
-        ranking=ProtocolRankingSpec(
-            primary_metric="domain_defined",
-            direction="higher_is_better",
-            summary="Generic protocol leaves ranking to the domain-specific analysis layer.",
-        ),
         execution=ProtocolExecutionPlan(
             compiler=compile_generic_protocol,
         ),
     ),
     ProtocolDescriptor(
-        protocol="logic/sfxi_vec8_collection",
+        protocol="logic/four_state_vector_collection",
         domain="logic",
         family="record_collection",
-        summary="Combine SFXI vec8 records from declared Reader experiments with exact revision provenance.",
-        tags=("logic", "aggregate", "records"),
+        summary="Collect four-state logic-intensity vectors from declared Reader experiments with exact revision provenance.",
+        tags=("logic", "collection", "records"),
         input_fields=(
             _field(
                 "record_resources",
@@ -120,23 +115,23 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         figures=(
             ProtocolFigureSpec(
-                id="vec8_collection_heatmap",
+                id="four_state_vector_heatmap",
                 kind="summary",
-                summary="Cross-experiment heatmap over the collected vec8 records.",
+                summary="Cross-experiment heatmap over the collected vector records.",
                 primary=True,
             ),
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
                 id="collection_overview",
-                summary="Primary cross-experiment vec8 heatmap.",
-                figures=("vec8_collection_heatmap",),
+                summary="Primary cross-experiment vector heatmap.",
+                figures=("four_state_vector_heatmap",),
             ),
         ),
         default_plot_profile="collection_overview",
-        artifacts=(ProtocolArtifactSpec(id="vec8_table", summary="CSV table of the collected vec8 rows."),),
+        artifacts=(ProtocolArtifactSpec(id="vector_table", summary="CSV table of the collected vector rows."),),
         execution=ProtocolExecutionPlan(
-            compiler=compile_logic_sfxi_vec8_collection,
+            compiler=compile_logic_four_state_vector_collection,
         ),
     ),
     ProtocolDescriptor(
@@ -734,11 +729,11 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
     ),
     ProtocolDescriptor(
-        protocol="logic/sfxi_screen",
+        protocol="logic/four_state_vector_screen",
         domain="logic",
         family="logic_summary",
-        summary="Dual-reporter plate-reader adapter for SFXI vec8 logic and intensity summaries.",
-        tags=("logic", "sfxi", "screen", "dual_reporter", "plate_reader"),
+        summary="Dual-reporter plate-reader adapter for four-state logic-intensity measurement vectors.",
+        tags=("logic", "four_state_vector", "screen", "dual_reporter", "plate_reader"),
         resources=(
             ProtocolResourceSpec(
                 id="sample_map",
@@ -828,7 +823,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             _field(
                 "fold_change",
-                "Optional fold-change summary inputs used before vec8 export.",
+                "Optional fold-change summary inputs used before vector export.",
                 children=(
                     _field("target", "Primary fold-change channel.", kind="string", default="YFP/CFP"),
                     _field(
@@ -875,7 +870,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             _field(
                 "reference",
-                "Reference design and aggregation policy for vec8 normalization.",
+                "Reference design and aggregation policy for vector normalization.",
                 children=(
                     _field("design_id", "Reference design id.", kind="string", default="REF"),
                     _field("observation_stat", "Reference observation statistic.", kind="string", default="mean"),
@@ -885,12 +880,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             _field("time_column", "Column containing assay time in hours.", kind="string", default="time"),
             _field(
                 "time_mode",
-                "Time-selection mode for vec8 extraction.",
+                "Time-selection mode for vector extraction.",
                 kind="string",
                 choices=("nearest", "last_before", "first_after", "exact"),
                 default="nearest",
             ),
-            _field("target_time_h", "Target timepoint for vec8 extraction.", kind="number", allow_none=True),
+            _field("target_time_h", "Target timepoint for vector extraction.", kind="number", allow_none=True),
             _field("time_tolerance_h", "Nearest-time tolerance in hours.", kind="number", default=0.5),
             _field(
                 "state_map_ref",
@@ -913,27 +908,27 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             _field(
                 "require_all_corners_per_design",
-                "Require each design to expose all logic corners before vec8 export.",
+                "Require each design to expose all logic corners before vector export.",
                 kind="bool",
                 default=True,
             ),
             _field(
                 "exclude_reference_from_output",
-                "Drop the reference design from the final vec8 output.",
+                "Drop the reference design from the final vector output.",
                 kind="bool",
                 default=True,
             ),
             _field(
                 "carry_metadata",
-                "Metadata columns to carry through vec8 output.",
+                "Metadata columns to carry through vector output.",
                 kind="string_list",
                 default=["sequence", "id"],
             ),
         ),
         analysis_fields=(
             _field("include_fold_change", "Build the fold-change comparison table.", kind="bool", default=False),
-            _field("include_vec8", "Build the vec8 summary table.", kind="bool", default=True),
-            _field("include_export", "Emit the workbook export when vec8 is present.", kind="bool", default=True),
+            _field("include_four_state_vector", "Build the vector summary table.", kind="bool", default=True),
+            _field("include_export", "Emit the workbook export when vector is present.", kind="bool", default=True),
             _field(
                 "logic_symmetry",
                 "Logic-symmetry summary settings used when that deliverable is selected.",
@@ -989,8 +984,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
             ),
             _field(
-                "sfxi_vec8",
-                "SFXI vec8 transform settings.",
+                "four_state_vector",
+                "Four-state logic-intensity vector transform settings.",
                 children=(
                     _field(
                         "intensity_log2_offset_delta",
@@ -1096,9 +1091,9 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         metrics=(
             ProtocolMetricSpec(
-                id="vec8",
+                id="four_state_vector",
                 stage="summary",
-                summary="Eight-value SFXI summary vector over logic and intensity channels.",
+                summary="Eight-value measurement vector over four-state logic shape and reference-normalized intensity.",
                 formula="v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star",
             ),
         ),
@@ -1133,17 +1128,17 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 summary="Logic symmetry geometry over the configured response channel.",
             ),
             ProtocolFigureSpec(
-                id="sfxi_diagnostic",
+                id="four_state_vector_diagnostic",
                 kind="summary",
                 summary=(
-                    "Per-design growth and response trajectories beside the persisted vec8 components "
+                    "Per-design growth and response trajectories beside the persisted vector components "
                     "at the persisted selection time."
                 ),
             ),
             ProtocolFigureSpec(
-                id="sfxi_vec8_heatmap",
+                id="four_state_vector_heatmap",
                 kind="summary",
-                summary="Heatmap over per-design SFXI vec8 logic shape and reference-normalized intensity.",
+                summary="Heatmap over per-design logic shape and reference-normalized intensity coordinates.",
             ),
         ),
         plot_profiles=(
@@ -1154,7 +1149,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             ProtocolPlotProfileSpec(
                 id="logic_overview",
-                summary="SFXI kinetics and endpoint summaries with explicitly authored plot times.",
+                summary="Logic kinetics and endpoint summaries with explicitly authored plot times.",
                 figures=(
                     "raw_kinetics",
                     "endpoint_by_condition",
@@ -1169,8 +1164,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ),
             ProtocolPlotProfileSpec(
                 id="logic_diagnostic",
-                summary="Record-driven per-design trajectory and vec8 review.",
-                figures=("sfxi_diagnostic",),
+                summary="Record-driven per-design trajectory and vector review.",
+                figures=("four_state_vector_diagnostic",),
             ),
             ProtocolPlotProfileSpec(
                 id="logic_full",
@@ -1181,8 +1176,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "endpoint_by_design",
                     "intensity_overview",
                     "logic_symmetry",
-                    "sfxi_diagnostic",
-                    "sfxi_vec8_heatmap",
+                    "four_state_vector_diagnostic",
+                    "four_state_vector_heatmap",
                 ),
             ),
         ),
@@ -1190,7 +1185,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         artifacts=(
             ProtocolArtifactSpec(
                 id="logic_summary_workbook",
-                summary="Workbook export of the SFXI vec8 summary.",
+                summary="Workbook export of the four-state logic-intensity vector.",
             ),
         ),
         execution=ProtocolExecutionPlan(
@@ -1215,7 +1210,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                 ),
                 ProtocolPluginDefaultsSpec(
                     plugin="validator/to_tidy_plus_map",
-                    summary="Promote plate-reader tidy data into the annotated SFXI-compatible table shape.",
+                    summary="Promote plate-reader tidy data into the annotated table shape required by the vector transform.",
                     with_={
                         "synthesize_batch": binding_value("promote.synthesize_batch", True),
                         "drop_where_null_in": binding_value(
@@ -1242,8 +1237,8 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     },
                 ),
                 ProtocolPluginDefaultsSpec(
-                    plugin="transform/sfxi",
-                    summary="The dual-reporter adapter binds its concrete channels to the generic SFXI transform.",
+                    plugin="transform/four_state_vector",
+                    summary="Bind the dual-reporter assay channels to the four-state vector transform.",
                     with_={
                         "response": {
                             "logic_channel": "YFP/CFP",
@@ -1265,7 +1260,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     },
                 ),
             ),
-            compiler=compile_logic_sfxi_screen,
+            compiler=compile_logic_four_state_vector_screen,
         ),
     ),
     ProtocolDescriptor(
@@ -1628,8 +1623,8 @@ BUILTIN_PROTOCOLS = (
     _DUAL_REPORTER_PROTOCOL,
     _PLATE_READER_SINGLE_REPORTER_PROTOCOL,
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/response_window"),
-    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/sfxi_screen"),
-    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/sfxi_vec8_collection"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_screen"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_collection"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "cytometry/flow_panel"),
 )
 

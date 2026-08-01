@@ -69,11 +69,11 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
         ),
     ),
     DataClassSpec(
-        id="logic_sfxi_analysis",
-        label="Logic/SFXI analysis",
-        summary="Logic-response or SFXI-style assay data with response/intensity channels and ordered states.",
+        id="four_state_logic_analysis",
+        label="Four-state logic analysis",
+        summary="Logic-response assay data with explicit response and intensity channels plus four ordered states.",
         decision_order=30,
-        protocol_candidates=("logic/sfxi_screen",),
+        protocol_candidates=("logic/four_state_vector_screen",),
         minimum_capture=(
             "raw assay files",
             "metadata map",
@@ -89,12 +89,12 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
         transfer_rules=(
             "stage raw files under inputs/",
             "encode ordered state spaces in annotations or metadata resources",
-            "regenerate SFXI summaries from source inputs",
+            "regenerate four-state vector summaries from source inputs",
         ),
         verification=(
             "logic reference config validates",
             "ordered state-space annotations are present",
-            "records catalog captures vec8 summary evidence",
+            "records catalog captures vector summary evidence",
         ),
     ),
     DataClassSpec(
@@ -102,7 +102,7 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
         label="Record-collection analysis",
         summary="A new Reader experiment that analyzes exact dataframe-record revisions from prior experiments.",
         decision_order=40,
-        protocol_candidates=("logic/sfxi_vec8_collection", "plate_reader/response_window"),
+        protocol_candidates=("logic/four_state_vector_collection", "plate_reader/response_window"),
         minimum_capture=(
             "source experiment ids",
             "exact dataframe record ids",

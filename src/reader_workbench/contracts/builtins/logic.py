@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..model import ColumnRule, DataFrameContract
 
 
-def _sfxi_vec8_columns() -> list[ColumnRule]:
+def _four_state_vector_columns() -> list[ColumnRule]:
     return [
         ColumnRule("design_id", "string"),
         ColumnRule("sequence", "string", required=False, allow_nan=True),
@@ -32,32 +32,19 @@ def _sfxi_vec8_columns() -> list[ColumnRule]:
 
 CONTRACTS: tuple[DataFrameContract, ...] = (
     DataFrameContract(
-        id="sfxi.vec8.v3",
-        description=("Per design vec8 table with explicit intensity transform parameters and reference provenance"),
-        columns=_sfxi_vec8_columns(),
+        id="logic.four_state_vector.v1",
+        description=(
+            "Per-design four-state logic-intensity measurement vector with explicit transform parameters "
+            "and reference provenance."
+        ),
+        columns=_four_state_vector_columns(),
         unique_keys=[["design_id"]],
         domain="logic",
         kind="logic-summary",
     ),
     DataFrameContract(
-        id="sfxi.vec8_collection.v1",
-        description="Cross-experiment SFXI vec8 collection with explicit resource and record identity.",
-        columns=[
-            ColumnRule("source_index", "int", nonnegative=True),
-            ColumnRule("source_resource_id", "string"),
-            ColumnRule("source_experiment_id", "string"),
-            ColumnRule("source_record_id", "string"),
-            ColumnRule("source_row_index", "int", nonnegative=True),
-            ColumnRule("row_label", "string"),
-            *_sfxi_vec8_columns(),
-        ],
-        unique_keys=[["source_experiment_id", "source_record_id", "design_id"]],
-        domain="logic",
-        kind="logic-summary-collection",
-    ),
-    DataFrameContract(
-        id="sfxi.vec8_collection.v2",
-        description="Cross-experiment SFXI vec8 collection with exact source-record revision provenance.",
+        id="logic.four_state_vector_collection.v1",
+        description="Cross-experiment four-state vector collection with exact source-record revision provenance.",
         columns=[
             ColumnRule("source_index", "int", nonnegative=True),
             ColumnRule("source_resource_id", "string"),
@@ -66,10 +53,9 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
             ColumnRule("source_record_revision_digest", "string"),
             ColumnRule("source_row_index", "int", nonnegative=True),
             ColumnRule("row_label", "string"),
-            *_sfxi_vec8_columns(),
+            *_four_state_vector_columns(),
         ],
         unique_keys=[["source_experiment_id", "source_record_id", "design_id"]],
-        parents=("sfxi.vec8_collection.v1",),
         domain="logic",
         kind="logic-summary-collection",
     ),

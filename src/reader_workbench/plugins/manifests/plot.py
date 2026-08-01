@@ -3,12 +3,12 @@ from __future__ import annotations
 from reader_workbench.plugins.plot.cytometry_diagnostic import CytometryDiagnosticPlot
 from reader_workbench.plugins.plot.distributions import DistributionsPlot
 from reader_workbench.plugins.plot.dual_reporter_triptych import DualReporterTriptychPlot
+from reader_workbench.plugins.plot.four_state_vector_collection import FourStateVectorCollectionHeatmapPlot
+from reader_workbench.plugins.plot.four_state_vector_diagnostic import FourStateVectorDiagnosticPlot
+from reader_workbench.plugins.plot.four_state_vector_heatmap import FourStateVectorHeatmapPlot
 from reader_workbench.plugins.plot.logic_symmetry import LogicSymmetryPlot
 from reader_workbench.plugins.plot.response_window_diagnostic import ResponseWindowDiagnosticPlot
 from reader_workbench.plugins.plot.response_window_summary import ResponseWindowSummaryPlot
-from reader_workbench.plugins.plot.sfxi_diagnostic import SFXIDiagnosticPlot
-from reader_workbench.plugins.plot.sfxi_vec8_collection import SFXIVec8CollectionHeatmapPlot
-from reader_workbench.plugins.plot.sfxi_vec8_heatmap import SFXIVec8HeatmapPlot
 from reader_workbench.plugins.plot.single_reporter_diagnostic import SingleReporterDiagnosticPlot
 from reader_workbench.plugins.plot.snapshot_barplot import SnapshotBarplot
 from reader_workbench.plugins.plot.snapshot_heatmap import SnapshotHeatmapPlot
@@ -79,34 +79,34 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
         plugin_cls=LogicSymmetryPlot,
     ),
     build_plugin_asset(
-        plugin_id="plot/sfxi_diagnostic",
+        plugin_id="plot/four_state_vector_diagnostic",
         semantics=PluginSemantics(
             domain="logic",
-            family="sfxi_diagnostic",
-            summary="Render per-design trajectories beside persisted SFXI vec8 components.",
-            tags=("logic", "sfxi", "diagnostic", "records"),
+            family="four_state_vector_diagnostic",
+            summary="Render per-design trajectories beside persisted four-state vector components.",
+            tags=("logic", "four_state_vector", "diagnostic", "records"),
         ),
-        plugin_cls=SFXIDiagnosticPlot,
+        plugin_cls=FourStateVectorDiagnosticPlot,
     ),
     build_plugin_asset(
-        plugin_id="plot/sfxi_vec8_heatmap",
+        plugin_id="plot/four_state_vector_heatmap",
         semantics=PluginSemantics(
             domain="logic",
-            family="sfxi_vec8_heatmap",
-            summary="Render a heatmap over one experiment's SFXI vec8 logic-shape and reference-normalized intensity channels.",
-            tags=("logic", "sfxi", "vec8", "heatmap"),
+            family="four_state_vector_heatmap",
+            summary="Render a heatmap over one experiment's four-state vector logic-shape and reference-normalized intensity channels.",
+            tags=("logic", "four_state_vector", "vector", "heatmap"),
         ),
-        plugin_cls=SFXIVec8HeatmapPlot,
+        plugin_cls=FourStateVectorHeatmapPlot,
     ),
     build_plugin_asset(
-        plugin_id="plot/sfxi_vec8_collection",
+        plugin_id="plot/four_state_vector_collection",
         semantics=PluginSemantics(
             domain="logic",
-            family="sfxi_vec8_heatmap",
-            summary="Render an SFXI vec8 heatmap over a provenance-bound record collection.",
-            tags=("logic", "sfxi", "aggregate", "heatmap"),
+            family="four_state_vector_heatmap",
+            summary="Render a four-state vector heatmap over a provenance-bound record collection.",
+            tags=("logic", "four_state_vector", "collection", "heatmap"),
         ),
-        plugin_cls=SFXIVec8CollectionHeatmapPlot,
+        plugin_cls=FourStateVectorCollectionHeatmapPlot,
     ),
     build_plugin_asset(
         plugin_id="plot/ts_and_snap",

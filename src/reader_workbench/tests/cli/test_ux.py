@@ -436,12 +436,21 @@ def test_ls_can_filter_by_protocol_and_status(tmp_path: Path) -> None:
 
     no_matches = runner.invoke(
         cli.app,
-        ["ls", "--root", str(exp_root), "--details", "--protocol", "logic/sfxi_screen", "--format", "json"],
+        [
+            "ls",
+            "--root",
+            str(exp_root),
+            "--details",
+            "--protocol",
+            "logic/four_state_vector_screen",
+            "--format",
+            "json",
+        ],
     )
     assert no_matches.exit_code == 0
     empty_payload = cli_success_data(no_matches.output)
     assert empty_payload["summary"]["experiments"] == 0
-    assert empty_payload["selection"]["protocol"] == "logic/sfxi_screen"
+    assert empty_payload["selection"]["protocol"] == "logic/four_state_vector_screen"
     assert empty_payload["experiments"] == []
 
 
@@ -975,18 +984,18 @@ def test_protocols_command_can_emit_json() -> None:
 
 def test_protocols_command_json_surfaces_compiled_logic_semantic_program() -> None:
     runner = CliRunner()
-    result = runner.invoke(cli.app, ["protocols", "logic/sfxi_screen", "--format", "json"])
+    result = runner.invoke(cli.app, ["protocols", "logic/four_state_vector_screen", "--format", "json"])
     assert result.exit_code == 0
     payload = cli_success_data(result.output)
     compiled_program = _compiled_semantic_program(payload)
-    assert payload["protocol"] == "logic/sfxi_screen"
+    assert payload["protocol"] == "logic/four_state_vector_screen"
     assert payload["semantics"]["program"]["summary"]["total"] == 3
     assert compiled_program["summary"]["compiled"] == 3
     assert compiled_program["summary"]["descriptive_only"] == 0
     assert compiled_program["controls"][0]["execution"]["status"] == "compiled"
-    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["sfxi_vec8"]
+    assert compiled_program["controls"][0]["execution"]["step_ids"] == ["four_state_vector"]
     assert compiled_program["windows"][0]["execution"]["status"] == "compiled"
-    assert compiled_program["metrics"][0]["execution"]["record_ids"] == ["sfxi_vec8/vec8"]
+    assert compiled_program["metrics"][0]["execution"]["record_ids"] == ["four_state_vector/vector"]
     assert compiled_program["ranking"] is None
 
 

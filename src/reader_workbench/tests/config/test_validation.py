@@ -200,7 +200,7 @@ def test_load_rejects_unknown_protocol_analysis_key_for_bound_protocol(tmp_path:
 def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "preprocessing": {
@@ -413,9 +413,9 @@ def test_protocol_compiler_expands_plate_reader_pipeline(tmp_path: Path) -> None
 def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none", "include": ["logic_symmetry"]},
         },
@@ -435,18 +435,18 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     workbench = resolve_workbench(decl)
     assert "promote_to_tidy_plus_map" in [step.id for step in workbench.pipeline]
     assert "logic_symmetry_summary" in [step.id for step in workbench.pipeline]
-    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
+    assert "four_state_vector" not in [step.id for step in workbench.pipeline]
     assert [step.id for step in workbench.plots] == ["logic_symmetry"]
     assert workbench.plots[0].reads["table"].record_id == "logic_symmetry/table"
     assert workbench.exports == ()
 
 
-def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None:
+def test_four_state_vector_default_plot_profile_respects_vector_opt_out(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
             "ordered_state_spaces": {
@@ -462,17 +462,17 @@ def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
 
-    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
-    assert "sfxi_vec8_heatmap" not in [plot.id for plot in workbench.plots]
+    assert "four_state_vector" not in [step.id for step in workbench.pipeline]
+    assert "four_state_vector_heatmap" not in [plot.id for plot in workbench.plots]
     assert [plot.id for plot in workbench.plots] == ["raw_kinetics"]
 
 
-def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_path: Path) -> None:
+def test_four_state_vector_explicit_workbook_export_compiles_vector_when_analysis_opts_out(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none"},
             "exports": {"include": ["logic_summary_workbook"]},
@@ -493,20 +493,20 @@ def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_
 
     workbench = resolve_workbench(decl)
 
-    assert [step.id for step in workbench.pipeline][-2:] == ["promote_to_tidy_plus_map", "sfxi_vec8"]
+    assert [step.id for step in workbench.pipeline][-2:] == ["promote_to_tidy_plus_map", "four_state_vector"]
     assert [export.id for export in workbench.exports] == ["logic_summary_workbook"]
-    assert workbench.exports[0].reads["df"].record_id == "sfxi_vec8/vec8"
+    assert workbench.exports[0].reads["df"].record_id == "four_state_vector/vector"
 
 
-def test_sfxi_vec8_delta_reaches_transform_config(tmp_path: Path) -> None:
+def test_four_state_vector_delta_reaches_transform_config(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
-            "include_vec8": True,
+            "include_four_state_vector": True,
             "include_fold_change": False,
-            "sfxi_vec8": {
+            "four_state_vector": {
                 "intensity_log2_offset_delta": 0.25,
             },
         },
@@ -526,8 +526,8 @@ def test_sfxi_vec8_delta_reaches_transform_config(tmp_path: Path) -> None:
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
 
-    vec8_step = next(step for step in workbench.pipeline if step.id == "sfxi_vec8")
-    assert vec8_step.with_["log2_offset_delta"] == pytest.approx(0.25)
+    vector_step = next(step for step in workbench.pipeline if step.id == "four_state_vector")
+    assert vector_step.with_["log2_offset_delta"] == pytest.approx(0.25)
 
 
 def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:

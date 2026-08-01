@@ -84,7 +84,7 @@ def test_synergy_resolves_one_discovered_workbook_as_runtime_input(tmp_path: Pat
     assert SynergyH1.resolve_missing_file_inputs(exp_dir=tmp_path, cfg=cfg, inputs={"raw": workbook}) == {}
 
 
-@pytest.mark.parametrize("protocol_id", ["plate_reader/dual_reporter_screen", "logic/sfxi_screen"])
+@pytest.mark.parametrize("protocol_id", ["plate_reader/dual_reporter_screen", "logic/four_state_vector_screen"])
 def test_synergy_builtin_protocol_defaults_parse_declared_biotek_channels(
     tmp_path: Path,
     protocol_id: str,

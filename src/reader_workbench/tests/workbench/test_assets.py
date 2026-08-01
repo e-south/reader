@@ -61,9 +61,9 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "plot/logic_symmetry",
         "plot/response_window_diagnostic",
         "plot/response_window_summary",
-        "plot/sfxi_diagnostic",
-        "plot/sfxi_vec8_collection",
-        "plot/sfxi_vec8_heatmap",
+        "plot/four_state_vector_diagnostic",
+        "plot/four_state_vector_collection",
+        "plot/four_state_vector_heatmap",
         "plot/single_reporter_diagnostic",
         "plot/snapshot_barplot",
         "plot/snapshot_heatmap",
@@ -82,8 +82,8 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "transform/response_window",
         "transform/sample_map",
         "transform/sample_metadata",
-        "transform/sfxi",
-        "transform/sfxi_vec8_collection",
+        "transform/four_state_vector",
+        "transform/four_state_vector_collection",
         "validator/to_tidy_plus_map",
     }
 

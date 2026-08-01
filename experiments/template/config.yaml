@@ -4,7 +4,7 @@ experiment:
   title: synthetic_logic_panel
   lifecycle: template
 protocol:
-  id: logic/sfxi_screen
+  id: logic/four_state_vector_screen
   inputs:
     ingest:
       mode: mixed

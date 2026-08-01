@@ -30,38 +30,38 @@ from .plate_reader import (
 from .plate_reader_pipeline import compose_dual_reporter_pipeline
 
 LOGIC_EXPORT_OUTPUTS = {"logic_summary_workbook"}
-SFXI_SCREEN_LOGIC_CHANNEL = "YFP/CFP"
+FOUR_STATE_VECTOR_SCREEN_LOGIC_CHANNEL = "YFP/CFP"
 
 
-def compile_logic_sfxi_vec8_collection(protocol: Any):
+def compile_logic_four_state_vector_collection(protocol: Any):
     resource_ids = tuple(protocol.effective_inputs().get("record_resources", ()))
     pipeline = (
         _step(
-            id="collect_vec8",
-            plugin="transform/sfxi_vec8_collection",
+            id="four_state_vector_collection",
+            plugin="transform/four_state_vector_collection",
             reads={"sources": RecordCollectionInputDecl(resource_ids=resource_ids)},
-            writes={"vec8": RecordOutputDecl(record_id="collect_vec8/vec8")},
+            writes={"vectors": RecordOutputDecl(record_id="four_state_vector_collection/vectors")},
         ),
     )
-    selected_plots = protocol.select_plot_outputs(allowed={"vec8_collection_heatmap"})
+    selected_plots = protocol.select_plot_outputs(allowed={"four_state_vector_heatmap"})
     plots = tuple(
         _step(
-            id="vec8_collection_heatmap",
-            plugin="plot/sfxi_vec8_collection",
-            reads={"vec8": RecordInputDecl(record_id="collect_vec8/vec8")},
-            with_=protocol.plot_view_config(figure_id="vec8_collection_heatmap"),
+            id="four_state_vector_heatmap",
+            plugin="plot/four_state_vector_collection",
+            reads={"vectors": RecordInputDecl(record_id="four_state_vector_collection/vectors")},
+            with_=protocol.plot_view_config(figure_id="four_state_vector_heatmap"),
         )
         for _ in selected_plots
     )
-    selected_exports = protocol.select_export_outputs(defaults=("vec8_table",), allowed={"vec8_table"})
+    selected_exports = protocol.select_export_outputs(defaults=("vector_table",), allowed={"vector_table"})
     exports = tuple(
         _step(
-            id="vec8_table",
+            id="vector_table",
             plugin="export/csv",
-            reads={"df": RecordInputDecl(record_id="collect_vec8/vec8")},
+            reads={"df": RecordInputDecl(record_id="four_state_vector_collection/vectors")},
             with_=_deep_merge(
-                {"path": "sfxi_vec8_collection.csv"},
-                protocol.export_artifact_config(artifact_id="vec8_table"),
+                {"path": "four_state_vector_collection.csv"},
+                protocol.export_artifact_config(artifact_id="vector_table"),
             ),
         )
         for _ in selected_exports
@@ -74,10 +74,10 @@ def compile_logic_sfxi_vec8_collection(protocol: Any):
     )
 
 
-def compile_logic_sfxi_screen(protocol: Any):
+def compile_logic_four_state_vector_screen(protocol: Any):
     analysis = _analysis_options(protocol)
     include_fold_change = _configured_fold_change_enabled(protocol, analysis=analysis)
-    include_vec8 = _analysis_bool(analysis, key="include_vec8", default=True)
+    include_four_state_vector = _analysis_bool(analysis, key="include_four_state_vector", default=True)
     preprocessing = _analysis_mapping(analysis, key="preprocessing")
     blank_cfg = _analysis_mapping(preprocessing, key="blank")
     overflow_cfg = _analysis_mapping(preprocessing, key="overflow")
@@ -91,12 +91,13 @@ def compile_logic_sfxi_screen(protocol: Any):
         )
     )
     if include_fold_change:
-        _configured_fold_change_target(protocol, expected=SFXI_SCREEN_LOGIC_CHANNEL)
+        _configured_fold_change_target(protocol, expected=FOUR_STATE_VECTOR_SCREEN_LOGIC_CHANNEL)
         _configured_fold_change_report_times(protocol)
         pipeline.append(_plate_reader_fold_change_step(measurement="yfp_cfp"))
     default_exports = (
         ("logic_summary_workbook",)
-        if include_vec8 and _analysis_bool(analysis, key="include_export", default=include_vec8)
+        if include_four_state_vector
+        and _analysis_bool(analysis, key="include_export", default=include_four_state_vector)
         else ()
     )
     selected_exports = protocol.select_export_outputs(
@@ -110,24 +111,24 @@ def compile_logic_sfxi_screen(protocol: Any):
             "endpoint_by_design",
             "intensity_overview",
             "logic_symmetry",
-            "sfxi_diagnostic",
-            "sfxi_vec8_heatmap",
+            "four_state_vector_diagnostic",
+            "four_state_vector_heatmap",
         },
     )
-    requires_vec8 = (
-        include_vec8
-        or "sfxi_diagnostic" in selected_plot_ids
-        or "sfxi_vec8_heatmap" in selected_plot_ids
+    requires_four_state_vector = (
+        include_four_state_vector
+        or "four_state_vector_diagnostic" in selected_plot_ids
+        or "four_state_vector_heatmap" in selected_plot_ids
         or "logic_summary_workbook" in selected_exports
     )
     requires_logic_symmetry = "logic_symmetry" in selected_plot_ids
-    requires_promoted_df = requires_vec8 or requires_logic_symmetry
+    requires_promoted_df = requires_four_state_vector or requires_logic_symmetry
     if requires_promoted_df:
-        pipeline.append(_sfxi_promote_step())
+        pipeline.append(_four_state_vector_promote_step())
     if requires_logic_symmetry:
         pipeline.append(_logic_symmetry_step(protocol))
-    if requires_vec8:
-        pipeline.append(_sfxi_vec8_step(protocol))
+    if requires_four_state_vector:
+        pipeline.append(_four_state_vector_step(protocol))
 
     plots = [_logic_plot_output(protocol, output_id=output_id) for output_id in selected_plot_ids]
     exports = [_logic_export_output(protocol, output_id=output_id) for output_id in selected_exports]
@@ -136,11 +137,11 @@ def compile_logic_sfxi_screen(protocol: Any):
         pipeline=tuple(pipeline),
         plots=tuple(plots),
         exports=tuple(exports),
-        semantic_program=_logic_semantic_program(protocol, include_vec8=requires_vec8),
+        semantic_program=_logic_semantic_program(protocol, include_four_state_vector=requires_four_state_vector),
     )
 
 
-def _sfxi_promote_step() -> PluginStepDecl:
+def _four_state_vector_promote_step() -> PluginStepDecl:
     return _step(
         id="promote_to_tidy_plus_map",
         plugin="validator/to_tidy_plus_map",
@@ -149,13 +150,13 @@ def _sfxi_promote_step() -> PluginStepDecl:
     )
 
 
-def _sfxi_vec8_step(protocol: Any) -> PluginStepDecl:
+def _four_state_vector_step(protocol: Any) -> PluginStepDecl:
     return _step(
-        id="sfxi_vec8",
-        plugin="transform/sfxi",
+        id="four_state_vector",
+        plugin="transform/four_state_vector",
         reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
-        with_={"log2_offset_delta": _sfxi_vec8_delta(protocol)},
-        writes={"vec8": RecordOutputDecl(record_id="sfxi_vec8/vec8")},
+        with_={"log2_offset_delta": _four_state_vector_delta(protocol)},
+        writes={"vector": RecordOutputDecl(record_id="four_state_vector/vector")},
     )
 
 
@@ -168,7 +169,7 @@ def _logic_symmetry_step(protocol: Any) -> PluginStepDecl:
         reads={"df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df")},
         with_=_deep_merge(
             {
-                "response_channel": SFXI_SCREEN_LOGIC_CHANNEL,
+                "response_channel": FOUR_STATE_VECTOR_SCREEN_LOGIC_CHANNEL,
                 "design_by": inputs.get("design_by", ["design_id"]),
                 "state_map_ref": inputs.get("state_map_ref", "induction_logic"),
             },
@@ -178,49 +179,49 @@ def _logic_symmetry_step(protocol: Any) -> PluginStepDecl:
     )
 
 
-def _sfxi_vec8_delta(protocol: Any) -> float:
-    settings = _analysis_mapping(_analysis_options(protocol), key="sfxi_vec8")
+def _four_state_vector_delta(protocol: Any) -> float:
+    settings = _analysis_mapping(_analysis_options(protocol), key="four_state_vector")
     return float(settings.get("intensity_log2_offset_delta", 0.0))
 
 
-def _sfxi_vec8_heatmap_defaults(protocol: Any) -> dict[str, Any]:
-    return dict(_analysis_mapping(_analysis_options(protocol), key="sfxi_vec8_heatmap"))
+def _four_state_vector_heatmap_defaults(protocol: Any) -> dict[str, Any]:
+    return dict(_analysis_mapping(_analysis_options(protocol), key="four_state_vector_heatmap"))
 
 
 def _logic_plot_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
-    if output_id == "sfxi_diagnostic":
+    if output_id == "four_state_vector_diagnostic":
         reserved = {"growth_channel", "response_channel", "state_map_ref", "time_column"}
         overridden = sorted(reserved.intersection(settings))
         if overridden:
             raise ConfigError(
-                "protocol.outputs.plots.views.sfxi_diagnostic cannot override compiler-owned settings: "
+                "protocol.outputs.plots.views.four_state_vector_diagnostic cannot override compiler-owned settings: "
                 + ", ".join(overridden)
             )
         inputs = protocol.effective_inputs()
         return _step(
-            id="sfxi_diagnostic",
-            plugin="plot/sfxi_diagnostic",
+            id="four_state_vector_diagnostic",
+            plugin="plot/four_state_vector_diagnostic",
             reads={
                 "df": RecordInputDecl(record_id="promote_to_tidy_plus_map/df"),
-                "vec8": RecordInputDecl(record_id="sfxi_vec8/vec8"),
+                "vector": RecordInputDecl(record_id="four_state_vector/vector"),
             },
             with_=_deep_merge(
                 {
                     "growth_channel": "OD600",
-                    "response_channel": SFXI_SCREEN_LOGIC_CHANNEL,
+                    "response_channel": FOUR_STATE_VECTOR_SCREEN_LOGIC_CHANNEL,
                     "state_map_ref": inputs.get("state_map_ref", "induction_logic"),
                     "time_column": inputs.get("time_column", "time"),
                 },
                 settings,
             ),
         )
-    if output_id == "sfxi_vec8_heatmap":
+    if output_id == "four_state_vector_heatmap":
         return _step(
-            id="sfxi_vec8_heatmap",
-            plugin="plot/sfxi_vec8_heatmap",
-            reads={"vec8": RecordInputDecl(record_id="sfxi_vec8/vec8")},
-            with_=_deep_merge(_sfxi_vec8_heatmap_defaults(protocol), settings),
+            id="four_state_vector_heatmap",
+            plugin="plot/four_state_vector_heatmap",
+            reads={"vector": RecordInputDecl(record_id="four_state_vector/vector")},
+            with_=_deep_merge(_four_state_vector_heatmap_defaults(protocol), settings),
         )
     if output_id == "logic_symmetry":
         return _step(
@@ -238,7 +239,7 @@ def _logic_export_output(protocol: Any, *, output_id: str) -> PluginStepDecl:
         return _step(
             id="logic_summary_workbook",
             plugin="export/xlsx",
-            reads={"df": RecordInputDecl(record_id="sfxi_vec8/vec8")},
-            with_=_deep_merge({"path": "sfxi/vec8.xlsx", "sheet_name": "vec8"}, settings),
+            reads={"df": RecordInputDecl(record_id="four_state_vector/vector")},
+            with_=_deep_merge({"path": "four_state_vector/vector.xlsx", "sheet_name": "vector"}, settings),
         )
     raise ConfigError(f"Unknown logic export output {output_id!r}")

@@ -6,6 +6,8 @@ from reader_workbench.plugins.transform.blank import BlankCorrection
 from reader_workbench.plugins.transform.crosstalk_pairs import CrosstalkPairs
 from reader_workbench.plugins.transform.cytometry_gating import CytometryGatingTransform
 from reader_workbench.plugins.transform.fold_change import FoldChange
+from reader_workbench.plugins.transform.four_state_vector import FourStateVectorTransform
+from reader_workbench.plugins.transform.four_state_vector_collection import FourStateVectorCollectionTransform
 from reader_workbench.plugins.transform.logic_symmetry import LogicSymmetryTransform
 from reader_workbench.plugins.transform.outlier_filter import OutlierFilter
 from reader_workbench.plugins.transform.overflow import OverflowHandling
@@ -13,8 +15,6 @@ from reader_workbench.plugins.transform.ratio import RatioTransform
 from reader_workbench.plugins.transform.response_window import ResponseWindowTransform
 from reader_workbench.plugins.transform.sample_map import SampleMapMerge
 from reader_workbench.plugins.transform.sample_metadata import SampleMetadataMerge
-from reader_workbench.plugins.transform.sfxi import SFXITransform
-from reader_workbench.plugins.transform.sfxi_vec8_collection import SFXIVec8CollectionTransform
 from reader_workbench.workbench.assets import AssetDescriptor, build_plugin_asset
 from reader_workbench.workbench.ontology import PluginSemantics
 
@@ -80,24 +80,24 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
         plugin_cls=LogicSymmetryTransform,
     ),
     build_plugin_asset(
-        plugin_id="transform/sfxi",
+        plugin_id="transform/four_state_vector",
         semantics=PluginSemantics(
             domain="logic",
             family="summary_transform",
-            summary="Compute SFXI vec8 logic summaries from annotated plate-reader traces.",
-            tags=("logic", "summary", "sfxi"),
+            summary="Compute four-state vector logic summaries from annotated plate-reader traces.",
+            tags=("logic", "summary", "four_state_vector"),
         ),
-        plugin_cls=SFXITransform,
+        plugin_cls=FourStateVectorTransform,
     ),
     build_plugin_asset(
-        plugin_id="transform/sfxi_vec8_collection",
+        plugin_id="transform/four_state_vector_collection",
         semantics=PluginSemantics(
             domain="logic",
             family="record_collection",
-            summary="Combine exact SFXI vec8 record revisions from multiple Reader experiments.",
-            tags=("logic", "aggregate", "provenance"),
+            summary="Collect exact four-state vector record revisions from multiple Reader experiments.",
+            tags=("logic", "collection", "provenance"),
         ),
-        plugin_cls=SFXIVec8CollectionTransform,
+        plugin_cls=FourStateVectorCollectionTransform,
     ),
     build_plugin_asset(
         plugin_id="transform/ratio",

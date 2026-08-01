@@ -14,7 +14,7 @@ from reader_workbench.protocols import ProtocolBinding, builtin_protocol_catalog
         ({"fold_change": {"report_times": [8.0], "agg": "median"}}, {}, "agg"),
     ],
 )
-def test_logic_sfxi_screen_rejects_legacy_observation_aggregation_keys(
+def test_logic_four_state_vector_screen_rejects_legacy_observation_aggregation_keys(
     inputs: dict,
     analysis: dict,
     legacy_key: str,
@@ -22,17 +22,17 @@ def test_logic_sfxi_screen_rejects_legacy_observation_aggregation_keys(
     with pytest.raises(ConfigError, match=legacy_key):
         builtin_protocol_catalog().bind(
             ProtocolBinding(
-                id="logic/sfxi_screen",
+                id="logic/four_state_vector_screen",
                 inputs=inputs,
                 analysis=analysis,
             )
         )
 
 
-def test_logic_sfxi_screen_accepts_observation_stat_keys() -> None:
+def test_logic_four_state_vector_screen_accepts_observation_stat_keys() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="logic/sfxi_screen",
+            id="logic/four_state_vector_screen",
             inputs={
                 "reference": {"design_id": "REF", "observation_stat": "mean"},
                 "fold_change": {"report_times": [8.0], "observation_stat": "median"},
