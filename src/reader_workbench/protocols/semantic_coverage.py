@@ -195,15 +195,7 @@ def _logic_semantic_program(protocol: Any, *, include_four_state_vector: bool) -
 
 
 def _cytometry_semantic_program(protocol: Any) -> ProtocolSemanticProgram:
-    return _semantic_program(
-        protocol,
-        overrides={
-            "ranking": ProtocolSemanticExecution(
-                status="descriptive_only",
-                note="Cytometry ranking remains domain-defined until a typed analysis program is introduced.",
-            )
-        },
-    )
+    return _semantic_program(protocol, overrides={})
 
 
 def _dual_reporter_semantic_profile(*, include_fold_change: bool, include_crosstalk_pairs: bool) -> str:

@@ -1503,11 +1503,6 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
             ProtocolFactorSpec(name="condition", role="condition", summary="Experimental condition."),
             ProtocolFactorSpec(name="gate", role="gate", summary="Gate or subset definition.", required=False),
         ),
-        ranking=ProtocolRankingSpec(
-            primary_metric="domain_defined",
-            direction="higher_is_better",
-            summary="Use domain-defined cytometry comparisons and gating summaries for ranking.",
-        ),
         figures=(
             ProtocolFigureSpec(
                 id="gating_diagnostic",

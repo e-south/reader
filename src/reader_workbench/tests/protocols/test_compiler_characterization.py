@@ -26,7 +26,7 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("ingest_cytometer", "merge_metadata", "cytometry_gating"),
         "plots": ("gating_diagnostic",),
         "exports": ("gate_definition_table", "sample_stats_table", "group_stats_table", "qc_table"),
-        "sha256": "e7f4b07b7be7f5a501fa2f490b4f5b49428c98c7847a170b5596cb72f5456b32",  # pragma: allowlist secret
+        "sha256": "0bc680b89907003aaffd19fdd0b93e90719a554854f22476ac80995ea8992eee",  # pragma: allowlist secret
     },
     "workbench/generic": {
         "pipeline": (),

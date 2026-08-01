@@ -576,6 +576,15 @@ def test_generic_workbench_does_not_claim_a_ranking_policy() -> None:
     assert protocol.compile().semantic_program.ranking is None
 
 
+def test_cytometry_flow_panel_does_not_claim_a_ranking_policy() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(id="cytometry/flow_panel", inputs={"gating": cytometry_test_gating_policy()})
+    )
+
+    assert protocol.descriptor.ranking is None
+    assert protocol.compile().semantic_program.ranking is None
+
+
 def test_four_state_vector_break_rejects_retired_protocol_and_analysis_key() -> None:
     catalog = builtin_protocol_catalog()
     retired_protocol = "logic/" + "sf" + "xi_screen"
