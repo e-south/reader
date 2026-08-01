@@ -78,7 +78,7 @@ def experiments(
                 f"during {first_failed['phase']}: {bounded_detail}"
             ),
             remediation=(
-                "Inspect the named experiment, correct its validation, execution, or verification failure, "
+                "Inspect the named experiment, correct its configuration, validation, execution, or verification failure, "
                 "then rerun the audit. Use --report-path when the complete machine report is required."
             ),
         )

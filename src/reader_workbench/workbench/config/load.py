@@ -39,7 +39,13 @@ def load_reader_config_document(path: Path) -> dict[str, Any]:
     """Load a Reader config document with strict YAML and schema identity checks."""
 
     try:
-        data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError as exc:
+        raise ConfigError(f"Could not read UTF-8 config {path}: {exc}") from exc
+    except OSError as exc:
+        raise ConfigError(f"Could not read config {path}: {exc}") from exc
+    try:
+        data = yaml.load(text, Loader=_UniqueKeyLoader)
     except yaml.YAMLError as exc:
         raise ConfigError(f"Invalid YAML in {path}: {exc}") from exc
     if not isinstance(data, dict):

@@ -42,6 +42,30 @@ def test_load_rejects_non_mapping(tmp_path: Path) -> None:
         ReaderSpec.load(path)
 
 
+def test_load_reports_invalid_utf8_as_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(ConfigError, match="Could not read UTF-8 config"):
+        ReaderSpec.load(path)
+
+
+def test_load_reports_config_io_failure_as_config_error(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text("schema: reader/v8\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fail_config_read(candidate: Path, *args, **kwargs):
+        if candidate == path:
+            raise OSError("synthetic read failure")
+        return original_read_text(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_config_read)
+
+    with pytest.raises(ConfigError, match="Could not read config.*synthetic read failure"):
+        ReaderSpec.load(path)
+
+
 def test_load_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
     path = write_config(
         tmp_path,
