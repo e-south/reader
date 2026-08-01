@@ -40,6 +40,7 @@ from reader_workbench.workbench.experiment import (
 from reader_workbench.workbench.graph import FileRef, PluginStep, RecordRef, ResourceRef
 from reader_workbench.workbench.ports import dataframe_output
 from reader_workbench.workbench.records import RecordStore, verify_record_store
+from reader_workbench.workbench.records import epoch as epoch_module
 from reader_workbench.workbench.records.identity import BuildIdentity
 from reader_workbench.workbench.registry import Plugin, PluginConfig, Registry
 
@@ -857,7 +858,58 @@ def test_run_spec_reset_records_replaces_schema_v5_catalog_before_full_rerun(tmp
     assert catalog["latest"]["ingest/df"]["schema_version"] == 6
 
 
-def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
+def test_run_spec_reset_records_starts_a_clean_generated_output_epoch(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+    outputs = tmp_path / "outputs"
+    store = runtime.record_store(outputs, experiment_root=tmp_path, create=False)
+    retired_artifact = store.latest_dataframe("ingest/df")
+    assert retired_artifact is not None
+    retired_artifact_path = store.artifacts_dir / "retired-artifact.bin"
+    retired_artifact_path.write_bytes(b"retired artifact")
+    retired_ledger_path = store.invocation_ledger_path()
+    (outputs / "plots" / "retired.pdf").write_text("retired plot", encoding="utf-8")
+    (outputs / "exports" / "retired.csv").write_text("retired export", encoding="utf-8")
+    notebooks = outputs / "notebooks"
+    notebooks.mkdir()
+    notebook = notebooks / "review.py"
+    notebook.write_text("# operator scaffold\n", encoding="utf-8")
+    unrelated = outputs / "operator-notes.txt"
+    unrelated.write_text("preserve me", encoding="utf-8")
+
+    result = run_spec(
+        decl,
+        reset_records=True,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    current = runtime.record_store(outputs, experiment_root=tmp_path, create=False)
+    assert result.status == "succeeded"
+    assert not retired_artifact_path.exists()
+    assert not retired_ledger_path.exists()
+    assert list((outputs / "plots").iterdir()) == []
+    assert list((outputs / "exports").iterdir()) == []
+    assert notebook.read_text(encoding="utf-8") == "# operator scaffold\n"
+    assert unrelated.read_text(encoding="utf-8") == "preserve me"
+    assert current.latest_dataframe("ingest/df") is not None
+    assert current.invocation_ledger_path().is_file()
+    assert list(outputs.glob(".reader-reset.*.staging")) == []
+
+
+def test_run_spec_reset_records_rolls_back_owned_outputs_when_epoch_initialization_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -872,15 +924,26 @@ def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
         runtime=runtime,
     )
     store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    artifact = store.latest_dataframe("ingest/df")
+    assert artifact is not None
+    artifact_bytes = artifact.path.read_bytes()
     ledger_path = store.invocation_ledger_path()
     prior_ledger = ledger_path.read_bytes()
+    plot_path = store.plots_dir / "retired.pdf"
+    export_path = store.exports_dir / "retired.csv"
+    plot_path.write_text("retired plot", encoding="utf-8")
+    export_path.write_text("retired export", encoding="utf-8")
+    notebook_path = store.root / "notebooks" / "review.py"
+    notebook_path.parent.mkdir()
+    notebook_path.write_text("# preserve\n", encoding="utf-8")
+    prior_catalog = store.records_path.read_bytes()
 
-    def _fail_catalog_reset(_store: RecordStore) -> None:
-        raise RecordError("catalog reset failed")
+    def _fail_catalog_write(*_args, **_kwargs) -> None:
+        raise RecordError("epoch initialization failed")
 
-    monkeypatch.setattr(RecordStore, "reset_catalog", _fail_catalog_reset)
+    monkeypatch.setattr(RecordStore, "_write_catalog", _fail_catalog_write)
 
-    with pytest.raises(RecordError, match="catalog reset failed"):
+    with pytest.raises(RecordError, match="epoch initialization failed"):
         run_spec(
             decl,
             reset_records=True,
@@ -892,7 +955,139 @@ def test_run_spec_reset_records_preserves_ledger_when_catalog_reset_fails(
             runtime=runtime,
         )
 
+    assert store.records_path.read_bytes() == prior_catalog
+    assert artifact.path.read_bytes() == artifact_bytes
     assert ledger_path.read_bytes() == prior_ledger
+    assert plot_path.read_text(encoding="utf-8") == "retired plot"
+    assert export_path.read_text(encoding="utf-8") == "retired export"
+    assert notebook_path.read_text(encoding="utf-8") == "# preserve\n"
+    assert list(store.root.glob(".reader-reset.*.staging")) == []
+
+
+def test_run_spec_reset_records_restores_missing_catalog_when_epoch_initialization_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    artifact = outputs / "artifacts" / "prior.bin"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"prior artifact")
+    records_path = outputs / "manifests" / "records.json"
+    original_provenance_epoch_id = RecordStore.provenance_epoch_id
+
+    def _fail_new_epoch_read(store: RecordStore) -> str:
+        if store.records_path == records_path and records_path.exists():
+            raise RecordError("epoch initialization failed")
+        return original_provenance_epoch_id(store)
+
+    monkeypatch.setattr(RecordStore, "provenance_epoch_id", _fail_new_epoch_read)
+
+    with pytest.raises(RecordError, match="epoch initialization failed"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert records_path.exists() is False
+    assert artifact.read_bytes() == b"prior artifact"
+    assert list(outputs.glob(".reader-reset.*.staging")) == []
+
+
+def test_run_spec_reset_records_retains_staging_when_rollback_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    retired_artifact = store.artifacts_dir / "retired-artifact.bin"
+    retired_artifact.write_bytes(b"retired artifact")
+    original_rename = Path.rename
+
+    def _fail_artifact_restore(source: Path, target: Path) -> Path:
+        if target == store.artifacts_dir and ".reader-reset." in str(source):
+            raise OSError("injected restore failure")
+        return original_rename(source, target)
+
+    def _fail_catalog_write(*_args, **_kwargs) -> None:
+        raise RecordError("epoch initialization failed")
+
+    monkeypatch.setattr(Path, "rename", _fail_artifact_restore)
+    monkeypatch.setattr(RecordStore, "_write_catalog", _fail_catalog_write)
+
+    with pytest.raises(RecordError, match="epoch initialization failed") as raised:
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    staging = list(store.root.glob(".reader-reset.*.staging"))
+    assert len(staging) == 1
+    assert list(staging[0].rglob("retired-artifact.bin"))[0].read_bytes() == b"retired artifact"
+    assert any(str(staging[0]) in note for note in getattr(raised.value, "__notes__", ()))
+
+
+def test_run_spec_reset_records_reports_cleanup_failure_without_reactivating_old_epoch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    run_spec(
+        decl,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+    store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
+    prior_epoch = store.provenance_epoch_id()
+    original_rmtree = epoch_module.shutil.rmtree
+
+    def _fail_staging_cleanup(path: Path, *args, **kwargs) -> None:
+        if Path(path).name.endswith(".staging"):
+            raise OSError("injected cleanup failure")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(epoch_module.shutil, "rmtree", _fail_staging_cleanup)
+
+    with pytest.raises(RecordError, match="fresh generated-output epoch was initialized"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert store.provenance_epoch_id() != prior_epoch
+    assert store.latest_record("ingest/df") is None
+    assert len(list(store.root.glob(".reader-reset.*.staging"))) == 1
 
 
 def test_run_spec_reset_records_starts_a_new_invocation_epoch(
@@ -912,7 +1107,6 @@ def test_run_spec_reset_records_starts_a_new_invocation_epoch(
     store = runtime.record_store(tmp_path / "outputs", experiment_root=tmp_path, create=False)
     prior_epoch_id = store.provenance_epoch_id()
     prior_ledger_path = store.invocation_ledger_path()
-    prior_ledger = prior_ledger_path.read_bytes()
 
     def _changed_run(self, ctx, inputs, cfg):
         del self, ctx, inputs, cfg
@@ -935,7 +1129,7 @@ def test_run_spec_reset_records_starts_a_new_invocation_epoch(
     events = _events(current_ledger_path)
     assert current_epoch_id != prior_epoch_id
     assert current_ledger_path != prior_ledger_path
-    assert prior_ledger_path.read_bytes() == prior_ledger
+    assert not prior_ledger_path.exists()
     assert [event["event"] for event in events] == ["attempt", "result"]
     assert {event["invocation_id"] for event in events} == {result.invocation_id}
     assert {event["provenance_epoch_id"] for event in events} == {current_epoch_id}
@@ -950,6 +1144,168 @@ def test_run_spec_reset_records_starts_a_new_invocation_epoch(
     assert report["status"] == "ok"
     assert report["summary"]["invocations_checked"] == 1
     assert report["summary"]["invocation_failures"] == 0
+
+
+@pytest.mark.parametrize("invalid_sink", ["plots", "exports", "artifacts", "manifests"])
+def test_run_spec_reset_records_rejects_symlinked_owned_sink_before_mutation(
+    tmp_path: Path,
+    invalid_sink: str,
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    sentinel = outputs / "operator-notes.txt"
+    sentinel.write_text("untouched", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (outputs / invalid_sink).symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises((ConfigError, RecordError), match="symlink"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    assert list(outside.iterdir()) == []
+    assert not (outputs / "reader.log").exists()
+
+
+def test_run_spec_reset_records_rejects_flattened_owned_sink_before_mutation(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    layout = decl.experiment_semantics.layout
+    object.__setattr__(
+        decl.experiment_semantics,
+        "layout",
+        OutputLayout(
+            outputs_dir=layout.outputs_dir,
+            plots_subdir=".",
+            exports_subdir=layout.exports_subdir,
+            notebooks_subdir=layout.notebooks_subdir,
+        ),
+    )
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    sentinel = outputs / "operator-notes.txt"
+    sentinel.write_text("untouched", encoding="utf-8")
+
+    with pytest.raises(RecordError, match="dedicated subdirectories"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    assert not (outputs / "reader.log").exists()
+
+
+def test_run_spec_reset_records_preserves_flattened_notebook_files(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    layout = decl.experiment_semantics.layout
+    object.__setattr__(
+        decl.experiment_semantics,
+        "layout",
+        OutputLayout(
+            outputs_dir=layout.outputs_dir,
+            plots_subdir=layout.plots_subdir,
+            exports_subdir=layout.exports_subdir,
+            notebooks_subdir=".",
+        ),
+    )
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    notebook = outputs / "review.py"
+    notebook.write_text("# preserve\n", encoding="utf-8")
+
+    result = run_spec(
+        decl,
+        reset_records=True,
+        include_pipeline=True,
+        include_plots=False,
+        include_exports=False,
+        log_level="ERROR",
+        console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+        runtime=runtime,
+    )
+
+    assert result.status == "succeeded"
+    assert notebook.read_text(encoding="utf-8") == "# preserve\n"
+
+
+def test_run_spec_reset_records_rejects_non_directory_owned_sink_before_mutation(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    sentinel = outputs / "operator-notes.txt"
+    sentinel.write_text("untouched", encoding="utf-8")
+    (outputs / "plots").write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(RecordError, match="must be a directory"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    assert (outputs / "plots").read_text(encoding="utf-8") == "not a directory"
+    assert not (outputs / "reader.log").exists()
+
+
+def test_run_spec_reset_records_rejects_outputs_outside_experiment_before_mutation(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    decl, runtime = _synthetic_decl_and_runtime(experiment)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "operator-notes.txt"
+    sentinel.write_text("untouched", encoding="utf-8")
+    layout = decl.experiment_semantics.layout
+    object.__setattr__(
+        decl.experiment_semantics,
+        "layout",
+        OutputLayout(
+            outputs_dir=outside,
+            plots_subdir=layout.plots_subdir,
+            exports_subdir=layout.exports_subdir,
+            notebooks_subdir=layout.notebooks_subdir,
+        ),
+    )
+
+    with pytest.raises(ConfigError, match="outputs sink root must stay within"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    assert list(outside.iterdir()) == [sentinel]
 
 
 def test_run_spec_rejects_symlinked_outputs_before_log_or_manifest_write(tmp_path: Path) -> None:

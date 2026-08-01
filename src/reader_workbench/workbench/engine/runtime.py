@@ -166,11 +166,6 @@ def run_spec(
         if source_record_issues:
             raise ConfigError("Run preflight failed before output mutation: " + source_record_issues[0])
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
-    if plot_steps:
-        ensure_mpl_cache_dir()
-
     plots_cfg = layout.plots_subdir
     exports_cfg = layout.exports_subdir
     store = runtime.record_store(
@@ -178,7 +173,19 @@ def run_spec(
         plots_subdir=(plots_cfg if plots_cfg not in ("", ".", "./") else None),
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
+        create=False,
     )
+    preserved_output_paths = (layout.subdir_path("notebooks"),)
+    if reset_records:
+        store.validate_generated_epoch_reset(preserved_paths=preserved_output_paths)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if reset_records:
+        store.manifests_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        store.ensure_layout()
+    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
+    if plot_steps:
+        ensure_mpl_cache_dir()
     with provenance_lock_scope(
         store.provenance_lock,
         acquire_error=ExecutionError("Could not acquire the experiment writer lease"),
@@ -233,7 +240,11 @@ def _run_spec_locked(
 ) -> ExecutionResult:
     """Execute one mutating plan while the caller holds the experiment writer lease."""
 
-    provenance_epoch_id = store.reset_catalog() if reset_records else store.provenance_epoch_id()
+    provenance_epoch_id = (
+        store.reset_generated_epoch(preserved_paths=(decl.experiment_semantics.layout.subdir_path("notebooks"),))
+        if reset_records
+        else store.provenance_epoch_id()
+    )
     store.bind_provenance_epoch(provenance_epoch_id)
     ledger = InvocationLedger(
         experiment_root=decl.experiment.root,

@@ -285,12 +285,13 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 ```
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
-Use `--reset-records` only to replace an incompatible generated catalog before
-a complete pipeline rerun. The replacement catalog starts a fresh provenance
-epoch and selects a new invocation-schema-v2 ledger. Prior epoch ledgers remain
-as forensic residue; they are inactive and are not independently verifiable
-after their catalog has been replaced. The option cannot be combined with a
-slice or dry run.
+Use `--reset-records` only to start a fresh generated-output epoch before a
+complete pipeline rerun. Reader removes the prior catalog and invocation
+ledgers together with generated dataframe artifacts, plots, and exports, then
+initializes a new provenance epoch. Generated notebooks and unrelated files
+directly under the output root are preserved. Plot and export sinks must use
+dedicated subdirectories so Reader can reset them without guessing ownership.
+The option cannot be combined with a slice or dry run.
 
 Inspect the emitted records catalog:
 
@@ -316,7 +317,7 @@ Useful flags:
 - `--from <step_id>` / `--until <step_id>` (pipeline only)
 - `--only <step_id>` (single pipeline step)
 - `--dry-run`
-- `--reset-records` (complete pipeline rerun only)
+- `--reset-records` (fresh generated-output epoch; complete pipeline rerun only)
 - `--log-level <level>`
 - `--compact` (use the compact progress view instead of per-step logs)
 

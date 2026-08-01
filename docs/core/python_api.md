@@ -75,12 +75,14 @@ invocation, provenance epoch, or ledger path. `from_step`, `until_step`, and
 `only` provide the same pipeline slicing semantics as the corresponding CLI
 options.
 
-Use `run(experiment, reset_records=True)` only to replace an invalid generated
-catalog before a complete pipeline rerun. Reset cannot be combined with a dry
-run or any partial selector. It creates a fresh catalog epoch and active ledger;
-prior epoch ledgers remain inactive forensic residue. Plot and export mutation
-remain behind `reader plot` and `reader export` while their typed public results
-are defined.
+Use `run(experiment, reset_records=True)` only to start a fresh generated-output
+epoch before a complete pipeline rerun. Reset cannot be combined with a dry run
+or any partial selector. It removes the prior catalog, ledgers, dataframe
+artifacts, plots, and exports, then creates a fresh catalog epoch and active
+ledger. Generated notebooks and unrelated output-root files are preserved.
+Plot and export sinks must be dedicated subdirectories. Plot and export
+mutation remain behind `reader plot` and `reader export` while their typed
+public results are defined.
 
 ## Notebook components and verified artifacts
 

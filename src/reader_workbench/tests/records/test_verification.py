@@ -323,7 +323,14 @@ def test_verifier_reports_an_epoch_reset_after_the_start_snapshot_as_concurrent(
     original_verify_ledger = verification_module._verify_invocation_ledger
 
     def _reset_then_verify_ledger(*args, **kwargs):
-        concurrent_store.reset_catalog()
+        concurrent_store._write_catalog(
+            {
+                "schema_version": 4,
+                "provenance_epoch_id": str(uuid4()),
+                "latest": {},
+                "history": {},
+            }
+        )
         return original_verify_ledger(*args, **kwargs)
 
     monkeypatch.setattr(verification_module, "_verify_invocation_ledger", _reset_then_verify_ledger)

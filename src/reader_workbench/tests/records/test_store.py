@@ -119,7 +119,7 @@ def test_record_catalog_owns_a_canonical_provenance_epoch(tmp_path: Path) -> Non
 
     initial_epoch = store.provenance_epoch_id()
     initial_path = store.invocation_ledger_path()
-    store.reset_catalog()
+    store.reset_generated_epoch(preserved_paths=(store.root / "notebooks",))
     reset_epoch = store.provenance_epoch_id()
 
     assert UUID(initial_epoch).version == 4
@@ -129,12 +129,12 @@ def test_record_catalog_owns_a_canonical_provenance_epoch(tmp_path: Path) -> Non
     assert store.invocation_ledger_path() == store.manifests_dir / "invocations" / f"{reset_epoch}.jsonl"
 
 
-def test_bound_record_store_rejects_catalog_reset(tmp_path: Path) -> None:
+def test_bound_record_store_rejects_generated_epoch_reset(tmp_path: Path) -> None:
     store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog(), experiment_root=tmp_path)
     store.bind_provenance_epoch(store.provenance_epoch_id())
 
     with pytest.raises(RecordError, match="bound.*provenance epoch"):
-        store.reset_catalog()
+        store.reset_generated_epoch(preserved_paths=(store.root / "notebooks",))
 
 
 def test_catalog_commit_rejects_a_same_epoch_concurrent_update(

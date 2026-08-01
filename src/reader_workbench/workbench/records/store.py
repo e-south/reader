@@ -40,6 +40,7 @@ from reader_workbench.workbench.records.model import (
     verify_record_artifact_integrity,
 )
 
+from .epoch import replace_generated_epoch, validate_generated_epoch_boundary
 from .evidence import RecordInputEvidence, SourceExperimentResolver, capture_artifact_evidence
 from .identity import BuildIdentity, current_build_identity, digest_json
 from .locking import ProvenanceFileLock, provenance_lock_scope
@@ -148,15 +149,40 @@ class RecordStore:
 
         return self._catalog_lock_path.exists() or self._catalog_lock_path.is_symlink()
 
-    def reset_catalog(self) -> str:
-        """Atomically begin a fresh catalog and invocation provenance epoch."""
+    def reset_generated_epoch(self, *, preserved_paths: Iterable[Path] = ()) -> str:
+        """Begin a fresh epoch for catalog, artifacts, plots, and exports."""
 
         if self._bound_provenance_epoch_id is not None:
-            raise RecordError("A RecordStore bound to a provenance epoch cannot reset the catalog")
-        self.ensure_layout()
-        catalog = _empty_catalog()
-        self._write_catalog(catalog)
-        return str(catalog["provenance_epoch_id"])
+            raise RecordError("A RecordStore bound to a provenance epoch cannot reset generated outputs")
+
+        def _initialize() -> str:
+            self.ensure_layout()
+            return self.provenance_epoch_id()
+
+        with self._catalog_lock_scope(operation="reset the generated-output epoch"):
+            return replace_generated_epoch(
+                outputs_root=self.root,
+                artifacts_root=self.artifacts_dir,
+                manifests_root=self.manifests_dir,
+                plots_root=self.plots_dir,
+                exports_root=self.exports_dir,
+                preserved_paths=preserved_paths,
+                lock_path=self._catalog_lock_path,
+                initialize=_initialize,
+            )
+
+    def validate_generated_epoch_reset(self, *, preserved_paths: Iterable[Path] = ()) -> None:
+        """Fail before mutation when generated-output ownership is unsafe to reset."""
+
+        validate_generated_epoch_boundary(
+            outputs_root=self.root,
+            artifacts_root=self.artifacts_dir,
+            manifests_root=self.manifests_dir,
+            plots_root=self.plots_dir,
+            exports_root=self.exports_dir,
+            preserved_paths=preserved_paths,
+            lock_path=self._catalog_lock_path,
+        )
 
     def provenance_epoch_id(self) -> str:
         """Return the catalog-owned identity for the active provenance epoch."""
