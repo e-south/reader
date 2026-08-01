@@ -2,7 +2,7 @@
 doc_id: reader-v8-config
 surface: config-reference
 owner: reader-maintainers
-last_verified: 2026-07-30
+last_verified: 2026-08-01
 summary: Public Reader v8 configuration reference for experiments, protocols, resources, annotations, paths, and outputs.
 ---
 
@@ -238,11 +238,11 @@ protocol:
           path: crosstalk_pairs.csv
 ```
 
-## Logic/SFXI example
+## Four-state logic-vector example
 
 ```yaml
 protocol:
-  id: logic/sfxi_screen
+  id: logic/four_state_vector_screen
   inputs:
     ingest:
       mode: mixed
@@ -332,7 +332,7 @@ For plate-reader assays, the protocol boundary matters:
 
 - `plate_reader/dual_reporter_screen` owns CFP/YFP-style dual-reporter panels.
 - `plate_reader/single_reporter_screen` owns single-reporter panels such as RFP/OD600 screens.
-- `logic/sfxi_screen` owns the ordered four-state vec8 measurement contract.
+- `logic/four_state_vector_screen` owns the ordered four-state vector measurement contract.
 
 ## Mental model
 

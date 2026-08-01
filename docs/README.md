@@ -2,7 +2,7 @@
 doc_id: reader-docs-index
 surface: documentation-index
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-08-01
 summary: Routes readers to the smallest current guide or reference for operating and maintaining reader.
 ---
 
@@ -74,8 +74,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
 - [Logic-symmetry space](./lib/logic_symmetry.md): generic four-state geometry,
   records, configuration, and plot semantics.
 - [Plate-reader metric outputs](./lib/plate_reader/metric_outputs.md): shared
-  plate-reader records and protocol-owned SFXI and response-window analyses.
-- [SFXI vec8 in Reader](./lib/sfxi_vec8_in_reader.md): measured vec8
+  plate-reader records and protocol-owned four-state vector and response-window analyses.
+- [Four-state vector in Reader](./lib/four_state_vector_in_reader.md): measured vector
   generation, workflow, and plot surfaces.
 - [Plate-reader response-window analysis](./lib/plate_reader/response_window.md):
   event-relative summaries from declared cross-experiment record resources.

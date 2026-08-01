@@ -2,7 +2,7 @@
 doc_id: reader-notebooks-guide
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Operate Reader's canonical record-driven Marimo workbench.
 ---
 
@@ -57,7 +57,7 @@ Study labels, objectives, and interpretation stay with the consuming study;
 Reader may render authored labels but does not invent their meaning.
 
 Examples include the normal `dual_reporter_triptych`,
-`response_window_diagnostic`, `sfxi_diagnostic`, and
+`response_window_diagnostic`, `four_state_vector_diagnostic`, and
 `cytometry_diagnostic` plot outputs. Each consumes persisted records and can be
 selected in the same viewport after `reader plot`.
 
@@ -98,23 +98,23 @@ live `marimo run` session to verify interactive selection and rendering. See
 the [Marimo reference](./marimo_reference.md) for component and performance
 rules.
 
-## Aggregate experiments
+## Cross-experiment collections
 
 Cross-experiment review remains an experiment, not a notebook exception. For
-example, an SFXI vec8 collection declares exact Reader record resources and
+example, a four-state vector collection declares exact Reader record resources and
 runs the ordinary lifecycle:
 
 ```bash
-uv run reader init experiments/vec8_collection \
-  --protocol logic/sfxi_vec8_collection \
-  --title "SFXI vec8 collection"
-uv run reader validate experiments/vec8_collection
-uv run reader run experiments/vec8_collection
-uv run reader plot experiments/vec8_collection
-uv run reader export experiments/vec8_collection
-uv run reader verify experiments/vec8_collection
+uv run reader init experiments/vector_collection \
+  --protocol logic/four_state_vector_collection \
+  --title "four-state vector collection"
+uv run reader validate experiments/vector_collection
+uv run reader run experiments/vector_collection
+uv run reader plot experiments/vector_collection
+uv run reader export experiments/vector_collection
+uv run reader verify experiments/vector_collection
 ```
 
-See [SFXI plot surfaces](../lib/sfxi/plots.md) and
+See [Four-state vector plot surfaces](../lib/four_state_vector/plots.md) and
 [plate-reader metric outputs](../lib/plate_reader/metric_outputs.md) for the
 record and plot contracts.

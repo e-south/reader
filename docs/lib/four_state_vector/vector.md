@@ -1,19 +1,19 @@
 ---
-doc_id: reader-sfxi-vec8-contract
+doc_id: reader-four-state-vector-contract
 surface: library-reference
 owner: reader-maintainers
-last_verified: 2026-07-17
-summary: Reader-owned SFXI vec8 input, selection, calculation, output, and failure contract.
+last_verified: 2026-08-01
+summary: Reader-owned four-state vector input, selection, calculation, output, and failure contract.
 ---
 
-# SFXI vec8 contract
+# Four-state vector contract
 
-This reference describes the measured SFXI vec8 produced by Reader. It covers
+This reference describes the measured four-state vector produced by Reader. It covers
 the calculation and record contract only; downstream interpretation is outside
 the package.
 
-Return to the [SFXI entry point](../sfxi_vec8_in_reader.md) for operating,
-plot, and handoff routes.
+Return to the [four-state vector entry point](../four_state_vector_in_reader.md)
+for operating, plot, and handoff routes.
 
 ## Vector definition
 
@@ -32,7 +32,7 @@ Reader emits the fixed state order `00, 10, 01, 11`:
 
 ## Input contract
 
-The `logic/sfxi_screen` protocol feeds the transform from
+The `logic/four_state_vector_screen` protocol feeds the transform from
 `promote_to_tidy_plus_map/df`, a `plate_reader.annotated.v1` dataframe record.
 The calculation requires:
 
@@ -51,12 +51,12 @@ If both `treatment` and `treatment_alias` are present, the configured state-spac
 column is preferred. Without an explicit choice, Reader selects the column
 that matches more state values and uses `treatment` to break a tie.
 
-An optional `sequence` column can be carried into vec8 output. It is experiment
+An optional `sequence` column can be carried into vector output. It is experiment
 metadata; it is not downstream sequence authority.
 
 ## Snapshot selection
 
-`time_selected_h` is elapsed acquisition time. The vec8 contract does not
+`time_selected_h` is elapsed acquisition time. The vector contract does not
 record a stress-induction event and must not be described as stress-relative.
 Workbook segment transitions are acquisition provenance, not stress events.
 Return to [plate-reader metric outputs](../plate_reader/metric_outputs.md) when
@@ -149,8 +149,8 @@ recover the intended linear intensity.
 
 The main workbench output is the dataframe record:
 
-- record ID: `sfxi_vec8/vec8`
-- contract: `sfxi.vec8.v3`
+- record ID: `four_state_vector/vector`
+- contract: `logic.four_state_vector.v1`
 - catalog: `outputs/manifests/records.json`
 - dataframe artifact: under `outputs/artifacts/`
 
@@ -163,7 +163,7 @@ The primary columns are:
 - `flat_logic` and the retained calculation diagnostics
 
 The reference design is used for anchors and is excluded from the emitted
-vec8 table by default. Use `reader records` to inspect the record and its
+vector table by default. Use `reader records` to inspect the record and its
 provenance; use `reader export` when a workbook is required.
 
 ## Fail-fast conditions
@@ -182,12 +182,12 @@ Unknown transform and nested response/reference settings are rejected.
 
 ## Source map
 
-- [selection.py](../../../src/reader_workbench/domains/logic/sfxi/selection.py): treatment,
+- [selection.py](../../../src/reader_workbench/domains/logic/four_state_vector/selection.py): treatment,
   time, and corner selection
-- [math.py](../../../src/reader_workbench/domains/logic/sfxi/math.py): vec8 calculation
-- [reference.py](../../../src/reader_workbench/domains/logic/sfxi/reference.py): reference
+- [math.py](../../../src/reader_workbench/domains/logic/four_state_vector/math.py): vector calculation
+- [reference.py](../../../src/reader_workbench/domains/logic/four_state_vector/reference.py): reference
   identity and anchors
-- [builder.py](../../../src/reader_workbench/domains/logic/sfxi/builder.py): orchestration and
+- [builder.py](../../../src/reader_workbench/domains/logic/four_state_vector/builder.py): orchestration and
   output assembly
 - [logic.py](../../../src/reader_workbench/contracts/builtins/logic.py): dataframe
   contract

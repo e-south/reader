@@ -2,7 +2,7 @@
 doc_id: reader-experiment-bootstrap
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Workflow for creating an experiment workspace from classified inputs and verifying the first Reader run.
 ---
 
@@ -34,7 +34,7 @@ Start by selecting the first matching class from
 
 - plate-reader screen
 - flow-cytometry panel
-- logic/SFXI analysis
+- logic/four-state vector analysis
 - record-collection analysis
 - unsupported long-tail assay
 

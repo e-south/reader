@@ -2,7 +2,7 @@
 doc_id: reader-architecture
 surface: architecture
 owner: reader-maintainers
-last_verified: 2026-07-30
+last_verified: 2026-08-01
 summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
 ---
 
@@ -123,7 +123,7 @@ meaning of a particular collection:
 | `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
 | `protocols/` | Compile the declared collection, plots, and exports into the normal workbench plan |
 
-SFXI vec8 collection uses the same core record-reference seam. Neither
+The four-state vector collection uses the same core record-reference seam. Neither
 capability owns experiment discovery, direct publication, a custom manifest,
 or a second API lifecycle. Their scientific rules remain specialized and do
 not enter the generic workbench kernel.

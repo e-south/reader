@@ -1,25 +1,25 @@
 ---
-doc_id: reader-sfxi-vec8
+doc_id: reader-four-state-vector
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-29
-summary: Canonical route to Reader SFXI vec8 semantics, operation, and plots.
+last_verified: 2026-08-01
+summary: Canonical route to Reader four-state vector semantics, operation, and plots.
 ---
 
-# SFXI in Reader
+# Four-state vector in Reader
 
-Reader converts annotated four-state measurements into one measured SFXI vec8
-row per `design_id`. It persists the result as `sfxi_vec8/vec8` under the
-`sfxi.vec8.v3` contract.
+Reader converts annotated four-state measurements into one measured four-state vector
+row per `design_id`. It persists the result as `four_state_vector/vector` under the
+`logic.four_state_vector.v1` contract.
 
 ## Choose a route
 
-- [Vec8 contract](./sfxi/vec8.md): input requirements, ordered-state
+- [Four-state vector contract](./four_state_vector/vector.md): input requirements, ordered-state
   selection, reference normalization, equations, output columns, and failures.
-- [Experiment workflow](./sfxi/workflow.md): configuration, preflight,
+- [Experiment workflow](./four_state_vector/workflow.md): configuration, preflight,
   execution, records, workbook export, and canonical EDA review.
-- [Plot surfaces](./sfxi/plots.md): per-design diagnostics plus per-experiment
-  and aggregate heatmaps.
+- [Plot surfaces](./four_state_vector/plots.md): per-design diagnostics plus
+  per-experiment and cross-experiment collection heatmaps.
 - [Plate-reader metric outputs](./plate_reader/metric_outputs.md): the shared
   measurement boundary and independent analysis lanes.
 
@@ -27,7 +27,7 @@ row per `design_id`. It persists the result as `sfxi_vec8/vec8` under the
 
 | Term | Meaning | Owner |
 | --- | --- | --- |
-| SFXI vec8 | Measured `[v00, v10, v01, v11, y00_star, y10_star, y01_star, y11_star]` row | Reader |
+| four-state vector | Measured `[v00, v10, v01, v11, y00_star, y10_star, y01_star, y11_star]` row | Reader |
 | `design_id` | Experiment-scoped grouping identity | Experiment config |
 | ordered state space | Exact mapping from observed labels to `00, 10, 01, 11` | Experiment config |
 | `sequence` | Optional carried metadata; never identity authority | Source experiment |

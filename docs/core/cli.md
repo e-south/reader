@@ -2,7 +2,7 @@
 doc_id: reader-cli-reference
 surface: cli-reference
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Full Reader CLI reference for discovery, execution, outputs, notebooks, and record-backed aggregate experiments.
 ---
 
@@ -148,7 +148,7 @@ uv run reader init ./experiments/my_experiment --protocol <protocol-id>
 
 Use `plate_reader/dual_reporter_screen` for dual-reporter panels. Use
 `plate_reader/single_reporter_screen` for one reporter normalized to a
-configured denominator. Choose `logic/sfxi_screen` only when the experiment
+configured denominator. Choose `logic/four_state_vector_screen` only when the experiment
 declares an ordered four-state measurement contract.
 
 Inspect one experiment end to end:
@@ -425,26 +425,26 @@ uv run reader export CONFIG|DIR|INDEX --only crosstalk_pairs_table --set with.pa
 
 ---
 
-## Aggregate SFXI vec8
+## Collect four-state vectors
 
-Create a record-backed aggregate experiment, declare its source records, and
+Create a record-backed collection experiment, declare its source records, and
 run the ordinary lifecycle:
 
 ```bash
-uv run reader init experiments/vec8_collection \
-  --protocol logic/sfxi_vec8_collection \
-  --title "SFXI vec8 cross-experiment aggregate"
+uv run reader init experiments/vector_collection \
+  --protocol logic/four_state_vector_collection \
+  --title "Four-state vector collection"
 # Edit config.yaml: add record resources and list their ids under
 # protocol.inputs.record_resources.
-uv run reader validate experiments/vec8_collection
-uv run reader run experiments/vec8_collection
-uv run reader verify experiments/vec8_collection
+uv run reader validate experiments/vector_collection
+uv run reader run experiments/vector_collection
+uv run reader verify experiments/vector_collection
 ```
 
-Each resource must name a Reader experiment and its `sfxi_vec8/vec8` record.
-The protocol produces a collection dataframe, heatmap, CSV export, EDA
-notebook, and ordinary manifest evidence. See
-[SFXI plot surfaces](../lib/sfxi/plots.md#cross-experiment-heatmap)
+Each resource must name a Reader experiment and its
+`four_state_vector/vector` record. The protocol produces a collection
+dataframe, heatmap, CSV export, EDA notebook, and ordinary manifest evidence.
+See [Four-state vector plot surfaces](../lib/four_state_vector/plots.md#cross-experiment-heatmap)
 for the source and provenance rules.
 
 ---

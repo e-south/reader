@@ -2,7 +2,7 @@
 doc_id: reader-plate-reader-metric-outputs
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-30
+last_verified: 2026-08-01
 summary: Route compatible measurement records to independent typed analysis outputs.
 ---
 
@@ -28,7 +28,7 @@ summary time, event, ordered-state ontology, classification, or objective.
 | Lane | Explicit selector | Time basis | Durable output |
 | --- | --- | --- | --- |
 | General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
-| SFXI vec8 | `logic/sfxi_screen` | one selected acquisition-time snapshot | `sfxi_vec8/vec8` under `sfxi.vec8.v3` |
+| four-state vector | `logic/four_state_vector_screen` | one selected acquisition-time snapshot | `four_state_vector/vector` under `logic.four_state_vector.v1` |
 | Response window | `plate_reader/response_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
 
 Record-backed collection protocols use `resources` of kind `record`; they do
@@ -41,7 +41,7 @@ the same verified source revision and selected rows with the same time basis or
 event origin, temporal operator and support, ratio order, grouping,
 within-experiment observation aggregation, reference operation, and numerical
 tolerance, that shared reduced coordinate must be numerically identical.
-Historical SFXI vec8 normally does
+Historical four-state vector normally does
 not meet that identity: it uses one acquisition-time snapshot, per-design logic
 scaling, and corner-specific intensity normalization. Downstream interpretation
 remains a consumer concern.
@@ -160,7 +160,7 @@ setting also matches.
 
 ## Continue by task
 
-- [SFXI in Reader](../sfxi_vec8_in_reader.md)
+- [four-state vector in Reader](../four_state_vector_in_reader.md)
 - [Response-window analysis](response_window.md)
 - [Notebook operation](../../guides/notebooks.md)
 - [Plugin development](../../core/plugins.md)
