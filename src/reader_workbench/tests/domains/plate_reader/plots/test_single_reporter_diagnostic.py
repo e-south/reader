@@ -283,6 +283,8 @@ def test_single_reporter_diagnostic_renders_four_square_panels_and_visible_norma
     assert all(any(patch.get_gid() == "single-reporter-window" for patch in axis.patches) for axis in main_axes[:3])
     assert qc_axis.get_gid() == "single-reporter-normalizer-qc"
     assert qc_axis.get_ylabel() == "Reduced absorbance (QC only)"
+    assert main_axes[3].get_xlabel() == "Condition"
+    assert figure.legends[0].get_title().get_text() == "Condition"
     assert any(collection.get_gid() == "single-reporter-normalizer-center" for collection in qc_axis.collections)
     assert [tick.get_text() for tick in main_axes[3].get_xticklabels()] == ["baseline", "induced"]
     assert "Declared replicate units" in main_axes[3].get_title()
