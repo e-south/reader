@@ -2,7 +2,7 @@
 doc_id: reader-python-api
 surface: api-reference
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Stable task-oriented Python entrypoints for inspecting, verifying, and running Reader experiments without composing workbench internals.
 ---
 
@@ -43,9 +43,12 @@ declarations, runtime composition, and record stores remain API internals.
 - `validate(experiment, check_files=True)` runs preflight checks.
 - `plan(experiment)` returns the resolved protocol plan without execution.
 - `plots(experiment, only=(), exclude=())` returns selected plot contracts.
-- `records(experiment, include_history=False)` reads the record catalog without
-  creating one when it is absent. Catalog metadata reports the catalog schema,
-  active provenance epoch, and active invocation-ledger path.
+- `records(experiment, include_history=False)` reads the latest records produced
+  for the current configuration and, when outputs are declared, owned by the
+  current compiled workbench. It does not create a catalog when one is absent.
+  Set `include_history=True` to include prior and retired record identities and
+  their revision counts. Catalog metadata reports the catalog schema, active
+  provenance epoch, and active invocation-ledger path.
 - `read_dataframe(experiment, record_id)` loads the latest dataframe revision,
   verifies its content digest, and returns a defensive dataframe copy together
   with its contract, content digest, revision number, and revision digest. Its

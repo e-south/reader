@@ -2,7 +2,7 @@
 doc_id: reader-automation-json
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-08-01
 summary: Versioned success and failure envelopes for Reader automation.
 ---
 
@@ -49,7 +49,9 @@ uv run reader records <config|dir|index> --limit 10 --format json
 The summary describes the complete filtered collection while the collection
 array contains the current page. A continuation is bound to its command and
 filters; changing the root, readiness mode, plugin filters, experiment, or
-record-history mode requires a new first page.
+record-history mode requires a new first page. Record continuations are also
+bound to the current config, provenance epoch, and visible record revisions;
+if any of those change, restart from the first page.
 
 Large single-object descriptions use semantic projections instead of JSON
 paths. A selected projection is reported as `section:<name>` in

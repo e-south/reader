@@ -123,10 +123,16 @@ def record_producer_map(steps, *, runtime: ReaderRuntime) -> dict[str, dict[str,
 
 
 def workbench_record_verification_scope(workbench, *, runtime: ReaderRuntime) -> RecordVerificationScope:
+    return RecordVerificationScope(record_ids=workbench_record_ids(workbench, runtime=runtime))
+
+
+def workbench_record_ids(workbench, *, runtime: ReaderRuntime) -> frozenset[str]:
+    """Return record identities owned by the current compiled workbench."""
+
     record_ids = set(record_producer_map(workbench.plugin_steps(), runtime=runtime))
     record_ids.update(f"plot:{step.id}" for step in workbench.plots)
     record_ids.update(f"export:{step.id}" for step in workbench.exports)
-    return RecordVerificationScope(record_ids=frozenset(record_ids))
+    return frozenset(record_ids)
 
 
 def pipeline_step_payload(step, *, runtime: ReaderRuntime, record_producers=None) -> dict[str, object]:

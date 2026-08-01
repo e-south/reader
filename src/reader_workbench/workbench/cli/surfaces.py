@@ -347,14 +347,18 @@ def export(
         handle_reader_error(err)
 
 
-@app.command(help="List records from outputs/manifests/records.json.")
+@app.command(help="List current records from outputs/manifests/records.json.")
 def records(
     job: str | None = typer.Argument(
         None,
         metavar="[CONFIG]",
         help=shared.JOB_ARG_HELP_WITH_DEFAULT,
     ),
-    all: bool = typer.Option(False, "--all", help="Show revision history counts instead of latest entries."),
+    all: bool = typer.Option(
+        False,
+        "--all",
+        help="Include prior and retired record identities with revision counts.",
+    ),
     format: str = typer.Option(
         "table", "--format", metavar="FMT", help="Output format: table | json (default: table)."
     ),

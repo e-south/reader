@@ -33,6 +33,12 @@ def render_records(
         raise ReaderError(
             f"No outputs/manifests/records.json found. Run '{reader_command('run', job_path)}' first to produce records."
         )
+    current_record_ids = frozenset()
+    if not all_revisions:
+        workbench = _load("reader_workbench.workbench.graph").resolve_workbench(decl)
+        current_record_ids = _load("reader_workbench.workbench.inspection.runtime").workbench_record_ids(
+            workbench, runtime=runtime
+        )
 
     fmt = normalize_output_format(format)
     limit, continuation = shared.normalize_paging_options(limit, continuation)
@@ -46,15 +52,28 @@ def render_records(
             outputs_dir=outputs_dir,
             runtime=runtime,
             include_history=all_revisions,
+            current_config_digest=decl.config_digest,
+            declared_record_ids=current_record_ids,
         )
+        page_selection = {
+            "config": str(job_path),
+            "config_digest": decl.config_digest,
+            "include_history": all_revisions,
+            "provenance_epoch_id": payload["catalog"]["provenance_epoch_id"],
+            "record_revisions": [
+                {
+                    "record_id": item["record_id"],
+                    "revision_digest": item["revision_digest"],
+                    "revision_count": item.get("revision_count"),
+                }
+                for item in payload["records"]
+            ],
+        }
         page = shared.page_json_collection(
             payload["records"],
             key=lambda item: str(item["record_id"]),
             surface="records",
-            selection={
-                "config": str(job_path),
-                "include_history": all_revisions,
-            },
+            selection=page_selection,
             limit=limit,
             continuation=continuation,
         )
@@ -62,7 +81,11 @@ def render_records(
         emit_json(payload, truncated=page.truncated, continuation=page.continuation)
         return
 
-    latest_records = store.iter_latest_records()
+    snapshot = store.catalog_snapshot(
+        current_config_digest=decl.config_digest if not all_revisions else None,
+        current_record_ids=(current_record_ids or None) if not all_revisions else None,
+    )
+    latest_records = snapshot.latest_records
     if all_revisions:
         if not latest_records:
             shared.console.print(
@@ -76,7 +99,7 @@ def render_records(
                 )
             )
             return
-        revision_counts = store.revision_counts(record.record_id for record in latest_records)
+        revision_counts = snapshot.revision_counts
         listing = table("Records • history")
         listing.add_column("Record")
         listing.add_column("Kind", style="accent")

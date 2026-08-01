@@ -136,7 +136,10 @@ def experiment_inspect_renderables(
         filesystem.add_row("input", "—", "No visible files under inputs/")
     if resources:
         for resource in resources:
-            filesystem.add_row("resource", str(resource.get("id") or "—"), str(resource.get("path") or "—"))
+            details = resource.get("path")
+            if resource.get("kind") == "record":
+                details = f"{resource.get('experiment') or '—'}:{resource.get('record') or '—'}"
+            filesystem.add_row("resource", str(resource.get("id") or "—"), str(details or "—"))
     renderables.append(Panel(filesystem, border_style="accent", box=box.ROUNDED))
 
     generated_table = _table("Generated outputs")

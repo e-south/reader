@@ -10,6 +10,7 @@ from reader_workbench.workbench.config import ReaderSpec
 from reader_workbench.workbench.decl import WorkbenchDecl
 from reader_workbench.workbench.engine.setup import slice_pipeline_steps
 from reader_workbench.workbench.engine.validation import validation_summary
+from reader_workbench.workbench.experiment import FileResourceEntry, RecordResourceEntry, ResourceEntry
 from reader_workbench.workbench.graph import resolve_workbench
 
 from .common import (
@@ -40,6 +41,23 @@ EXPERIMENT_INSPECT_SECTIONS = (
     "generated",
     "readiness",
 )
+
+
+def _resource_entry_payload(resource_id: str, entry: ResourceEntry, *, base: Path) -> dict[str, str]:
+    if isinstance(entry, FileResourceEntry):
+        return {
+            "id": resource_id,
+            "kind": entry.kind,
+            "path": format_relative_path(entry.path, base=base),
+        }
+    if isinstance(entry, RecordResourceEntry):
+        return {
+            "id": resource_id,
+            "kind": entry.kind,
+            "experiment": entry.experiment_id,
+            "record": entry.record_id,
+        }
+    raise TypeError(f"Unsupported experiment resource entry: {type(entry).__name__}")
 
 
 def experiment_authoring_payload(
@@ -363,7 +381,7 @@ def experiment_inspect_payload(
     input_files = visible_relative_files(inputs_dir, base=exp_root, limit=8)
     input_file_count = count_visible_files(inputs_dir)
     resource_rows = [
-        (resource_id, format_relative_path(entry.path, base=exp_root))
+        _resource_entry_payload(resource_id, entry, base=exp_root)
         for resource_id, entry in sorted(decl.experiment_semantics.resources.by_id.items())
     ]
     record_producers = record_producer_map(workbench.plugin_steps(), runtime=runtime)
@@ -371,7 +389,11 @@ def experiment_inspect_payload(
     records_error: str | None = None
     if store.catalog_exists():
         try:
-            records_payload = record_entries_payload(store=store, outputs_dir=outputs_dir, runtime=runtime)
+            records_payload = record_entries_payload(
+                store=store,
+                outputs_dir=outputs_dir,
+                runtime=runtime,
+            )
         except RecordError as exc:
             records_error = str(exc)
     pipeline_steps = list(workbench.pipeline)
@@ -419,13 +441,7 @@ def experiment_inspect_payload(
                     "resources": len(resource_rows),
                 },
                 "files": input_files,
-                "resources": [
-                    {
-                        "id": resource_id,
-                        "path": path_text,
-                    }
-                    for resource_id, path_text in resource_rows
-                ],
+                "resources": resource_rows,
             },
             generated=generated_payload,
             readiness=readiness_payload,

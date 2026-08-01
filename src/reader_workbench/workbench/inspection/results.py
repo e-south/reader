@@ -131,8 +131,13 @@ def record_catalog_payload(
     outputs_dir: Path,
     runtime=None,
     include_history: bool = False,
+    current_config_digest: str | None = None,
+    declared_record_ids: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
-    snapshot = store.catalog_snapshot()
+    snapshot = store.catalog_snapshot(
+        current_config_digest=current_config_digest if not include_history else None,
+        current_record_ids=(declared_record_ids or None) if not include_history else None,
+    )
     latest_records = snapshot.latest_records
     revision_counts = snapshot.revision_counts if include_history else None
     return {

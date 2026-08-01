@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from reader_workbench.contracts import builtin_contract_catalog
 from reader_workbench.tests.support import base_reader_config, write_config
 from reader_workbench.workbench import cli
+from reader_workbench.workbench.config import ReaderSpec, reader_spec_digest
 from reader_workbench.workbench.records import RecordStore
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -174,6 +175,7 @@ def test_plugins_json_pages_without_changing_total_summary() -> None:
 
 def test_records_json_pages_latest_records_by_record_id(tmp_path: Path) -> None:
     config = _write_experiment(tmp_path, "bounded_records")
+    config_digest = reader_spec_digest(ReaderSpec.load(config))
     store = RecordStore(tmp_path / "bounded_records" / "outputs", contracts=builtin_contract_catalog())
     frame = pd.DataFrame(
         {
@@ -192,7 +194,7 @@ def test_records_json_pages_latest_records_by_record_id(tmp_path: Path) -> None:
             df=frame,
             contract_id="tidy.v1",
             inputs=[],
-            config_digest="sha256:test",
+            config_digest=config_digest,
         )
     runner = CliRunner()
 
@@ -230,6 +232,77 @@ def test_records_json_pages_latest_records_by_record_id(tmp_path: Path) -> None:
         "truncated": False,
         "continuation": None,
     }
+
+
+@pytest.mark.parametrize("mutation", ["config", "catalog"])
+def test_records_continuation_rejects_changed_current_selection(tmp_path: Path, mutation: str) -> None:
+    config = _write_experiment(tmp_path, "changing_records")
+    config_digest = reader_spec_digest(ReaderSpec.load(config))
+    store = RecordStore(tmp_path / "changing_records" / "outputs", contracts=builtin_contract_catalog())
+    frame = pd.DataFrame(
+        {
+            "position": ["A1"],
+            "time": [0.0],
+            "channel": ["OD600"],
+            "value": [1.0],
+        }
+    )
+
+    def persist(record_id: str) -> None:
+        store.persist_dataframe(
+            producer_id=record_id.replace("/", "_"),
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=frame,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+        )
+
+    for record_id in ("step/a", "step/m", "step/z"):
+        persist(record_id)
+    runner = CliRunner()
+    first = runner.invoke(
+        cli.app,
+        ["records", str(config), "--limit", "2", "--format", "json"],
+    )
+    assert first.exit_code == 0
+    continuation = _envelope(first.output)["meta"]["continuation"]
+    assert isinstance(continuation, str) and continuation
+
+    if mutation == "config":
+        write_config(
+            config,
+            base_reader_config(experiment_id="changing_records", title="Changed record selection"),
+        )
+    else:
+        persist("step/zz")
+
+    second = subprocess.run(
+        [
+            str(CONSOLE_SCRIPT),
+            "records",
+            str(config),
+            "--limit",
+            "2",
+            "--continuation",
+            continuation,
+            "--format",
+            "json",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert second.returncode != 0
+    assert second.stderr == ""
+    envelope = _envelope(second.stdout)
+    assert envelope["ok"] is False
+    assert envelope["error"]["field"] == "continuation"
+    assert "does not match" in envelope["error"]["reason"]
 
 
 @pytest.mark.parametrize(

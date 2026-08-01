@@ -129,6 +129,69 @@ def test_record_catalog_owns_a_canonical_provenance_epoch(tmp_path: Path) -> Non
     assert store.invocation_ledger_path() == store.manifests_dir / "invocations" / f"{reset_epoch}.jsonl"
 
 
+def test_current_catalog_snapshot_isolates_retired_external_lineage(tmp_path: Path) -> None:
+    experiment_root = tmp_path / "experiments" / "aggregates" / "aggregate"
+    experiment_root.mkdir(parents=True)
+    store = RecordStore(
+        experiment_root / "outputs",
+        contracts=builtin_contract_catalog(),
+        experiment_root=experiment_root,
+    )
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    for record_id, config_digest in (
+        ("current/df", "sha256:current"),
+        ("retired/df", "sha256:retired"),
+    ):
+        store.persist_dataframe(
+            producer_id=record_id.replace("/", "_"),
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=frame,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+        )
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    retired = catalog["latest"]["retired/df"]
+    retired["inputs"] = [
+        {
+            "label": "source",
+            "kind": "source_record",
+            "resource": "source",
+            "experiment": "removed-source",
+            "record": "source/df",
+            "discovery_policy": "source_record",
+            "record_revision_digest": "sha256:" + "a" * 64,
+        }
+    ]
+    catalog["history"]["retired/df"][-1] = retired
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    snapshot = store.catalog_snapshot(
+        current_config_digest="sha256:current",
+        current_record_ids=frozenset({"current/df"}),
+    )
+
+    assert [record.record_id for record in snapshot.latest_records] == ["current/df"]
+    assert snapshot.revision_counts == {"current/df": 1}
+    with pytest.raises(RecordError, match="Could not resolve source experiment 'removed-source'"):
+        store.catalog_snapshot(
+            current_config_digest="sha256:retired",
+            current_record_ids=frozenset({"retired/df"}),
+        )
+    with pytest.raises(RecordError, match="Could not resolve source experiment 'removed-source'"):
+        store.catalog_snapshot()
+
+    catalog["history"]["retired/df"] = []
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+    with pytest.raises(RecordError, match="history for latest record 'retired/df' must be non-empty"):
+        store.catalog_snapshot(
+            current_config_digest="sha256:current",
+            current_record_ids=frozenset({"current/df"}),
+        )
+
+
 def test_bound_record_store_rejects_generated_epoch_reset(tmp_path: Path) -> None:
     store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog(), experiment_root=tmp_path)
     store.bind_provenance_epoch(store.provenance_epoch_id())

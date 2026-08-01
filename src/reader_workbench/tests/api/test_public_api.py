@@ -30,14 +30,15 @@ from reader_workbench.api import (
     validate,
     verify,
 )
-from reader_workbench.errors import ConfigError, RegistryError
-from reader_workbench.runtime import builtin_runtime
+from reader_workbench.errors import ConfigError, RecordError, RegistryError
+from reader_workbench.runtime import ReaderRuntime, builtin_runtime
 from reader_workbench.tests.support.configs import base_reader_config, write_config
 from reader_workbench.workbench.config import ReaderSpec
 from reader_workbench.workbench.decl import build_workbench_decl
 from reader_workbench.workbench.engine.invocations import InvocationLedger
 from reader_workbench.workbench.records import record_revision_digest
 from reader_workbench.workbench.records.identity import current_build_identity
+from reader_workbench.workbench.registry import Registry
 
 
 def _generic_experiment(tmp_path: Path) -> Path:
@@ -106,7 +107,7 @@ def test_experiment_read_surfaces_return_typed_results(tmp_path: Path) -> None:
     assert not (config_path.parent / "outputs").exists()
 
 
-def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Path) -> None:
+def test_current_surfaces_isolate_records_retired_from_the_workbench(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path / "config.yaml",
         base_reader_config(
@@ -139,7 +140,7 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
     frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
     for producer_id, record_id, config_digest in (
         ("ingest", "ingest/df", declaration.config_digest),
-        ("retired", "retired/df", "sha256:retired-config"),
+        ("retired", "retired/df", declaration.config_digest),
     ):
         store.persist_dataframe(
             producer_id=producer_id,
@@ -170,8 +171,12 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
     ]
     ledger.append_result(attempt, exit_status=0, produced_record_revisions=revisions)
 
+    current_catalog = records(experiment)
+    historical_catalog = records(experiment, include_history=True)
     result = verify(experiment)
 
+    assert [entry["record_id"] for entry in current_catalog.entries] == ["ingest/df"]
+    assert {entry["record_id"] for entry in historical_catalog.entries} == {"ingest/df", "retired/df"}
     assert result.status == "ok"
     assert result.summary == {
         "checked": 1,
@@ -181,6 +186,65 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
         "invocation_failures": 0,
     }
     assert [record["record_id"] for record in result.records] == ["ingest/df"]
+
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    retired = catalog["latest"]["retired/df"]
+    retired["inputs"] = [
+        {
+            "label": "source",
+            "kind": "source_record",
+            "resource": "source",
+            "experiment": "removed-source",
+            "record": "source/df",
+            "discovery_policy": "source_record",
+            "record_revision_digest": "sha256:" + "a" * 64,
+        }
+    ]
+    catalog["history"]["retired/df"][-1] = retired
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    isolated_catalog = records(experiment)
+
+    assert [record["record_id"] for record in isolated_catalog.entries] == ["ingest/df"]
+    with pytest.raises(RecordError, match="Could not resolve source experiment 'removed-source'"):
+        records(experiment, include_history=True)
+
+
+def test_records_history_remains_readable_when_current_plugins_are_unavailable(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="archived",
+            protocol_id="logic/four_state_vector_collection",
+        ),
+    )
+    builtin = builtin_runtime()
+    archived_runtime = ReaderRuntime(
+        contracts=builtin.contracts,
+        protocols=builtin.protocols,
+        plugins=Registry(contracts=builtin.contracts),
+    )
+    experiment = open_experiment(config_path, runtime=archived_runtime)
+    store = archived_runtime.record_store(tmp_path / "outputs")
+    store.persist_dataframe(
+        producer_id="retired_collection",
+        producer_plugin="transform/retired_collection",
+        out_name="df",
+        record_id="retired_collection/vectors",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:archived",
+    )
+
+    history = records(experiment, include_history=True)
+
+    assert [record["record_id"] for record in history.entries] == ["retired_collection/vectors"]
+    assert history.entries[0]["description"] == (
+        "Description unavailable because plugin 'transform/retired_collection' is not registered."
+    )
+    with pytest.raises(RegistryError, match="Unknown plugin"):
+        records(experiment)
 
 
 def test_run_returns_typed_invocation_result_without_console_leakage(tmp_path: Path, capsys) -> None:
