@@ -55,14 +55,14 @@ def test_logic_four_state_vector_screen_accepts_observation_stat_keys() -> None:
         ("quality", "min_replicates_per_state", 2),
     ],
 )
-def test_response_window_compile_rejects_retired_observation_keys(
+def test_four_state_event_window_compile_rejects_retired_observation_keys(
     section: str,
     legacy_key: str,
     value: object,
 ) -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             analysis={section: {legacy_key: value}},
         )
     )

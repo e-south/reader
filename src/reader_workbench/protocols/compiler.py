@@ -5,7 +5,7 @@ from .compilers.generic import compile_generic_protocol
 from .compilers.logic import compile_logic_four_state_vector_collection, compile_logic_four_state_vector_screen
 from .compilers.plate_reader import (
     compile_plate_reader_dual_reporter_screen,
-    compile_plate_reader_response_window,
+    compile_plate_reader_four_state_event_window,
     compile_plate_reader_single_reporter_screen,
 )
 
@@ -15,6 +15,6 @@ __all__ = [
     "compile_logic_four_state_vector_screen",
     "compile_logic_four_state_vector_collection",
     "compile_plate_reader_dual_reporter_screen",
-    "compile_plate_reader_response_window",
+    "compile_plate_reader_four_state_event_window",
     "compile_plate_reader_single_reporter_screen",
 ]

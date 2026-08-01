@@ -28,8 +28,8 @@ def test_root_readme_is_a_human_first_landing_page() -> None:
     assert "doc_id:" not in text
 
 
-def test_response_window_docs_route_through_public_records_api() -> None:
-    text = (REPO_ROOT / "docs" / "lib" / "plate_reader" / "response_window.md").read_text(encoding="utf-8")
+def test_four_state_event_window_docs_route_through_public_records_api() -> None:
+    text = (REPO_ROOT / "docs" / "lib" / "plate_reader" / "four_state_event_window.md").read_text(encoding="utf-8")
 
     assert "reader_workbench.api.records()" in text
     assert "reader_workbench.api.read_dataframe()" in text

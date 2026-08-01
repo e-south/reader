@@ -102,7 +102,7 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
         label="Record-collection analysis",
         summary="A new Reader experiment that analyzes exact dataframe-record revisions from prior experiments.",
         decision_order=40,
-        protocol_candidates=("logic/four_state_vector_collection", "plate_reader/response_window"),
+        protocol_candidates=("logic/four_state_vector_collection", "plate_reader/four_state_event_window"),
         minimum_capture=(
             "source experiment ids",
             "exact dataframe record ids",

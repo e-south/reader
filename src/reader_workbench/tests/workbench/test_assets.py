@@ -21,8 +21,8 @@ def test_sample_metadata_descriptor_is_not_plate_reader_specific() -> None:
     assert descriptor.summary == "Attach sample-keyed metadata tables to tidy measurement rows."
 
 
-def test_response_window_diagnostic_descriptor_is_source_design_scoped() -> None:
-    descriptor = builtin_plugin_catalog().resolve("plot/response_window_diagnostic")
+def test_four_state_event_window_diagnostic_descriptor_is_source_design_scoped() -> None:
+    descriptor = builtin_plugin_catalog().resolve("plot/four_state_event_window_diagnostic")
 
     assert descriptor.domain == "plate_reader"
     assert descriptor.family == "event_relative_diagnostic"
@@ -59,8 +59,8 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "plot/cytometry_diagnostic",
         "plot/dual_reporter_triptych",
         "plot/logic_symmetry",
-        "plot/response_window_diagnostic",
-        "plot/response_window_summary",
+        "plot/four_state_event_window_diagnostic",
+        "plot/four_state_event_window_summary",
         "plot/four_state_vector_diagnostic",
         "plot/four_state_vector_collection",
         "plot/four_state_vector_heatmap",
@@ -79,7 +79,7 @@ def test_builtin_plugin_manifest_preserves_the_complete_plugin_id_set() -> None:
         "transform/outlier_filter",
         "transform/overflow_handling",
         "transform/ratio",
-        "transform/response_window",
+        "transform/four_state_event_window",
         "transform/sample_map",
         "transform/sample_metadata",
         "transform/four_state_vector",

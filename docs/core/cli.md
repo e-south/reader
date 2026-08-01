@@ -26,7 +26,7 @@ A typical order is:
 Record-backed multi-experiment analyses use the same lifecycle:
 
 ```bash
-uv run reader init OUTPUT_EXPERIMENT --protocol plate_reader/response_window
+uv run reader init OUTPUT_EXPERIMENT --protocol plate_reader/four_state_event_window
 # Declare source records in OUTPUT_EXPERIMENT/config.yaml.
 uv run reader inspect OUTPUT_EXPERIMENT
 uv run reader validate OUTPUT_EXPERIMENT

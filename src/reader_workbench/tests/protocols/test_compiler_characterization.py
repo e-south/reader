@@ -15,7 +15,7 @@ from reader_workbench.protocols.compiler import (
     compile_logic_four_state_vector_collection,
     compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
-    compile_plate_reader_response_window,
+    compile_plate_reader_four_state_event_window,
     compile_plate_reader_single_reporter_screen,
 )
 from reader_workbench.runtime import builtin_runtime
@@ -40,11 +40,11 @@ COMPILED_PLAN_FIXTURES = {
         "exports": ("vector_table",),
         "sha256": "a16bdb145fec593f20aa7adfcfd291b469c46240ba17d24e439c8aa3bb62d124",  # pragma: allowlist secret
     },
-    "plate_reader/response_window": {
-        "pipeline": ("response_window",),
-        "plots": ("response_window_summary",),
+    "plate_reader/four_state_event_window": {
+        "pipeline": ("four_state_event_window",),
+        "plots": ("four_state_event_window_summary",),
         "exports": ("designs_table", "events_table"),
-        "sha256": "8c05d7c289b87964300ba32eac10cb1eb4cbebe8d182d66338560a32436812fa",  # pragma: allowlist secret
+        "sha256": "7eebf69ddc9bc73957821eb1aa5593006ee5c295ae9eed04f88dedcaa2da558f",  # pragma: allowlist secret
     },
     "logic/four_state_vector_screen": {
         "pipeline": (
@@ -140,7 +140,7 @@ def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str
         compile_logic_four_state_vector_screen,
         compile_logic_four_state_vector_collection,
         compile_plate_reader_dual_reporter_screen,
-        compile_plate_reader_response_window,
+        compile_plate_reader_four_state_event_window,
         compile_plate_reader_single_reporter_screen,
     ],
 )

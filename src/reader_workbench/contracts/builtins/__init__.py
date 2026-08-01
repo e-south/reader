@@ -6,15 +6,15 @@ from functools import cache
 
 from ..catalog import ContractCatalog
 from .cytometry import CONTRACTS as CYTOMETRY_CONTRACTS
+from .four_state_event_window import CONTRACTS as FOUR_STATE_EVENT_WINDOW_CONTRACTS
 from .generic import CONTRACTS as GENERIC_CONTRACTS
 from .logic import CONTRACTS as LOGIC_CONTRACTS
 from .plate_reader import CONTRACTS as PLATE_READER_CONTRACTS
-from .response_window import CONTRACTS as RESPONSE_WINDOW_CONTRACTS
 
 BUILTIN_CONTRACTS = (
     *GENERIC_CONTRACTS,
     *PLATE_READER_CONTRACTS,
-    *RESPONSE_WINDOW_CONTRACTS,
+    *FOUR_STATE_EVENT_WINDOW_CONTRACTS,
     *LOGIC_CONTRACTS,
     *CYTOMETRY_CONTRACTS,
 )
@@ -31,6 +31,6 @@ __all__ = [
     "GENERIC_CONTRACTS",
     "LOGIC_CONTRACTS",
     "PLATE_READER_CONTRACTS",
-    "RESPONSE_WINDOW_CONTRACTS",
+    "FOUR_STATE_EVENT_WINDOW_CONTRACTS",
     "builtin_contract_catalog",
 ]

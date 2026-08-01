@@ -32,7 +32,7 @@ FORBIDDEN_API_DOMAIN_TERMS = (
     "cytometry",
     "logic_symmetry",
     "plate_reader",
-    "response_window",
+    "four_state_event_window",
     "four_state_vector",
     "vector",
 )
@@ -148,9 +148,9 @@ def test_repo_local_skills_use_the_codex_discovery_root() -> None:
 
 
 def test_domain_capabilities_do_not_create_parallel_public_lifecycles() -> None:
-    assert not (READER_ROOT / "api" / "response_window").exists()
-    assert not (READER_ROOT / "runtime" / "response_window.py").exists()
-    assert not (READER_ROOT / "workbench" / "cli" / "response_window.py").exists()
+    assert not (READER_ROOT / "api" / "four_state_event_window").exists()
+    assert not (READER_ROOT / "runtime" / "four_state_event_window.py").exists()
+    assert not (READER_ROOT / "workbench" / "cli" / "four_state_event_window.py").exists()
     assert not (READER_ROOT / "runtime" / "four_state_collection.py").exists()
 
 

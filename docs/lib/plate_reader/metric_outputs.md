@@ -28,8 +28,8 @@ summary time, event, ordered-state ontology, classification, or objective.
 | Lane | Explicit selector | Time basis | Durable output |
 | --- | --- | --- | --- |
 | General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
-| four-state vector | `logic/four_state_vector_screen` | one selected acquisition-time snapshot | `four_state_vector/vector` under `logic.four_state_vector.v1` |
-| Response window | `plate_reader/response_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
+| Four-state vector | `logic/four_state_vector_screen` | one selected acquisition-time snapshot | `four_state_vector/vector` under `logic.four_state_vector.v1` |
+| Four-state event-window | `plate_reader/four_state_event_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
 
 Record-backed collection protocols use `resources` of kind `record`; they do
 not copy source configs or publish custom manifests.
@@ -170,8 +170,8 @@ This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study
 objective. A downstream study may validate and select such a policy while the
 Reader plot stays reusable across single-reporter assays. The same neutral
-temporal contract also underlies response-window trace reduction, but the
-response-window protocol separately owns event estimation, interpolation,
+temporal contract also underlies four-state event-window trace reduction, but the
+four-state event-window protocol separately owns event estimation, interpolation,
 reference anchoring, log2 output, descriptive resampling, and event-time
 sensitivity. Matching source data and nominal bounds imply matching values only
 when every reduction and support
@@ -180,6 +180,6 @@ setting also matches.
 ## Continue by task
 
 - [four-state vector in Reader](../four_state_vector_in_reader.md)
-- [Response-window analysis](response_window.md)
+- [Four-state event-window analysis](four_state_event_window.md)
 - [Notebook operation](../../guides/notebooks.md)
 - [Plugin development](../../core/plugins.md)

@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from reader_workbench.runtime import ReaderRuntime
 from reader_workbench.workbench.config import ReaderSpec
-from reader_workbench.workbench.decl import WorkbenchDecl
+from reader_workbench.workbench.decl import RecordCollectionInputDecl, WorkbenchDecl
 from reader_workbench.workbench.graph import OutputRef, input_ref_display, output_ref_to_dict, resolve_workbench
 from reader_workbench.workbench.records import RecordVerificationScope
 
@@ -201,6 +201,8 @@ def serialize_reads(reads, *, declared_ports=None, record_producers=None) -> lis
                 item["source"] = deepcopy(record_producers[record_id])
         elif isinstance(resource_id, str) and resource_id:
             item["ref"] = {"resource": resource_id}
+        elif isinstance(ref, RecordCollectionInputDecl):
+            item["ref"] = {"record_resources": list(ref.resource_ids)}
         elif path is not None:
             item["ref"] = {"file": str(path)}
         else:
@@ -252,6 +254,8 @@ def binding_display(ref) -> str:
 
 
 def _binding_display(ref) -> str:
+    if isinstance(ref, RecordCollectionInputDecl):
+        return "record_resources(" + ", ".join(ref.resource_ids) + ")"
     record_id = getattr(ref, "record_id", None)
     if isinstance(record_id, str) and record_id:
         return record_id

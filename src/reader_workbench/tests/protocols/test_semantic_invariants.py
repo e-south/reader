@@ -31,7 +31,7 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
         "workbench/generic",
         "plate_reader/dual_reporter_screen",
         "plate_reader/single_reporter_screen",
-        "plate_reader/response_window",
+        "plate_reader/four_state_event_window",
         "logic/four_state_vector_screen",
         "logic/four_state_vector_collection",
         "cytometry/flow_panel",
@@ -191,15 +191,15 @@ def test_logic_four_state_vector_diagnostic_rejects_compiler_owned_overrides(key
         protocol.compile()
 
 
-def test_response_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> None:
+def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             outputs={
                 "plots": {
-                    "include": ["response_window_diagnostic"],
+                    "include": ["four_state_event_window_diagnostic"],
                     "views": {
-                        "response_window_diagnostic": {
+                        "four_state_event_window_diagnostic": {
                             "source_experiment_id": "trace-source",
                             "design_id": "design-a",
                         }
@@ -210,11 +210,11 @@ def test_response_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> 
     )
 
     compiled = protocol.compile()
-    diagnostic = next(step for step in compiled.plots if step.id == "response_window_diagnostic")
+    diagnostic = next(step for step in compiled.plots if step.id == "four_state_event_window_diagnostic")
 
-    assert diagnostic.plugin == "plot/response_window_diagnostic"
-    assert diagnostic.reads["designs"].record_id == "response_window/designs"
-    assert diagnostic.reads["traces"].record_id == "response_window/traces"
+    assert diagnostic.plugin == "plot/four_state_event_window_diagnostic"
+    assert diagnostic.reads["designs"].record_id == "four_state_event_window/designs"
+    assert diagnostic.reads["traces"].record_id == "four_state_event_window/traces"
     assert diagnostic.with_["primary_reduction_id"] == "primary"
     assert diagnostic.with_["pre_window_duration_h"] is None
     assert diagnostic.with_["source_experiment_id"] == "trace-source"
@@ -493,11 +493,11 @@ def test_single_reporter_diagnostic_rejects_compiler_owned_channel_overrides(key
         protocol.compile()
 
 
-def test_response_window_diagnostic_requires_an_explicit_record_identity() -> None:
+def test_four_state_event_window_diagnostic_requires_an_explicit_record_identity() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
-            outputs={"plots": {"include": ["response_window_diagnostic"]}},
+            id="plate_reader/four_state_event_window",
+            outputs={"plots": {"include": ["four_state_event_window_diagnostic"]}},
         )
     )
 
@@ -505,14 +505,14 @@ def test_response_window_diagnostic_requires_an_explicit_record_identity() -> No
         protocol.compile()
 
 
-def test_response_window_plot_cannot_override_the_primary_reduction() -> None:
+def test_four_state_event_window_plot_cannot_override_the_primary_reduction() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             outputs={
                 "plots": {
                     "views": {
-                        "response_window_summary": {"primary_reduction_id": "secondary"},
+                        "four_state_event_window_summary": {"primary_reduction_id": "secondary"},
                     }
                 }
             },
@@ -523,10 +523,10 @@ def test_response_window_plot_cannot_override_the_primary_reduction() -> None:
         protocol.compile()
 
 
-def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> None:
+def test_four_state_event_window_diagnostic_receives_the_compiler_owned_pre_window() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             analysis={
                 "reductions": [
                     {
@@ -542,9 +542,9 @@ def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> 
             },
             outputs={
                 "plots": {
-                    "include": ["response_window_diagnostic"],
+                    "include": ["four_state_event_window_diagnostic"],
                     "views": {
-                        "response_window_diagnostic": {
+                        "four_state_event_window_diagnostic": {
                             "source_experiment_id": "trace-source",
                             "design_id": "design-a",
                         }
@@ -554,7 +554,7 @@ def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> 
         )
     )
 
-    diagnostic = next(step for step in protocol.compile().plots if step.id == "response_window_diagnostic")
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "four_state_event_window_diagnostic")
 
     assert diagnostic.with_["primary_reduction_id"] == "delta"
     assert diagnostic.with_["pre_window_duration_h"] == 1.5

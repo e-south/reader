@@ -126,9 +126,9 @@ meaning of a particular collection:
 | --- | --- |
 | `workbench/experiments.py` | Resolve experiment identities below the canonical `experiments/` owner without assuming a year or directory name |
 | `workbench/records/sources.py` | Resolve exact source-record revisions for typed record-collection ports |
-| `domains/plate_reader/analysis/response_window/` | Response-window source validation, reductions, aggregation, and uncertainty |
-| `domains/plate_reader/plots/response_window/` | Response-window summary selection, validation, labeling, and rendering |
-| `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
+| `domains/plate_reader/analysis/four_state_event_window/` | Four-state event-window source validation, reductions, aggregation, and uncertainty |
+| `domains/plate_reader/plots/four_state_event_window/` | Four-state event-window summary selection, validation, labeling, and rendering |
+| `plugins/transform/four_state_event_window.py` | Thin adapter from record collections to four-state event-window dataframe records |
 | `protocols/` | Compile the declared collection, plots, and exports into the normal workbench plan |
 
 The four-state vector collection uses the same core record-reference seam. Neither

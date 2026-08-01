@@ -496,7 +496,7 @@ def _annotated_traces() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: Path) -> None:
+def test_four_state_event_window_is_a_normal_protocol_run_with_normal_records(tmp_path: Path) -> None:
     source_root = tmp_path / "experiments" / "2026" / "trace-source"
     source_root.mkdir(parents=True)
     write_config(source_root, base_reader_config(experiment_id="trace-source"))
@@ -524,7 +524,7 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
         aggregate_root,
         base_reader_config(
             experiment_id="response-review",
-            protocol_id="plate_reader/response_window",
+            protocol_id="plate_reader/four_state_event_window",
             protocol_inputs={
                 "response_records": ["response"],
                 "magnitude_records": ["magnitude"],
@@ -572,9 +572,9 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
             },
             protocol_outputs={
                 "plots": {
-                    "include": ["response_window_diagnostic"],
+                    "include": ["four_state_event_window_diagnostic"],
                     "views": {
-                        "response_window_diagnostic": {
+                        "four_state_event_window_diagnostic": {
                             "source_experiment_id": "trace-source",
                             "design_id": "candidate",
                         }
@@ -598,10 +598,10 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
         experiment_root=aggregate_root,
         create=False,
     )
-    assert store.latest_dataframe("response_window/designs") is not None
-    assert store.latest_dataframe("response_window/events") is not None
-    assert store.latest_record("plot:response_window_summary") is not None
-    assert store.latest_record("plot:response_window_diagnostic") is not None
+    assert store.latest_dataframe("four_state_event_window/designs") is not None
+    assert store.latest_dataframe("four_state_event_window/events") is not None
+    assert store.latest_record("plot:four_state_event_window_summary") is not None
+    assert store.latest_record("plot:four_state_event_window_diagnostic") is not None
     assert store.latest_record("export:designs_table") is not None
     assert store.latest_record("export:events_table") is not None
     assert not (aggregate_root / "outputs" / "manifest.json").exists()
@@ -612,8 +612,8 @@ def test_response_window_is_a_normal_protocol_run_with_normal_records(tmp_path: 
 def test_repository_has_no_aggregate_counter_control_plane() -> None:
     package_root = Path(__file__).resolve().parents[2]
 
-    assert not (package_root / "api" / "response_window").exists()
-    assert not (package_root / "runtime" / "response_window.py").exists()
+    assert not (package_root / "api" / "four_state_event_window").exists()
+    assert not (package_root / "runtime" / "four_state_event_window.py").exists()
     assert not (package_root / "runtime" / "four_state_collection.py").exists()
-    assert not (package_root / "workbench" / "cli" / "response_window.py").exists()
-    assert not (package_root / "domains" / "plate_reader" / "evidence" / "response_window").exists()
+    assert not (package_root / "workbench" / "cli" / "four_state_event_window.py").exists()
+    assert not (package_root / "domains" / "plate_reader" / "evidence" / "four_state_event_window").exists()

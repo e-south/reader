@@ -57,7 +57,7 @@ Study labels, objectives, and interpretation stay with the consuming study;
 Reader may render authored labels but does not invent their meaning.
 
 Examples include the normal `dual_reporter_triptych`,
-`response_window_diagnostic`, `four_state_vector_diagnostic`, and
+`four_state_event_window_diagnostic`, `four_state_vector_diagnostic`, and
 `cytometry_diagnostic` plot outputs. Each consumes persisted records and can be
 selected in the same viewport after `reader plot`.
 

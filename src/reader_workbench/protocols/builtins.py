@@ -16,7 +16,7 @@ from .compiler import (
     compile_logic_four_state_vector_collection,
     compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
-    compile_plate_reader_response_window,
+    compile_plate_reader_four_state_event_window,
 )
 from .model import (
     ProtocolArtifactSpec,
@@ -135,10 +135,10 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
     ),
     ProtocolDescriptor(
-        protocol="plate_reader/response_window",
+        protocol="plate_reader/four_state_event_window",
         domain="plate_reader",
         family="event_relative_record_collection",
-        summary="Materialize event-relative summaries from aligned records owned by declared Reader experiments.",
+        summary="Materialize a declared-event, four-state profile from aligned records owned by Reader experiments.",
         tags=("plate_reader", "aggregate", "event", "window", "records"),
         input_fields=tuple(
             _field(
@@ -221,31 +221,31 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
         ),
         figures=(
             ProtocolFigureSpec(
-                id="response_window_summary",
+                id="four_state_event_window_summary",
                 kind="summary",
                 summary="Primary event-relative response and anchored-magnitude components.",
                 primary=True,
             ),
             ProtocolFigureSpec(
-                id="response_window_diagnostic",
+                id="four_state_event_window_diagnostic",
                 kind="kinetics",
                 summary="Focused trajectories and reduced components for one source design.",
             ),
         ),
         plot_profiles=(
             ProtocolPlotProfileSpec(
-                id="response_window_overview",
+                id="four_state_event_window_overview",
                 summary="Primary event-relative summary view.",
-                figures=("response_window_summary",),
+                figures=("four_state_event_window_summary",),
             ),
         ),
-        default_plot_profile="response_window_overview",
+        default_plot_profile="four_state_event_window_overview",
         artifacts=(
-            ProtocolArtifactSpec(id="designs_table", summary="CSV of design-level response-window summaries."),
+            ProtocolArtifactSpec(id="designs_table", summary="CSV of design-level four-state event-window summaries."),
             ProtocolArtifactSpec(id="events_table", summary="CSV of source event intervals."),
         ),
         execution=ProtocolExecutionPlan(
-            compiler=compile_plate_reader_response_window,
+            compiler=compile_plate_reader_four_state_event_window,
         ),
     ),
     ProtocolDescriptor(
@@ -1617,7 +1617,7 @@ BUILTIN_PROTOCOLS = (
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "workbench/generic"),
     _DUAL_REPORTER_PROTOCOL,
     _PLATE_READER_SINGLE_REPORTER_PROTOCOL,
-    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/response_window"),
+    next(item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/four_state_event_window"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_screen"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_collection"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "cytometry/flow_panel"),

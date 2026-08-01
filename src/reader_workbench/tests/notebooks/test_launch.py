@@ -43,7 +43,7 @@ def test_plan_marimo_launch_uses_repo_local_runtime_dirs(tmp_path: Path) -> None
 
 def test_plan_marimo_launch_uses_explicit_repo_root_for_external_notebook(tmp_path: Path) -> None:
     repo_root, _ = _make_repo(tmp_path)
-    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook = tmp_path / "published-four-state-event-window" / "review.py"
     notebook.parent.mkdir()
     notebook.write_text("import marimo\n", encoding="utf-8")
 
@@ -208,7 +208,7 @@ def test_plan_marimo_launch_rejects_busy_explicit_port(monkeypatch, tmp_path: Pa
 
 def test_register_external_notebook_session_with_explicit_repo_root(monkeypatch, tmp_path: Path) -> None:
     repo_root, _ = _make_repo(tmp_path)
-    notebook = tmp_path / "published-response-window" / "review.py"
+    notebook = tmp_path / "published-four-state-event-window" / "review.py"
     notebook.parent.mkdir()
     notebook.write_text("import marimo\n", encoding="utf-8")
     runtime_paths = launch._runtime_paths_for_repo_root(repo_root)

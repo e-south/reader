@@ -6,13 +6,13 @@ from reader_workbench.plugins.transform.blank import BlankCorrection
 from reader_workbench.plugins.transform.crosstalk_pairs import CrosstalkPairs
 from reader_workbench.plugins.transform.cytometry_gating import CytometryGatingTransform
 from reader_workbench.plugins.transform.fold_change import FoldChange
+from reader_workbench.plugins.transform.four_state_event_window import FourStateEventWindowTransform
 from reader_workbench.plugins.transform.four_state_vector import FourStateVectorTransform
 from reader_workbench.plugins.transform.four_state_vector_collection import FourStateVectorCollectionTransform
 from reader_workbench.plugins.transform.logic_symmetry import LogicSymmetryTransform
 from reader_workbench.plugins.transform.outlier_filter import OutlierFilter
 from reader_workbench.plugins.transform.overflow import OverflowHandling
 from reader_workbench.plugins.transform.ratio import RatioTransform
-from reader_workbench.plugins.transform.response_window import ResponseWindowTransform
 from reader_workbench.plugins.transform.sample_map import SampleMapMerge
 from reader_workbench.plugins.transform.sample_metadata import SampleMetadataMerge
 from reader_workbench.workbench.assets import AssetDescriptor, build_plugin_asset
@@ -110,14 +110,14 @@ BUILTIN_PLUGIN_DESCRIPTORS: tuple[AssetDescriptor, ...] = (
         plugin_cls=RatioTransform,
     ),
     build_plugin_asset(
-        plugin_id="transform/response_window",
+        plugin_id="transform/four_state_event_window",
         semantics=PluginSemantics(
             domain="plate_reader",
             family="event_relative_summary",
             summary="Materialize event-relative summaries from provenance-bound source records.",
             tags=("event", "window", "aggregate", "provenance"),
         ),
-        plugin_cls=ResponseWindowTransform,
+        plugin_cls=FourStateEventWindowTransform,
     ),
     build_plugin_asset(
         plugin_id="transform/sample_map",
