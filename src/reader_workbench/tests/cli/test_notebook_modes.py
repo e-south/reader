@@ -51,6 +51,28 @@ def test_notebook_mode_none_skips_launch(monkeypatch, tmp_path: Path) -> None:
     assert default_notebook_name() in result.output
 
 
+def test_notebook_overwrite_is_explicit_and_noninteractive(tmp_path: Path) -> None:
+    cfg_path = write_config(tmp_path, _base_config())
+    runner = CliRunner()
+    create = runner.invoke(
+        app,
+        ["notebook", str(cfg_path), "--mode", "none", "--name", "review.py"],
+    )
+    assert create.exit_code == 0
+    target = tmp_path / "outputs" / "notebooks" / "review.py"
+    target.write_text("stale\n", encoding="utf-8")
+
+    overwrite = runner.invoke(
+        app,
+        ["notebook", str(cfg_path), "--mode", "none", "--name", "review.py", "--overwrite"],
+    )
+
+    assert overwrite.exit_code == 0
+    assert "Overwrite?" not in overwrite.output
+    assert "Notebook overwritten" in overwrite.output
+    assert target.read_text(encoding="utf-8") != "stale\n"
+
+
 def test_notebook_rejects_symlinked_notebooks_root_before_write(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path, _base_config())
     outputs = tmp_path / "outputs"
