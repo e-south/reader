@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from reader_workbench.plugins.plot.single_reporter_diagnostic import (
     SingleReporterDiagnosticCfg,
     SingleReporterDiagnosticPlot,
+    SingleReporterObservationUnitCfg,
     _reduction_columns,
 )
 from reader_workbench.workbench.experiment import (
@@ -129,6 +130,7 @@ def _aggregation_policy():
 def test_single_reporter_diagnostic_plugin_uses_semantic_partition_and_declared_replicates() -> None:
     cfg = SingleReporterDiagnosticCfg(
         partition={"collection_ref": "subjects"},
+        identity_scope={"entity_columns": ["subject_alias"]},
         condition_column="condition_alias",
         condition_order_ref="conditions",
         temporal_reduction=_interval_policy(),
@@ -157,16 +159,93 @@ def test_single_reporter_diagnostic_declares_tidy_record_input() -> None:
     assert SingleReporterDiagnosticPlot.input_ports()["df"].contract == "plate_reader.annotated.v1"
 
 
-def test_single_reporter_diagnostic_keeps_plate_scoped_biological_identity_unknown() -> None:
+def test_single_reporter_diagnostic_does_not_infer_replicates_from_position() -> None:
     context = _context(replicate_identity_field=None)
+    frame = _frame().assign(
+        experiment_id="experiment-1",
+        plate_id="plate-1",
+        sheet_name="read-1",
+        well="A1",
+    )
 
     assert context.experiment.evidence.replicate_kind == "biological"
     assert context.experiment.evidence.replicate_identity_field is None
-    assert _reduction_columns(ctx=context, frame=_frame()) == ("position", "position")
+    with pytest.raises(ValueError, match="replicate identity.*observation_unit"):
+        _reduction_columns(ctx=context, frame=frame, observation_unit=None)
+
+
+def test_single_reporter_diagnostic_accepts_explicit_observation_only_units() -> None:
+    cfg = SingleReporterDiagnosticCfg(
+        temporal_reduction=_endpoint_policy(),
+        observation_aggregation=_aggregation_policy(),
+        observation_unit={"role": "observation_only", "column": "position"},
+        partition={"collection_ref": "subjects"},
+        identity_scope={"entity_columns": ["subject_alias"]},
+        condition_column="condition_alias",
+        normalizer_channel="OD",
+        reporter_channel="reporter",
+        ratio_channel="reporter/OD",
+    )
+
+    rendered = SingleReporterDiagnosticPlot().render(
+        _context(replicate_identity_field=None),
+        {"df": _frame()},
+        cfg,
+    )
+
+    assert rendered
+    assert all(item.description and "observation-only" in item.description for item in rendered)
+    assert all("Observation units (not replicates)" in item.fig.axes[3].get_title() for item in rendered)
+    for figure in {item.fig for item in rendered}:
+        plt.close(figure)
+
+
+def test_single_reporter_diagnostic_uses_declared_replicate_without_position_fallback() -> None:
+    frame = _frame().drop(columns="position")
+
+    assert _reduction_columns(
+        ctx=_context(),
+        frame=frame,
+        observation_unit=None,
+    ) == ("biological_replicate_id", "biological_replicate_id", "declared_replicate")
+
+    assert _reduction_columns(
+        ctx=_context(),
+        frame=_frame(),
+        observation_unit=SingleReporterObservationUnitCfg(role="observation_only", column="position"),
+    ) == ("biological_replicate_id", "position", "declared_replicate")
+
+
+@pytest.mark.parametrize(
+    "observation_unit",
+    [
+        {"column": "position"},
+        {"role": "replicate", "column": "position"},
+        {"role": "observation_only", "column": "   "},
+    ],
+)
+def test_single_reporter_diagnostic_requires_typed_observation_only_contract(
+    observation_unit: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError, match="observation_unit|role|column"):
+        SingleReporterDiagnosticCfg(
+            temporal_reduction=_endpoint_policy(),
+            observation_aggregation=_aggregation_policy(),
+            identity_scope={"entity_columns": ["subject_alias"]},
+            observation_unit=observation_unit,
+            normalizer_channel="OD",
+            reporter_channel="reporter",
+            ratio_channel="reporter/OD",
+        )
 
 
 def test_single_reporter_diagnostic_config_requires_compiler_owned_reduction_policy() -> None:
-    common = {"normalizer_channel": "OD", "reporter_channel": "reporter", "ratio_channel": "reporter/OD"}
+    common = {
+        "identity_scope": {"entity_columns": ["subject_alias"]},
+        "normalizer_channel": "OD",
+        "reporter_channel": "reporter",
+        "ratio_channel": "reporter/OD",
+    }
 
     with pytest.raises(ValidationError, match="temporal_reduction"):
         SingleReporterDiagnosticCfg(**common)
@@ -178,6 +257,8 @@ def test_single_reporter_diagnostic_fails_when_declared_replicate_identity_is_mi
     cfg = SingleReporterDiagnosticCfg(
         temporal_reduction=_endpoint_policy(),
         observation_aggregation=_aggregation_policy(),
+        identity_scope={"entity_columns": ["subject_alias"]},
+        condition_column="condition_alias",
         normalizer_channel="OD",
         reporter_channel="reporter",
         ratio_channel="reporter/OD",
@@ -189,3 +270,85 @@ def test_single_reporter_diagnostic_fails_when_declared_replicate_identity_is_mi
             {"df": _frame().drop(columns="biological_replicate_id")},
             cfg,
         )
+
+
+def test_single_reporter_diagnostic_fails_when_observation_only_column_is_missing() -> None:
+    cfg = SingleReporterDiagnosticCfg(
+        temporal_reduction=_endpoint_policy(),
+        observation_aggregation=_aggregation_policy(),
+        identity_scope={"entity_columns": ["subject_alias"]},
+        observation_unit={"role": "observation_only", "column": "well_id"},
+        condition_column="condition_alias",
+        normalizer_channel="OD",
+        reporter_channel="reporter",
+        ratio_channel="reporter/OD",
+    )
+
+    with pytest.raises(ValueError, match="observation_unit.*well_id.*absent"):
+        SingleReporterDiagnosticPlot().render(
+            _context(replicate_identity_field=None),
+            {"df": _frame()},
+            cfg,
+        )
+
+
+def test_single_reporter_diagnostic_fails_when_identity_scope_column_is_missing() -> None:
+    cfg = SingleReporterDiagnosticCfg(
+        temporal_reduction=_endpoint_policy(),
+        observation_aggregation=_aggregation_policy(),
+        identity_scope={"entity_columns": ["subject_alias"]},
+        condition_column="condition_alias",
+        normalizer_channel="OD",
+        reporter_channel="reporter",
+        ratio_channel="reporter/OD",
+    )
+
+    with pytest.raises(ValueError, match="missing required columns.*subject_alias"):
+        SingleReporterDiagnosticPlot().render(
+            _context(),
+            {"df": _frame().drop(columns="subject_alias")},
+            cfg,
+        )
+
+
+def test_single_reporter_diagnostic_rejects_missing_identity_scope_values() -> None:
+    cfg = SingleReporterDiagnosticCfg(
+        temporal_reduction=_endpoint_policy(),
+        observation_aggregation=_aggregation_policy(),
+        identity_scope={"entity_columns": ["subject_alias"]},
+        condition_column="condition_alias",
+        normalizer_channel="OD",
+        reporter_channel="reporter",
+        ratio_channel="reporter/OD",
+    )
+    frame = _frame()
+    frame.loc[frame.index[0], "subject_alias"] = None
+
+    with pytest.raises(ValueError, match="subject_alias.*missing identities"):
+        SingleReporterDiagnosticPlot().render(_context(), {"df": frame}, cfg)
+
+
+@pytest.mark.parametrize(
+    "identity_scope",
+    [
+        None,
+        {"entity_columns": []},
+        {"entity_columns": ["subject_alias", "subject_alias"]},
+        {"entity_columns": ["   "]},
+    ],
+)
+def test_single_reporter_diagnostic_requires_explicit_semantic_identity_scope(
+    identity_scope: dict[str, list[str]] | None,
+) -> None:
+    kwargs = {
+        "temporal_reduction": _endpoint_policy(),
+        "observation_aggregation": _aggregation_policy(),
+        "normalizer_channel": "OD",
+        "reporter_channel": "reporter",
+        "ratio_channel": "reporter/OD",
+    }
+    if identity_scope is not None:
+        kwargs["identity_scope"] = identity_scope
+
+    with pytest.raises(ValidationError, match="identity_scope|entity_columns"):
+        SingleReporterDiagnosticCfg(**kwargs)

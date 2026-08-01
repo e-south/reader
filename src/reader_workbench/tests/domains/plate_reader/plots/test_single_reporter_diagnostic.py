@@ -48,15 +48,19 @@ def _frame() -> pd.DataFrame:
 
 
 def _prepare(*, endpoint_time_h=None, window_h=None):
+    frame = _frame()
+    frame = frame[frame["subject_alias"] == "subject-a"].copy()
     return prepare_single_reporter_diagnostics(
-        _frame(),
+        frame,
         group_on="subject_alias",
-        collection_items=[{"paired": ["subject-a", "subject-b"]}],
+        collection_items=None,
         group_match="exact",
         condition_column="condition_alias",
         condition_order=["baseline", "induced"],
+        entity_columns=["subject_alias"],
         unit_column="biological_replicate_id",
         observation_column="position",
+        unit_role="declared_replicate",
         time_column="time",
         normalizer_channel="absorbance",
         reporter_channel="mScarlet",
@@ -112,17 +116,14 @@ def _aggregation() -> ObservationAggregationSpec:
 def test_single_reporter_diagnostic_reduces_observations_within_declared_units() -> None:
     (diagnostic,) = _prepare(window_h=(1.0, 2.0))
 
-    assert diagnostic.group_label == "paired"
+    assert diagnostic.group_label == "subject-a"
     assert diagnostic.condition_order == ("baseline", "induced")
     assert diagnostic.selection.label == "observed median over 1–2 h"
-    assert len(diagnostic.reduced_ratio) == 8
-    assert len(diagnostic.reduced_normalizer) == 8
-    assert set(diagnostic.reduced_ratio["__unit"]) == {
-        "subject-a::replicate-1",
-        "subject-a::replicate-2",
-        "subject-b::replicate-1",
-        "subject-b::replicate-2",
-    }
+    assert len(diagnostic.reduced_ratio) == 4
+    assert len(diagnostic.reduced_normalizer) == 4
+    assert set(diagnostic.reduced_ratio["__unit"]) == {"replicate-1", "replicate-2"}
+    assert len(diagnostic.reduced_ratio[["__condition", "subject_alias", "__unit"]].drop_duplicates()) == 4
+    assert diagnostic.unit_role == "declared_replicate"
 
 
 def test_single_reporter_diagnostic_endpoint_fails_outside_tolerance() -> None:
@@ -139,8 +140,10 @@ def test_single_reporter_diagnostic_condition_order_is_closed() -> None:
             group_match="exact",
             condition_column="condition_alias",
             condition_order=["baseline"],
+            entity_columns=["subject_alias"],
             unit_column="biological_replicate_id",
             observation_column="position",
+            unit_role="declared_replicate",
             time_column="time",
             normalizer_channel="absorbance",
             reporter_channel="mScarlet",
@@ -162,8 +165,10 @@ def test_single_reporter_diagnostic_rejects_nonfinite_ratio_rows() -> None:
             group_match="exact",
             condition_column="condition_alias",
             condition_order=["baseline", "induced"],
+            entity_columns=["subject_alias"],
             unit_column="biological_replicate_id",
             observation_column="position",
+            unit_role="declared_replicate",
             time_column="time",
             normalizer_channel="absorbance",
             reporter_channel="mScarlet",
@@ -191,8 +196,10 @@ def test_single_reporter_diagnostic_requires_channel_pairing_at_each_acquisition
             group_match="exact",
             condition_column="condition_alias",
             condition_order=["baseline", "induced"],
+            entity_columns=["subject_alias"],
             unit_column="biological_replicate_id",
             observation_column="position",
+            unit_role="declared_replicate",
             time_column="time",
             normalizer_channel="absorbance",
             reporter_channel="mScarlet",
@@ -200,6 +207,58 @@ def test_single_reporter_diagnostic_requires_channel_pairing_at_each_acquisition
             temporal_reduction=_temporal(endpoint_time_h=1.0),
             observation_aggregation=_aggregation(),
         )
+
+
+def test_single_reporter_diagnostic_rejects_multi_entity_presentation_partition() -> None:
+    with pytest.raises(ValueError, match="partition 'all'.*multiple identity_scope entities"):
+        prepare_single_reporter_diagnostics(
+            _frame(),
+            group_on=None,
+            collection_items=None,
+            group_match="exact",
+            condition_column="condition_alias",
+            condition_order=["baseline", "induced"],
+            entity_columns=["subject_alias"],
+            unit_column="biological_replicate_id",
+            observation_column="position",
+            unit_role="declared_replicate",
+            time_column="time",
+            normalizer_channel="absorbance",
+            reporter_channel="mScarlet",
+            ratio_channel="mScarlet/absorbance",
+            temporal_reduction=_temporal(window_h=(1.0, 2.0)),
+            observation_aggregation=_aggregation(),
+        )
+
+
+def test_single_reporter_replicate_scope_keeps_structural_entity_and_unit_keys() -> None:
+    frame = _frame()
+    frame = frame[frame["subject_alias"] == "subject-a"].copy()
+    frame["subject_alias"] = "subject::a"
+    frame.loc[frame["biological_replicate_id"] == "replicate-1", "biological_replicate_id"] = "replicate::1"
+
+    (diagnostic,) = prepare_single_reporter_diagnostics(
+        frame,
+        group_on=None,
+        collection_items=None,
+        group_match="exact",
+        condition_column="condition_alias",
+        condition_order=["baseline", "induced"],
+        entity_columns=["subject_alias"],
+        unit_column="biological_replicate_id",
+        observation_column="position",
+        unit_role="declared_replicate",
+        time_column="time",
+        normalizer_channel="absorbance",
+        reporter_channel="mScarlet",
+        ratio_channel="mScarlet/absorbance",
+        temporal_reduction=_temporal(window_h=(1.0, 2.0)),
+        observation_aggregation=_aggregation(),
+    )
+
+    assert set(diagnostic.reduced_ratio["subject_alias"]) == {"subject::a"}
+    assert set(diagnostic.reduced_ratio["__unit"]) == {"replicate::1", "replicate-2"}
+    assert len(diagnostic.reduced_ratio[["__condition", "subject_alias", "__unit"]].drop_duplicates()) == 4
 
 
 def test_single_reporter_diagnostic_renders_four_square_panels_and_visible_normalizer_qc() -> None:
@@ -218,7 +277,7 @@ def test_single_reporter_diagnostic_renders_four_square_panels_and_visible_norma
         "absorbance kinetics",
         "mScarlet kinetics",
         "mScarlet/absorbance kinetics",
-        "mScarlet/absorbance by condition",
+        "mScarlet/absorbance by condition\nDeclared replicate units",
     ]
     assert len({tuple(axis.get_position().bounds) for axis in figure.axes}) == 4
     assert all(any(patch.get_gid() == "single-reporter-window" for patch in axis.patches) for axis in main_axes[:3])
@@ -226,5 +285,6 @@ def test_single_reporter_diagnostic_renders_four_square_panels_and_visible_norma
     assert qc_axis.get_ylabel() == "Reduced absorbance (QC only)"
     assert any(collection.get_gid() == "single-reporter-normalizer-center" for collection in qc_axis.collections)
     assert [tick.get_text() for tick in main_axes[3].get_xticklabels()] == ["baseline", "induced"]
+    assert "Declared replicate units" in main_axes[3].get_title()
 
     plt.close(figure)

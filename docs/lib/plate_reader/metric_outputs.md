@@ -129,23 +129,42 @@ protocol:
         single_reporter_diagnostic:
           partition:
             by: sample_id_alias
+          identity_scope:
+            entity_columns: [sample_id_alias]
           condition_column: condition_alias
           condition_order_ref: condition_order
+          observation_unit:
+            role: observation_only
+            column: position
           format: [png, pdf]
 ```
 
 When `evidence.replicate_identity_field` is declared, the plot reduces
-observations within that explicitly named unit before comparing conditions. If
-it is absent, the replicate-kind declaration applies to the experiment and each
-well position remains a separate within-experiment plot unit. Thus a study in
-which each physical plate is a biological replicate can declare
-`replicate_kind: biological` on every plate experiment without inventing a
-within-plate identity field. Neither a well position nor spatial proximity
-establishes technical replication. Use `replicate_kind: unknown` when the kind
-is not established, and omit the identity field when no grouping relationship
-is established. The compiler owns the temporal and aggregation policies plus
-the reporter, normalizer, ratio, and time-channel bindings; a plot view owns
-only partitioning, condition presentation, and figure options.
+observations within that explicitly named identity before comparing conditions.
+The identity is scoped by `identity_scope.entity_columns`, the declared
+condition, and the replicate identity field; Reader does not impose a second
+plate-level replicate tier. This semantic scope is independent of `partition`,
+which selects presentation artifacts but may not redefine or pool replicate
+populations. Each diagnostic partition must resolve to exactly one entity
+tuple. Use a comparison figure with an explicit aggregation contract when
+several subjects or genotypes belong in one visual. The single-reporter
+compiler defaults the entity scope to canonical `design_id`; a view must
+override it explicitly when another persisted subject or genotype column is
+the correct owner. If one declared replicate contains several recorded
+observations, the view must also name their column through the observation-only
+contract shown above. Without that contract, each declared replicate identity
+must resolve to one aligned trace. If the replicate identity field is absent,
+grouping is unresolved even when `replicate_kind` is known. The plot then fails
+unless its view explicitly declares an `observation_unit` with
+`role: observation_only`. This opt-in keeps descriptive well or position traces
+available while labeling their points as observations, not replicates.
+Experiment, plate, sheet, well, and position fields otherwise remain
+acquisition provenance and are never implicit replicate identities. Use
+`replicate_kind: unknown` when the kind is not established. The compiler owns
+the temporal and aggregation policies plus the reporter, normalizer, ratio, and
+time-channel bindings; a plot view owns presentation partitioning, semantic
+entity scope, any explicit observation-only unit, condition presentation, and
+figure options.
 
 This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study

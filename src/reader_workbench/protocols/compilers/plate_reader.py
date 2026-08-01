@@ -619,6 +619,7 @@ def _plate_reader_single_reporter_plot_output(
         temporal_reduction, observation_aggregation = _single_reporter_diagnostic_policy(protocol)
         defaults = {
             **({} if "partition" in settings else {"partition": {"by": "design_id"}}),
+            "identity_scope": {"entity_columns": ["design_id"]},
             "condition_column": "treatment",
             "temporal_reduction": temporal_reduction,
             "observation_aggregation": observation_aggregation,

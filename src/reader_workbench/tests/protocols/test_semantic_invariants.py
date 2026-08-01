@@ -325,8 +325,10 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
                     "views": {
                         "single_reporter_diagnostic": {
                             "partition": {"collection_ref": "subjects"},
+                            "identity_scope": {"entity_columns": ["subject_alias"]},
                             "condition_column": "condition_alias",
                             "condition_order_ref": "conditions",
+                            "observation_unit": {"role": "observation_only", "column": "position"},
                             "format": ["png", "pdf"],
                         }
                     },
@@ -341,6 +343,7 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
     assert diagnostic.reads["df"].record_id == "sample_measurements/df"
     assert diagnostic.with_ == {
         "partition": {"collection_ref": "subjects"},
+        "identity_scope": {"entity_columns": ["subject_alias"]},
         "condition_column": "condition_alias",
         "temporal_reduction": temporal_reduction,
         "observation_aggregation": observation_aggregation,
@@ -349,8 +352,33 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
         "reporter_channel": "mScarlet",
         "ratio_channel": "mScarlet/absorbance",
         "condition_order_ref": "conditions",
+        "observation_unit": {"role": "observation_only", "column": "position"},
         "format": ["png", "pdf"],
     }
+
+
+def test_single_reporter_diagnostic_defaults_identity_scope_independently_of_partition() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": _single_reporter_interval_policy(),
+                "observation_aggregation": _single_reporter_aggregation_policy(),
+            },
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["single_reporter_diagnostic"],
+                    "views": {"single_reporter_diagnostic": {"partition": {"by": "sample_id_alias"}}},
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "single_reporter_diagnostic")
+
+    assert diagnostic.with_["partition"] == {"by": "sample_id_alias"}
+    assert diagnostic.with_["identity_scope"] == {"entity_columns": ["design_id"]}
 
 
 @pytest.mark.parametrize(

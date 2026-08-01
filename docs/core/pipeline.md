@@ -28,7 +28,7 @@ experiment:
 evidence:
   data_class: plate_reader_screen
   data_class_reason: Time-series plate-reader assay with an explicit sample map.
-  replicate_kind: biological
+  replicate_kind: unknown
 
 protocol:
   id: plate_reader/dual_reporter_screen
@@ -52,13 +52,17 @@ resources:
 `replicate_kind` records what the source establishes: `biological`,
 `technical`, `mixed`, `unknown`, or `not_applicable`. Declare
 `replicate_identity_field` only when a persisted source field identifies the
-replicate units inside one experiment record. Without that field, the
-declaration applies to the experiment itself. For example, when one Reader
-experiment represents one physical plate and plates are biological replicates,
-declare `replicate_kind: biological` and omit `replicate_identity_field`. Plate
-positions remain observations; they are not thereby technical replicates. Use
-`unknown` when the replicate kind is not established, and omit the identity
-field as well when no grouping relationship is established.
+replicate units inside one experiment record. Replicate kind may be known while
+that grouping remains unresolved; omitting the identity field records exactly
+that limitation. It does not make the experiment, plate, sheet, well, or
+position a replicate unit. Acquisition identifiers remain provenance unless
+one is explicitly authored as the replicate identity. Use `unknown` when the
+kind itself is not established. Never infer grouping or technical replication
+from spatial position. Plot presentation groups are also not identity scopes:
+where a reduction needs subject or genotype ownership, it declares that scope
+separately. A diagnostic partition must resolve to one such entity tuple;
+cross-entity pooling requires an explicit comparison contract rather than a
+change in panel membership.
 
 `channel_map` keys are exact canonical channel labels from the Synergy export.
 Keep wavelength suffixes when the workbook supplies them; the values are the

@@ -252,7 +252,10 @@ def _draw_reduction_panel(
         )
         qc_line.set_gid("single-reporter-normalizer-center")
 
-    axis.set_title(f"{data.ratio_channel} by condition")
+    unit_label = (
+        "Declared replicate units" if data.unit_role == "declared_replicate" else "Observation units (not replicates)"
+    )
+    axis.set_title(f"{data.ratio_channel} by condition\n{unit_label}")
     axis.set_xlabel(str(data.condition_column).replace("_", " ").capitalize())
     value_space = data.selection.temporal_reduction.output_space
     value_suffix = "" if value_space == "linear" else " (log2)"
