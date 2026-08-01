@@ -228,7 +228,6 @@ def plots(
 
 def records(experiment: Experiment, *, include_history: bool = False) -> RecordCatalogResult:
     decl = experiment._declaration
-    workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
     outputs_dir = layout.outputs_dir
     store = experiment._runtime.record_store(
@@ -258,6 +257,10 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
             },
             entries=(),
         )
+    current_record_ids = frozenset()
+    if not include_history:
+        workbench = resolve_workbench(decl)
+        current_record_ids = workbench_record_ids(workbench, runtime=experiment._runtime)
     payload = record_catalog_payload(
         experiment=experiment_identity_payload(job_path=experiment.config_path, decl=decl),
         store=store,
@@ -265,7 +268,7 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
         runtime=experiment._runtime,
         include_history=include_history,
         current_config_digest=decl.config_digest,
-        declared_record_ids=workbench_record_ids(workbench, runtime=experiment._runtime),
+        declared_record_ids=current_record_ids,
     )
     return RecordCatalogResult(
         experiment=_identity(payload["experiment"]),

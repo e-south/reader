@@ -23,10 +23,6 @@ def render_records(
     _, decl = load_job_models(job_path)
     outputs_dir = decl.experiment_semantics.layout.outputs_dir
     runtime = _load("reader_workbench.runtime").builtin_runtime()
-    workbench = _load("reader_workbench.workbench.graph").resolve_workbench(decl)
-    current_record_ids = _load("reader_workbench.workbench.inspection.runtime").workbench_record_ids(
-        workbench, runtime=runtime
-    )
     store = runtime.record_store(
         outputs_dir,
         plots_subdir=decl.experiment_semantics.layout.plots_subdir,
@@ -36,6 +32,12 @@ def render_records(
     if not store.catalog_exists():
         raise ReaderError(
             f"No outputs/manifests/records.json found. Run '{reader_command('run', job_path)}' first to produce records."
+        )
+    current_record_ids = frozenset()
+    if not all_revisions:
+        workbench = _load("reader_workbench.workbench.graph").resolve_workbench(decl)
+        current_record_ids = _load("reader_workbench.workbench.inspection.runtime").workbench_record_ids(
+            workbench, runtime=runtime
         )
 
     fmt = normalize_output_format(format)

@@ -5,11 +5,13 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from reader_workbench.contracts import builtin_contract_catalog
+from reader_workbench.runtime import ReaderRuntime, builtin_runtime
 from reader_workbench.tests.support import base_reader_config, cli_success_data, write_config
 from reader_workbench.workbench.cli import app
 from reader_workbench.workbench.config import ReaderSpec, reader_spec_digest
 from reader_workbench.workbench.graph import ProvenanceInput, RecordRef
 from reader_workbench.workbench.records import PathDescription, RecordStore
+from reader_workbench.workbench.registry import Registry
 
 
 def _collection_config(tmp_path: Path, *, lifecycle: str = "active") -> Path:
@@ -198,6 +200,40 @@ def test_records_generic_workbench_uses_current_config_as_its_record_boundary(tm
         "measurements/current",
         "measurements/prior",
     }
+
+
+def test_records_history_remains_readable_when_current_plugins_are_unavailable(tmp_path, monkeypatch) -> None:
+    config = _collection_config(tmp_path)
+    builtin = builtin_runtime()
+    archived_runtime = ReaderRuntime(
+        contracts=builtin.contracts,
+        protocols=builtin.protocols,
+        plugins=Registry(contracts=builtin.contracts),
+    )
+    monkeypatch.setattr("reader_workbench.runtime.builtin_runtime", lambda: archived_runtime)
+    store = RecordStore(tmp_path / "outputs", contracts=builtin.contracts)
+    store.persist_dataframe(
+        producer_id="retired_collection",
+        producer_plugin="transform/retired_collection",
+        out_name="df",
+        record_id="retired_collection/vectors",
+        df=pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]}),
+        contract_id="tidy.v1",
+        inputs=[],
+        config_digest="sha256:archived",
+    )
+
+    current_result = CliRunner().invoke(app, ["records", str(config), "--format", "json"])
+    history_result = CliRunner().invoke(app, ["records", str(config), "--all", "--format", "json"])
+
+    assert current_result.exit_code == 1
+    assert "Unknown plugin" in current_result.output
+    assert history_result.exit_code == 0
+    history = cli_success_data(history_result.output)
+    assert [record["record_id"] for record in history["records"]] == ["retired_collection/vectors"]
+    assert history["records"][0]["description"] == (
+        "Description unavailable because plugin 'transform/retired_collection' is not registered."
+    )
 
 
 def test_records_rejects_retired_record_schemas(tmp_path) -> None:
