@@ -179,10 +179,6 @@ def _scaffold_notebook(
             raise ConfigError(f"Notebook target must stay within the notebooks sink root: {target_candidate}") from exc
         if new:
             target = next_available_path(target)
-        elif overwrite and target.exists():
-            confirm = typer.confirm(f"Notebook already exists at {target}. Overwrite?", default=False)
-            if not confirm:
-                overwrite = False
         has_fcs = any(path.suffix.lower() == ".fcs" for path in exp_dir.rglob("*.fcs"))
         existed = target.exists()
         target, created = _load("reader_workbench.workbench.notebooks").write_experiment_notebook(
@@ -226,7 +222,7 @@ def notebook(
         False,
         "--overwrite",
         "--force",
-        help="Overwrite today's notebook if it already exists (asks for confirmation).",
+        help="Overwrite the selected generated notebook if it already exists.",
     ),
     new: bool = typer.Option(
         False,

@@ -125,8 +125,12 @@ def test_canonical_notebook_does_not_advertise_omitted_notebooks_extra(tmp_path:
     assert "Install the `notebooks` extra." not in body
 
 
+def _marimo_cli_available() -> bool:
+    return importlib.util.find_spec("marimo") is not None and importlib.util.find_spec("marimo.__main__") is not None
+
+
 def test_canonical_notebook_renders_through_scaffold_and_passes_marimo_check(tmp_path: Path) -> None:
-    run_marimo_check = importlib.util.find_spec("marimo") is not None
+    run_marimo_check = _marimo_cli_available()
     rendered_path, content = _render_canonical_notebook(tmp_path)
     assert "__PLOT_SPECS__" not in content
 
@@ -145,7 +149,7 @@ def test_canonical_notebook_renders_through_scaffold_and_passes_marimo_check(tmp
 
 @pytest.mark.integration
 def test_generated_generic_eda_executes_without_assay_identity_columns(tmp_path: Path) -> None:
-    if importlib.util.find_spec("marimo") is None:
+    if not _marimo_cli_available():
         pytest.skip("Marimo is unavailable; use a separately managed notebook environment to run execution tests.")
 
     config_path = write_config(
