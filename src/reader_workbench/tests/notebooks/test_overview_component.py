@@ -36,7 +36,7 @@ def test_build_notebook_overview_requires_identity_and_protocol(tmp_path: Path) 
         build_notebook_overview(
             experiment_id=" ",
             experiment_title="demo",
-            protocol_id="logic/sfxi_screen",
+            protocol_id="logic/four_state_vector_screen",
             experiment_root=tmp_path,
             outputs_dir=tmp_path / "outputs",
             notebooks_dir=tmp_path / "outputs" / "notebooks",
@@ -56,11 +56,11 @@ def test_build_notebook_overview_requires_identity_and_protocol(tmp_path: Path) 
 
 
 def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: Path) -> None:
-    experiment_id = "20260102_sfxi_four-state-panel"
+    experiment_id = "20260102_four_state_vector_four-state-panel"
     overview = build_notebook_overview(
         experiment_id=experiment_id,
         experiment_title=experiment_id,
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         experiment_root=tmp_path,
         outputs_dir=tmp_path / "outputs",
         notebooks_dir=tmp_path / "outputs" / "notebooks",
@@ -68,7 +68,7 @@ def test_build_notebook_overview_humanizes_compiled_identity_fallback(tmp_path: 
     )
 
     assert overview.experiment_id == experiment_id
-    assert overview.experiment_title == "2026-01-02 · Sfxi Four State Panel"
+    assert overview.experiment_title == "2026-01-02 · Four State Vector Four State Panel"
 
 
 def test_render_notebook_overview_panel_is_assay_neutral_and_uses_lazy_accordion(tmp_path: Path) -> None:

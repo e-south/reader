@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from reader_workbench.domains.plate_reader.analysis.response_window import ResponseWindowAnalysisSpec
+from reader_workbench.domains.plate_reader.analysis.four_state_event_window import FourStateEventWindowAnalysisSpec
 from reader_workbench.domains.time_series import (
     ObservationAggregationSpec,
     TemporalReductionSpec,
@@ -36,32 +36,34 @@ from .plate_reader_pipeline import compose_dual_reporter_pipeline, compose_singl
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
 
 
-def compile_plate_reader_response_window(protocol: Any):
+def compile_plate_reader_four_state_event_window(protocol: Any):
     input_names = ("response_records", "magnitude_records", "trajectory_records")
     effective_inputs = protocol.effective_inputs()
     analysis = protocol.effective_analysis()
     try:
-        ResponseWindowAnalysisSpec.from_mapping(analysis)
+        FourStateEventWindowAnalysisSpec.from_mapping(analysis)
     except ValueError as exc:
-        raise ConfigError(f"invalid plate-reader response-window analysis policy: {exc}") from exc
+        raise ConfigError(f"invalid plate-reader four-state event-window analysis policy: {exc}") from exc
     resource_ids = {name: tuple(effective_inputs.get(name, ())) for name in input_names}
     writes = {
-        name: RecordOutputDecl(record_id=f"response_window/{name}")
+        name: RecordOutputDecl(record_id=f"four_state_event_window/{name}")
         for name in ("wells", "designs", "descriptive_resampling_draws", "traces", "events")
     }
     pipeline = (
         _step(
-            id="response_window",
-            plugin="transform/response_window",
+            id="four_state_event_window",
+            plugin="transform/four_state_event_window",
             reads={name: RecordCollectionInputDecl(resource_ids=resource_ids[name]) for name in input_names},
             writes=writes,
             with_=analysis,
         ),
     )
     primary_reduction = _primary_reduction_config(analysis)
-    selected_plots = protocol.select_plot_outputs(allowed={"response_window_summary", "response_window_diagnostic"})
+    selected_plots = protocol.select_plot_outputs(
+        allowed={"four_state_event_window_summary", "four_state_event_window_diagnostic"}
+    )
     plots = tuple(
-        _response_window_plot_output(
+        _four_state_event_window_plot_output(
             protocol,
             output_id=output_id,
             primary_reduction=primary_reduction,
@@ -73,8 +75,8 @@ def compile_plate_reader_response_window(protocol: Any):
         allowed={"designs_table", "events_table"},
     )
     export_records = {
-        "designs_table": ("response_window/designs", "response_window_designs.csv"),
-        "events_table": ("response_window/events", "response_window_events.csv"),
+        "designs_table": ("four_state_event_window/designs", "four_state_event_window_designs.csv"),
+        "events_table": ("four_state_event_window/events", "four_state_event_window_events.csv"),
     }
     exports = tuple(
         _step(
@@ -96,7 +98,7 @@ def compile_plate_reader_response_window(protocol: Any):
     )
 
 
-def _response_window_plot_output(
+def _four_state_event_window_plot_output(
     protocol: Any,
     *,
     output_id: str,
@@ -111,24 +113,24 @@ def _response_window_plot_output(
             "mark exactly one protocol.analysis.reductions entry as primary instead"
         )
     primary_reduction_id = str(primary_reduction["id"])
-    if output_id == "response_window_summary":
+    if output_id == "four_state_event_window_summary":
         return _step(
             id=output_id,
-            plugin="plot/response_window_summary",
-            reads={"designs": RecordInputDecl(record_id="response_window/designs")},
+            plugin="plot/four_state_event_window_summary",
+            reads={"designs": RecordInputDecl(record_id="four_state_event_window/designs")},
             with_=_deep_merge({"primary_reduction_id": primary_reduction_id}, settings),
         )
-    if output_id == "response_window_diagnostic":
+    if output_id == "four_state_event_window_diagnostic":
         for key in ("source_experiment_id", "design_id"):
             value = settings.get(key)
             if not isinstance(value, str) or not value.strip():
                 raise ConfigError(f"protocol.outputs.plots.views.{output_id}.{key} must be a non-empty string")
         return _step(
             id=output_id,
-            plugin="plot/response_window_diagnostic",
+            plugin="plot/four_state_event_window_diagnostic",
             reads={
-                "designs": RecordInputDecl(record_id="response_window/designs"),
-                "traces": RecordInputDecl(record_id="response_window/traces"),
+                "designs": RecordInputDecl(record_id="four_state_event_window/designs"),
+                "traces": RecordInputDecl(record_id="four_state_event_window/traces"),
             },
             with_=_deep_merge(
                 {
@@ -138,7 +140,7 @@ def _response_window_plot_output(
                 settings,
             ),
         )
-    raise ConfigError(f"Unsupported response-window plot output {output_id!r}")
+    raise ConfigError(f"Unsupported four-state event-window plot output {output_id!r}")
 
 
 def _primary_reduction_config(analysis: dict[str, Any]) -> dict[str, Any]:
@@ -619,6 +621,7 @@ def _plate_reader_single_reporter_plot_output(
         temporal_reduction, observation_aggregation = _single_reporter_diagnostic_policy(protocol)
         defaults = {
             **({} if "partition" in settings else {"partition": {"by": "design_id"}}),
+            "identity_scope": {"entity_columns": ["design_id"]},
             "condition_column": "treatment",
             "temporal_reduction": temporal_reduction,
             "observation_aggregation": observation_aggregation,

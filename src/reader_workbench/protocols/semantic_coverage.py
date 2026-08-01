@@ -166,14 +166,14 @@ def _plate_reader_single_reporter_semantic_program(
     )
 
 
-def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSemanticProgram:
+def _logic_semantic_program(protocol: Any, *, include_four_state_vector: bool) -> ProtocolSemanticProgram:
     overrides: dict[str, ProtocolSemanticExecution] = {}
-    if include_vec8:
-        vec8_binding = ProtocolSemanticExecution(
+    if include_four_state_vector:
+        vector_binding = ProtocolSemanticExecution(
             status="compiled",
-            step_ids=("sfxi_vec8",),
-            plugin_ids=("transform/sfxi",),
-            record_ids=("sfxi_vec8/vec8",),
+            step_ids=("four_state_vector",),
+            plugin_ids=("transform/four_state_vector",),
+            record_ids=("four_state_vector/vector",),
             config_paths=(
                 "protocol.inputs.reference",
                 "protocol.inputs.design_by",
@@ -182,28 +182,20 @@ def _logic_semantic_program(protocol: Any, *, include_vec8: bool) -> ProtocolSem
                 "protocol.inputs.target_time_h",
                 "protocol.inputs.time_tolerance_h",
             ),
-            note="The SFXI vec8 transform materializes the protocol control rule, summary window, and vector metric.",
+            note="The four-state vector transform materializes the protocol control rule, summary window, and measurement vector.",
         )
         overrides.update(
             {
-                "logic_corner_map": vec8_binding,
-                "summary_timepoint": vec8_binding,
-                "vec8": vec8_binding,
+                "logic_corner_map": vector_binding,
+                "summary_timepoint": vector_binding,
+                "four_state_vector": vector_binding,
             }
         )
     return _semantic_program(protocol, overrides=overrides)
 
 
 def _cytometry_semantic_program(protocol: Any) -> ProtocolSemanticProgram:
-    return _semantic_program(
-        protocol,
-        overrides={
-            "ranking": ProtocolSemanticExecution(
-                status="descriptive_only",
-                note="Cytometry ranking remains domain-defined until a typed analysis program is introduced.",
-            )
-        },
-    )
+    return _semantic_program(protocol, overrides={})
 
 
 def _dual_reporter_semantic_profile(*, include_fold_change: bool, include_crosstalk_pairs: bool) -> str:

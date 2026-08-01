@@ -2,7 +2,7 @@
 doc_id: reader-package-spec
 surface: architecture-reference
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Detailed package map and implementation contracts beneath the top-level Reader architecture.
 ---
 
@@ -96,10 +96,10 @@ plugin wiring or internal graph structure.
   planner itself.
 - [`src/reader_workbench/domains/`](../../src/reader_workbench/domains/)
   owns domain math, parsing, ordering, and figure-planning logic.
-- [`src/reader_workbench/domains/plate_reader/analysis/response_window/`](../../src/reader_workbench/domains/plate_reader/analysis/response_window/)
-  owns response-window contracts and calculations.
-- [`src/reader_workbench/domains/plate_reader/plots/response_window/`](../../src/reader_workbench/domains/plate_reader/plots/response_window/)
-  owns response-window figure planning and rendering.
+- [`src/reader_workbench/domains/plate_reader/analysis/four_state_event_window/`](../../src/reader_workbench/domains/plate_reader/analysis/four_state_event_window/)
+  owns four-state event-window contracts and calculations.
+- [`src/reader_workbench/domains/plate_reader/plots/four_state_event_window/`](../../src/reader_workbench/domains/plate_reader/plots/four_state_event_window/)
+  owns four-state event-window figure planning and rendering.
 - [`src/reader_workbench/plugins/`](../../src/reader_workbench/plugins/)
   owns thin execution adapters only.
 - [`src/reader_workbench/workbench/records/sources.py`](../../src/reader_workbench/workbench/records/sources.py)

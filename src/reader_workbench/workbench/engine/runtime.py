@@ -31,7 +31,14 @@ from .invocations import (
     produced_record_revisions,
 )
 from .planning import build_next_steps, explain
-from .setup import build_run_context, configure_logger, normalize_log_level, resolve_palette_book, slice_pipeline_steps
+from .setup import (
+    build_run_context,
+    close_reader_logger,
+    configure_logger,
+    normalize_log_level,
+    resolve_palette_book,
+    slice_pipeline_steps,
+)
 from .validation import (
     _assert_no_source_record_output_collisions,
     _planned_output_record_ids,
@@ -166,11 +173,6 @@ def run_spec(
         if source_record_issues:
             raise ConfigError("Run preflight failed before output mutation: " + source_record_issues[0])
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
-    if plot_steps:
-        ensure_mpl_cache_dir()
-
     plots_cfg = layout.plots_subdir
     exports_cfg = layout.exports_subdir
     store = runtime.record_store(
@@ -178,7 +180,17 @@ def run_spec(
         plots_subdir=(plots_cfg if plots_cfg not in ("", ".", "./") else None),
         exports_subdir=(exports_cfg if exports_cfg not in ("", ".", "./") else None),
         experiment_root=decl.experiment.root,
+        create=False,
     )
+    preserved_output_paths = (layout.subdir_path("notebooks"),)
+    store.validate_no_interrupted_epoch()
+    if reset_records:
+        store.validate_generated_epoch_reset(preserved_paths=preserved_output_paths)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # The existing writer lease lives under manifests. Create only its parent
+    # before acquisition; catalog and generated-output layout belong inside the
+    # guarded section below.
+    store.manifests_dir.mkdir(parents=True, exist_ok=True)
     with provenance_lock_scope(
         store.provenance_lock,
         acquire_error=ExecutionError("Could not acquire the experiment writer lease"),
@@ -193,7 +205,7 @@ def run_spec(
             runtime=runtime,
             out_dir=out_dir,
             store=store,
-            logger=logger,
+            log_level=log_level,
             all_steps=all_steps,
             pipeline_steps=pipeline_steps,
             plot_steps=plot_steps,
@@ -216,7 +228,7 @@ def _run_spec_locked(
     runtime: ReaderRuntime,
     out_dir: Path,
     store: Any,
-    logger: Any,
+    log_level: str,
     all_steps: list[Any],
     pipeline_steps: list[Any],
     plot_steps: list[Any],
@@ -233,8 +245,33 @@ def _run_spec_locked(
 ) -> ExecutionResult:
     """Execute one mutating plan while the caller holds the experiment writer lease."""
 
-    provenance_epoch_id = store.reset_catalog() if reset_records else store.provenance_epoch_id()
+    # Repeat the lightweight preflight under the writer lease. The first check
+    # prevents ordinary layout mutation; this one closes the race with another
+    # process that may have interrupted a reset before we acquired the lease.
+    store.validate_no_interrupted_epoch()
+    if not reset_records:
+        store.ensure_layout()
+    if plot_steps:
+        ensure_mpl_cache_dir()
+    if reset_records:
+        close_reader_logger()
+        try:
+            provenance_epoch_id = store.reset_generated_epoch(
+                preserved_paths=(decl.experiment_semantics.layout.subdir_path("notebooks"),)
+            )
+        except BaseException as reset_failure:
+            try:
+                configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
+            except BaseException as logger_failure:
+                reset_failure.add_note(
+                    "Reader also could not restore the process logger after the reset failed "
+                    f"({type(logger_failure).__name__})."
+                )
+            raise
+    else:
+        provenance_epoch_id = store.provenance_epoch_id()
     store.bind_provenance_epoch(provenance_epoch_id)
+    logger = configure_logger(out_dir=out_dir, log_level=log_level, verbose=verbose, console=console)
     ledger = InvocationLedger(
         experiment_root=decl.experiment.root,
         outputs_dir=out_dir,

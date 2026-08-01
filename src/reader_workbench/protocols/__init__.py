@@ -2,7 +2,7 @@ from .builtins import BUILTIN_PROTOCOLS, builtin_protocol_catalog
 from .compiler import (
     compile_cytometry_flow_panel,
     compile_generic_protocol,
-    compile_logic_sfxi_screen,
+    compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
     compile_plate_reader_single_reporter_screen,
 )
@@ -72,7 +72,7 @@ __all__ = [
     "builtin_protocol_catalog",
     "compile_cytometry_flow_panel",
     "compile_generic_protocol",
-    "compile_logic_sfxi_screen",
+    "compile_logic_four_state_vector_screen",
     "compile_plate_reader_dual_reporter_screen",
     "compile_plate_reader_single_reporter_screen",
 ]

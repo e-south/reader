@@ -523,7 +523,7 @@ def run(
     reset_records: bool = typer.Option(
         False,
         "--reset-records",
-        help="Replace the generated records catalog before a complete pipeline rerun.",
+        help="Start a fresh generated-output epoch before a complete pipeline rerun.",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan only: validate and print the plan without executing steps."

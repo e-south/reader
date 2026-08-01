@@ -7,12 +7,20 @@ from rich.console import Console
 
 from reader_workbench.errors import ConfigError
 from reader_workbench.protocols.builtins import builtin_protocol_catalog
-from reader_workbench.protocols.model import ProtocolBinding
+from reader_workbench.protocols.model import (
+    BoundProtocol,
+    CompiledProtocolPlan,
+    ProtocolArtifactSpec,
+    ProtocolBinding,
+    ProtocolDescriptor,
+    ProtocolExecutionPlan,
+)
 from reader_workbench.tests.support import base_reader_config, cytometry_test_gating_policy, load_models, write_config
 from reader_workbench.workbench import resolve_workbench
 from reader_workbench.workbench.config import ReaderSpec
-from reader_workbench.workbench.decl.model import FileInputDecl
+from reader_workbench.workbench.decl.model import FileInputDecl, PluginStepDecl
 from reader_workbench.workbench.engine import validate as validate_job
+from reader_workbench.workbench.engine.validation import _configured_output_steps
 from reader_workbench.workbench.experiment import ResourceCatalog
 from reader_workbench.workbench.graph.normalize import normalize_input_binding
 
@@ -31,6 +39,30 @@ def _symlink_or_skip(link: Path, target: Path) -> None:
 def test_load_rejects_non_mapping(tmp_path: Path) -> None:
     path = write_config(tmp_path, "- just\n- a\n- list\n")
     with pytest.raises(ConfigError):
+        ReaderSpec.load(path)
+
+
+def test_load_reports_invalid_utf8_as_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(ConfigError, match="Could not read UTF-8 config"):
+        ReaderSpec.load(path)
+
+
+def test_load_reports_config_io_failure_as_config_error(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text("schema: reader/v8\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fail_config_read(candidate: Path, *args, **kwargs):
+        if candidate == path:
+            raise OSError("synthetic read failure")
+        return original_read_text(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_config_read)
+
+    with pytest.raises(ConfigError, match="Could not read config.*synthetic read failure"):
         ReaderSpec.load(path)
 
 
@@ -200,7 +232,7 @@ def test_load_rejects_unknown_protocol_analysis_key_for_bound_protocol(tmp_path:
 def test_load_accepts_extended_overflow_policy_keys(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
             "preprocessing": {
@@ -237,6 +269,176 @@ def test_load_rejects_unknown_protocol_outputs_key(tmp_path: Path) -> None:
     path = write_config(tmp_path, data)
     with pytest.raises(ConfigError, match="protocol.outputs.plots has unknown keys"):
         ReaderSpec.load(path)
+
+
+def test_validate_rejects_unsupported_config_in_dormant_plot_view(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_dormant_plot",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_analysis={"include_fold_change": False},
+        protocol_outputs={
+            "plots": {
+                "profile": "none",
+                "views": {"raw_kinetics": {"unsupported_option": True}},
+            }
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+
+    assert resolve_workbench(decl).plots == ()
+    with pytest.raises(ConfigError, match="unsupported_option"):
+        validate_job(decl, console=Console(record=True), check_files=False)
+
+
+def test_validate_accepts_valid_config_in_dormant_plot_view(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_dormant_plot",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_analysis={"include_fold_change": False},
+        protocol_outputs={
+            "plots": {
+                "profile": "none",
+                "views": {"raw_kinetics": {"y": ["OD600"]}},
+            }
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+
+    assert resolve_workbench(decl).plots == ()
+    summary = validate_job(decl, console=Console(record=True), check_files=False)
+
+    assert summary["status"] == "ok"
+
+
+def test_validate_rejects_invalid_semantic_reference_in_dormant_plot_view(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_dormant_plot",
+        protocol_id="plate_reader/dual_reporter_screen",
+        protocol_analysis={"include_fold_change": False},
+        protocol_outputs={
+            "plots": {
+                "profile": "none",
+                "views": {"raw_kinetics": {"partition": {"collection_ref": "missing"}}},
+            }
+        },
+        resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+
+    assert resolve_workbench(decl).plots == ()
+    with pytest.raises(ConfigError, match="collection_ref"):
+        validate_job(decl, console=Console(record=True), check_files=False)
+
+
+def test_validate_rejects_unsupported_config_in_excluded_export_artifact(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_dormant_export",
+        protocol_id="cytometry/flow_panel",
+        protocol_inputs={"gating": cytometry_test_gating_policy()},
+        protocol_outputs={
+            "exports": {
+                "exclude": ["gate_definition_table"],
+                "artifacts": {"gate_definition_table": {"unsupported_option": True}},
+            }
+        },
+        resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+
+    assert "gate_definition_table" not in {item.id for item in resolve_workbench(decl).exports}
+    with pytest.raises(ConfigError, match="unsupported_option"):
+        validate_job(decl, console=Console(record=True), check_files=False)
+
+
+def test_validate_accepts_valid_config_in_excluded_export_artifact(tmp_path: Path) -> None:
+    data = base_reader_config(
+        experiment_id="exp_dormant_export",
+        protocol_id="cytometry/flow_panel",
+        protocol_inputs={"gating": cytometry_test_gating_policy()},
+        protocol_outputs={
+            "exports": {
+                "exclude": ["gate_definition_table"],
+                "artifacts": {"gate_definition_table": {"index": True}},
+            }
+        },
+        resources={"metadata": {"kind": "file", "path": "./inputs/metadata.csv"}},
+    )
+    _, decl = load_models(write_config(tmp_path, data))
+
+    assert "gate_definition_table" not in {item.id for item in resolve_workbench(decl).exports}
+    summary = validate_job(decl, console=Console(record=True), check_files=False)
+
+    assert summary["status"] == "ok"
+
+
+def test_configured_output_validation_does_not_reactivate_unrelated_export_defaults() -> None:
+    def _compile(protocol: BoundProtocol) -> CompiledProtocolPlan:
+        selected = protocol.select_export_outputs(
+            defaults=("default_export",),
+            allowed={"configured_export", "default_export"},
+        )
+        if "default_export" in selected:
+            raise ConfigError("unrelated default export was reactivated")
+        return CompiledProtocolPlan(
+            semantic_program=protocol.descriptor.semantic_program(),
+            exports=tuple(
+                PluginStepDecl(
+                    id=output_id,
+                    plugin="export/csv",
+                    with_={"path": f"{output_id}.csv"},
+                )
+                for output_id in selected
+            ),
+        )
+
+    descriptor = ProtocolDescriptor(
+        protocol="test/provider_outputs",
+        domain="generic",
+        family="test",
+        summary="Synthetic provider output-selection contract.",
+        artifacts=(
+            ProtocolArtifactSpec(id="configured_export", summary="Configured export."),
+            ProtocolArtifactSpec(id="default_export", summary="Unrelated default export.", default=True),
+        ),
+        execution=ProtocolExecutionPlan(compiler=_compile),
+    )
+    protocol = BoundProtocol(
+        descriptor=descriptor,
+        outputs={
+            "exports": {
+                "exclude": ["default_export"],
+                "artifacts": {"configured_export": {"index": True}},
+            }
+        },
+    )
+
+    assert protocol.compile().exports == ()
+    _, configured_exports = _configured_output_steps(protocol=protocol)
+
+    assert [step.id for step in configured_exports] == ["configured_export"]
+
+
+def test_configured_output_validation_accepts_null_exclude_from_runtime_binding() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/dual_reporter_screen",
+            analysis={"include_fold_change": False},
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "exclude": None,
+                    "views": {"raw_kinetics": {"y": ["OD600"]}},
+                }
+            },
+        )
+    )
+
+    assert protocol.compile().plots == ()
+    configured_plots, _ = _configured_output_steps(protocol=protocol)
+
+    assert [step.id for step in configured_plots] == ["raw_kinetics"]
 
 
 def test_single_reporter_protocol_compiles_opt_in_subject_comparison(tmp_path: Path) -> None:
@@ -413,9 +615,9 @@ def test_protocol_compiler_expands_plate_reader_pipeline(tmp_path: Path) -> None
 def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none", "include": ["logic_symmetry"]},
         },
@@ -435,18 +637,18 @@ def test_protocol_analysis_and_outputs_adjust_compiled_protocol(tmp_path: Path) 
     workbench = resolve_workbench(decl)
     assert "promote_to_tidy_plus_map" in [step.id for step in workbench.pipeline]
     assert "logic_symmetry_summary" in [step.id for step in workbench.pipeline]
-    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
+    assert "four_state_vector" not in [step.id for step in workbench.pipeline]
     assert [step.id for step in workbench.plots] == ["logic_symmetry"]
     assert workbench.plots[0].reads["table"].record_id == "logic_symmetry/table"
     assert workbench.exports == ()
 
 
-def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None:
+def test_four_state_vector_default_plot_profile_respects_vector_opt_out(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         resources={"sample_map": {"kind": "file", "path": "./inputs/metadata.xlsx"}},
         annotations={
             "ordered_state_spaces": {
@@ -462,17 +664,17 @@ def test_sfxi_default_plot_profile_respects_vec8_opt_out(tmp_path: Path) -> None
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
 
-    assert "sfxi_vec8" not in [step.id for step in workbench.pipeline]
-    assert "sfxi_vec8_heatmap" not in [plot.id for plot in workbench.plots]
+    assert "four_state_vector" not in [step.id for step in workbench.pipeline]
+    assert "four_state_vector_heatmap" not in [plot.id for plot in workbench.plots]
     assert [plot.id for plot in workbench.plots] == ["raw_kinetics"]
 
 
-def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_path: Path) -> None:
+def test_four_state_vector_explicit_workbook_export_compiles_vector_when_analysis_opts_out(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
-        protocol_analysis={"include_vec8": False, "include_fold_change": False},
+        protocol_analysis={"include_four_state_vector": False, "include_fold_change": False},
         protocol_outputs={
             "plots": {"profile": "none"},
             "exports": {"include": ["logic_summary_workbook"]},
@@ -493,20 +695,20 @@ def test_sfxi_explicit_workbook_export_compiles_vec8_when_analysis_opts_out(tmp_
 
     workbench = resolve_workbench(decl)
 
-    assert [step.id for step in workbench.pipeline][-2:] == ["promote_to_tidy_plus_map", "sfxi_vec8"]
+    assert [step.id for step in workbench.pipeline][-2:] == ["promote_to_tidy_plus_map", "four_state_vector"]
     assert [export.id for export in workbench.exports] == ["logic_summary_workbook"]
-    assert workbench.exports[0].reads["df"].record_id == "sfxi_vec8/vec8"
+    assert workbench.exports[0].reads["df"].record_id == "four_state_vector/vector"
 
 
-def test_sfxi_vec8_delta_reaches_transform_config(tmp_path: Path) -> None:
+def test_four_state_vector_delta_reaches_transform_config(tmp_path: Path) -> None:
     data = base_reader_config(
         experiment_id="exp_logic",
-        protocol_id="logic/sfxi_screen",
+        protocol_id="logic/four_state_vector_screen",
         protocol_inputs={"state_map_ref": "induction_logic"},
         protocol_analysis={
-            "include_vec8": True,
+            "include_four_state_vector": True,
             "include_fold_change": False,
-            "sfxi_vec8": {
+            "four_state_vector": {
                 "intensity_log2_offset_delta": 0.25,
             },
         },
@@ -526,8 +728,8 @@ def test_sfxi_vec8_delta_reaches_transform_config(tmp_path: Path) -> None:
     _, decl = load_models(path)
     workbench = resolve_workbench(decl)
 
-    vec8_step = next(step for step in workbench.pipeline if step.id == "sfxi_vec8")
-    assert vec8_step.with_["log2_offset_delta"] == pytest.approx(0.25)
+    vector_step = next(step for step in workbench.pipeline if step.id == "four_state_vector")
+    assert vector_step.with_["log2_offset_delta"] == pytest.approx(0.25)
 
 
 def test_validate_accepts_partition_collection_ref(tmp_path: Path) -> None:

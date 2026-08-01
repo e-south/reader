@@ -32,10 +32,11 @@ FORBIDDEN_API_DOMAIN_TERMS = (
     "cytometry",
     "logic_symmetry",
     "plate_reader",
-    "response_window",
-    "sfxi",
-    "vec8",
+    "four_state_event_window",
+    "four_state_vector",
+    "vector",
 )
+ACTIVE_TEXT_SUFFIXES = frozenset({".md", ".py", ".toml", ".yaml", ".yml"})
 
 
 def test_domains_do_not_depend_on_orchestration_packages() -> None:
@@ -60,6 +61,30 @@ def test_public_api_does_not_own_domain_specific_policy_or_names() -> None:
                 violations.append(f"{path.relative_to(READER_ROOT)} contains {term!r}")
 
     assert violations == [], "reader_workbench.api must remain domain-neutral:\n" + "\n".join(violations)
+
+
+def test_active_reader_surfaces_do_not_reintroduce_downstream_objective_names() -> None:
+    """Reader publishes measurement mechanics, never downstream objective identities."""
+    forbidden = ("sf" + "xi", "ms" + "rb", "rm" + "sd", "ve" + "c8")
+    roots = (
+        READER_ROOT,
+        REPO_ROOT / "docs",
+        REPO_ROOT / "experiments" / "template",
+    )
+    files = [REPO_ROOT / name for name in ("ARCHITECTURE.md", "DESIGN.md", "README.md", "pyproject.toml")]
+    for root in roots:
+        files.extend(path for path in root.rglob("*") if path.is_file() and path.suffix in ACTIVE_TEXT_SUFFIXES)
+
+    violations: list[str] = []
+    for path in sorted(set(files)):
+        if READER_ROOT / "tests" in path.parents or "outputs" in path.parts:
+            continue
+        source = path.read_text(encoding="utf-8").casefold()
+        for term in forbidden:
+            if term in source:
+                violations.append(f"{path.relative_to(REPO_ROOT)} contains retired term {term!r}")
+
+    assert violations == [], "Active Reader surfaces must stay objective-neutral:\n" + "\n".join(violations)
 
 
 def test_shared_notebook_components_do_not_branch_on_domain_names() -> None:
@@ -123,10 +148,10 @@ def test_repo_local_skills_use_the_codex_discovery_root() -> None:
 
 
 def test_domain_capabilities_do_not_create_parallel_public_lifecycles() -> None:
-    assert not (READER_ROOT / "api" / "response_window").exists()
-    assert not (READER_ROOT / "runtime" / "response_window.py").exists()
-    assert not (READER_ROOT / "workbench" / "cli" / "response_window.py").exists()
-    assert not (READER_ROOT / "runtime" / "sfxi_vec8_aggregate.py").exists()
+    assert not (READER_ROOT / "api" / "four_state_event_window").exists()
+    assert not (READER_ROOT / "runtime" / "four_state_event_window.py").exists()
+    assert not (READER_ROOT / "workbench" / "cli" / "four_state_event_window.py").exists()
+    assert not (READER_ROOT / "runtime" / "four_state_collection.py").exists()
 
 
 def test_protocol_compilers_own_assay_step_composition() -> None:

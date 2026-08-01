@@ -22,18 +22,17 @@ def test_builtin_contract_catalog_is_explicit_and_stable() -> None:
     assert {
         "tidy.v1",
         "plate_reader.annotated.v1",
-        "plate_reader.response_window.wells.v3",
-        "plate_reader.response_window.designs.v4",
-        "plate_reader.response_window.descriptive_resampling_draws.v3",
-        "plate_reader.response_window.traces.v3",
-        "plate_reader.response_window.events.v2",
+        "plate_reader.four_state_event_window.wells.v3",
+        "plate_reader.four_state_event_window.designs.v4",
+        "plate_reader.four_state_event_window.descriptive_resampling_draws.v3",
+        "plate_reader.four_state_event_window.traces.v3",
+        "plate_reader.four_state_event_window.events.v2",
         "fold_change.v1",
-        "sfxi.vec8.v3",
-        "sfxi.vec8_collection.v1",
-        "sfxi.vec8_collection.v2",
+        "logic.four_state_vector.v1",
+        "logic.four_state_vector_collection.v1",
         "cytometer.channels.v1",
     } <= set(catalog.ids())
-    designs = catalog.require("plate_reader.response_window.designs.v4")
+    designs = catalog.require("plate_reader.four_state_event_window.designs.v4")
     design_columns = {column.name for column in designs.columns}
     assert {
         "observation_stat",
@@ -49,18 +48,16 @@ def test_builtin_contract_catalog_is_explicit_and_stable() -> None:
     assert not any(
         retired in column for column in design_columns for retired in ("replicate", "bootstrap", "confidence", "_ci_")
     )
-    assert "plate_reader.response_window.designs.v3" not in catalog.ids()
-    assert "plate_reader.response_window.bootstrap_draws.v2" not in catalog.ids()
+    assert "plate_reader.four_state_event_window.designs.v3" not in catalog.ids()
+    assert "plate_reader.four_state_event_window.bootstrap_draws.v2" not in catalog.ids()
     assert "plate_reader.sponge_trace.v1" not in catalog.ids()
     assert "plate_reader.sponge_summary.v1" not in catalog.ids()
-    vec8_v3 = catalog.require("sfxi.vec8.v3")
-    delta_v3 = next(column for column in vec8_v3.columns if column.name == "intensity_log2_offset_delta")
-    assert delta_v3.required is True
-    collection_v1 = catalog.require("sfxi.vec8_collection.v1")
-    collection_v2 = catalog.require("sfxi.vec8_collection.v2")
-    assert "source_record_revision_digest" not in {column.name for column in collection_v1.columns}
-    assert "source_record_revision_digest" in {column.name for column in collection_v2.columns}
-    assert collection_v2.parents == ("sfxi.vec8_collection.v1",)
+    vector = catalog.require("logic.four_state_vector.v1")
+    delta = next(column for column in vector.columns if column.name == "intensity_log2_offset_delta")
+    assert delta.required is True
+    collection = catalog.require("logic.four_state_vector_collection.v1")
+    assert "source_record_revision_digest" in {column.name for column in collection.columns}
+    assert collection.parents == ()
     assert builtin_contract_catalog() is catalog
 
 

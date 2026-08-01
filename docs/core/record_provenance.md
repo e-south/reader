@@ -66,12 +66,19 @@ uv run reader run <config|dir|index> --reset-records
 ```
 
 `--reset-records` cannot be combined with `--dry-run`, `--from`, `--until`, or
-`--only`. The reset atomically replaces the catalog with an empty catalog and a
-fresh epoch. The new active ledger begins separately; prior epoch ledgers are
-retained as forensic residue and are not independently verifiable after their
-catalog was replaced. Reader does not decode retired records or fabricate
-provenance by hashing files left by an older run; the complete rerun writes
-current evidence.
+`--only`. The reset stages Reader-owned generated state, initializes a
+fresh epoch, and removes the prior dataframe artifacts, invocation ledgers,
+execution log, plots, and exports as one bounded operation. Reader closes the
+old log before staging it and opens a new log only after the epoch transaction
+succeeds. If epoch initialization fails, Reader restores the staged state.
+Generated notebooks and unrelated files at the output root are preserved. Plot
+and export sinks must use dedicated subdirectories; ambiguous flattened sinks
+fail before mutation. An existing `.reader-reset.*.staging` directory is
+retained recovery evidence: inspect its `roots/`, `manifests/`, and `files/`
+entries, restore the prior epoch or archive confirmed residue, then remove the
+staging directory before running any mutating Reader operation. Reader does not
+decode retired records or fabricate provenance by hashing older files; the
+complete rerun writes current evidence.
 
 Verification is scoped to records owned by the current compiled workbench.
 Records from removed pipeline, plot, or export surfaces do not make the current

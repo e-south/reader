@@ -27,14 +27,21 @@ def normalize_log_level(log_level: str) -> str:
     return level_name
 
 
-def configure_logger(*, out_dir: Path, log_level: str, verbose: bool, console: Console) -> logging.Logger:
-    level_name = normalize_log_level(log_level)
+def close_reader_logger() -> None:
+    """Close Reader's process-global handlers before moving an owned log file."""
 
     logger = logging.getLogger("reader")
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
         with contextlib.suppress(Exception):
             handler.close()
+
+
+def configure_logger(*, out_dir: Path, log_level: str, verbose: bool, console: Console) -> logging.Logger:
+    level_name = normalize_log_level(log_level)
+
+    close_reader_logger()
+    logger = logging.getLogger("reader")
     logger.setLevel(getattr(logging, level_name))
 
     try:

@@ -8,7 +8,11 @@ from reader_workbench.api import inspect, open_experiment
 from reader_workbench.tests.support.configs import base_reader_config, write_config
 
 
-@pytest.mark.parametrize("replicate_identity_field", ["colony_id", None], ids=["within-record", "experiment"])
+@pytest.mark.parametrize(
+    "replicate_identity_field",
+    ["colony_id", None],
+    ids=["declared-grouping", "grouping-unresolved"],
+)
 def test_experiment_evidence_is_queryable_through_identity_and_inspect(
     tmp_path: Path,
     replicate_identity_field: str | None,

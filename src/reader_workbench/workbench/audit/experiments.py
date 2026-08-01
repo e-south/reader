@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
-import shutil
 import tempfile
 import time
 from dataclasses import asdict, dataclass
@@ -10,14 +8,17 @@ from pathlib import Path
 
 from rich.console import Console
 
+from reader_workbench.errors import ReaderError
 from reader_workbench.runtime import builtin_runtime
 from reader_workbench.workbench.decl import load_workbench_decl
 from reader_workbench.workbench.engine import run_spec
 from reader_workbench.workbench.engine.validation import validation_summary
 from reader_workbench.workbench.experiments import discover_experiment_configs
 from reader_workbench.workbench.graph import resolve_workbench
-from reader_workbench.workbench.inspection.runtime import workbench_record_verification_scope
+from reader_workbench.workbench.inspection.runtime import record_producer_map, workbench_record_verification_scope
 from reader_workbench.workbench.records import verify_record_store
+
+from .staging import stage_audit_workspace
 
 
 @dataclass(slots=True)
@@ -53,46 +54,9 @@ def discover_configs(root: Path, years: set[str]) -> list[Path]:
     return sorted(selected)
 
 
-def stage_experiment(source_dir: Path, target_dir: Path) -> Path:
-    shutil.copytree(
-        source_dir,
-        target_dir,
-        ignore=shutil.ignore_patterns("outputs", "__pycache__", ".DS_Store"),
-        symlinks=True,
-    )
-    _retarget_internal_symlinks(source_dir=source_dir, target_dir=target_dir)
-    return target_dir / "config.yaml"
-
-
-def _retarget_internal_symlinks(*, source_dir: Path, target_dir: Path) -> None:
-    """Map confined source symlinks into the staged tree without following links while copying."""
-
-    source_root = source_dir.resolve(strict=True)
-    target_root = target_dir.resolve(strict=True)
-    for current, dirnames, filenames in os.walk(target_root, followlinks=False):
-        current_path = Path(current)
-        for name in [*dirnames, *filenames]:
-            staged_link = current_path / name
-            if not staged_link.is_symlink():
-                continue
-            relative_link = staged_link.relative_to(target_root)
-            source_link = source_root / relative_link
-            try:
-                source_target = source_link.resolve(strict=True)
-                relative_target = source_target.relative_to(source_root)
-            except (OSError, RuntimeError, ValueError):
-                # External, dangling, or cyclic links remain links. Staged
-                # validation can then reject them without copytree traversing them.
-                continue
-            staged_target = target_root / relative_target
-            link_target = os.path.relpath(staged_target, start=staged_link.parent)
-            target_is_directory = source_target.is_dir()
-            staged_link.unlink()
-            staged_link.symlink_to(link_target, target_is_directory=target_is_directory)
-
-
 def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
     workbench = resolve_workbench(decl)
+    verification_scope = workbench_record_verification_scope(workbench, runtime=runtime)
     layout = decl.experiment_semantics.layout
     outputs = layout.outputs_dir
     store = runtime.record_store(
@@ -105,11 +69,17 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
     latest_ids = {record.record_id for record in store.iter_latest_records()}
     expected_plot_ids = {f"plot:{plot.id}" for plot in workbench.plots}
     expected_export_ids = {f"export:{export.id}" for export in workbench.exports}
+    expected_dataframe_ids = set(record_producer_map(workbench.plugin_steps(), runtime=runtime))
 
     if (outputs / "manifests" / "records.json").exists() is False:
         return len(expected_plot_ids), len(expected_export_ids), "records.json missing"
-    if "ingest/df" not in latest_ids:
-        return len(expected_plot_ids), len(expected_export_ids), "ingest/df record missing"
+    missing_dataframe_ids = sorted(expected_dataframe_ids - latest_ids)
+    if missing_dataframe_ids:
+        return (
+            len(expected_plot_ids),
+            len(expected_export_ids),
+            f"missing declared dataframe records: {missing_dataframe_ids}",
+        )
 
     missing_plot_ids = sorted(expected_plot_ids - latest_ids)
     if missing_plot_ids:
@@ -129,7 +99,7 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
         store,
         experiment_root=decl.experiment.root,
         expected_config_digest=decl.config_digest,
-        scope=workbench_record_verification_scope(workbench, runtime=runtime),
+        scope=verification_scope,
     )
     if verification["status"] != "ok":
         issues = list(verification.get("issues") or [])
@@ -147,7 +117,20 @@ def verify_outputs(decl, runtime) -> tuple[int, int, str | None]:
 
 def audit_config(config_path: Path, *, include_non_active: bool, runtime) -> AuditResult:
     start = time.perf_counter()
-    decl = load_workbench_decl(config_path, protocols=runtime.protocols)
+    try:
+        decl = load_workbench_decl(config_path, protocols=runtime.protocols)
+    except ReaderError as exc:
+        return AuditResult(
+            config=str(config_path),
+            name=config_path.parent.name,
+            lifecycle="unknown",
+            status="failed",
+            phase="config",
+            seconds=time.perf_counter() - start,
+            detail=str(exc),
+            expected_plots=0,
+            expected_exports=0,
+        )
     lifecycle = decl.experiment.lifecycle
     rel_config = str(config_path)
     if lifecycle != "active" and not include_non_active:
@@ -183,8 +166,26 @@ def audit_config(config_path: Path, *, include_non_active: bool, runtime) -> Aud
         )
 
     with tempfile.TemporaryDirectory(prefix="reader-local-audit-") as tmpdir:
-        staged_config = stage_experiment(config_path.parent, Path(tmpdir) / config_path.parent.name)
-        staged_decl = load_workbench_decl(staged_config, protocols=runtime.protocols)
+        try:
+            staged_config = stage_audit_workspace(
+                config_path=config_path,
+                target_root=Path(tmpdir),
+                resources=decl.experiment_semantics.resources,
+                runtime=runtime,
+            )
+            staged_decl = load_workbench_decl(staged_config, protocols=runtime.protocols)
+        except (ReaderError, OSError) as exc:
+            return AuditResult(
+                config=rel_config,
+                name=config_path.parent.name,
+                lifecycle=lifecycle,
+                status="failed",
+                phase="validate",
+                seconds=time.perf_counter() - start,
+                detail=str(exc),
+                expected_plots=0,
+                expected_exports=0,
+            )
         summary = validation_summary(
             staged_decl, check_files=True, exp_root=staged_decl.experiment.root, runtime=runtime
         )

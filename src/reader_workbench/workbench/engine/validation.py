@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -226,6 +228,72 @@ def _validate_specs(
             )
 
 
+def _configured_output_steps(*, protocol: Any) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+    """Compile explicitly configured output blocks without selecting them for execution."""
+
+    outputs = deepcopy(protocol.outputs)
+    configured_ids: dict[str, tuple[str, ...]] = {"plots": (), "exports": ()}
+    output_keys = {"plots": "views", "exports": "artifacts"}
+    for section, config_key in output_keys.items():
+        block = protocol.outputs.get(section, {}) or {}
+        named_configs = block.get(config_key, {}) or {}
+        configured_ids[section] = tuple(named_configs)
+        if not configured_ids[section]:
+            continue
+        selected_block = dict(outputs.get(section, {}) or {})
+        selected_block["include"] = list(configured_ids[section])
+        selected_block["exclude"] = [
+            output_id for output_id in (selected_block.get("exclude") or ()) if output_id not in configured_ids[section]
+        ]
+        if section == "plots":
+            selected_block["profile"] = "none"
+        outputs[section] = selected_block
+    if not any(configured_ids.values()):
+        return (), ()
+
+    plan = replace(protocol, outputs=outputs).compile()
+    configured: dict[str, tuple[Any, ...]] = {}
+    for section, config_key in output_keys.items():
+        steps = tuple(step for step in getattr(plan, section) if step.id in configured_ids[section])
+        for output_id in configured_ids[section]:
+            if sum(step.id == output_id for step in steps) != 1:
+                where = f"protocol.outputs.{section}.{config_key}.{output_id}"
+                raise ConfigError(f"{where} did not compile to exactly one plugin-backed output")
+        configured[section] = steps
+    return configured["plots"], configured["exports"]
+
+
+def _validate_configured_output_steps(
+    *,
+    plot_steps: tuple[Any, ...],
+    export_steps: tuple[Any, ...],
+    registry: Any,
+    protocol: Any,
+    experiment: ExperimentSemantics,
+) -> None:
+    for section, config_key, steps in (
+        ("plots", "views", plot_steps),
+        ("exports", "artifacts", export_steps),
+    ):
+        for step in steps:
+            where = f"protocol.outputs.{section}.{config_key}.{step.id}"
+            try:
+                plugin_cls = registry.resolve(step.plugin)
+            except Exception as err:
+                raise ConfigError(f"{where}: {err}") from err
+            with_block = _effective_step_with(protocol=protocol, step=step)
+            try:
+                cfg = plugin_cls.ConfigModel.model_validate(with_block)
+            except Exception as err:
+                raise ConfigError(f"{where}: invalid config for {step.plugin}: {err}") from err
+            if section == "plots":
+                _validate_plot_semantic_refs(step=step, experiment=experiment, with_block=with_block)
+                try:
+                    plugin_cls.validate_semantic_references(experiment=experiment, cfg=cfg)
+                except Exception as err:
+                    raise ConfigError(f"{where}: invalid plugin semantic reference: {err}") from err
+
+
 def _resolve_exp_path(path: Path, *, exp_root: Path | None) -> Path:
     if exp_root is None:
         return path
@@ -363,11 +431,12 @@ def validation_summary(
     plot_specs = list(workbench.plots) if plot_specs_override is None else list(plot_specs_override)
     export_specs = list(workbench.exports) if export_specs_override is None else list(export_specs_override)
     ensure_unique_workbench_ids(pipeline_steps, plot_specs, export_specs)
-    categories = collect_categories(list(workbench.plugin_steps()))
+    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
+    configured_plot_steps, configured_export_steps = _configured_output_steps(protocol=bound_protocol)
+    categories = collect_categories([*workbench.plugin_steps(), *configured_plot_steps, *configured_export_steps])
     if "plot" in categories:
         ensure_mpl_cache_dir()
     registry = runtime.plugins if categories else None
-    bound_protocol = runtime.bind_protocol(decl.experiment_semantics.protocol)
 
     experiment_semantics = decl.experiment_semantics
     pipeline_labels = _validate_pipeline_steps(
@@ -408,6 +477,20 @@ def validation_summary(
             registry=registry,
             available_labels=pipeline_labels,
             protocol=bound_protocol,
+        )
+    configured_plot_steps = tuple(step for step in configured_plot_steps if step.id not in {s.id for s in plot_specs})
+    configured_export_steps = tuple(
+        step for step in configured_export_steps if step.id not in {s.id for s in export_specs}
+    )
+    if configured_plot_steps or configured_export_steps:
+        if registry is None:
+            raise ConfigError("configured output validation requires plugin-backed workbench specs")
+        _validate_configured_output_steps(
+            plot_steps=configured_plot_steps,
+            export_steps=configured_export_steps,
+            registry=registry,
+            protocol=bound_protocol,
+            experiment=experiment_semantics,
         )
     declared_entries: list[tuple[str, str, str, Path]] = []
     declared_roots: list[tuple[str, str, Path]] = []

@@ -110,7 +110,7 @@ def test_evidence_preserves_unknown_replication_without_an_invented_identity(tmp
 
 
 @pytest.mark.parametrize("replicate_kind", ["biological", "technical", "mixed"])
-def test_evidence_without_identity_uses_the_experiment_as_the_declared_replicate_unit(
+def test_evidence_can_preserve_known_replicate_kind_with_unresolved_grouping(
     tmp_path: Path,
     replicate_kind: str,
 ) -> None:
@@ -197,10 +197,10 @@ def test_experiment_evidence_direct_construction_matches_config_invariants(
         ExperimentEvidence(**values)  # type: ignore[arg-type]
 
 
-def test_experiment_evidence_direct_construction_accepts_an_experiment_level_biological_replicate() -> None:
+def test_experiment_evidence_direct_construction_accepts_known_kind_with_unresolved_grouping() -> None:
     evidence = ExperimentEvidence(
         data_class="plate_reader_screen",
-        data_class_reason="One physical plate represented by this experiment.",
+        data_class_reason="The assay establishes biological replication but this record lacks its grouping field.",
         replicate_kind="biological",
         replicate_identity_field=None,
     )

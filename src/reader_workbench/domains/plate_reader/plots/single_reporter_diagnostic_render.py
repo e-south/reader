@@ -106,11 +106,12 @@ def render_single_reporter_diagnostic(
             markersize=max(4.0, point_size**0.5),
             label=f"{data.normalizer_channel} QC (right axis)",
         )
+        condition_label = _column_label(data.condition_column)
         figure.legend(
             handles=[*condition_handles, qc_handle],
             loc="outside lower center",
             ncols=max(1, min(len(condition_handles) + 1, 5)),
-            title=str(data.condition_column).replace("_", " ").capitalize(),
+            title=condition_label,
         )
         figure.suptitle(f"{data.group_label}\n{data.selection.label}", fontweight="normal")
         return figure
@@ -252,8 +253,11 @@ def _draw_reduction_panel(
         )
         qc_line.set_gid("single-reporter-normalizer-center")
 
-    axis.set_title(f"{data.ratio_channel} by condition")
-    axis.set_xlabel(str(data.condition_column).replace("_", " ").capitalize())
+    unit_label = (
+        "Declared replicate units" if data.unit_role == "declared_replicate" else "Observation units (not replicates)"
+    )
+    axis.set_title(f"{data.ratio_channel} by condition\n{unit_label}")
+    axis.set_xlabel(_column_label(data.condition_column))
     value_space = data.selection.temporal_reduction.output_space
     value_suffix = "" if value_space == "linear" else " (log2)"
     axis.set_ylabel(f"Reduced {data.ratio_channel}{value_suffix}")
@@ -272,6 +276,15 @@ def _offsets(size: int, *, center: float) -> np.ndarray:
     if size <= 1:
         return np.asarray([center] if size else [], dtype=float)
     return np.linspace(center - 0.06, center + 0.06, size)
+
+
+def _column_label(column: str) -> str:
+    """Render configured semantic columns without storage-only alias suffixes."""
+
+    normalized = str(column).strip()
+    if normalized.endswith("_alias"):
+        normalized = normalized.removesuffix("_alias")
+    return normalized.replace("_", " ").capitalize()
 
 
 def _center(values, *, statistic: str) -> float:

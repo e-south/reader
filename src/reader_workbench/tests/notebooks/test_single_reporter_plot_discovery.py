@@ -74,8 +74,9 @@ def test_engine_persists_single_reporter_diagnostic_for_canonical_notebook_disco
         },
         protocol_outputs={
             "plots": {
-                "profile": "none",
+                "profile": "kinetics_qc",
                 "include": ["single_reporter_diagnostic"],
+                "exclude": ["raw_kinetics", "value_distributions"],
                 "views": {
                     "single_reporter_diagnostic": {
                         "partition": {"by": "sample_alias"},

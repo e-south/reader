@@ -2,7 +2,7 @@
 doc_id: reader-logic-symmetry
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-07-29
+last_verified: 2026-08-01
 summary: Scale-invariant four-state logic and asymmetry coordinates, configuration, records, and plots.
 ---
 
@@ -42,8 +42,9 @@ This preserves the distinction between the two single-input states (`10` vs `01`
 
 All quantities are computed from **observation-aggregated values** at a
 **snapshot** time (observations aggregated by `mean` or `median`; default
-`mean`). Positions are observations unless the source explicitly declares a
-relationship among them.
+`mean`). Positions remain observations. Replicate membership exists only when
+a separate source field declares an identity scoped by assay entity and
+condition.
 
 ### Inputs
 
@@ -173,12 +174,12 @@ A = u10 - u01
 
 ## Reader configuration
 
-Reader exposes this calculation through the `logic/sfxi_screen` protocol. Put
+Reader exposes this calculation through the `logic/four_state_vector_screen` protocol. Put
 the exact four-state mapping under
 `annotations.ordered_state_spaces`, select the protocol-owned
 `logic_symmetry` figure, and configure assay semantics under `protocol.inputs`
 and `protocol.analysis`. See the maintained
-[SFXI workflow](./sfxi/workflow.md) for a complete
+[Four-state vector workflow](./four_state_vector/workflow.md) for a complete
 `reader/v8` fragment and preflight sequence.
 
 ```yaml

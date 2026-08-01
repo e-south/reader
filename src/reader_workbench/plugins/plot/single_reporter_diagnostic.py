@@ -15,10 +15,10 @@ from reader_workbench.plugins.plot._shared import FigurePlotPlugin, PlotPartitio
 from reader_workbench.workbench.ports import dataframe_input
 from reader_workbench.workbench.registry import PluginConfig
 
-_DESCRIPTION = (
-    "Normalizer, reporter, and reporter-normalizer kinetics with an explicit endpoint or interval reduction, "
-    "temporally reduced observation-unit values by condition, and visible normalizer QC."
-)
+_UNIT_DESCRIPTIONS = {
+    "declared_replicate": "temporally reduced declared-replicate values by condition",
+    "observation_only": "temporally reduced observation-only values by condition",
+}
 
 
 class SingleReporterDiagnosticFigureCfg(BaseModel):
@@ -41,13 +41,50 @@ class SingleReporterDiagnosticFigureCfg(BaseModel):
         return self
 
 
+class SingleReporterObservationUnitCfg(BaseModel):
+    """Identify descriptive source observations without declaring replication."""
+
+    role: Literal["observation_only"]
+    column: str = Field(min_length=1)
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_observation_unit(self) -> SingleReporterObservationUnitCfg:
+        column = self.column.strip()
+        if not column:
+            raise ValueError("single_reporter_diagnostic: observation_unit.column must be a non-empty string")
+        self.column = column
+        return self
+
+
+class SingleReporterIdentityScopeCfg(BaseModel):
+    """Bind unit identities to stable assay entities, independent of presentation."""
+
+    entity_columns: list[str] = Field(min_length=1)
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_identity_scope(self) -> SingleReporterIdentityScopeCfg:
+        columns = [str(column).strip() for column in self.entity_columns]
+        if not columns or any(not column for column in columns):
+            raise ValueError("single_reporter_diagnostic: identity_scope.entity_columns must be non-empty strings")
+        if len(set(columns)) != len(columns):
+            raise ValueError("single_reporter_diagnostic: identity_scope.entity_columns must not contain duplicates")
+        self.entity_columns = columns
+        return self
+
+
 class SingleReporterDiagnosticCfg(PluginConfig):
     partition: PlotPartitionCfg = Field(default_factory=PlotPartitionCfg)
+    identity_scope: SingleReporterIdentityScopeCfg
     condition_column: str = Field(default="treatment", min_length=1)
     condition_order: list[str] | None = None
     condition_order_ref: str | None = Field(default=None, min_length=1)
     temporal_reduction: dict[str, Any]
     observation_aggregation: dict[str, Any]
+    observation_unit: SingleReporterObservationUnitCfg | None = None
     time_column: str = Field(default="time", min_length=1)
     normalizer_channel: str = Field(min_length=1)
     reporter_channel: str = Field(min_length=1)
@@ -73,6 +110,11 @@ class SingleReporterDiagnosticCfg(PluginConfig):
             setattr(self, field_name, value)
         if len({self.normalizer_channel, self.reporter_channel, self.ratio_channel}) != 3:
             raise ValueError("single_reporter_diagnostic: normalizer, reporter, and ratio channels must be distinct")
+        if self.condition_column in self.identity_scope.entity_columns:
+            raise ValueError(
+                "single_reporter_diagnostic: condition_column is already part of unit identity and must not be "
+                "repeated in identity_scope.entity_columns"
+            )
         temporal = TemporalReductionSpec.from_mapping(self.temporal_reduction)
         aggregation = ObservationAggregationSpec.from_mapping(self.observation_aggregation)
         self.temporal_reduction = temporal.to_mapping()
@@ -127,7 +169,11 @@ class SingleReporterDiagnosticPlot(FigurePlotPlugin):
         frame: pd.DataFrame = inputs["df"]
         partition = resolve_plot_partition_cfg(ctx=ctx, partition=cfg.partition)
         condition_order = type(self)._resolve_condition_order(experiment=ctx.experiment, cfg=cfg)
-        unit_column, observation_column = _reduction_columns(ctx=ctx, frame=frame)
+        unit_column, observation_column, unit_role = _reduction_columns(
+            ctx=ctx,
+            frame=frame,
+            observation_unit=cfg.observation_unit,
+        )
         diagnostics = prepare_single_reporter_diagnostics(
             frame,
             group_on=partition.group_by,
@@ -135,8 +181,10 @@ class SingleReporterDiagnosticPlot(FigurePlotPlugin):
             group_match=partition.match,
             condition_column=cfg.condition_column,
             condition_order=condition_order,
+            entity_columns=cfg.identity_scope.entity_columns,
             unit_column=unit_column,
             observation_column=observation_column,
+            unit_role=unit_role,
             time_column=cfg.time_column,
             normalizer_channel=cfg.normalizer_channel,
             reporter_channel=cfg.reporter_channel,
@@ -160,16 +208,22 @@ class SingleReporterDiagnosticPlot(FigurePlotPlugin):
                     filename=artifact_names[diagnostic.group_label],
                     ext=extension,
                     dpi=cfg.dpi,
-                    description=_DESCRIPTION,
+                    description=(
+                        "Normalizer, reporter, and reporter-normalizer kinetics with an explicit endpoint or "
+                        f"interval reduction, {_UNIT_DESCRIPTIONS[diagnostic.unit_role]}, and visible normalizer QC."
+                    ),
                 )
                 for extension in cfg.format
             )
         return figures
 
 
-def _reduction_columns(*, ctx, frame: pd.DataFrame) -> tuple[str, str]:
-    if "position" not in frame.columns:
-        raise ValueError("single_reporter_diagnostic: the annotated sample record requires position")
+def _reduction_columns(
+    *,
+    ctx,
+    frame: pd.DataFrame,
+    observation_unit: SingleReporterObservationUnitCfg | None,
+) -> tuple[str, str, Literal["declared_replicate", "observation_only"]]:
     evidence = getattr(ctx.experiment, "evidence", None)
     declared = getattr(evidence, "replicate_identity_field", None)
     if declared is not None:
@@ -179,8 +233,23 @@ def _reduction_columns(*, ctx, frame: pd.DataFrame) -> tuple[str, str]:
                 "single_reporter_diagnostic: declared evidence.replicate_identity_field "
                 f"{unit_column!r} is absent from the persisted ratio record"
             )
-        return unit_column, "position"
-    return "position", "position"
+        observation_column = observation_unit.column if observation_unit is not None else unit_column
+        _require_observation_column(frame=frame, column=observation_column)
+        return unit_column, observation_column, "declared_replicate"
+    if observation_unit is None:
+        raise ValueError(
+            "single_reporter_diagnostic: no replicate identity is declared; configure "
+            "observation_unit with role='observation_only' to plot descriptive record observations"
+        )
+    _require_observation_column(frame=frame, column=observation_unit.column)
+    return observation_unit.column, observation_unit.column, "observation_only"
+
+
+def _require_observation_column(*, frame: pd.DataFrame, column: str) -> None:
+    if column not in frame.columns:
+        raise ValueError(
+            f"single_reporter_diagnostic: observation_unit column {column!r} is absent from the persisted ratio record"
+        )
 
 
 def _artifact_names(diagnostics, *, filename_prefix: str) -> dict[str, str]:
@@ -204,5 +273,7 @@ def _artifact_names(diagnostics, *, filename_prefix: str) -> dict[str, str]:
 __all__ = [
     "SingleReporterDiagnosticCfg",
     "SingleReporterDiagnosticFigureCfg",
+    "SingleReporterIdentityScopeCfg",
+    "SingleReporterObservationUnitCfg",
     "SingleReporterDiagnosticPlot",
 ]

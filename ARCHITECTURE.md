@@ -2,7 +2,7 @@
 doc_id: reader-architecture
 surface: architecture
 owner: reader-maintainers
-last_verified: 2026-07-30
+last_verified: 2026-08-01
 summary: Canonical map of Reader layers, ownership boundaries, lifecycle, registries, and extension points.
 ---
 
@@ -98,11 +98,22 @@ Assay-neutral temporal selection and reduction live under
 absolute versus event-relative coordinates, numerical value space, trace
 support, gap, and censor mechanics. Assay packages adapt their authored policy
 to that contract. Within-unit observation reduction and across-unit centering
-remain explicit and separate; evidence declares whether units are biological,
-technical, mixed, unknown, or not applicable. Replicate-kind evidence applies
-to the experiment unless it names a within-record identity field. A plot plugin
-cannot infer that relationship from position or silently choose an aggregation
-policy.
+remain explicit and separate. Evidence records replicate kind and replicate
+identity as independent facts: the kind may be biological, technical, mixed,
+unknown, or not applicable while the within-record grouping remains unresolved.
+An absent identity field does not make the experiment, plate, sheet, well, or
+position a replicate. Those fields remain acquisition provenance. An
+acquisition identifier may supply only the declared-ID component when source
+design evidence establishes that it identifies an independently prepared
+replicate; the resulting identity is still scoped by assay entity and
+condition. A descriptive
+plot may instead opt into a typed observation-only unit, but it must label that
+unit as non-replicate evidence and cannot silently choose an aggregation
+relationship. Semantic unit scope is separate from presentation partitioning:
+a diagnostic partition must resolve to exactly one declared entity tuple, so
+changing panel membership cannot silently pool subject- or genotype-specific
+replicate populations. Multi-entity summaries require an explicit comparison
+figure with its own aggregation contract.
 
 Cross-repository bridge skills only route between these owners. They may name
 public contracts and verification commands, but must not contain equations,
@@ -118,12 +129,12 @@ meaning of a particular collection:
 | --- | --- |
 | `workbench/experiments.py` | Resolve experiment identities below the canonical `experiments/` owner without assuming a year or directory name |
 | `workbench/records/sources.py` | Resolve exact source-record revisions for typed record-collection ports |
-| `domains/plate_reader/analysis/response_window/` | Response-window source validation, reductions, aggregation, and uncertainty |
-| `domains/plate_reader/plots/response_window/` | Response-window summary selection, validation, labeling, and rendering |
-| `plugins/transform/response_window.py` | Thin adapter from record collections to response-window dataframe records |
+| `domains/plate_reader/analysis/four_state_event_window/` | Four-state event-window source validation, reductions, aggregation, and uncertainty |
+| `domains/plate_reader/plots/four_state_event_window/` | Four-state event-window summary selection, validation, labeling, and rendering |
+| `plugins/transform/four_state_event_window.py` | Thin adapter from record collections to four-state event-window dataframe records |
 | `protocols/` | Compile the declared collection, plots, and exports into the normal workbench plan |
 
-SFXI vec8 collection uses the same core record-reference seam. Neither
+The four-state vector collection uses the same core record-reference seam. Neither
 capability owns experiment discovery, direct publication, a custom manifest,
 or a second API lifecycle. Their scientific rules remain specialized and do
 not enter the generic workbench kernel.

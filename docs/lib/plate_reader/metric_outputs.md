@@ -2,7 +2,7 @@
 doc_id: reader-plate-reader-metric-outputs
 surface: library-router
 owner: reader-maintainers
-last_verified: 2026-07-30
+last_verified: 2026-08-01
 summary: Route compatible measurement records to independent typed analysis outputs.
 ---
 
@@ -28,8 +28,8 @@ summary time, event, ordered-state ontology, classification, or objective.
 | Lane | Explicit selector | Time basis | Durable output |
 | --- | --- | --- | --- |
 | General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
-| SFXI vec8 | `logic/sfxi_screen` | one selected acquisition-time snapshot | `sfxi_vec8/vec8` under `sfxi.vec8.v3` |
-| Response window | `plate_reader/response_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
+| Four-state vector | `logic/four_state_vector_screen` | one selected acquisition-time snapshot | `four_state_vector/vector` under `logic.four_state_vector.v1` |
+| Four-state event-window | `plate_reader/four_state_event_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
 
 Record-backed collection protocols use `resources` of kind `record`; they do
 not copy source configs or publish custom manifests.
@@ -41,7 +41,7 @@ the same verified source revision and selected rows with the same time basis or
 event origin, temporal operator and support, ratio order, grouping,
 within-experiment observation aggregation, reference operation, and numerical
 tolerance, that shared reduced coordinate must be numerically identical.
-Historical SFXI vec8 normally does
+Historical four-state vector normally does
 not meet that identity: it uses one acquisition-time snapshot, per-design logic
 scaling, and corner-specific intensity normalization. Downstream interpretation
 remains a consumer concern.
@@ -129,30 +129,49 @@ protocol:
         single_reporter_diagnostic:
           partition:
             by: sample_id_alias
+          identity_scope:
+            entity_columns: [sample_id_alias]
           condition_column: condition_alias
           condition_order_ref: condition_order
+          observation_unit:
+            role: observation_only
+            column: position
           format: [png, pdf]
 ```
 
 When `evidence.replicate_identity_field` is declared, the plot reduces
-observations within that explicitly named unit before comparing conditions. If
-it is absent, the replicate-kind declaration applies to the experiment and each
-well position remains a separate within-experiment plot unit. Thus a study in
-which each physical plate is a biological replicate can declare
-`replicate_kind: biological` on every plate experiment without inventing a
-within-plate identity field. Neither a well position nor spatial proximity
-establishes technical replication. Use `replicate_kind: unknown` when the kind
-is not established, and omit the identity field when no grouping relationship
-is established. The compiler owns the temporal and aggregation policies plus
-the reporter, normalizer, ratio, and time-channel bindings; a plot view owns
-only partitioning, condition presentation, and figure options.
+observations within that explicitly named identity before comparing conditions.
+The identity is scoped by `identity_scope.entity_columns`, the declared
+condition, and the replicate identity field; Reader does not impose a second
+plate-level replicate tier. This semantic scope is independent of `partition`,
+which selects presentation artifacts but may not redefine or pool replicate
+populations. Each diagnostic partition must resolve to exactly one entity
+tuple. Use a comparison figure with an explicit aggregation contract when
+several subjects or genotypes belong in one visual. The single-reporter
+compiler defaults the entity scope to canonical `design_id`; a view must
+override it explicitly when another persisted subject or genotype column is
+the correct owner. If one declared replicate contains several recorded
+observations, the view must also name their column through the observation-only
+contract shown above. Without that contract, each declared replicate identity
+must resolve to one aligned trace. If the replicate identity field is absent,
+grouping is unresolved even when `replicate_kind` is known. The plot then fails
+unless its view explicitly declares an `observation_unit` with
+`role: observation_only`. This opt-in keeps descriptive well or position traces
+available while labeling their points as observations, not replicates.
+Experiment, plate, sheet, well, and position fields otherwise remain
+acquisition provenance and are never implicit replicate identities. Use
+`replicate_kind: unknown` when the kind is not established. The compiler owns
+the temporal and aggregation policies plus the reporter, normalizer, ratio, and
+time-channel bindings; a plot view owns presentation partitioning, semantic
+entity scope, any explicit observation-only unit, condition presentation, and
+figure options.
 
 This figure is descriptive. Its endpoint or interval is authored experiment
 policy, not an inferred event, dose rule, control ontology, ranking, or study
 objective. A downstream study may validate and select such a policy while the
 Reader plot stays reusable across single-reporter assays. The same neutral
-temporal contract also underlies response-window trace reduction, but the
-response-window protocol separately owns event estimation, interpolation,
+temporal contract also underlies four-state event-window trace reduction, but the
+four-state event-window protocol separately owns event estimation, interpolation,
 reference anchoring, log2 output, descriptive resampling, and event-time
 sensitivity. Matching source data and nominal bounds imply matching values only
 when every reduction and support
@@ -160,7 +179,7 @@ setting also matches.
 
 ## Continue by task
 
-- [SFXI in Reader](../sfxi_vec8_in_reader.md)
-- [Response-window analysis](response_window.md)
+- [four-state vector in Reader](../four_state_vector_in_reader.md)
+- [Four-state event-window analysis](four_state_event_window.md)
 - [Notebook operation](../../guides/notebooks.md)
 - [Plugin development](../../core/plugins.md)

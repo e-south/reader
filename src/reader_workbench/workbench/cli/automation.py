@@ -42,8 +42,6 @@ def request_from_argv(argv: Sequence[str]) -> AutomationRequest:
     )
     positional = [item for item in args if item and not item.startswith("-")]
     command = positional[0] if positional else "reader"
-    if command == "response-window" and len(positional) > 1:
-        command = f"{command} {positional[1]}"
     return AutomationRequest(json_requested=json_requested, command=command)
 
 

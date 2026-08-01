@@ -1,0 +1,49 @@
+---
+doc_id: reader-four-state-vector
+surface: library-router
+owner: reader-maintainers
+last_verified: 2026-08-01
+summary: Canonical route to Reader four-state vector semantics, operation, and plots.
+---
+
+# Four-state vector in Reader
+
+Reader converts annotated four-state measurements into one measured four-state vector
+row per `design_id`. It persists the result as `four_state_vector/vector` under the
+`logic.four_state_vector.v1` contract.
+
+## Choose a route
+
+- [Four-state vector contract](./four_state_vector/vector.md): input requirements, ordered-state
+  selection, reference normalization, equations, output columns, and failures.
+- [Experiment workflow](./four_state_vector/workflow.md): configuration, preflight,
+  execution, records, workbook export, and canonical EDA review.
+- [Plot surfaces](./four_state_vector/plots.md): per-design diagnostics plus
+  per-experiment and cross-experiment collection heatmaps.
+- [Plate-reader metric outputs](./plate_reader/metric_outputs.md): the shared
+  measurement boundary and independent analysis lanes.
+
+## Stable terms
+
+| Term | Meaning | Owner |
+| --- | --- | --- |
+| four-state vector | Measured `[v00, v10, v01, v11, y00_star, y10_star, y01_star, y11_star]` row | Reader |
+| `design_id` | Experiment-scoped grouping identity | Experiment config |
+| ordered state space | Exact mapping from observed labels to `00, 10, 01, 11` | Experiment config |
+| `sequence` | Optional carried metadata; never identity authority | Source experiment |
+
+Reader stops at measured records and visual review. Any external
+classification, optimization, or campaign interpretation consumes the public
+record and remains outside this package.
+
+## Shortest path
+
+```bash
+uv run reader validate <config-or-experiment>
+uv run reader run <config-or-experiment> --dry-run --format json
+uv run reader run <config-or-experiment>
+uv run reader records <config-or-experiment> --format json
+```
+
+Generated artifacts stay below the owning experiment's `outputs/` directory
+and are regenerated through Reader rather than edited by hand.

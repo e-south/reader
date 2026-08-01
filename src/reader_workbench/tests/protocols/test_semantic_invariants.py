@@ -31,9 +31,9 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
         "workbench/generic",
         "plate_reader/dual_reporter_screen",
         "plate_reader/single_reporter_screen",
-        "plate_reader/response_window",
-        "logic/sfxi_screen",
-        "logic/sfxi_vec8_collection",
+        "plate_reader/four_state_event_window",
+        "logic/four_state_vector_screen",
+        "logic/four_state_vector_collection",
         "cytometry/flow_panel",
     ]
 
@@ -128,60 +128,60 @@ def test_bound_protocol_semantic_program_applies_execution_overrides_without_cha
     assert compiled_metrics["OD"].execution.step_ids == ("ingest",)
 
 
-def test_logic_sfxi_screen_can_compile_vec8_heatmap_plot() -> None:
+def test_logic_four_state_vector_screen_can_compile_heatmap_plot() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="logic/sfxi_screen",
-            outputs={"plots": {"include": ["sfxi_vec8_heatmap"]}},
+            id="logic/four_state_vector_screen",
+            outputs={"plots": {"include": ["four_state_vector_heatmap"]}},
         )
     )
 
     compiled = protocol.compile()
-    plot = next(step for step in compiled.plots if step.id == "sfxi_vec8_heatmap")
+    plot = next(step for step in compiled.plots if step.id == "four_state_vector_heatmap")
 
-    assert plot.plugin == "plot/sfxi_vec8_heatmap"
-    assert plot.reads["vec8"].record_id == "sfxi_vec8/vec8"
-    assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
+    assert plot.plugin == "plot/four_state_vector_heatmap"
+    assert plot.reads["vector"].record_id == "four_state_vector/vector"
+    assert any(step.id == "four_state_vector" for step in compiled.pipeline)
 
 
-def test_logic_sfxi_screen_compiles_a_record_driven_diagnostic() -> None:
+def test_logic_four_state_vector_screen_compiles_a_record_driven_diagnostic() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="logic/sfxi_screen",
+            id="logic/four_state_vector_screen",
             inputs={"state_map_ref": "states", "time_column": "elapsed_h"},
             outputs={
                 "plots": {
                     "profile": "none",
-                    "include": ["sfxi_diagnostic"],
-                    "views": {"sfxi_diagnostic": {"design_ids": ["design-a"], "format": ["png"]}},
+                    "include": ["four_state_vector_diagnostic"],
+                    "views": {"four_state_vector_diagnostic": {"design_ids": ["design-a"], "format": ["png"]}},
                 }
             },
         )
     )
 
     compiled = protocol.compile()
-    diagnostic = next(step for step in compiled.plots if step.id == "sfxi_diagnostic")
+    diagnostic = next(step for step in compiled.plots if step.id == "four_state_vector_diagnostic")
 
-    assert diagnostic.plugin == "plot/sfxi_diagnostic"
+    assert diagnostic.plugin == "plot/four_state_vector_diagnostic"
     assert diagnostic.reads["df"].record_id == "promote_to_tidy_plus_map/df"
-    assert diagnostic.reads["vec8"].record_id == "sfxi_vec8/vec8"
+    assert diagnostic.reads["vector"].record_id == "four_state_vector/vector"
     assert diagnostic.with_["state_map_ref"] == "states"
     assert diagnostic.with_["time_column"] == "elapsed_h"
     assert diagnostic.with_["response_channel"] == "YFP/CFP"
     assert diagnostic.with_["design_ids"] == ["design-a"]
-    assert any(step.id == "sfxi_vec8" for step in compiled.pipeline)
+    assert any(step.id == "four_state_vector" for step in compiled.pipeline)
 
 
 @pytest.mark.parametrize("key", ["growth_channel", "response_channel", "state_map_ref", "time_column"])
-def test_logic_sfxi_diagnostic_rejects_compiler_owned_overrides(key: str) -> None:
+def test_logic_four_state_vector_diagnostic_rejects_compiler_owned_overrides(key: str) -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="logic/sfxi_screen",
+            id="logic/four_state_vector_screen",
             outputs={
                 "plots": {
                     "profile": "none",
-                    "include": ["sfxi_diagnostic"],
-                    "views": {"sfxi_diagnostic": {key: "override"}},
+                    "include": ["four_state_vector_diagnostic"],
+                    "views": {"four_state_vector_diagnostic": {key: "override"}},
                 }
             },
         )
@@ -191,15 +191,15 @@ def test_logic_sfxi_diagnostic_rejects_compiler_owned_overrides(key: str) -> Non
         protocol.compile()
 
 
-def test_response_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> None:
+def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             outputs={
                 "plots": {
-                    "include": ["response_window_diagnostic"],
+                    "include": ["four_state_event_window_diagnostic"],
                     "views": {
-                        "response_window_diagnostic": {
+                        "four_state_event_window_diagnostic": {
                             "source_experiment_id": "trace-source",
                             "design_id": "design-a",
                         }
@@ -210,11 +210,11 @@ def test_response_window_can_compile_a_focused_diagnostic_as_a_normal_plot() -> 
     )
 
     compiled = protocol.compile()
-    diagnostic = next(step for step in compiled.plots if step.id == "response_window_diagnostic")
+    diagnostic = next(step for step in compiled.plots if step.id == "four_state_event_window_diagnostic")
 
-    assert diagnostic.plugin == "plot/response_window_diagnostic"
-    assert diagnostic.reads["designs"].record_id == "response_window/designs"
-    assert diagnostic.reads["traces"].record_id == "response_window/traces"
+    assert diagnostic.plugin == "plot/four_state_event_window_diagnostic"
+    assert diagnostic.reads["designs"].record_id == "four_state_event_window/designs"
+    assert diagnostic.reads["traces"].record_id == "four_state_event_window/traces"
     assert diagnostic.with_["primary_reduction_id"] == "primary"
     assert diagnostic.with_["pre_window_duration_h"] is None
     assert diagnostic.with_["source_experiment_id"] == "trace-source"
@@ -325,8 +325,10 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
                     "views": {
                         "single_reporter_diagnostic": {
                             "partition": {"collection_ref": "subjects"},
+                            "identity_scope": {"entity_columns": ["subject_alias"]},
                             "condition_column": "condition_alias",
                             "condition_order_ref": "conditions",
+                            "observation_unit": {"role": "observation_only", "column": "position"},
                             "format": ["png", "pdf"],
                         }
                     },
@@ -341,6 +343,7 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
     assert diagnostic.reads["df"].record_id == "sample_measurements/df"
     assert diagnostic.with_ == {
         "partition": {"collection_ref": "subjects"},
+        "identity_scope": {"entity_columns": ["subject_alias"]},
         "condition_column": "condition_alias",
         "temporal_reduction": temporal_reduction,
         "observation_aggregation": observation_aggregation,
@@ -349,8 +352,33 @@ def test_single_reporter_screen_compiles_record_driven_four_panel_diagnostic() -
         "reporter_channel": "mScarlet",
         "ratio_channel": "mScarlet/absorbance",
         "condition_order_ref": "conditions",
+        "observation_unit": {"role": "observation_only", "column": "position"},
         "format": ["png", "pdf"],
     }
+
+
+def test_single_reporter_diagnostic_defaults_identity_scope_independently_of_partition() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/single_reporter_screen",
+            analysis={
+                "temporal_reduction": _single_reporter_interval_policy(),
+                "observation_aggregation": _single_reporter_aggregation_policy(),
+            },
+            outputs={
+                "plots": {
+                    "profile": "none",
+                    "include": ["single_reporter_diagnostic"],
+                    "views": {"single_reporter_diagnostic": {"partition": {"by": "sample_id_alias"}}},
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "single_reporter_diagnostic")
+
+    assert diagnostic.with_["partition"] == {"by": "sample_id_alias"}
+    assert diagnostic.with_["identity_scope"] == {"entity_columns": ["design_id"]}
 
 
 @pytest.mark.parametrize(
@@ -465,11 +493,11 @@ def test_single_reporter_diagnostic_rejects_compiler_owned_channel_overrides(key
         protocol.compile()
 
 
-def test_response_window_diagnostic_requires_an_explicit_record_identity() -> None:
+def test_four_state_event_window_diagnostic_requires_an_explicit_record_identity() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
-            outputs={"plots": {"include": ["response_window_diagnostic"]}},
+            id="plate_reader/four_state_event_window",
+            outputs={"plots": {"include": ["four_state_event_window_diagnostic"]}},
         )
     )
 
@@ -477,14 +505,14 @@ def test_response_window_diagnostic_requires_an_explicit_record_identity() -> No
         protocol.compile()
 
 
-def test_response_window_plot_cannot_override_the_primary_reduction() -> None:
+def test_four_state_event_window_plot_cannot_override_the_primary_reduction() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             outputs={
                 "plots": {
                     "views": {
-                        "response_window_summary": {"primary_reduction_id": "secondary"},
+                        "four_state_event_window_summary": {"primary_reduction_id": "secondary"},
                     }
                 }
             },
@@ -495,10 +523,10 @@ def test_response_window_plot_cannot_override_the_primary_reduction() -> None:
         protocol.compile()
 
 
-def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> None:
+def test_four_state_event_window_diagnostic_receives_the_compiler_owned_pre_window() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="plate_reader/response_window",
+            id="plate_reader/four_state_event_window",
             analysis={
                 "reductions": [
                     {
@@ -514,9 +542,9 @@ def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> 
             },
             outputs={
                 "plots": {
-                    "include": ["response_window_diagnostic"],
+                    "include": ["four_state_event_window_diagnostic"],
                     "views": {
-                        "response_window_diagnostic": {
+                        "four_state_event_window_diagnostic": {
                             "source_experiment_id": "trace-source",
                             "design_id": "design-a",
                         }
@@ -526,23 +554,55 @@ def test_response_window_diagnostic_receives_the_compiler_owned_pre_window() -> 
         )
     )
 
-    diagnostic = next(step for step in protocol.compile().plots if step.id == "response_window_diagnostic")
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "four_state_event_window_diagnostic")
 
     assert diagnostic.with_["primary_reduction_id"] == "delta"
     assert diagnostic.with_["pre_window_duration_h"] == 1.5
 
 
-def test_logic_sfxi_screen_names_typed_vec8_channels() -> None:
-    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
+def test_logic_four_state_vector_screen_names_typed_vector_channels() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/four_state_vector_screen"))
 
-    vec8 = next(metric for metric in protocol.descriptor.metrics if metric.id == "vec8")
+    vector = next(metric for metric in protocol.descriptor.metrics if metric.id == "four_state_vector")
 
-    assert vec8.formula == "v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star"
+    assert vector.formula == "v00,v10,v01,v11,y00_star,y10_star,y01_star,y11_star"
     assert protocol.descriptor.ranking is None
 
 
-def test_logic_sfxi_semantics_do_not_reference_the_retired_response_block() -> None:
-    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/sfxi_screen"))
+def test_generic_workbench_does_not_claim_a_ranking_policy() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="workbench/generic"))
+
+    assert protocol.descriptor.ranking is None
+    assert protocol.compile().semantic_program.ranking is None
+
+
+def test_cytometry_flow_panel_does_not_claim_a_ranking_policy() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(id="cytometry/flow_panel", inputs={"gating": cytometry_test_gating_policy()})
+    )
+
+    assert protocol.descriptor.ranking is None
+    assert protocol.compile().semantic_program.ranking is None
+
+
+def test_four_state_vector_break_rejects_retired_protocol_and_analysis_key() -> None:
+    catalog = builtin_protocol_catalog()
+    retired_protocol = "logic/" + "sf" + "xi_screen"
+    retired_analysis_key = "include_" + "ve" + "c8"
+
+    with pytest.raises(ConfigError, match="Unknown protocol"):
+        catalog.bind(ProtocolBinding(id=retired_protocol))
+    with pytest.raises(ConfigError, match="unknown keys"):
+        catalog.bind(
+            ProtocolBinding(
+                id="logic/four_state_vector_screen",
+                analysis={retired_analysis_key: True},
+            )
+        )
+
+
+def test_logic_four_state_vector_semantics_do_not_reference_the_retired_response_block() -> None:
+    protocol = builtin_protocol_catalog().bind(ProtocolBinding(id="logic/four_state_vector_screen"))
     program = protocol.compile().semantic_program
 
     compiled_paths = {
@@ -555,10 +615,10 @@ def test_logic_sfxi_semantics_do_not_reference_the_retired_response_block() -> N
     assert "protocol.inputs.response" not in compiled_paths
 
 
-def test_logic_sfxi_screen_exposes_a_concrete_dual_reporter_adapter() -> None:
+def test_logic_four_state_vector_screen_exposes_a_concrete_dual_reporter_adapter() -> None:
     catalog = builtin_protocol_catalog()
-    protocol = catalog.bind(ProtocolBinding(id="logic/sfxi_screen"))
-    transform_config = protocol.effective_plugin_config(plugin_id="transform/sfxi")
+    protocol = catalog.bind(ProtocolBinding(id="logic/four_state_vector_screen"))
+    transform_config = protocol.effective_plugin_config(plugin_id="transform/four_state_vector")
 
     assert "response" not in {field.key for field in protocol.descriptor.input_fields}
     assert transform_config["response"] == {
@@ -568,16 +628,16 @@ def test_logic_sfxi_screen_exposes_a_concrete_dual_reporter_adapter() -> None:
     with pytest.raises(ConfigError, match=r"unknown keys \['response'\]"):
         catalog.bind(
             ProtocolBinding(
-                id="logic/sfxi_screen",
+                id="logic/four_state_vector_screen",
                 inputs={"response": {"logic_channel": "A/B", "intensity_channel": "A/C"}},
             )
         )
 
 
-def test_logic_sfxi_screen_rejects_fold_change_target_outside_its_compiled_adapter() -> None:
+def test_logic_four_state_vector_screen_rejects_fold_change_target_outside_its_compiled_adapter() -> None:
     protocol = builtin_protocol_catalog().bind(
         ProtocolBinding(
-            id="logic/sfxi_screen",
+            id="logic/four_state_vector_screen",
             inputs={"fold_change": {"target": "A/B", "report_times": [8.0]}},
             analysis={"include_fold_change": True},
         )
@@ -592,7 +652,7 @@ def test_logic_sfxi_screen_rejects_fold_change_target_outside_its_compiled_adapt
     [
         "plate_reader/dual_reporter_screen",
         "plate_reader/single_reporter_screen",
-        "logic/sfxi_screen",
+        "logic/four_state_vector_screen",
     ],
 )
 def test_plate_reader_fold_change_requires_explicit_report_times(protocol_id: str) -> None:
@@ -662,7 +722,7 @@ def test_experiment_semantics_rejects_mismatched_protocol_program() -> None:
 
     with pytest.raises(ValueError, match="must target the bound protocol"):
         ExperimentSemantics(
-            protocol=ProtocolBinding(id="logic/sfxi_screen"),
+            protocol=ProtocolBinding(id="logic/four_state_vector_screen"),
             annotations=AnnotationSemantics(),
             resources=ResourceCatalog(),
             layout=OutputLayout(

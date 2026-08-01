@@ -16,7 +16,7 @@ from reader_workbench.workbench.notebooks.presentation import (
 def test_experiment_display_title_prefers_authored_metadata() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260102_sfxi_four-state-panel",
+            experiment_id="20260102_four_state_vector_four-state-panel",
             authored_title="Two-input response panel",
         )
         == "Two-input response panel"
@@ -26,20 +26,20 @@ def test_experiment_display_title_prefers_authored_metadata() -> None:
 def test_experiment_display_title_humanizes_stable_id_as_fallback() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260102_sfxi_four-state-panel",
+            experiment_id="20260102_four_state_vector_four-state-panel",
             authored_title=None,
         )
-        == "2026-01-02 · Sfxi Four State Panel"
+        == "2026-01-02 · Four State Vector Four State Panel"
     )
 
 
 def test_experiment_display_title_preserves_mixed_case_biological_identifiers() -> None:
     assert (
         experiment_display_title(
-            experiment_id="20260117_sfxi_ref-ControlA-DesignB",
+            experiment_id="20260117_four_state_vector_ref-ControlA-DesignB",
             authored_title=None,
         )
-        == "2026-01-17 · Sfxi Ref ControlA DesignB"
+        == "2026-01-17 · Four State Vector Ref ControlA DesignB"
     )
 
 
@@ -110,12 +110,12 @@ def test_experiment_selector_options_preserve_stable_ids_and_disambiguate_titles
 def test_experiment_selector_options_use_stable_dates_for_repeated_titles() -> None:
     assert experiment_selector_options(
         {
-            "20260117_sfxi_reference": "Reference design",
-            "20260121_sfxi_reference": "Reference design",
+            "20260117_four_state_vector_reference": "Reference design",
+            "20260121_four_state_vector_reference": "Reference design",
         }
     ) == {
-        "Reference design · 2026-01-17": "20260117_sfxi_reference",
-        "Reference design · 2026-01-21": "20260121_sfxi_reference",
+        "Reference design · 2026-01-17": "20260117_four_state_vector_reference",
+        "Reference design · 2026-01-21": "20260121_four_state_vector_reference",
     }
 
 
@@ -129,5 +129,5 @@ def test_notebook_presentation_does_not_embed_study_or_metric_vocabulary() -> No
         encoding="utf-8"
     )
 
-    for forbidden in ("sfxi", "rmf", "se" + "cg"):
+    for forbidden in ("four_state_vector", "rmf", "se" + "cg"):
         assert f'"{forbidden}"' not in source.lower()

@@ -75,6 +75,7 @@ def test_observation_aggregation_fails_fast_on_malformed_policies(
 def test_single_reporter_config_rejects_retired_replicate_aggregation_key() -> None:
     common = {
         "temporal_reduction": _temporal_reduction(),
+        "identity_scope": {"entity_columns": ["design_id"]},
         "normalizer_channel": "OD",
         "reporter_channel": "reporter",
         "ratio_channel": "reporter/OD",

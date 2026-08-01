@@ -23,12 +23,25 @@ from reader_workbench.workbench.inspection.experiments import (
 )
 from reader_workbench.workbench.inspection.protocols import protocol_descriptor_payload
 from reader_workbench.workbench.inspection.reports import experiment_inspect_renderables
+from reader_workbench.workbench.inspection.runtime import serialize_reads
 from reader_workbench.workbench.registry import Registry
 
 
 def test_decl_public_exports_all_resolve() -> None:
     assert "bind_recipe_steps" not in decl_module.__all__
     assert {name: getattr(decl_module, name) for name in decl_module.__all__}
+
+
+def test_compiled_inspection_serializes_record_resource_collections() -> None:
+    reads = {"sources": decl_module.RecordCollectionInputDecl(resource_ids=("source_a", "source_b"))}
+
+    assert serialize_reads(reads) == [
+        {
+            "label": "sources",
+            "display": "record_resources(source_a, source_b)",
+            "ref": {"record_resources": ["source_a", "source_b"]},
+        }
+    ]
 
 
 def test_experiment_inspection_payloads_do_not_advertise_notebook_planning(tmp_path) -> None:

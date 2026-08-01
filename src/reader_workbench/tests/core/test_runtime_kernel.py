@@ -29,7 +29,7 @@ def test_bound_protocol_applies_executable_defaults() -> None:
     runtime = builtin_runtime()
     protocol = runtime.bind_protocol(
         ProtocolBinding(
-            id="logic/sfxi_screen",
+            id="logic/four_state_vector_screen",
             inputs={
                 "target_time_h": 10.0,
                 "state_map_ref": "induction_logic",
@@ -39,7 +39,7 @@ def test_bound_protocol_applies_executable_defaults() -> None:
     )
 
     cfg = protocol.effective_plugin_config(
-        plugin_id="transform/sfxi",
+        plugin_id="transform/four_state_vector",
         step_with={"reference": {"observation_stat": "median"}},
     )
 
