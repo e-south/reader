@@ -44,6 +44,60 @@ def test_compiled_inspection_serializes_record_resource_collections() -> None:
     ]
 
 
+def test_experiment_inspection_serializes_record_resources_by_identity(tmp_path) -> None:
+    source_root = tmp_path / "experiments" / "2026" / "source-a"
+    source_root.mkdir(parents=True)
+    write_config(source_root, base_reader_config(experiment_id="source-a"))
+    aggregate_root = tmp_path / "experiments" / "aggregates" / "aggregate-a"
+    aggregate_root.mkdir(parents=True)
+    config_path = write_config(
+        aggregate_root,
+        base_reader_config(
+            experiment_id="aggregate-a",
+            protocol_id="logic/four_state_vector_collection",
+            protocol_inputs={"record_resources": ["source"]},
+            resources={
+                "metadata": {"kind": "file", "path": "./inputs/metadata.csv"},
+                "source": {
+                    "kind": "record",
+                    "experiment": "source-a",
+                    "record": "vector/df",
+                },
+            },
+        ),
+    )
+    spec = ReaderSpec.load(config_path)
+    declaration = build_decl(spec, source_path=config_path)
+
+    payload = experiment_inspect_payload(
+        job_path=config_path,
+        spec=spec,
+        decl=declaration,
+        runtime=builtin_runtime(),
+    )
+
+    assert payload["implementation"]["inputs"]["resources"] == [
+        {
+            "id": "metadata",
+            "kind": "file",
+            "path": "inputs/metadata.csv",
+        },
+        {
+            "id": "source",
+            "kind": "record",
+            "experiment": "source-a",
+            "record": "vector/df",
+        },
+    ]
+    console = Console(record=True, width=120, theme=THEME)
+    for renderable in experiment_inspect_renderables(
+        payload=payload,
+        semantic_program=declaration.experiment_semantics.protocol_program,
+    ):
+        console.print(renderable)
+    assert "source-a:vector/df" in console.export_text()
+
+
 def test_experiment_inspection_payloads_do_not_advertise_notebook_planning(tmp_path) -> None:
     config_path = write_config(tmp_path / "config.yaml", base_reader_config(experiment_id="inspection_contract"))
     spec = ReaderSpec.load(config_path)
