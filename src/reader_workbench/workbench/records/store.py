@@ -40,7 +40,7 @@ from reader_workbench.workbench.records.model import (
     verify_record_artifact_integrity,
 )
 
-from .epoch import replace_generated_epoch, validate_generated_epoch_boundary
+from .epoch import assert_no_interrupted_epoch, replace_generated_epoch, validate_generated_epoch_boundary
 from .evidence import RecordInputEvidence, SourceExperimentResolver, capture_artifact_evidence
 from .identity import BuildIdentity, current_build_identity, digest_json
 from .locking import ProvenanceFileLock, provenance_lock_scope
@@ -166,6 +166,7 @@ class RecordStore:
                 manifests_root=self.manifests_dir,
                 plots_root=self.plots_dir,
                 exports_root=self.exports_dir,
+                log_path=self.root / "reader.log",
                 preserved_paths=preserved_paths,
                 lock_path=self._catalog_lock_path,
                 initialize=_initialize,
@@ -180,9 +181,15 @@ class RecordStore:
             manifests_root=self.manifests_dir,
             plots_root=self.plots_dir,
             exports_root=self.exports_dir,
+            log_path=self.root / "reader.log",
             preserved_paths=preserved_paths,
             lock_path=self._catalog_lock_path,
         )
+
+    def validate_no_interrupted_epoch(self) -> None:
+        """Fail while recovery evidence from an interrupted reset remains."""
+
+        assert_no_interrupted_epoch(self.root)
 
     def provenance_epoch_id(self) -> str:
         """Return the catalog-owned identity for the active provenance epoch."""

@@ -286,12 +286,15 @@ uv run reader run CONFIG|DIR|INDEX --from step_a --until step_c --dry-run --form
 
 `uv run reader run` fails fast if `--from` comes after `--until` in pipeline order.
 Use `--reset-records` only to start a fresh generated-output epoch before a
-complete pipeline rerun. Reader removes the prior catalog and invocation
-ledgers together with generated dataframe artifacts, plots, and exports, then
-initializes a new provenance epoch. Generated notebooks and unrelated files
-directly under the output root are preserved. Plot and export sinks must use
-dedicated subdirectories so Reader can reset them without guessing ownership.
-The option cannot be combined with a slice or dry run.
+complete pipeline rerun. Reader removes the prior catalog, invocation ledgers,
+execution log, generated dataframe artifacts, plots, and exports, then
+initializes a new provenance epoch and log. Generated notebooks and unrelated
+files directly under the output root are preserved. Plot and export sinks must
+use dedicated subdirectories so Reader can reset them without guessing
+ownership. If an interrupted reset left `.reader-reset.*.staging`, Reader
+preserves that recovery evidence and refuses every mutating run until the
+operator has inspected and resolved it. The option cannot be combined with a
+slice or dry run.
 
 Inspect the emitted records catalog:
 

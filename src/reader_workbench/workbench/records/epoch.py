@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from uuid import uuid4
@@ -19,6 +20,7 @@ def replace_generated_epoch(
     manifests_root: Path,
     plots_root: Path,
     exports_root: Path,
+    log_path: Path,
     preserved_paths: Iterable[Path],
     lock_path: Path,
     initialize: Callable[[], str],
@@ -29,12 +31,13 @@ def replace_generated_epoch(
     outside the named owned roots are never enumerated or removed.
     """
 
-    root, manifests, lock, owned_roots = validate_generated_epoch_boundary(
+    root, manifests, lock, owned_roots, owned_files = validate_generated_epoch_boundary(
         outputs_root=outputs_root,
         artifacts_root=artifacts_root,
         manifests_root=manifests_root,
         plots_root=plots_root,
         exports_root=exports_root,
+        log_path=log_path,
         preserved_paths=preserved_paths,
         lock_path=lock_path,
     )
@@ -42,14 +45,17 @@ def replace_generated_epoch(
     staging = root / f".reader-reset.{uuid4()}.staging"
     staged_roots: list[tuple[Path, Path]] = []
     staged_manifest_entries: list[tuple[Path, Path]] = []
+    staged_files: list[tuple[Path, Path]] = []
     initialization_started = False
     cleanup_started = False
     try:
         staging.mkdir(mode=0o700)
         roots_staging = staging / "roots"
         manifests_staging = staging / "manifests"
+        files_staging = staging / "files"
         roots_staging.mkdir()
         manifests_staging.mkdir()
+        files_staging.mkdir()
 
         for index, source in enumerate(owned_roots):
             if not source.exists():
@@ -65,6 +71,13 @@ def replace_generated_epoch(
                 destination = manifests_staging / source.name
                 source.rename(destination)
                 staged_manifest_entries.append((source, destination))
+
+        for index, source in enumerate(owned_files):
+            if not source.exists():
+                continue
+            destination = files_staging / f"{index}-{source.name}"
+            source.rename(destination)
+            staged_files.append((source, destination))
 
         initialization_started = True
         epoch_id = initialize()
@@ -84,8 +97,10 @@ def replace_generated_epoch(
                     manifests=manifests,
                     lock=lock,
                     owned_roots=owned_roots,
+                    owned_files=owned_files,
                     staged_roots=staged_roots,
                     staged_manifest_entries=staged_manifest_entries,
+                    staged_files=staged_files,
                     discard_current=initialization_started,
                 )
             except BaseException as rollback_error:
@@ -113,20 +128,23 @@ def validate_generated_epoch_boundary(
     manifests_root: Path,
     plots_root: Path,
     exports_root: Path,
+    log_path: Path,
     preserved_paths: Iterable[Path],
     lock_path: Path,
-) -> tuple[Path, Path, Path, tuple[Path, ...]]:
+) -> tuple[Path, Path, Path, tuple[Path, ...], tuple[Path, ...]]:
     """Validate the complete reset boundary without mutating it."""
 
     root = Path(outputs_root).expanduser().absolute()
     manifests = Path(manifests_root).expanduser().absolute()
     lock = Path(lock_path).expanduser().absolute()
+    owned_files = (_confined(log_path, root=root, label="reader log"),)
     owned_roots = _minimal_owned_roots(
         root=root,
         candidates=(artifacts_root, plots_root, exports_root),
         manifests_root=manifests,
     )
     preserved = tuple(_confined(path, root=root, label="preserved output") for path in preserved_paths)
+    assert_no_interrupted_epoch(root)
     _validate_reset_boundary(
         root=root,
         manifests=manifests,
@@ -134,7 +152,25 @@ def validate_generated_epoch_boundary(
         owned_roots=owned_roots,
         preserved=preserved,
     )
-    return root, manifests, lock, owned_roots
+    for owned_file in owned_files:
+        _validate_existing_file(owned_file)
+    return root, manifests, lock, owned_roots, owned_files
+
+
+def assert_no_interrupted_epoch(outputs_root: Path) -> None:
+    """Reject writes while recovery evidence from an interrupted reset remains."""
+
+    root = Path(outputs_root).expanduser().absolute()
+    stale_transactions = _stale_transactions(root)
+    if not stale_transactions:
+        return
+    paths = ", ".join(str(path) for path in stale_transactions)
+    raise RecordError(
+        "An unfinished generated-output reset exists at "
+        f"{paths}. Reader will not mutate outputs or discard recovery evidence. "
+        "Inspect the retained roots/, manifests/, and files/ entries; restore the prior epoch or archive "
+        "confirmed residue, then remove the staging directory before running Reader again."
+    )
 
 
 def _minimal_owned_roots(
@@ -196,13 +232,40 @@ def _validate_existing_tree(root: Path) -> None:
                 raise RecordError(f"Generated output state must not contain symlinks: {candidate}")
 
 
+def _validate_existing_file(path: Path) -> None:
+    if path.is_symlink():
+        raise RecordError(f"Reader-owned output must not be a symlink: {path}")
+    if not path.exists():
+        return
+    metadata = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise RecordError(f"Reader-owned output must be a regular file with a single link: {path}")
+
+
+def _stale_transactions(root: Path) -> tuple[Path, ...]:
+    if not root.exists():
+        return ()
+    return tuple(
+        sorted(
+            (
+                path
+                for path in root.iterdir()
+                if path.name.startswith(".reader-reset.") and path.name.endswith(".staging")
+            ),
+            key=lambda path: path.name,
+        )
+    )
+
+
 def _rollback(
     *,
     manifests: Path,
     lock: Path,
     owned_roots: tuple[Path, ...],
+    owned_files: tuple[Path, ...],
     staged_roots: list[tuple[Path, Path]],
     staged_manifest_entries: list[tuple[Path, Path]],
+    staged_files: list[tuple[Path, Path]],
     discard_current: bool,
 ) -> None:
     if discard_current and manifests.exists():
@@ -213,6 +276,17 @@ def _rollback(
         manifests.mkdir(parents=True)
     for source, destination in reversed(staged_manifest_entries):
         if source.exists() or source.is_symlink():
+            _remove_entry(source)
+        destination.rename(source)
+
+    if discard_current:
+        for source in owned_files:
+            if source.exists() or source.is_symlink():
+                _remove_entry(source)
+    for source, destination in reversed(staged_files):
+        if source.exists() or source.is_symlink():
+            if not discard_current:
+                raise RecordError(f"Cannot restore staged generated output because its target reappeared: {source}")
             _remove_entry(source)
         destination.rename(source)
 

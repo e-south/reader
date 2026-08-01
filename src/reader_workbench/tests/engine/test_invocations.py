@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -884,6 +887,8 @@ def test_run_spec_reset_records_starts_a_clean_generated_output_epoch(tmp_path: 
     notebook.write_text("# operator scaffold\n", encoding="utf-8")
     unrelated = outputs / "operator-notes.txt"
     unrelated.write_text("preserve me", encoding="utf-8")
+    log_path = outputs / "reader.log"
+    log_path.write_text("PRIVATE-SENTINEL\n", encoding="utf-8")
 
     result = run_spec(
         decl,
@@ -904,6 +909,8 @@ def test_run_spec_reset_records_starts_a_clean_generated_output_epoch(tmp_path: 
     assert list((outputs / "exports").iterdir()) == []
     assert notebook.read_text(encoding="utf-8") == "# operator scaffold\n"
     assert unrelated.read_text(encoding="utf-8") == "preserve me"
+    assert log_path.is_file()
+    assert "PRIVATE-SENTINEL" not in log_path.read_text(encoding="utf-8")
     assert current.latest_dataframe("ingest/df") is not None
     assert current.invocation_ledger_path().is_file()
     assert list(outputs.glob(".reader-reset.*.staging")) == []
@@ -937,6 +944,8 @@ def test_run_spec_reset_records_rolls_back_owned_outputs_when_epoch_initializati
     notebook_path.parent.mkdir()
     notebook_path.write_text("# preserve\n", encoding="utf-8")
     prior_catalog = store.records_path.read_bytes()
+    log_path = store.root / "reader.log"
+    log_path.write_text("PRIVATE-SENTINEL\n", encoding="utf-8")
 
     def _fail_catalog_write(*_args, **_kwargs) -> None:
         raise RecordError("epoch initialization failed")
@@ -961,6 +970,13 @@ def test_run_spec_reset_records_rolls_back_owned_outputs_when_epoch_initializati
     assert plot_path.read_text(encoding="utf-8") == "retired plot"
     assert export_path.read_text(encoding="utf-8") == "retired export"
     assert notebook_path.read_text(encoding="utf-8") == "# preserve\n"
+    assert log_path.read_text(encoding="utf-8") == "PRIVATE-SENTINEL\n"
+    restored_logger = logging.getLogger("reader")
+    assert restored_logger.handlers
+    restored_logger.error("POST-ROLLBACK-SENTINEL")
+    restored_log = log_path.read_text(encoding="utf-8")
+    assert restored_log.startswith("PRIVATE-SENTINEL\n")
+    assert "POST-ROLLBACK-SENTINEL" in restored_log
     assert list(store.root.glob(".reader-reset.*.staging")) == []
 
 
@@ -1306,6 +1322,159 @@ def test_run_spec_reset_records_rejects_outputs_outside_experiment_before_mutati
 
     assert sentinel.read_text(encoding="utf-8") == "untouched"
     assert list(outside.iterdir()) == [sentinel]
+
+
+def test_run_spec_reset_records_rejects_symlinked_log_before_mutation(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    outside_log = tmp_path / "outside.log"
+    outside_log.write_text("private sentinel", encoding="utf-8")
+    try:
+        (outputs / "reader.log").symlink_to(outside_log)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(RecordError, match="reader.log.*symlink|symlink.*reader.log"):
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert outside_log.read_text(encoding="utf-8") == "private sentinel"
+    assert not (outputs / "manifests").exists()
+
+
+def test_interrupted_epoch_reset_blocks_all_runs_without_deleting_staged_evidence(tmp_path: Path) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    source_root = Path(__file__).resolve().parents[3]
+    child = """
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[2])
+from reader_workbench.contracts import builtin_contract_catalog
+from reader_workbench.workbench.records import RecordStore
+
+outputs = Path(sys.argv[1])
+store = RecordStore(outputs, contracts=builtin_contract_catalog(), experiment_root=outputs.parent)
+(store.artifacts_dir / 'private.bin').write_bytes(b'PRIVATE-ARTIFACT')
+(outputs / 'reader.log').write_text('PRIVATE-LOG\\n', encoding='utf-8')
+store.ensure_layout = lambda: os._exit(23)
+store.reset_generated_epoch(preserved_paths=(outputs / 'notebooks',))
+"""
+    interrupted = subprocess.run(
+        [sys.executable, "-c", child, str(outputs), str(source_root)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert interrupted.returncode == 23
+    staging = list(outputs.glob(".reader-reset.*.staging"))
+    assert len(staging) == 1
+    staged_files_before = {
+        path.relative_to(staging[0]).as_posix(): path.read_bytes() for path in staging[0].rglob("*") if path.is_file()
+    }
+    output_files_before = {
+        path.relative_to(outputs).as_posix(): path.read_bytes() for path in outputs.rglob("*") if path.is_file()
+    }
+    assert any(payload == b"PRIVATE-ARTIFACT" for payload in staged_files_before.values())
+    assert any(payload == b"PRIVATE-LOG\n" for payload in staged_files_before.values())
+
+    with pytest.raises(RecordError, match="unfinished generated-output reset") as raised:
+        run_spec(
+            decl,
+            reset_records=True,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert str(staging[0]) in str(raised.value)
+    assert all(segment in str(raised.value) for segment in ("roots/", "manifests/", "files/"))
+    staged_files_after = {
+        path.relative_to(staging[0]).as_posix(): path.read_bytes() for path in staging[0].rglob("*") if path.is_file()
+    }
+    assert staged_files_after == staged_files_before
+    assert len(list(outputs.glob(".reader-reset.*.staging"))) == 1
+    assert not (outputs / "reader.log").exists()
+
+    with pytest.raises(RecordError, match="unfinished generated-output reset") as ordinary_run:
+        run_spec(
+            decl,
+            reset_records=False,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert str(staging[0]) in str(ordinary_run.value)
+    assert not (outputs / "artifacts").exists()
+    assert not (outputs / "reader.log").exists()
+    assert {
+        path.relative_to(outputs).as_posix(): path.read_bytes() for path in outputs.rglob("*") if path.is_file()
+    } == (output_files_before)
+
+
+def test_run_spec_rechecks_interrupted_reset_after_acquiring_writer_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decl, runtime = _synthetic_decl_and_runtime(tmp_path)
+    outputs = tmp_path / "outputs"
+    staging = outputs / ".reader-reset.concurrent.staging"
+    calls = 0
+    original_check = RecordStore.validate_no_interrupted_epoch
+
+    def _inject_interrupted_reset(current: RecordStore) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (staging / "roots").mkdir(parents=True)
+            (staging / "roots" / "private.bin").write_bytes(b"PRIVATE")
+        original_check(current)
+
+    monkeypatch.setattr(RecordStore, "validate_no_interrupted_epoch", _inject_interrupted_reset)
+
+    with pytest.raises(RecordError, match="unfinished generated-output reset"):
+        run_spec(
+            decl,
+            reset_records=False,
+            include_pipeline=True,
+            include_plots=False,
+            include_exports=False,
+            log_level="ERROR",
+            console=Console(quiet=True, theme=Theme({"accent": "cyan", "path": "magenta"})),
+            runtime=runtime,
+        )
+
+    assert calls == 2
+    assert (staging / "roots" / "private.bin").read_bytes() == b"PRIVATE"
+    assert not (outputs / "reader.log").exists()
+    assert not (outputs / "artifacts").exists()
+    assert not (outputs / "plots").exists()
+    assert not (outputs / "exports").exists()
+    assert not (outputs / "manifests" / "records.json").exists()
+    assert {path.relative_to(outputs).as_posix() for path in outputs.rglob("*")} == {
+        ".reader-reset.concurrent.staging",
+        ".reader-reset.concurrent.staging/roots",
+        ".reader-reset.concurrent.staging/roots/private.bin",
+        "manifests",
+        "manifests/.records.lock",
+    }
 
 
 def test_run_spec_rejects_symlinked_outputs_before_log_or_manifest_write(tmp_path: Path) -> None:

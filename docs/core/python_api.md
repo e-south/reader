@@ -78,11 +78,13 @@ options.
 Use `run(experiment, reset_records=True)` only to start a fresh generated-output
 epoch before a complete pipeline rerun. Reset cannot be combined with a dry run
 or any partial selector. It removes the prior catalog, ledgers, dataframe
-artifacts, plots, and exports, then creates a fresh catalog epoch and active
-ledger. Generated notebooks and unrelated output-root files are preserved.
-Plot and export sinks must be dedicated subdirectories. Plot and export
-mutation remain behind `reader plot` and `reader export` while their typed
-public results are defined.
+artifacts, execution log, plots, and exports, then creates a fresh catalog
+epoch, active ledger, and log. Generated notebooks and unrelated output-root
+files are preserved. Plot and export sinks must be dedicated subdirectories.
+An interrupted `.reader-reset.*.staging` transaction blocks every mutating run
+until its retained evidence is inspected and resolved. Plot and export mutation
+remain behind `reader plot` and `reader export` while their typed public results
+are defined.
 
 ## Notebook components and verified artifacts
 
