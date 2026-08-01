@@ -55,10 +55,12 @@ resources:
 replicate units inside one experiment record. Replicate kind may be known while
 that grouping remains unresolved; omitting the identity field records exactly
 that limitation. It does not make the experiment, plate, sheet, well, or
-position a replicate unit. Acquisition identifiers remain provenance unless
-one is explicitly authored as the replicate identity. Use `unknown` when the
-kind itself is not established. Never infer grouping or technical replication
-from spatial position. Plot presentation groups are also not identity scopes:
+position a replicate unit. Acquisition identifiers remain provenance. One may
+supply only the declared-ID component when source design evidence establishes
+an independently prepared replicate, and that identity remains scoped by assay
+entity and condition. Use `unknown` when the kind itself is not established.
+Never infer grouping or technical replication from spatial position. Plot
+presentation groups are also not identity scopes:
 where a reduction needs subject or genotype ownership, it declares that scope
 separately. A diagnostic partition must resolve to one such entity tuple;
 cross-entity pooling requires an explicit comparison contract rather than a

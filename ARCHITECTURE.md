@@ -102,8 +102,11 @@ remain explicit and separate. Evidence records replicate kind and replicate
 identity as independent facts: the kind may be biological, technical, mixed,
 unknown, or not applicable while the within-record grouping remains unresolved.
 An absent identity field does not make the experiment, plate, sheet, well, or
-position a replicate. Those fields remain acquisition provenance unless the
-experiment explicitly declares one as its replicate identity. A descriptive
+position a replicate. Those fields remain acquisition provenance. An
+acquisition identifier may supply only the declared-ID component when source
+design evidence establishes that it identifies an independently prepared
+replicate; the resulting identity is still scoped by assay entity and
+condition. A descriptive
 plot may instead opt into a typed observation-only unit, but it must label that
 unit as non-replicate evidence and cannot silently choose an aggregation
 relationship. Semantic unit scope is separate from presentation partitioning:

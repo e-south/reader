@@ -42,8 +42,9 @@ This preserves the distinction between the two single-input states (`10` vs `01`
 
 All quantities are computed from **observation-aggregated values** at a
 **snapshot** time (observations aggregated by `mean` or `median`; default
-`mean`). Positions are observations unless the source explicitly declares a
-relationship among them.
+`mean`). Positions remain observations. Replicate membership exists only when
+a separate source field declares an identity scoped by assay entity and
+condition.
 
 ### Inputs
 
