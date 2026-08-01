@@ -81,13 +81,11 @@ def render_records(
         emit_json(payload, truncated=page.truncated, continuation=page.continuation)
         return
 
-    latest_records = store.iter_latest_records()
-    if not all_revisions:
-        latest_records = _load("reader_workbench.workbench.inspection.results").select_current_records(
-            latest_records,
-            config_digest=decl.config_digest,
-            declared_record_ids=current_record_ids,
-        )
+    snapshot = store.catalog_snapshot(
+        current_config_digest=decl.config_digest if not all_revisions else None,
+        current_record_ids=(current_record_ids or None) if not all_revisions else None,
+    )
+    latest_records = snapshot.latest_records
     if all_revisions:
         if not latest_records:
             shared.console.print(
@@ -101,7 +99,7 @@ def render_records(
                 )
             )
             return
-        revision_counts = store.revision_counts(record.record_id for record in latest_records)
+        revision_counts = snapshot.revision_counts
         listing = table("Records • history")
         listing.add_column("Record")
         listing.add_column("Kind", style="accent")

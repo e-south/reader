@@ -16,7 +16,7 @@ import pandas as pd
 
 from reader_workbench.contracts import ContractCatalog, ContractId
 from reader_workbench.errors import ProvenanceEpochChangedError, RecordError
-from reader_workbench.workbench.experiments import ExperimentCatalog
+from reader_workbench.workbench.experiments import ExperimentCatalog, ExperimentLocation
 from reader_workbench.workbench.graph import (
     FileRef,
     ProvenanceInput,
@@ -67,6 +67,24 @@ def _empty_catalog() -> dict[str, Any]:
         "latest": {},
         "history": {},
     }
+
+
+def _selected_latest_record_ids(
+    latest: Mapping[str, Any],
+    *,
+    config_digest: str | None,
+    record_ids: frozenset[str] | None,
+) -> frozenset[str]:
+    candidates = set(latest)
+    if record_ids is not None:
+        candidates &= record_ids
+    if config_digest is None:
+        return frozenset(candidates)
+    return frozenset(
+        record_id
+        for record_id in candidates
+        if not isinstance(latest[record_id], dict) or latest[record_id].get("config_digest") == config_digest
+    )
 
 
 @dataclass(frozen=True)
@@ -202,13 +220,33 @@ class RecordStore:
         epoch_id = self.provenance_epoch_id()
         return self.manifests_dir / "invocations" / f"{epoch_id}.jsonl"
 
-    def catalog_snapshot(self) -> RecordCatalogSnapshot:
-        """Read one internally consistent catalog projection for inspection surfaces."""
+    def catalog_snapshot(
+        self,
+        *,
+        current_config_digest: str | None = None,
+        current_record_ids: frozenset[str] | None = None,
+    ) -> RecordCatalogSnapshot:
+        """Read one internally consistent catalog projection for inspection surfaces.
+
+        A current-config projection validates the full catalog structure and
+        every serialized payload, but resolves live external source locations
+        only for selected latest records. Historical and unselected source
+        resolution remains the responsibility of an unscoped snapshot.
+        """
 
         source_experiment_resolver = self._source_experiment_resolver()
         with self._catalog_lock_scope(operation="inspect the record catalog"):
-            catalog = self._read_catalog(source_experiment_resolver=source_experiment_resolver)
+            catalog = self._read_catalog(
+                source_experiment_resolver=source_experiment_resolver,
+                materialize_config_digest=current_config_digest,
+                materialize_record_ids=current_record_ids,
+            )
             epoch_id = str(catalog["provenance_epoch_id"])
+            selected_record_ids = _selected_latest_record_ids(
+                catalog["latest"],
+                config_digest=current_config_digest,
+                record_ids=current_record_ids,
+            )
             records = tuple(
                 self._materialize(
                     record_id,
@@ -216,8 +254,11 @@ class RecordStore:
                     source_experiment_resolver=source_experiment_resolver,
                 )
                 for record_id, payload in sorted(catalog["latest"].items())
+                if record_id in selected_record_ids
             )
-            revision_counts = {record_id: len(revisions) for record_id, revisions in sorted(catalog["history"].items())}
+            revision_counts = {
+                record_id: len(catalog["history"][record_id]) for record_id in sorted(selected_record_ids)
+            }
         return RecordCatalogSnapshot(
             schema_version=RECORD_CATALOG_SCHEMA_VERSION,
             provenance_epoch_id=epoch_id,
@@ -279,10 +320,27 @@ class RecordStore:
 
         return resolve
 
+    def _source_identity_resolver(self) -> SourceExperimentResolver:
+        """Validate serialized source identity without requiring its live workspace."""
+
+        def preserve(experiment_id: str) -> ExperimentLocation:
+            if Path(experiment_id).name != experiment_id or experiment_id in {".", ".."}:
+                raise RecordError(f"Source experiment id must be one safe path segment: {experiment_id!r}")
+            return ExperimentLocation(
+                id=experiment_id,
+                root=self.experiment_root,
+                config_path=self.experiment_root / "config.yaml",
+                outputs_dir=self.root,
+            )
+
+        return preserve
+
     def _read_catalog(
         self,
         *,
         source_experiment_resolver: SourceExperimentResolver | None = None,
+        materialize_config_digest: str | None = None,
+        materialize_record_ids: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         self._validate_catalog_roots()
         if self.records_path.is_symlink():
@@ -330,9 +388,16 @@ class RecordStore:
             raise RecordError("records.json must include 'latest' and 'history' objects")
         if not isinstance(data["latest"], dict) or not isinstance(data["history"], dict):
             raise RecordError("records.json 'latest' and 'history' must be JSON objects")
+        selected_record_ids = _selected_latest_record_ids(
+            data["latest"],
+            config_digest=materialize_config_digest,
+            record_ids=materialize_record_ids,
+        )
         self._validate_catalog_lineage(
             data,
             source_experiment_resolver=source_experiment_resolver or self._source_experiment_resolver(),
+            materialize_latest_ids=selected_record_ids,
+            materialize_history=materialize_config_digest is None and materialize_record_ids is None,
         )
         if (
             self._bound_provenance_epoch_id is not None
@@ -349,6 +414,8 @@ class RecordStore:
         catalog: dict[str, Any],
         *,
         source_experiment_resolver: SourceExperimentResolver,
+        materialize_latest_ids: frozenset[str],
+        materialize_history: bool,
     ) -> None:
         latest = catalog["latest"]
         history = catalog["history"]
@@ -363,23 +430,38 @@ class RecordStore:
             if orphan_history:
                 details.append("history records missing latest: " + ", ".join(orphan_history))
             raise RecordError("records.json latest/history lineage is inconsistent: " + "; ".join(details))
+        identity_resolver = self._source_identity_resolver()
         for record_id in sorted(latest_ids):
             revisions = history[record_id]
             if not isinstance(revisions, list):
                 raise RecordError(f"records.json history for {record_id!r} must be a list")
             if not revisions:
                 raise RecordError(f"records.json history for latest record {record_id!r} must be non-empty")
-            for payload in revisions:
+            if not materialize_history:
+                for payload in revisions:
+                    self._materialize(
+                        record_id,
+                        payload,
+                        source_experiment_resolver=identity_resolver,
+                    )
                 self._materialize(
                     record_id,
-                    payload,
+                    latest[record_id],
+                    source_experiment_resolver=identity_resolver,
+                )
+            if materialize_history:
+                for payload in revisions:
+                    self._materialize(
+                        record_id,
+                        payload,
+                        source_experiment_resolver=source_experiment_resolver,
+                    )
+            if record_id in materialize_latest_ids:
+                self._materialize(
+                    record_id,
+                    latest[record_id],
                     source_experiment_resolver=source_experiment_resolver,
                 )
-            self._materialize(
-                record_id,
-                latest[record_id],
-                source_experiment_resolver=source_experiment_resolver,
-            )
             if revisions[-1] != latest[record_id]:
                 raise RecordError(
                     f"records.json history for {record_id!r} must end with the exact latest record payload"

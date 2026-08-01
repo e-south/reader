@@ -120,7 +120,7 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
     assert "detail" not in bundle
 
 
-def test_records_default_hides_records_retired_from_current_workbench(tmp_path) -> None:
+def test_records_default_isolates_retired_records_and_unavailable_lineage(tmp_path) -> None:
     config = _collection_config(tmp_path)
     current_digest = _config_digest(config)
     store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
@@ -162,6 +162,32 @@ def test_records_default_hides_records_retired_from_current_workbench(tmp_path) 
         "plot:four_state_vector_heatmap",
         "retired_collection/vectors",
     }
+
+    catalog = json.loads(store.records_path.read_text(encoding="utf-8"))
+    retired = catalog["latest"]["retired_collection/vectors"]
+    retired["inputs"] = [
+        {
+            "label": "source",
+            "kind": "source_record",
+            "resource": "source",
+            "experiment": "removed-source",
+            "record": "source/df",
+            "discovery_policy": "source_record",
+            "record_revision_digest": "sha256:" + "a" * 64,
+        }
+    ]
+    catalog["history"]["retired_collection/vectors"][-1] = retired
+    store.records_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    isolated_current = runner.invoke(app, ["records", str(config), "--format", "json"])
+    unresolvable_history = runner.invoke(app, ["records", str(config), "--all", "--format", "json"])
+
+    assert isolated_current.exit_code == 0
+    assert [record["record_id"] for record in cli_success_data(isolated_current.output)["records"]] == [
+        "four_state_vector_collection/vectors"
+    ]
+    assert unresolvable_history.exit_code == 1
+    assert "Could not resolve source experiment 'removed-source'" in unresolvable_history.output
 
 
 def test_records_generic_workbench_uses_current_config_as_its_record_boundary(tmp_path: Path) -> None:

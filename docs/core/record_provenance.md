@@ -48,9 +48,11 @@ missing-file, exact-upstream-revision, or invalid-schema failure is `blocked`.
 `reader records` is a catalog view. By default it projects the catalog through
 the current configuration and, when outputs are declared, the current compiled
 workbench. Records from a prior configuration or from renamed or retired steps
-do not enter current handoffs. `reader records --all` retains access to those
-catalog identities and their revision counts. Neither view replaces `reader
-verify`.
+do not enter current handoffs. Reader still validates every catalog payload and
+the complete latest/history structure, but it resolves external source
+locations only for records selected into the current handoff. `reader records
+--all` retains access to prior and retired catalog identities and their revision
+counts. Neither view replaces `reader verify`.
 Verification also audits the catalog-selected invocation-schema-v2 ledger.
 Every invocation must contain one attempt and at most one terminal result;
 every catalog revision must be claimed exactly once by a terminal result. An
