@@ -23,6 +23,10 @@ def render_records(
     _, decl = load_job_models(job_path)
     outputs_dir = decl.experiment_semantics.layout.outputs_dir
     runtime = _load("reader_workbench.runtime").builtin_runtime()
+    workbench = _load("reader_workbench.workbench.graph").resolve_workbench(decl)
+    current_record_ids = _load("reader_workbench.workbench.inspection.runtime").workbench_record_ids(
+        workbench, runtime=runtime
+    )
     store = runtime.record_store(
         outputs_dir,
         plots_subdir=decl.experiment_semantics.layout.plots_subdir,
@@ -46,15 +50,28 @@ def render_records(
             outputs_dir=outputs_dir,
             runtime=runtime,
             include_history=all_revisions,
+            current_config_digest=decl.config_digest,
+            declared_record_ids=current_record_ids,
         )
+        page_selection = {
+            "config": str(job_path),
+            "config_digest": decl.config_digest,
+            "include_history": all_revisions,
+            "provenance_epoch_id": payload["catalog"]["provenance_epoch_id"],
+            "record_revisions": [
+                {
+                    "record_id": item["record_id"],
+                    "revision_digest": item["revision_digest"],
+                    "revision_count": item.get("revision_count"),
+                }
+                for item in payload["records"]
+            ],
+        }
         page = shared.page_json_collection(
             payload["records"],
             key=lambda item: str(item["record_id"]),
             surface="records",
-            selection={
-                "config": str(job_path),
-                "include_history": all_revisions,
-            },
+            selection=page_selection,
             limit=limit,
             continuation=continuation,
         )
@@ -63,6 +80,12 @@ def render_records(
         return
 
     latest_records = store.iter_latest_records()
+    if not all_revisions:
+        latest_records = _load("reader_workbench.workbench.inspection.results").select_current_records(
+            latest_records,
+            config_digest=decl.config_digest,
+            declared_record_ids=current_record_ids,
+        )
     if all_revisions:
         if not latest_records:
             shared.console.print(

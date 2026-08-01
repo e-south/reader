@@ -106,6 +106,25 @@ def record_entries_payload(
     ]
 
 
+def select_current_records(
+    records,
+    *,
+    config_digest: str,
+    declared_record_ids: frozenset[str],
+):
+    """Project latest records through the current config and declared outputs.
+
+    A generic workbench has no declared outputs, so its config digest is the
+    complete current-record boundary. Protocols that declare outputs narrow
+    that boundary to their owned record identities.
+    """
+
+    current = tuple(record for record in records if record.config_digest == config_digest)
+    if not declared_record_ids:
+        return current
+    return tuple(record for record in current if record.record_id in declared_record_ids)
+
+
 def record_summary_payload(
     *,
     latest_records,
@@ -131,9 +150,17 @@ def record_catalog_payload(
     outputs_dir: Path,
     runtime=None,
     include_history: bool = False,
+    current_config_digest: str | None = None,
+    declared_record_ids: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     snapshot = store.catalog_snapshot()
     latest_records = snapshot.latest_records
+    if not include_history and current_config_digest is not None:
+        latest_records = select_current_records(
+            latest_records,
+            config_digest=current_config_digest,
+            declared_record_ids=declared_record_ids,
+        )
     revision_counts = snapshot.revision_counts if include_history else None
     return {
         "experiment": deepcopy(experiment),

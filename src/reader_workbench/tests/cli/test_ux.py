@@ -1172,6 +1172,7 @@ def test_records_command_can_emit_json_with_history(tmp_path: Path) -> None:
 
 def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -> None:
     cfg_path = write_config(tmp_path / "config.yaml", _base_config())
+    config_digest = build_decl(ReaderSpec.load(cfg_path), source_path=cfg_path).config_digest
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     store.persist_dataframe(
@@ -1182,7 +1183,7 @@ def test_records_command_can_emit_json_without_history_summary(tmp_path: Path) -
         df=_tidy_df(),
         contract_id="tidy.v1",
         inputs=[],
-        config_digest="sha256:test1",
+        config_digest=config_digest,
     )
 
     runner = CliRunner()

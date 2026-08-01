@@ -306,14 +306,18 @@ uv run reader records CONFIG|DIR|INDEX --all --format json
 
 In JSON mode, `uv run reader records` keeps experiment identity at the top of
 `data`, then adds the record-manifest path, a summary by record kind and
-producer, and the latest record entries. Current record-schema-v6 payloads bind
+producer, and the latest entries produced for the current configuration. When
+the compiled workbench declares outputs, the view also requires those current
+record identities. Records left by a prior configuration or a renamed or
+retired step stay out of this default handoff.
+Current record-schema-v6 payloads bind
 the complete config identity, Reader build identity, typed input evidence,
 exact upstream revisions, and generated-file evidence. File bundles include
 one typed description for every path. Non-v6 record payloads are rejected as
-an invalid catalog and must be reproduced from source inputs. `--all` adds
-revision counts rather than dumping every stored revision. Use `reader verify`
-to prove the current catalog rather than treating `records` as an integrity
-check.
+an invalid catalog and must be reproduced from source inputs. `--all` includes
+retired record identities and adds revision counts rather than dumping every
+stored revision. Use `reader verify` to prove the current catalog rather than
+treating `records` as an integrity check.
 
 Useful flags:
 
@@ -533,7 +537,7 @@ List records from `outputs/manifests/records.json`:
 uv run reader records CONFIG|DIR|INDEX
 ```
 
-Show record history counts:
+Show all catalog identities with record history counts:
 
 ```bash
 uv run reader records CONFIG|DIR|INDEX --all

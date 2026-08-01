@@ -139,7 +139,7 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
     frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["signal"], "value": [1.0]})
     for producer_id, record_id, config_digest in (
         ("ingest", "ingest/df", declaration.config_digest),
-        ("retired", "retired/df", "sha256:retired-config"),
+        ("retired", "retired/df", declaration.config_digest),
     ):
         store.persist_dataframe(
             producer_id=producer_id,
@@ -170,8 +170,12 @@ def test_verify_ignores_records_retired_from_the_current_workbench(tmp_path: Pat
     ]
     ledger.append_result(attempt, exit_status=0, produced_record_revisions=revisions)
 
+    current_catalog = records(experiment)
+    historical_catalog = records(experiment, include_history=True)
     result = verify(experiment)
 
+    assert [entry["record_id"] for entry in current_catalog.entries] == ["ingest/df"]
+    assert {entry["record_id"] for entry in historical_catalog.entries} == {"ingest/df", "retired/df"}
     assert result.status == "ok"
     assert result.summary == {
         "checked": 1,

@@ -23,7 +23,7 @@ from reader_workbench.workbench.inspection.experiments import (
     experiment_inspect_payload,
 )
 from reader_workbench.workbench.inspection.results import record_catalog_payload
-from reader_workbench.workbench.inspection.runtime import workbench_record_verification_scope
+from reader_workbench.workbench.inspection.runtime import workbench_record_ids, workbench_record_verification_scope
 from reader_workbench.workbench.notebooks import CANONICAL_NOTEBOOK_ID, write_experiment_notebook
 from reader_workbench.workbench.paths import resolve_confined_sink_root
 from reader_workbench.workbench.records import (
@@ -228,6 +228,7 @@ def plots(
 
 def records(experiment: Experiment, *, include_history: bool = False) -> RecordCatalogResult:
     decl = experiment._declaration
+    workbench = resolve_workbench(decl)
     layout = decl.experiment_semantics.layout
     outputs_dir = layout.outputs_dir
     store = experiment._runtime.record_store(
@@ -263,6 +264,8 @@ def records(experiment: Experiment, *, include_history: bool = False) -> RecordC
         outputs_dir=outputs_dir,
         runtime=experiment._runtime,
         include_history=include_history,
+        current_config_digest=decl.config_digest,
+        declared_record_ids=workbench_record_ids(workbench, runtime=experiment._runtime),
     )
     return RecordCatalogResult(
         experiment=_identity(payload["experiment"]),

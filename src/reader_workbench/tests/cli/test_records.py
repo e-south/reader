@@ -1,13 +1,30 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 from typer.testing import CliRunner
 
 from reader_workbench.contracts import builtin_contract_catalog
-from reader_workbench.tests.support import cli_success_data
+from reader_workbench.tests.support import base_reader_config, cli_success_data, write_config
 from reader_workbench.workbench.cli import app
+from reader_workbench.workbench.config import ReaderSpec, reader_spec_digest
 from reader_workbench.workbench.graph import ProvenanceInput, RecordRef
 from reader_workbench.workbench.records import PathDescription, RecordStore
+
+
+def _collection_config(tmp_path: Path, *, lifecycle: str = "active") -> Path:
+    return write_config(
+        tmp_path / "config.yaml",
+        base_reader_config(
+            experiment_id="exp",
+            lifecycle=lifecycle,
+            protocol_id="logic/four_state_vector_collection",
+        ),
+    )
+
+
+def _config_digest(config: Path) -> str:
+    return reader_spec_digest(ReaderSpec.load(config))
 
 
 def test_records_requires_catalog(tmp_path) -> None:
@@ -17,7 +34,7 @@ def test_records_requires_catalog(tmp_path) -> None:
         encoding="utf-8",
     )
     runner = CliRunner()
-    result = runner.invoke(app, ["records", str(config)])
+    result = runner.invoke(app, ["records", str(config)], env={"COLUMNS": "200"})
     assert result.exit_code == 1
     assert "No outputs/manifests/records.json found" in result.output
     text = " ".join(result.output.split())
@@ -26,11 +43,7 @@ def test_records_requires_catalog(tmp_path) -> None:
 
 
 def test_records_lists_catalog_for_non_active_lifecycle(tmp_path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        "schema: reader/v8\nexperiment:\n  id: exp\n  lifecycle: draft\nprotocol:\n  id: workbench/generic\n",
-        encoding="utf-8",
-    )
+    config = _collection_config(tmp_path, lifecycle="draft")
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
@@ -38,24 +51,20 @@ def test_records_lists_catalog_for_non_active_lifecycle(tmp_path) -> None:
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
-        record_id="ingest/df",
+        record_id="four_state_vector_collection/vectors",
         df=df,
         contract_id="tidy.v1",
         inputs=[],
-        config_digest="sha256:test",
+        config_digest=_config_digest(config),
     )
     runner = CliRunner()
-    result = runner.invoke(app, ["records", str(config)])
+    result = runner.invoke(app, ["records", str(config)], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "ingest/df" in result.output
+    assert "four_state_vector_collection/vectors" in result.output
 
 
 def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
-        encoding="utf-8",
-    )
+    config = _collection_config(tmp_path)
     outputs = tmp_path / "outputs"
     store = RecordStore(outputs, contracts=builtin_contract_catalog())
     df = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
@@ -63,11 +72,11 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         producer_id="ingest",
         producer_plugin="ingest/synergy_h1",
         out_name="df",
-        record_id="ingest/df",
+        record_id="four_state_vector_collection/vectors",
         df=df,
         contract_id="tidy.v1",
         inputs=[],
-        config_digest="sha256:test",
+        config_digest=_config_digest(config),
     )
     plot_path = outputs / "plots" / "trace.png"
     summary_path = outputs / "plots" / "summary.png"
@@ -78,9 +87,11 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         producer_kind="plot",
         producer_id="qc",
         producer_plugin="plot/time_series",
-        record_id="plot:qc",
-        inputs=store.capture_inputs([ProvenanceInput(label="df", ref=RecordRef(record_id="ingest/df"))]),
-        config_digest="sha256:plot",
+        record_id="plot:four_state_vector_heatmap",
+        inputs=store.capture_inputs(
+            [ProvenanceInput(label="df", ref=RecordRef(record_id="four_state_vector_collection/vectors"))]
+        ),
+        config_digest=_config_digest(config),
         files=[plot_path, summary_path],
         description="Render grouped time-series plots from tidy plate-reader traces.",
         path_descriptions=(
@@ -89,22 +100,104 @@ def test_records_lists_dataframe_and_file_bundle_entries(tmp_path) -> None:
         ),
     )
     runner = CliRunner()
-    result = runner.invoke(app, ["records", str(config)])
+    result = runner.invoke(app, ["records", str(config)], env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    assert "ingest/df" in result.output
-    assert "plot:qc" in result.output
+    assert "four_state_vector_collection/vectors" in result.output
+    assert "plot:four_state_vector_heatmap" in result.output
     assert "2 files" in result.output
 
     json_result = runner.invoke(app, ["records", str(config), "--format", "json"])
     assert json_result.exit_code == 0
     payload = cli_success_data(json_result.output)
-    bundle = next(record for record in payload["records"] if record["record_id"] == "plot:qc")
+    bundle = next(record for record in payload["records"] if record["record_id"] == "plot:four_state_vector_heatmap")
     assert bundle["description"] == "Render grouped time-series plots from tidy plate-reader traces."
     assert bundle["path_descriptions"] == [
         {"path": "plots/summary.png", "description": "Endpoint summary by treatment."},
         {"path": "plots/trace.png", "description": "Grouped time-series traces for the configured channels."},
     ]
     assert "detail" not in bundle
+
+
+def test_records_default_hides_records_retired_from_current_workbench(tmp_path) -> None:
+    config = _collection_config(tmp_path)
+    current_digest = _config_digest(config)
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    for producer_id, record_id, config_digest in (
+        ("four_state_vector_collection", "four_state_vector_collection/vectors", current_digest),
+        ("stale_heatmap", "plot:four_state_vector_heatmap", "sha256:stale"),
+        ("retired_collection", "retired_collection/vectors", current_digest),
+    ):
+        store.persist_dataframe(
+            producer_id=producer_id,
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=frame,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+        )
+
+    runner = CliRunner()
+    text_result = runner.invoke(app, ["records", str(config)], env={"COLUMNS": "200"})
+    current_result = runner.invoke(app, ["records", str(config), "--format", "json"])
+    history_result = runner.invoke(app, ["records", str(config), "--all", "--format", "json"])
+
+    assert text_result.exit_code == 0
+    assert "four_state_vector_collection/vectors" in text_result.output
+    assert "retired_collection" not in text_result.output
+    assert "plot:four_state_vector_heatmap" not in text_result.output
+    assert current_result.exit_code == 0
+    current = cli_success_data(current_result.output)
+    assert current["summary"]["records"] == 1
+    assert [record["record_id"] for record in current["records"]] == ["four_state_vector_collection/vectors"]
+    assert history_result.exit_code == 0
+    history = cli_success_data(history_result.output)
+    assert history["selection"]["include_history"] is True
+    assert {record["record_id"] for record in history["records"]} == {
+        "four_state_vector_collection/vectors",
+        "plot:four_state_vector_heatmap",
+        "retired_collection/vectors",
+    }
+
+
+def test_records_generic_workbench_uses_current_config_as_its_record_boundary(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "schema: reader/v8\nexperiment:\n  id: exp\nprotocol:\n  id: workbench/generic\n",
+        encoding="utf-8",
+    )
+    store = RecordStore(tmp_path / "outputs", contracts=builtin_contract_catalog())
+    frame = pd.DataFrame({"position": ["A1"], "time": [0.0], "channel": ["OD600"], "value": [1.0]})
+    for record_id, config_digest in (
+        ("measurements/current", _config_digest(config)),
+        ("measurements/prior", "sha256:prior"),
+    ):
+        store.persist_dataframe(
+            producer_id=record_id.replace("/", "_"),
+            producer_plugin="ingest/synergy_h1",
+            out_name="df",
+            record_id=record_id,
+            df=frame,
+            contract_id="tidy.v1",
+            inputs=[],
+            config_digest=config_digest,
+        )
+
+    runner = CliRunner()
+    current_result = runner.invoke(app, ["records", str(config), "--format", "json"])
+    history_result = runner.invoke(app, ["records", str(config), "--all", "--format", "json"])
+
+    assert current_result.exit_code == 0
+    current = cli_success_data(current_result.output)
+    assert [record["record_id"] for record in current["records"]] == ["measurements/current"]
+    assert history_result.exit_code == 0
+    history = cli_success_data(history_result.output)
+    assert {record["record_id"] for record in history["records"]} == {
+        "measurements/current",
+        "measurements/prior",
+    }
 
 
 def test_records_rejects_retired_record_schemas(tmp_path) -> None:
