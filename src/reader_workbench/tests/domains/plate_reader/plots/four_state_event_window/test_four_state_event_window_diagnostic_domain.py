@@ -126,10 +126,16 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
         pre_window_duration_h=None,
         axis_labels={
             "growth": "OD600",
-            "response": "log₂(YFP/CFP)",
-            "magnitude": "log₂(YFP/OD600)",
+            "response": "log$_2$(YFP/CFP)",
+            "magnitude": "log$_2$(YFP/OD600)",
         },
-        reference_label="pDual-10",
+        state_labels={
+            "00": "No treatment",
+            "10": "Treatment A",
+            "01": "Treatment B",
+            "11": "Treatments A + B",
+        },
+        reference_label="reference-a",
         title="Selected diagnostic",
     )
 
@@ -144,13 +150,13 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     assert [axis.get_title() for axis in figure.axes] == [
         "Growth",
         "Reporter ratio",
-        "Signal and reference",
-        "Window summary",
+        "Signal vs reference",
+        "Response-window phenotype",
     ]
     assert [axis.get_ylabel() for axis in figure.axes[:3]] == [
         "OD600",
-        "log₂(YFP/CFP)",
-        "log₂(YFP/OD600)",
+        "log$_2$(YFP/CFP)",
+        "log$_2$(YFP/OD600)",
     ]
     assert [tick.get_text() for tick in figure.axes[3].get_yticklabels()] == list(COMPONENT_COLUMNS)
     assert any(line.get_gid() == "four-state-event-window-reference-trace" for line in figure.axes[2].lines)
@@ -169,7 +175,16 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
         "^",
         "D",
     }
-    assert "pDual-10" in {text.get_text() for text in figure.legends[0].get_texts()}
+    centered_traces = [line for line in figure.axes[0].lines if line.get_gid() == "four-state-event-window-trace"]
+    assert all(line.get_markeredgecolor() == "white" for line in centered_traces)
+    assert all(line.get_markeredgewidth() == pytest.approx(0.55) for line in centered_traces)
+    assert "reference-a" in {text.get_text() for text in figure.legends[0].get_texts()}
+    assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(
+        {text.get_text() for text in figure.legends[0].get_texts()}
+    )
+    component_labels = {text.get_text() for text in figure.axes[3].texts}
+    assert "Response $r_i$\nlog$_2$(YFP/CFP)" in component_labels
+    assert "Signal $b_i$\nlog$_2$(YFP/OD600)\nrelative to reference-a" in component_labels
     plt.close(figure)
 
 

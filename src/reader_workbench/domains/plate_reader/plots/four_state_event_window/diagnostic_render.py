@@ -11,21 +11,9 @@ import pandas as pd
 from reader_workbench.plotting.style import use_style
 
 from .diagnostic import FourStateEventWindowDiagnostic, prepare_four_state_event_window_diagnostic
-from .schema import COMPONENT_COLUMNS, STATE_ORDER
-
-STATE_COLORS = {
-    "00": "#596675",
-    "10": "#4F8C83",
-    "01": "#607CC8",
-    "11": "#C15D6E",
-}
-STATE_MARKERS = {"00": "o", "10": "s", "01": "^", "11": "D"}
-BOUND_MARKERS = {"exact": "o", "lower": ">", "upper": "<", "indeterminate": "X"}
-_DEFAULT_AXIS_LABELS = {
-    "growth": "Signal",
-    "response": "log₂(response signal)",
-    "magnitude": "log₂(magnitude signal)",
-}
+from .diagnostic_components import draw_component_panel, has_quality_flags
+from .diagnostic_style import BOUND_MARKERS, STATE_COLORS, STATE_MARKERS, validated_axis_labels, validated_state_labels
+from .schema import STATE_ORDER
 
 
 def render_four_state_event_window_diagnostic(
@@ -37,6 +25,7 @@ def render_four_state_event_window_diagnostic(
     reduction_id: str,
     pre_window_duration_h: float | None,
     axis_labels: Mapping[str, str] | None = None,
+    state_labels: Mapping[str, str] | None = None,
     reference_label: str = "reference",
     title: str | None = None,
 ) -> Any:
@@ -68,18 +57,24 @@ def render_four_state_event_window_diagnostic(
             gridspec_kw={"width_ratios": (1.0, 1.0, 1.0, 0.95)},
         )
         figure.set_gid("four-state-event-window-diagnostic")
-        labels = _validated_axis_labels(axis_labels)
+        labels = validated_axis_labels(axis_labels)
+        states = validated_state_labels(state_labels)
         for axis, signal_kind, panel_title in (
             (axes[0], "growth", "Growth"),
             (axes[1], "response", "Reporter ratio"),
-            (axes[2], "magnitude", "Signal and reference"),
+            (axes[2], "magnitude", "Signal vs reference"),
         ):
             _draw_trace_panel(axis, diagnostic=diagnostic, signal_kind=signal_kind)
             axis.set_title(panel_title, pad=8)
             axis.set_xlabel("Time from event estimate (h)")
             axis.set_ylabel(labels[signal_kind])
-        _draw_component_panel(axes[3], diagnostic=diagnostic)
-        axes[3].set_title("Window summary", pad=8)
+        draw_component_panel(
+            axes[3],
+            diagnostic=diagnostic,
+            axis_labels=labels,
+            reference_label=reference_label,
+        )
+        axes[3].set_title("Response-window phenotype", pad=8)
 
         interval_mass_percent = diagnostic.descriptive_interval_mass * 100.0
         response_basis = " · response shown as post − pre" if diagnostic.response_basis == "post_minus_pre" else ""
@@ -98,7 +93,7 @@ def render_four_state_event_window_diagnostic(
                 color=STATE_COLORS[state],
                 marker=STATE_MARKERS[state],
                 linewidth=1.8,
-                label=state,
+                label=states[state],
             )
             for state in STATE_ORDER
         ]
@@ -123,7 +118,7 @@ def render_four_state_event_window_diagnostic(
                 ),
             ]
         )
-        if _has_quality_flags(diagnostic):
+        if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
         figure.legend(handles=legend, loc="outside lower center", ncol=min(len(legend), 8), frameon=False)
     return figure
@@ -201,8 +196,9 @@ def _draw_observed_traces(
             linestyle=linestyle,
             linewidth=0.65 if reference else 0.8,
             marker=marker,
-            markersize=1.5,
-            markeredgewidth=0.0,
+            markersize=2.0,
+            markeredgecolor="white",
+            markeredgewidth=0.3,
             alpha=0.10 if reference else 0.15,
         )
         flagged = trace.loc[
@@ -230,7 +226,9 @@ def _draw_observed_traces(
         linestyle=linestyle,
         linewidth=1.9 if linestyle == "-" else 1.4,
         marker=marker,
-        markersize=3.2 if not reference else 2.7,
+        markersize=4.0 if not reference else 3.4,
+        markeredgecolor="white",
+        markeredgewidth=0.55 if not reference else 0.45,
         alpha=0.55 if reference else 1.0,
     )
     line.set_gid(gid)
@@ -249,91 +247,6 @@ def _aligned_trace_center(
     values = np.vstack([trace["plot_value"].to_numpy(dtype=float) for trace in traces])
     center = np.mean(values, axis=0) if observation_stat == "mean" else np.median(values, axis=0)
     return times, center
-
-
-def _draw_component_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic) -> None:
-    y = np.arange(len(COMPONENT_COLUMNS))
-    values = np.asarray(diagnostic.component_values)
-    interval_low = np.asarray(diagnostic.component_descriptive_interval_low)
-    interval_high = np.asarray(diagnostic.component_descriptive_interval_high)
-    event_range = np.asarray(diagnostic.component_event_half_range)
-    for index, (component, value) in enumerate(zip(COMPONENT_COLUMNS, values, strict=True)):
-        state = component[1:]
-        color = STATE_COLORS[state]
-        axis.hlines(
-            y[index],
-            value - event_range[index],
-            value + event_range[index],
-            color=color,
-            linewidth=5.0,
-            alpha=0.20,
-        )
-        axis.hlines(y[index], interval_low[index], interval_high[index], color=color, linewidth=1.5)
-        bound_kind = diagnostic.component_bound_kinds[index]
-        axis.scatter(
-            value,
-            y[index],
-            color=color,
-            marker=BOUND_MARKERS[bound_kind],
-            s=30.0,
-            zorder=3,
-        )
-    axis.axvline(0.0, color="#64748b", linewidth=0.9)
-    axis.axhline(3.5, color="#cbd5e1", linewidth=0.8)
-    axis.set_yticks(y, labels=COMPONENT_COLUMNS)
-    axis.invert_yaxis()
-    axis.set_xlabel("Reduced value (log2 units)")
-    notes = _quality_notes(diagnostic)
-    if notes:
-        axis.text(
-            0.0,
-            -0.16,
-            "Quality flags — " + "; ".join(notes),
-            transform=axis.transAxes,
-            ha="left",
-            va="top",
-            fontsize=7.0,
-            color="#7c2d12",
-            wrap=True,
-        )
-
-
-def _quality_notes(diagnostic: FourStateEventWindowDiagnostic) -> list[str]:
-    notes: list[str] = []
-    for index, component in enumerate(COMPONENT_COLUMNS):
-        flags: list[str] = []
-        bound = diagnostic.component_bound_kinds[index]
-        if bound != "exact":
-            flags.append(f"{bound} bound")
-        if diagnostic.component_has_policy_clipping[index]:
-            flags.append("policy clipping")
-        if diagnostic.component_has_instrument_overflow[index]:
-            flags.append("instrument overflow")
-        if diagnostic.component_event_has_policy_clipping[index]:
-            flags.append("event-range clipping")
-        if diagnostic.component_event_has_instrument_overflow[index]:
-            flags.append("event-range overflow")
-        if flags:
-            notes.append(f"{component}: {', '.join(flags)}")
-    return notes
-
-
-def _has_quality_flags(diagnostic: FourStateEventWindowDiagnostic) -> bool:
-    trace_flags = (
-        diagnostic.traces["value_policy_clipped"].astype(bool)
-        | diagnostic.traces["value_instrument_overflow"].astype(bool)
-        | diagnostic.traces["value_bound_kind"].astype(str).ne("exact")
-    ).any()
-    return bool(trace_flags or _quality_notes(diagnostic))
-
-
-def _validated_axis_labels(axis_labels: Mapping[str, str] | None) -> dict[str, str]:
-    labels = dict(_DEFAULT_AXIS_LABELS if axis_labels is None else axis_labels)
-    if set(labels) != set(_DEFAULT_AXIS_LABELS):
-        raise ValueError("four-state event-window diagnostic axis labels must define growth, response, and magnitude")
-    if any(not isinstance(value, str) or not value.strip() for value in labels.values()):
-        raise ValueError("four-state event-window diagnostic axis labels must be non-empty strings")
-    return {key: value.strip() for key, value in labels.items()}
 
 
 __all__ = ["BOUND_MARKERS", "STATE_COLORS", "STATE_MARKERS", "render_four_state_event_window_diagnostic"]

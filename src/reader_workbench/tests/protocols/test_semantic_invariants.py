@@ -224,9 +224,10 @@ def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_pl
     assert diagnostic.with_["pre_window_duration_h"] is None
     assert diagnostic.with_["axis_labels"] == {
         "growth": "growth",
-        "response": "log₂(response)",
-        "magnitude": "log₂(magnitude)",
+        "response": "log$_2$(response)",
+        "magnitude": "log$_2$(magnitude)",
     }
+    assert diagnostic.with_["state_labels"] == {"00": "00", "10": "10", "01": "01", "11": "11"}
     assert diagnostic.with_["reference_label"] == "reference"
     assert diagnostic.with_["subjects"] == [
         {

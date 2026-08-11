@@ -19,7 +19,9 @@ def test_four_state_event_window_modules_stay_bounded() -> None:
         ANALYSIS_PACKAGE / "sources.py": 340,
         ANALYSIS_PACKAGE / "observation_resampling.py": 130,
         PLOT_PACKAGE / "diagnostic.py": 320,
+        PLOT_PACKAGE / "diagnostic_components.py": 150,
         PLOT_PACKAGE / "diagnostic_render.py": 320,
+        PLOT_PACKAGE / "diagnostic_style.py": 60,
         PLOT_PACKAGE / "schema.py": 40,
         PLOT_PACKAGE / "summary.py": 150,
     }
@@ -48,7 +50,9 @@ def test_four_state_event_window_roles_have_distinct_packages() -> None:
     assert {path.name for path in PLOT_PACKAGE.glob("*.py")} == {
         "__init__.py",
         "diagnostic.py",
+        "diagnostic_components.py",
         "diagnostic_render.py",
+        "diagnostic_style.py",
         "schema.py",
         "summary.py",
     }
