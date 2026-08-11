@@ -575,8 +575,13 @@ def test_four_state_event_window_is_a_normal_protocol_run_with_normal_records(tm
                     "include": ["four_state_event_window_diagnostic"],
                     "views": {
                         "four_state_event_window_diagnostic": {
-                            "source_experiment_id": "trace-source",
-                            "design_id": "candidate",
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "candidate",
+                                    "filename": "candidate",
+                                }
+                            ],
                         }
                     },
                 }

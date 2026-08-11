@@ -48,7 +48,9 @@ anchored-magnitude components for one source design. It is a normal plot
 artifact, so it appears in the same record catalog and canonical EDA notebook
 as every other generated figure.
 
-Enable the diagnostic explicitly and identify the record row to render:
+Enable the diagnostic explicitly and list the source-design rows to render.
+Each subject declares its own output filename, so one plot step can publish a
+small review set without introducing another execution path:
 
 ```yaml
 protocol:
@@ -57,8 +59,10 @@ protocol:
       include: [four_state_event_window_summary, four_state_event_window_diagnostic]
       views:
         four_state_event_window_diagnostic:
-          source_experiment_id: trace-source
-          design_id: design-a
+          subjects:
+            - source_experiment_id: trace-source
+              design_id: design-a
+              filename: design-a-event-window
 ```
 
 The compiler supplies the reduction marked `role: primary`; plot configuration

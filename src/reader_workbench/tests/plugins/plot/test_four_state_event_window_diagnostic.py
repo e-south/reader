@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import pytest
+from pydantic import ValidationError
 
 from reader_workbench.plugins.plot.four_state_event_window_diagnostic import (
     FourStateEventWindowDiagnosticCfg,
@@ -80,12 +82,16 @@ def test_four_state_event_window_diagnostic_declares_record_contracts() -> None:
 
 def test_four_state_event_window_diagnostic_adapts_figure_metadata() -> None:
     cfg = FourStateEventWindowDiagnosticCfg(
-        source_experiment_id="source",
-        design_id="selected",
+        subjects=[
+            {
+                "source_experiment_id": "source",
+                "design_id": "selected",
+                "title": "Selected diagnostic",
+                "filename": "diagnostic",
+            }
+        ],
         primary_reduction_id="primary",
         pre_window_duration_h=None,
-        title="Selected diagnostic",
-        filename="diagnostic",
         format=["png", "pdf"],
         dpi=144,
     )
@@ -112,3 +118,89 @@ def test_four_state_event_window_diagnostic_adapts_figure_metadata() -> None:
     assert "confidence" not in title
     assert " CI" not in title
     plt.close(rendered[0].fig)
+
+
+def test_four_state_event_window_diagnostic_renders_an_explicit_subject_set() -> None:
+    traces = _traces_frame()
+    second_traces = traces.loc[traces["design_id"].eq("selected")].copy()
+    second_traces["design_id"] = "selected-b"
+    traces = pd.concat([traces, second_traces], ignore_index=True)
+    designs = _designs_frame()
+    second_design = designs.copy()
+    second_design["design_id"] = "selected-b"
+    designs = pd.concat([designs, second_design], ignore_index=True)
+    cfg = FourStateEventWindowDiagnosticCfg(
+        subjects=[
+            {
+                "source_experiment_id": "source",
+                "design_id": "selected-b",
+                "filename": "selected-a",
+                "title": "Selected A",
+            },
+            {
+                "source_experiment_id": "source",
+                "design_id": "selected",
+                "filename": "selected-b",
+                "title": "Selected B",
+            },
+        ],
+        primary_reduction_id="primary",
+        format=["svg"],
+    )
+
+    rendered = FourStateEventWindowDiagnosticPlot().render(
+        None,
+        {"traces": traces, "designs": designs},
+        cfg,
+    )
+
+    assert [(item.filename, item.ext) for item in rendered] == [
+        ("selected-a", "svg"),
+        ("selected-b", "svg"),
+    ]
+    assert rendered[0].fig is not rendered[1].fig
+    assert rendered[0].fig.get_suptitle().startswith("Selected A\n")
+    assert rendered[1].fig.get_suptitle().startswith("Selected B\n")
+    for item in rendered:
+        plt.close(item.fig)
+
+
+def test_four_state_event_window_diagnostic_rejects_filename_collisions_after_normalization() -> None:
+    with pytest.raises(ValidationError, match="unique filenames"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[
+                {"source_experiment_id": "source", "design_id": "a", "filename": "design a"},
+                {"source_experiment_id": "source", "design_id": "b", "filename": "design/a"},
+            ],
+            primary_reduction_id="primary",
+        )
+
+
+@pytest.mark.parametrize("filename", [" ", "...", "///"])
+def test_four_state_event_window_diagnostic_rejects_empty_filename_slug(filename: str) -> None:
+    with pytest.raises(ValidationError, match="filesystem-safe character|must not be blank"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[
+                {
+                    "source_experiment_id": "source",
+                    "design_id": "a",
+                    "filename": filename,
+                }
+            ],
+            primary_reduction_id="primary",
+        )
+
+
+def test_four_state_event_window_diagnostic_rejects_unknown_subject_fields() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[
+                {
+                    "source_experiment_id": "source",
+                    "design_id": "a",
+                    "filename": "design-a",
+                    "unknown": "value",
+                }
+            ],
+            primary_reduction_id="primary",
+        )
