@@ -200,8 +200,13 @@ def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_pl
                     "include": ["four_state_event_window_diagnostic"],
                     "views": {
                         "four_state_event_window_diagnostic": {
-                            "source_experiment_id": "trace-source",
-                            "design_id": "design-a",
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "design-a",
+                                    "filename": "design-a",
+                                }
+                            ],
                         }
                     },
                 }
@@ -217,8 +222,65 @@ def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_pl
     assert diagnostic.reads["traces"].record_id == "four_state_event_window/traces"
     assert diagnostic.with_["primary_reduction_id"] == "primary"
     assert diagnostic.with_["pre_window_duration_h"] is None
-    assert diagnostic.with_["source_experiment_id"] == "trace-source"
-    assert diagnostic.with_["design_id"] == "design-a"
+    assert diagnostic.with_["subjects"] == [
+        {
+            "source_experiment_id": "trace-source",
+            "design_id": "design-a",
+            "filename": "design-a",
+        }
+    ]
+
+
+def test_four_state_event_window_can_compile_an_explicit_diagnostic_subject_set() -> None:
+    subjects = [
+        {
+            "source_experiment_id": "trace-source",
+            "design_id": "design-a",
+            "filename": "design-a",
+        },
+        {
+            "source_experiment_id": "trace-source",
+            "design_id": "design-b",
+            "filename": "design-b",
+        },
+    ]
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/four_state_event_window",
+            outputs={
+                "plots": {
+                    "include": ["four_state_event_window_diagnostic"],
+                    "views": {"four_state_event_window_diagnostic": {"subjects": subjects}},
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "four_state_event_window_diagnostic")
+
+    assert diagnostic.with_["subjects"] == subjects
+
+
+def test_four_state_event_window_diagnostic_rejects_top_level_subject_fields() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/four_state_event_window",
+            outputs={
+                "plots": {
+                    "include": ["four_state_event_window_diagnostic"],
+                    "views": {
+                        "four_state_event_window_diagnostic": {
+                            "source_experiment_id": "trace-source",
+                            "design_id": "design-a",
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="unsupported top-level subject fields"):
+        protocol.compile()
 
 
 def test_dual_reporter_screen_compiles_triptych_from_persisted_ratio_record() -> None:
@@ -501,7 +563,7 @@ def test_four_state_event_window_diagnostic_requires_an_explicit_record_identity
         )
     )
 
-    with pytest.raises(ConfigError, match="source_experiment_id must be a non-empty string"):
+    with pytest.raises(ConfigError, match="subjects must be a non-empty list"):
         protocol.compile()
 
 
@@ -545,8 +607,13 @@ def test_four_state_event_window_diagnostic_receives_the_compiler_owned_pre_wind
                     "include": ["four_state_event_window_diagnostic"],
                     "views": {
                         "four_state_event_window_diagnostic": {
-                            "source_experiment_id": "trace-source",
-                            "design_id": "design-a",
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "design-a",
+                                    "filename": "design-a",
+                                }
+                            ],
                         }
                     },
                 }

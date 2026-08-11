@@ -121,10 +121,17 @@ def _four_state_event_window_plot_output(
             with_=_deep_merge({"primary_reduction_id": primary_reduction_id}, settings),
         )
     if output_id == "four_state_event_window_diagnostic":
-        for key in ("source_experiment_id", "design_id"):
-            value = settings.get(key)
-            if not isinstance(value, str) or not value.strip():
-                raise ConfigError(f"protocol.outputs.plots.views.{output_id}.{key} must be a non-empty string")
+        legacy_subject_fields = sorted(
+            {"source_experiment_id", "design_id", "filename", "title"}.intersection(settings)
+        )
+        if legacy_subject_fields:
+            raise ConfigError(
+                f"protocol.outputs.plots.views.{output_id} uses unsupported top-level subject fields "
+                f"{legacy_subject_fields}; declare every diagnostic under subjects"
+            )
+        subjects = settings.get("subjects")
+        if not isinstance(subjects, list) or not subjects:
+            raise ConfigError(f"protocol.outputs.plots.views.{output_id}.subjects must be a non-empty list")
         return _step(
             id=output_id,
             plugin="plot/four_state_event_window_diagnostic",
