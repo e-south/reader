@@ -54,10 +54,11 @@ class FourStateEventWindowDiagnosticCfg(PluginConfig):
     axis_labels: FourStateEventWindowAxisLabels = Field(
         default_factory=lambda: FourStateEventWindowAxisLabels(
             growth="Signal",
-            response="log₂(response signal)",
-            magnitude="log₂(magnitude signal)",
+            response="log$_2$(response signal)",
+            magnitude="log$_2$(magnitude signal)",
         )
     )
+    state_labels: dict[str, str] = Field(default_factory=lambda: {"00": "00", "10": "10", "01": "01", "11": "11"})
     reference_label: str = Field(default="reference", min_length=1)
     format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["png"], min_length=1)
     dpi: int = Field(default=300, ge=1)
@@ -70,6 +71,10 @@ class FourStateEventWindowDiagnosticCfg(PluginConfig):
         filenames = [slugify(subject.filename).casefold() for subject in self.subjects]
         if len(filenames) != len(set(filenames)):
             raise ValueError("subjects must contain unique filenames")
+        if set(self.state_labels) != {"00", "10", "01", "11"}:
+            raise ValueError("state_labels must define exactly 00, 10, 01, and 11")
+        if any(not isinstance(value, str) or not value.strip() for value in self.state_labels.values()):
+            raise ValueError("state_labels values must be non-empty strings")
         return self
 
 
@@ -98,6 +103,7 @@ class FourStateEventWindowDiagnosticPlot(FigurePlotPlugin):
                 reduction_id=cfg.primary_reduction_id,
                 pre_window_duration_h=cfg.pre_window_duration_h,
                 axis_labels=cfg.axis_labels.model_dump(),
+                state_labels=cfg.state_labels,
                 reference_label=cfg.reference_label,
                 title=subject.title,
             )

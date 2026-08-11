@@ -158,9 +158,10 @@ def _diagnostic_display_labels(analysis: dict[str, Any]) -> dict[str, object]:
     return {
         "axis_labels": {
             "growth": str(source["growth_channel"]),
-            "response": f"log₂({source['response_channel']})",
-            "magnitude": f"log₂({source['magnitude_channel']})",
+            "response": f"log$_2$({source['response_channel']})",
+            "magnitude": f"log$_2$({source['magnitude_channel']})",
         },
+        "state_labels": {state: str(label) for state, label in source["state_values"].items()},
         "reference_label": str(source["reference_design_id"]),
     }
 

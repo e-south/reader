@@ -211,3 +211,12 @@ def test_four_state_event_window_diagnostic_rejects_unknown_subject_fields() -> 
             ],
             primary_reduction_id="primary",
         )
+
+
+def test_four_state_event_window_diagnostic_requires_all_state_labels() -> None:
+    with pytest.raises(ValidationError, match="state_labels must define exactly"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[{"source_experiment_id": "source", "design_id": "a", "filename": "design-a"}],
+            primary_reduction_id="primary",
+            state_labels={"00": "No treatment"},
+        )
