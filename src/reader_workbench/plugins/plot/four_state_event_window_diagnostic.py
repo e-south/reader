@@ -49,7 +49,7 @@ class FourStateEventWindowDiagnosticCfg(PluginConfig):
         identities = [(subject.source_experiment_id, subject.design_id) for subject in self.subjects]
         if len(identities) != len(set(identities)):
             raise ValueError("subjects must contain unique source/design identities")
-        filenames = [slugify(subject.filename) for subject in self.subjects]
+        filenames = [slugify(subject.filename).casefold() for subject in self.subjects]
         if len(filenames) != len(set(filenames)):
             raise ValueError("subjects must contain unique filenames")
         return self
