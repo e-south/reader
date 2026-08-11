@@ -165,12 +165,19 @@ def test_four_state_event_window_diagnostic_renders_an_explicit_subject_set() ->
         plt.close(item.fig)
 
 
-def test_four_state_event_window_diagnostic_rejects_filename_collisions_after_normalization() -> None:
+@pytest.mark.parametrize(
+    ("first_filename", "second_filename"),
+    [("design a", "design/a"), ("Design-A", "design-a")],
+)
+def test_four_state_event_window_diagnostic_rejects_portable_filename_collisions(
+    first_filename: str,
+    second_filename: str,
+) -> None:
     with pytest.raises(ValidationError, match="unique filenames"):
         FourStateEventWindowDiagnosticCfg(
             subjects=[
-                {"source_experiment_id": "source", "design_id": "a", "filename": "design a"},
-                {"source_experiment_id": "source", "design_id": "b", "filename": "design/a"},
+                {"source_experiment_id": "source", "design_id": "a", "filename": first_filename},
+                {"source_experiment_id": "source", "design_id": "b", "filename": second_filename},
             ],
             primary_reduction_id="primary",
         )
