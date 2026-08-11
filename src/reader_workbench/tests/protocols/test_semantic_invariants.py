@@ -222,6 +222,12 @@ def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_pl
     assert diagnostic.reads["traces"].record_id == "four_state_event_window/traces"
     assert diagnostic.with_["primary_reduction_id"] == "primary"
     assert diagnostic.with_["pre_window_duration_h"] is None
+    assert diagnostic.with_["axis_labels"] == {
+        "growth": "growth",
+        "response": "log₂(response)",
+        "magnitude": "log₂(magnitude)",
+    }
+    assert diagnostic.with_["reference_label"] == "reference"
     assert diagnostic.with_["subjects"] == [
         {
             "source_experiment_id": "trace-source",

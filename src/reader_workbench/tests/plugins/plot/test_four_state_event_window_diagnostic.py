@@ -112,8 +112,8 @@ def test_four_state_event_window_diagnostic_adapts_figure_metadata() -> None:
     assert rendered[0].fig is rendered[1].fig
     assert rendered[0].fig.get_suptitle().startswith("Selected diagnostic\n")
     title = rendered[0].fig.get_suptitle()
-    assert "median center across within-experiment observations" in title
-    assert "descriptive resampling interval" in title
+    assert "median across observations" in title
+    assert "95% resampling range" in title
     assert "replicate" not in title
     assert "confidence" not in title
     assert " CI" not in title

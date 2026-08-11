@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -13,12 +14,18 @@ from .diagnostic import FourStateEventWindowDiagnostic, prepare_four_state_event
 from .schema import COMPONENT_COLUMNS, STATE_ORDER
 
 STATE_COLORS = {
-    "00": "#334155",
-    "10": "#0f766e",
-    "01": "#2563eb",
-    "11": "#be123c",
+    "00": "#596675",
+    "10": "#4F8C83",
+    "01": "#607CC8",
+    "11": "#C15D6E",
 }
+STATE_MARKERS = {"00": "o", "10": "s", "01": "^", "11": "D"}
 BOUND_MARKERS = {"exact": "o", "lower": ">", "upper": "<", "indeterminate": "X"}
+_DEFAULT_AXIS_LABELS = {
+    "growth": "Signal",
+    "response": "log₂(response signal)",
+    "magnitude": "log₂(magnitude signal)",
+}
 
 
 def render_four_state_event_window_diagnostic(
@@ -29,6 +36,8 @@ def render_four_state_event_window_diagnostic(
     design_id: str,
     reduction_id: str,
     pre_window_duration_h: float | None,
+    axis_labels: Mapping[str, str] | None = None,
+    reference_label: str = "reference",
     title: str | None = None,
 ) -> Any:
     """Render observed traces, descriptive dispersion, and event sensitivity in one row."""
@@ -59,33 +68,42 @@ def render_four_state_event_window_diagnostic(
             gridspec_kw={"width_ratios": (1.0, 1.0, 1.0, 0.95)},
         )
         figure.set_gid("four-state-event-window-diagnostic")
-        for axis, signal_kind, panel_title, ylabel in (
-            (axes[0], "growth", "Growth traces", "signal value"),
-            (axes[1], "response", "Response traces", "log2 signal value"),
-            (axes[2], "magnitude", "Magnitude traces + reference", "log2 signal value"),
+        labels = _validated_axis_labels(axis_labels)
+        for axis, signal_kind, panel_title in (
+            (axes[0], "growth", "Growth"),
+            (axes[1], "response", "Reporter ratio"),
+            (axes[2], "magnitude", "Signal and reference"),
         ):
             _draw_trace_panel(axis, diagnostic=diagnostic, signal_kind=signal_kind)
-            axis.set_title(panel_title)
+            axis.set_title(panel_title, pad=8)
             axis.set_xlabel("Time from event estimate (h)")
-            axis.set_ylabel(ylabel)
+            axis.set_ylabel(labels[signal_kind])
         _draw_component_panel(axes[3], diagnostic=diagnostic)
-        axes[3].set_title("Reduced components")
+        axes[3].set_title("Window summary", pad=8)
 
         interval_mass_percent = diagnostic.descriptive_interval_mass * 100.0
+        response_basis = " · response shown as post − pre" if diagnostic.response_basis == "post_minus_pre" else ""
         metadata = (
-            f"{diagnostic.observation_stat} center across within-experiment observations when grids align · "
-            f"{diagnostic.reduction_method} / {diagnostic.response_basis} · "
-            f"{interval_mass_percent:g}% descriptive resampling interval "
-            f"({diagnostic.descriptive_resampling_draws} draws) · "
-            f"event estimate uncertainty ±{diagnostic.event_time_uncertainty_h:g} h"
+            f"{diagnostic.window[0]:g}–{diagnostic.window[1]:g} h after "
+            f"{diagnostic.event_id.replace('_', ' ')} · {diagnostic.observation_stat} across observations · "
+            f"{interval_mass_percent:g}% resampling range · event timing ±{diagnostic.event_time_uncertainty_h:g} h"
+            f"{response_basis}"
         )
         figure.suptitle(f"{title or f'{diagnostic.source_experiment_id} :: {diagnostic.design_id}'}\n{metadata}")
 
         legend = [
-            Line2D([0], [0], color=STATE_COLORS[state], marker="o", linewidth=1.8, label=state) for state in STATE_ORDER
+            Line2D(
+                [0],
+                [0],
+                color=STATE_COLORS[state],
+                marker=STATE_MARKERS[state],
+                linewidth=1.8,
+                label=state,
+            )
+            for state in STATE_ORDER
         ]
         if diagnostic.reference_design_id != diagnostic.design_id:
-            legend.append(Line2D([0], [0], color="#64748b", linestyle="--", linewidth=1.4, label="reference"))
+            legend.append(Line2D([0], [0], color="#9AA3AD", linestyle="--", linewidth=1.2, label=reference_label))
         legend.extend(
             [
                 Line2D(
@@ -94,14 +112,14 @@ def render_four_state_event_window_diagnostic(
                     color="#64748b",
                     linewidth=5.0,
                     alpha=0.25,
-                    label="event-time sensitivity",
+                    label="event-time range",
                 ),
                 Line2D(
                     [0],
                     [0],
                     color="#64748b",
                     linewidth=1.5,
-                    label=f"{interval_mass_percent:g}% descriptive resampling interval",
+                    label=f"{interval_mass_percent:g}% resampling range",
                 ),
             ]
         )
@@ -125,7 +143,9 @@ def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, 
             axis,
             selected,
             color=STATE_COLORS[state],
+            marker=STATE_MARKERS[state],
             linestyle="-",
+            reference=False,
             observation_stat=diagnostic.observation_stat,
             gid="four-state-event-window-trace",
         )
@@ -136,8 +156,10 @@ def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, 
             _draw_observed_traces(
                 axis,
                 reference,
-                color=STATE_COLORS[state],
+                color="#9AA3AD",
+                marker=STATE_MARKERS[state],
                 linestyle="--",
+                reference=True,
                 observation_stat=diagnostic.observation_stat,
                 gid="four-state-event-window-reference-trace",
             )
@@ -162,7 +184,9 @@ def _draw_observed_traces(
     rows: pd.DataFrame,
     *,
     color: str,
+    marker: str,
     linestyle: str,
+    reference: bool,
     observation_stat: str,
     gid: str,
 ) -> None:
@@ -175,8 +199,11 @@ def _draw_observed_traces(
             trace["plot_value"],
             color=color,
             linestyle=linestyle,
-            linewidth=0.8,
-            alpha=0.22,
+            linewidth=0.65 if reference else 0.8,
+            marker=marker,
+            markersize=1.5,
+            markeredgewidth=0.0,
+            alpha=0.10 if reference else 0.15,
         )
         flagged = trace.loc[
             trace["value_policy_clipped"].astype(bool)
@@ -202,8 +229,9 @@ def _draw_observed_traces(
         color=color,
         linestyle=linestyle,
         linewidth=1.9 if linestyle == "-" else 1.4,
-        marker="o",
-        markersize=2.8,
+        marker=marker,
+        markersize=3.2 if not reference else 2.7,
+        alpha=0.55 if reference else 1.0,
     )
     line.set_gid(gid)
 
@@ -299,4 +327,13 @@ def _has_quality_flags(diagnostic: FourStateEventWindowDiagnostic) -> bool:
     return bool(trace_flags or _quality_notes(diagnostic))
 
 
-__all__ = ["BOUND_MARKERS", "STATE_COLORS", "render_four_state_event_window_diagnostic"]
+def _validated_axis_labels(axis_labels: Mapping[str, str] | None) -> dict[str, str]:
+    labels = dict(_DEFAULT_AXIS_LABELS if axis_labels is None else axis_labels)
+    if set(labels) != set(_DEFAULT_AXIS_LABELS):
+        raise ValueError("four-state event-window diagnostic axis labels must define growth, response, and magnitude")
+    if any(not isinstance(value, str) or not value.strip() for value in labels.values()):
+        raise ValueError("four-state event-window diagnostic axis labels must be non-empty strings")
+    return {key: value.strip() for key, value in labels.items()}
+
+
+__all__ = ["BOUND_MARKERS", "STATE_COLORS", "STATE_MARKERS", "render_four_state_event_window_diagnostic"]

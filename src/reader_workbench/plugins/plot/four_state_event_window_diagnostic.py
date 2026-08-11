@@ -37,10 +37,28 @@ class FourStateEventWindowDiagnosticSubject(BaseModel):
         return self
 
 
+class FourStateEventWindowAxisLabels(BaseModel):
+    """Protocol-derived labels for the three source trace panels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    growth: str = Field(min_length=1)
+    response: str = Field(min_length=1)
+    magnitude: str = Field(min_length=1)
+
+
 class FourStateEventWindowDiagnosticCfg(PluginConfig):
     subjects: list[FourStateEventWindowDiagnosticSubject] = Field(min_length=1)
     primary_reduction_id: str = Field(min_length=1)
     pre_window_duration_h: float | None = Field(default=None, gt=0.0)
+    axis_labels: FourStateEventWindowAxisLabels = Field(
+        default_factory=lambda: FourStateEventWindowAxisLabels(
+            growth="Signal",
+            response="log₂(response signal)",
+            magnitude="log₂(magnitude signal)",
+        )
+    )
+    reference_label: str = Field(default="reference", min_length=1)
     format: list[Literal["png", "pdf", "svg"]] = Field(default_factory=lambda: ["png"], min_length=1)
     dpi: int = Field(default=300, ge=1)
 
@@ -79,6 +97,8 @@ class FourStateEventWindowDiagnosticPlot(FigurePlotPlugin):
                 design_id=subject.design_id,
                 reduction_id=cfg.primary_reduction_id,
                 pre_window_duration_h=cfg.pre_window_duration_h,
+                axis_labels=cfg.axis_labels.model_dump(),
+                reference_label=cfg.reference_label,
                 title=subject.title,
             )
             rendered.extend(

@@ -67,6 +67,7 @@ def compile_plate_reader_four_state_event_window(protocol: Any):
             protocol,
             output_id=output_id,
             primary_reduction=primary_reduction,
+            analysis=analysis,
         )
         for output_id in selected_plots
     )
@@ -103,9 +104,10 @@ def _four_state_event_window_plot_output(
     *,
     output_id: str,
     primary_reduction: dict[str, Any],
+    analysis: dict[str, Any],
 ) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
-    compiler_owned = {"primary_reduction_id", "pre_window_duration_h"}
+    compiler_owned = {"axis_labels", "pre_window_duration_h", "primary_reduction_id", "reference_label"}
     overridden = sorted(compiler_owned.intersection(settings))
     if overridden:
         raise ConfigError(
@@ -143,11 +145,24 @@ def _four_state_event_window_plot_output(
                 {
                     "primary_reduction_id": primary_reduction_id,
                     "pre_window_duration_h": primary_reduction.get("pre_window_duration_h"),
+                    **_diagnostic_display_labels(analysis),
                 },
                 settings,
             ),
         )
     raise ConfigError(f"Unsupported four-state event-window plot output {output_id!r}")
+
+
+def _diagnostic_display_labels(analysis: dict[str, Any]) -> dict[str, object]:
+    source = analysis["source"]
+    return {
+        "axis_labels": {
+            "growth": str(source["growth_channel"]),
+            "response": f"log₂({source['response_channel']})",
+            "magnitude": f"log₂({source['magnitude_channel']})",
+        },
+        "reference_label": str(source["reference_design_id"]),
+    }
 
 
 def _primary_reduction_config(analysis: dict[str, Any]) -> dict[str, Any]:
