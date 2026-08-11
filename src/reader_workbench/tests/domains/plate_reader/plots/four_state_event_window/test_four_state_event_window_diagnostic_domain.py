@@ -124,22 +124,33 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
         design_id="design-a",
         reduction_id="primary",
         pre_window_duration_h=None,
+        axis_labels={
+            "growth": "OD600",
+            "response": "log₂(YFP/CFP)",
+            "magnitude": "log₂(YFP/OD600)",
+        },
+        reference_label="pDual-10",
         title="Selected diagnostic",
     )
 
     assert figure.get_gid() == "four-state-event-window-diagnostic"
     assert figure.get_suptitle().startswith("Selected diagnostic\n")
-    assert "mean center" in figure.get_suptitle()
+    assert "mean across observations" in figure.get_suptitle()
     title_text = figure.get_suptitle()
-    assert "90% descriptive resampling interval (200 draws)" in title_text
+    assert "90% resampling range" in title_text
     assert "replicate" not in title_text
     assert "confidence" not in title_text
     assert " CI" not in title_text
     assert [axis.get_title() for axis in figure.axes] == [
-        "Growth traces",
-        "Response traces",
-        "Magnitude traces + reference",
-        "Reduced components",
+        "Growth",
+        "Reporter ratio",
+        "Signal and reference",
+        "Window summary",
+    ]
+    assert [axis.get_ylabel() for axis in figure.axes[:3]] == [
+        "OD600",
+        "log₂(YFP/CFP)",
+        "log₂(YFP/OD600)",
     ]
     assert [tick.get_text() for tick in figure.axes[3].get_yticklabels()] == list(COMPONENT_COLUMNS)
     assert any(line.get_gid() == "four-state-event-window-reference-trace" for line in figure.axes[2].lines)
@@ -150,6 +161,15 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
         any(patch.get_gid() == "four-state-event-window-event-interval" for patch in axis.patches)
         for axis in figure.axes[:3]
     )
+    assert {
+        line.get_marker() for line in figure.axes[0].lines if line.get_gid() == "four-state-event-window-trace"
+    } == {
+        "o",
+        "s",
+        "^",
+        "D",
+    }
+    assert "pDual-10" in {text.get_text() for text in figure.legends[0].get_texts()}
     plt.close(figure)
 
 
@@ -175,7 +195,7 @@ def test_post_minus_pre_diagnostic_discloses_and_shades_the_pre_window() -> None
     )
 
     assert diagnostic.pre_window == (-1.25, -0.25)
-    assert "post_minus_pre" in figure.get_suptitle()
+    assert "post − pre" in figure.get_suptitle()
     assert any(patch.get_gid() == "four-state-event-window-pre-window" for patch in figure.axes[1].patches)
     assert all(
         patch.get_gid() != "four-state-event-window-pre-window"
