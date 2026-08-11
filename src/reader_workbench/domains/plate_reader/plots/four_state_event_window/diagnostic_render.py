@@ -86,7 +86,7 @@ def render_four_state_event_window_diagnostic(
         metadata = (
             f"{diagnostic.window[0]:g}–{diagnostic.window[1]:g} h after "
             f"{diagnostic.event_id.replace('_', ' ')} · {diagnostic.observation_stat} across observations · "
-            f"{interval_mass_percent:g}% resampling range · event timing ±{diagnostic.event_time_uncertainty_h:g} h"
+            f"{interval_mass_percent:g}% resampling range · event timing ±{diagnostic.event_time_uncertainty_h:.2g} h"
             f"{response_basis}"
         )
         figure.suptitle(f"{title or f'{diagnostic.source_experiment_id} :: {diagnostic.design_id}'}\n{metadata}")
