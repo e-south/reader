@@ -162,6 +162,13 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     ]
     assert [tick.get_text() for tick in figure.axes[3].get_yticklabels()] == list(COMPONENT_COLUMNS)
     assert any(line.get_gid() == "four-state-event-window-reference-trace" for line in figure.axes[2].lines)
+    reference_traces = [
+        line for line in figure.axes[2].lines if line.get_gid() == "four-state-event-window-reference-trace"
+    ]
+    assert all(line.get_linestyle() == "--" for line in reference_traces)
+    assert all(line.get_linewidth() >= 1.6 for line in reference_traces)
+    assert all(line.get_alpha() >= 0.7 for line in reference_traces)
+    assert all(line.get_markevery() == 2 for line in reference_traces)
     assert all(
         line.get_gid() != "four-state-event-window-reference-trace" for axis in figure.axes[:2] for line in axis.lines
     )

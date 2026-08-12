@@ -15,6 +15,8 @@ from .diagnostic_components import draw_component_panel, has_quality_flags
 from .diagnostic_style import BOUND_MARKERS, STATE_COLORS, STATE_MARKERS, validated_axis_labels, validated_state_labels
 from .schema import STATE_ORDER
 
+_REFERENCE_COLOR = "#7C8793"
+
 
 def render_four_state_event_window_diagnostic(
     traces: pd.DataFrame,
@@ -102,7 +104,9 @@ def render_four_state_event_window_diagnostic(
             for state in STATE_ORDER
         ]
         if diagnostic.reference_design_id != diagnostic.design_id:
-            legend.append(Line2D([0], [0], color="#9AA3AD", linestyle="--", linewidth=1.2, label=reference_label))
+            legend.append(
+                Line2D([0], [0], color=_REFERENCE_COLOR, linestyle="--", linewidth=1.7, label=reference_label)
+            )
         legend.extend(_component_uncertainty_legend_handles(diagnostic))
         if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
@@ -169,7 +173,7 @@ def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, 
             _draw_observed_traces(
                 axis,
                 reference,
-                color="#9AA3AD",
+                color=_REFERENCE_COLOR,
                 marker=STATE_MARKERS[state],
                 linestyle="--",
                 reference=True,
@@ -218,6 +222,7 @@ def _draw_observed_traces(
             markeredgecolor="white",
             markeredgewidth=0.3,
             alpha=0.10 if reference else 0.15,
+            markevery=2 if reference else None,
         )
         flagged = trace.loc[
             trace["value_policy_clipped"].astype(bool)
@@ -242,12 +247,13 @@ def _draw_observed_traces(
         values,
         color=color,
         linestyle=linestyle,
-        linewidth=1.9 if linestyle == "-" else 1.4,
+        linewidth=1.9 if linestyle == "-" else 1.7,
         marker=marker,
         markersize=4.0 if not reference else 3.4,
         markeredgecolor="white",
         markeredgewidth=0.55 if not reference else 0.45,
-        alpha=0.55 if reference else 1.0,
+        alpha=0.72 if reference else 1.0,
+        markevery=2 if reference else None,
     )
     line.set_gid(gid)
 
