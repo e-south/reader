@@ -140,19 +140,21 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     )
 
     assert figure.get_gid() == "four-state-event-window-diagnostic"
-    assert figure.get_suptitle().startswith("Selected diagnostic\n")
-    assert "mean across observations" in figure.get_suptitle()
-    title_text = figure.get_suptitle()
-    assert "90% resampling range" in title_text
-    assert "replicate" not in title_text
-    assert "confidence" not in title_text
-    assert " CI" not in title_text
+    assert figure.get_suptitle() == "Selected diagnostic"
+    assert figure._suptitle.get_fontsize() >= 18.0  # noqa: SLF001
     assert [axis.get_title() for axis in figure.axes] == [
         "Growth",
-        "Reporter ratio",
+        "Response",
         "Signal vs reference",
-        "Response-window phenotype",
+        "0.5–1.5 h mean",
     ]
+    assert all(axis.get_box_aspect() == pytest.approx(1.0) for axis in figure.axes)
+    assert all(axis.title.get_fontsize() >= 14.0 for axis in figure.axes)
+    assert all(axis.xaxis.label.get_fontsize() >= 12.0 for axis in figure.axes)
+    assert all(axis.yaxis.label.get_fontsize() >= 12.0 for axis in figure.axes)
+    assert all(tick.get_fontsize() >= 11.0 for axis in figure.axes for tick in axis.get_xticklabels())
+    assert all(tick.get_fontsize() >= 11.0 for axis in figure.axes for tick in axis.get_yticklabels())
+    assert all(text.get_fontsize() >= 11.0 for text in figure.legends[0].get_texts())
     assert [axis.get_ylabel() for axis in figure.axes[:3]] == [
         "OD600",
         "log$_2$(YFP/CFP)",
@@ -179,12 +181,18 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     assert all(line.get_markeredgecolor() == "white" for line in centered_traces)
     assert all(line.get_markeredgewidth() == pytest.approx(0.55) for line in centered_traces)
     assert "reference-a" in {text.get_text() for text in figure.legends[0].get_texts()}
-    assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(
-        {text.get_text() for text in figure.legends[0].get_texts()}
-    )
+    legend_labels = {text.get_text() for text in figure.legends[0].get_texts()}
+    assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(legend_labels)
+    assert "event-time range" not in legend_labels
+    assert not any("resampling range" in label for label in legend_labels)
     component_labels = {text.get_text() for text in figure.axes[3].texts}
     assert "Response $r_i$\nlog$_2$(YFP/CFP)" in component_labels
     assert "Signal $b_i$\nlog$_2$(YFP/OD600)\nrelative to reference-a" in component_labels
+    assert all(
+        text.get_fontsize() >= 11.0
+        for text in figure.axes[3].texts
+        if text.get_text().startswith(("Response ", "Signal "))
+    )
     plt.close(figure)
 
 
@@ -210,7 +218,7 @@ def test_post_minus_pre_diagnostic_discloses_and_shades_the_pre_window() -> None
     )
 
     assert diagnostic.pre_window == (-1.25, -0.25)
-    assert "post − pre" in figure.get_suptitle()
+    assert figure.get_suptitle() == "source-a :: design-a"
     assert any(patch.get_gid() == "four-state-event-window-pre-window" for patch in figure.axes[1].patches)
     assert all(
         patch.get_gid() != "four-state-event-window-pre-window"

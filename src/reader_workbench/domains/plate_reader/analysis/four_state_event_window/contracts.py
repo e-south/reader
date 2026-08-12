@@ -62,6 +62,7 @@ class FourStateEventWindowSourceSpec:
     reference_design_id: str
     state_column: str
     state_values: Mapping[str, str]
+    state_labels: Mapping[str, str]
     state_values_case_sensitive: bool = True
 
     @classmethod
@@ -78,7 +79,7 @@ class FourStateEventWindowSourceSpec:
             value,
             context="source",
             required=fields,
-            optional={"state_values_case_sensitive"},
+            optional={"state_labels", "state_values_case_sensitive"},
         )
         state_values = _mapping(payload["state_values"], context="source.state_values")
         expected_states = {"00", "10", "01", "11"}
@@ -90,6 +91,13 @@ class FourStateEventWindowSourceSpec:
         }
         if len(set(normalized_values.values())) != 4:
             raise ValueError("source.state_values must map to four distinct source values.")
+        state_labels = _mapping(payload.get("state_labels", normalized_values), context="source.state_labels")
+        if set(state_labels) != expected_states:
+            raise ValueError("source.state_labels must define exactly 00, 10, 01, and 11.")
+        normalized_labels = {
+            state: _nonempty(state_labels[state], context=f"source.state_labels.{state}")
+            for state in sorted(expected_states)
+        }
         case_sensitive = payload.get("state_values_case_sensitive", True)
         if not isinstance(case_sensitive, bool):
             raise ValueError("source.state_values_case_sensitive must be true or false.")
@@ -100,6 +108,7 @@ class FourStateEventWindowSourceSpec:
             reference_design_id=_nonempty(payload["reference_design_id"], context="source.reference_design_id"),
             state_column=_nonempty(payload["state_column"], context="source.state_column"),
             state_values=normalized_values,
+            state_labels=normalized_labels,
             state_values_case_sensitive=case_sensitive,
         )
 

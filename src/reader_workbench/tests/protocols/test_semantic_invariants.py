@@ -238,6 +238,50 @@ def test_four_state_event_window_can_compile_a_focused_diagnostic_as_a_normal_pl
     ]
 
 
+def test_four_state_event_window_compiles_protocol_owned_state_display_labels() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/four_state_event_window",
+            analysis={
+                "source": {
+                    "state_values": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+                    "state_labels": {
+                        "00": "No treatment",
+                        "10": "Treatment A",
+                        "01": "Treatment B",
+                        "11": "Treatments A + B",
+                    },
+                }
+            },
+            outputs={
+                "plots": {
+                    "include": ["four_state_event_window_diagnostic"],
+                    "views": {
+                        "four_state_event_window_diagnostic": {
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "design-a",
+                                    "filename": "design-a",
+                                }
+                            ]
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "four_state_event_window_diagnostic")
+
+    assert diagnostic.with_["state_labels"] == {
+        "00": "No treatment",
+        "10": "Treatment A",
+        "01": "Treatment B",
+        "11": "Treatments A + B",
+    }
+
+
 def test_four_state_event_window_can_compile_an_explicit_diagnostic_subject_set() -> None:
     subjects = [
         {
@@ -583,6 +627,35 @@ def test_four_state_event_window_plot_cannot_override_the_primary_reduction() ->
                     "views": {
                         "four_state_event_window_summary": {"primary_reduction_id": "secondary"},
                     }
+                }
+            },
+        )
+    )
+
+    with pytest.raises(ConfigError, match="cannot override compiler-owned fields"):
+        protocol.compile()
+
+
+@pytest.mark.parametrize("field", ["axis_labels", "reference_label", "state_labels"])
+def test_four_state_event_window_diagnostic_rejects_protocol_derived_display_overrides(field: str) -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/four_state_event_window",
+            outputs={
+                "plots": {
+                    "include": ["four_state_event_window_diagnostic"],
+                    "views": {
+                        "four_state_event_window_diagnostic": {
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "design-a",
+                                    "filename": "design-a",
+                                }
+                            ],
+                            field: "override",
+                        }
+                    },
                 }
             },
         )

@@ -55,6 +55,7 @@ def test_build_experiment_source_consumes_resolved_frames_without_workspace_path
         reference_design_id="reference",
         state_column="condition",
         state_values={"00": "none", "10": "a", "01": "b", "11": "a+b"},
+        state_labels={"00": "None", "10": "A", "01": "B", "11": "A + B"},
     )
 
     source = build_experiment_source(

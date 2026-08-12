@@ -165,6 +165,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     "reference_design_id": "reference",
                     "state_column": "state",
                     "state_values": {"00": "00", "10": "10", "01": "01", "11": "11"},
+                    "state_labels": {"00": "00", "10": "10", "01": "01", "11": "11"},
                     "state_values_case_sensitive": True,
                 },
             ),

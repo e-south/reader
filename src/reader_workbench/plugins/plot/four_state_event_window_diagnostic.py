@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -34,6 +35,8 @@ class FourStateEventWindowDiagnosticSubject(BaseModel):
         normalized_filename = slugify(self.filename)
         if not normalized_filename or not any(character.isalnum() for character in normalized_filename):
             raise ValueError("subject filename must contain a filesystem-safe character")
+        if _is_windows_reserved_filename(normalized_filename):
+            raise ValueError("subject filename must not use a Windows reserved device name")
         return self
 
 
@@ -121,3 +124,10 @@ class FourStateEventWindowDiagnosticPlot(FigurePlotPlugin):
                 for extension in cfg.format
             )
         return rendered
+
+
+def _is_windows_reserved_filename(filename: str) -> bool:
+    """Return whether a portable filename would address a Windows device."""
+
+    device_name = filename.split(".", maxsplit=1)[0]
+    return re.fullmatch(r"(?i:con|prn|aux|nul|com[1-9]|lpt[1-9])", device_name) is not None

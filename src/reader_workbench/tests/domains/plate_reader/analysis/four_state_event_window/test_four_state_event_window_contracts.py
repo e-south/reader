@@ -18,6 +18,7 @@ def _payload() -> dict[str, object]:
             "reference_design_id": "reference",
             "state_column": "condition",
             "state_values": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+            "state_labels": {"00": "No treatment", "10": "Treatment A", "01": "Treatment B", "11": "A + B"},
             "state_values_case_sensitive": True,
         },
         "event": {
@@ -66,9 +67,24 @@ def test_analysis_spec_is_domain_config_not_a_parallel_request_schema() -> None:
 
     assert spec.primary_reduction.id == "primary"
     assert spec.source.state_values == {"00": "none", "01": "b", "10": "a", "11": "a+b"}
+    assert spec.source.state_labels == {
+        "00": "No treatment",
+        "01": "Treatment B",
+        "10": "Treatment A",
+        "11": "A + B",
+    }
     assert not hasattr(spec, "experiment_ids")
     assert not hasattr(spec, "study_id")
     assert not hasattr(spec, "request_id")
+
+
+def test_source_labels_default_to_source_values() -> None:
+    payload = _payload()
+    del payload["source"]["state_labels"]  # type: ignore[index]
+
+    spec = FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+    assert spec.source.state_labels == spec.source.state_values
 
 
 def test_analysis_requires_one_primary_reduction() -> None:

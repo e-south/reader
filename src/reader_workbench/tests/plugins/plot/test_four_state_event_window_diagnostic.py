@@ -110,13 +110,7 @@ def test_four_state_event_window_diagnostic_adapts_figure_metadata() -> None:
         "Event-relative growth, response, magnitude, and reduced components for one source experiment and design."
     }
     assert rendered[0].fig is rendered[1].fig
-    assert rendered[0].fig.get_suptitle().startswith("Selected diagnostic\n")
-    title = rendered[0].fig.get_suptitle()
-    assert "median across observations" in title
-    assert "95% resampling range" in title
-    assert "replicate" not in title
-    assert "confidence" not in title
-    assert " CI" not in title
+    assert rendered[0].fig.get_suptitle() == "Selected diagnostic"
     plt.close(rendered[0].fig)
 
 
@@ -159,8 +153,8 @@ def test_four_state_event_window_diagnostic_renders_an_explicit_subject_set() ->
         ("selected-b", "svg"),
     ]
     assert rendered[0].fig is not rendered[1].fig
-    assert rendered[0].fig.get_suptitle().startswith("Selected A\n")
-    assert rendered[1].fig.get_suptitle().startswith("Selected B\n")
+    assert rendered[0].fig.get_suptitle() == "Selected A"
+    assert rendered[1].fig.get_suptitle() == "Selected B"
     for item in rendered:
         plt.close(item.fig)
 
@@ -186,6 +180,21 @@ def test_four_state_event_window_diagnostic_rejects_portable_filename_collisions
 @pytest.mark.parametrize("filename", [" ", "...", "///"])
 def test_four_state_event_window_diagnostic_rejects_empty_filename_slug(filename: str) -> None:
     with pytest.raises(ValidationError, match="filesystem-safe character|must not be blank"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[
+                {
+                    "source_experiment_id": "source",
+                    "design_id": "a",
+                    "filename": filename,
+                }
+            ],
+            primary_reduction_id="primary",
+        )
+
+
+@pytest.mark.parametrize("filename", ["CON", "nul", "Aux.pdf", "COM1", "lpt9.review"])
+def test_four_state_event_window_diagnostic_rejects_windows_device_names(filename: str) -> None:
+    with pytest.raises(ValidationError, match="Windows reserved device name"):
         FourStateEventWindowDiagnosticCfg(
             subjects=[
                 {
