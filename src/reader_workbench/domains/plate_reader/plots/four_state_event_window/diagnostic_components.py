@@ -99,10 +99,6 @@ def quality_notes(diagnostic: FourStateEventWindowDiagnostic) -> list[str]:
             flags.append("policy clipping")
         if diagnostic.component_has_instrument_overflow[index]:
             flags.append("instrument overflow")
-        if diagnostic.component_event_has_policy_clipping[index]:
-            flags.append("event-range clipping")
-        if diagnostic.component_event_has_instrument_overflow[index]:
-            flags.append("event-range overflow")
         if flags:
             notes.append(f"{component}: {', '.join(flags)}")
     return notes

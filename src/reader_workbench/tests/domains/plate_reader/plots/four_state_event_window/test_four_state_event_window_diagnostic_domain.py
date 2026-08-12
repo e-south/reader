@@ -246,6 +246,8 @@ def test_diagnostic_renders_component_bound_notes_without_uncertainty_ranges() -
     )
     designs.loc[selected, "r00_bound_kind"] = "lower"
     designs.loc[selected, "r00_has_policy_clipping"] = True
+    designs.loc[selected, "r00_event_sensitivity_has_policy_clipping"] = True
+    designs.loc[selected, "r00_event_sensitivity_has_instrument_overflow"] = True
 
     figure = render_four_state_event_window_diagnostic(
         _traces_frame(),
@@ -259,6 +261,7 @@ def test_diagnostic_renders_component_bound_notes_without_uncertainty_ranges() -
     component_axis = figure.axes[3]
     assert not any(isinstance(collection, LineCollection) for collection in component_axis.collections)
     assert any("r00: lower bound, policy clipping" in text.get_text() for text in component_axis.texts)
+    assert not any("event-range" in text.get_text() for text in component_axis.texts)
     plt.close(figure)
 
 
