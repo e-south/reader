@@ -177,6 +177,17 @@ def test_four_state_event_window_diagnostic_rejects_portable_filename_collisions
         )
 
 
+def test_four_state_event_window_diagnostic_rejects_whitespace_equivalent_subject_identities() -> None:
+    with pytest.raises(ValidationError, match="unique source/design identities"):
+        FourStateEventWindowDiagnosticCfg(
+            subjects=[
+                {"source_experiment_id": "source", "design_id": "a", "filename": "design-a"},
+                {"source_experiment_id": " source ", "design_id": " a ", "filename": "design-a-copy"},
+            ],
+            primary_reduction_id="primary",
+        )
+
+
 @pytest.mark.parametrize("filename", [" ", "...", "///"])
 def test_four_state_event_window_diagnostic_rejects_empty_filename_slug(filename: str) -> None:
     with pytest.raises(ValidationError, match="filesystem-safe character|must not be blank"):
