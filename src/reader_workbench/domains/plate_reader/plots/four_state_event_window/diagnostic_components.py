@@ -19,25 +19,13 @@ def draw_component_panel(
     axis_labels: Mapping[str, str],
     reference_label: str,
 ) -> None:
-    """Draw exact components, uncertainty ranges, and their two semantic groups."""
+    """Draw reduced components and their two semantic groups."""
 
     y = np.arange(len(COMPONENT_COLUMNS))
     values = np.asarray(diagnostic.component_values)
-    interval_low = np.asarray(diagnostic.component_descriptive_interval_low)
-    interval_high = np.asarray(diagnostic.component_descriptive_interval_high)
-    event_range = np.asarray(diagnostic.component_event_half_range)
     for index, (component, value) in enumerate(zip(COMPONENT_COLUMNS, values, strict=True)):
         state = component[1:]
         color = STATE_COLORS[state]
-        axis.hlines(
-            y[index],
-            value - event_range[index],
-            value + event_range[index],
-            color=color,
-            linewidth=5.0,
-            alpha=0.20,
-        )
-        axis.hlines(y[index], interval_low[index], interval_high[index], color=color, linewidth=1.5)
         axis.scatter(
             value,
             y[index],

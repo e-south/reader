@@ -3,6 +3,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from matplotlib.collections import LineCollection
 
 from reader_workbench.domains.plate_reader.plots.four_state_event_window import (
     COMPONENT_COLUMNS,
@@ -192,6 +193,7 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(legend_labels)
     assert "event timing sensitivity" not in legend_labels
     assert "90% resampling interval" not in legend_labels
+    assert not any(isinstance(collection, LineCollection) for collection in figure.axes[3].collections)
     component_labels = {text.get_text() for text in figure.axes[3].texts}
     assert "Response $r_i$\nlog$_2$(YFP/CFP)" in component_labels
     assert "Signal $b_i$\nlog$_2$(YFP/OD600)\nrelative to reference-a" in component_labels
@@ -235,7 +237,7 @@ def test_post_minus_pre_diagnostic_discloses_and_shades_the_pre_window() -> None
     plt.close(figure)
 
 
-def test_diagnostic_renders_component_event_range_and_bound_notes() -> None:
+def test_diagnostic_renders_component_bound_notes_without_uncertainty_ranges() -> None:
     designs = _designs_frame()
     selected = (
         designs["experiment_id"].eq("source-a")
@@ -244,7 +246,6 @@ def test_diagnostic_renders_component_event_range_and_bound_notes() -> None:
     )
     designs.loc[selected, "r00_bound_kind"] = "lower"
     designs.loc[selected, "r00_has_policy_clipping"] = True
-    designs.loc[selected, "r00_event_half_range"] = 0.75
 
     figure = render_four_state_event_window_diagnostic(
         _traces_frame(),
@@ -256,13 +257,7 @@ def test_diagnostic_renders_component_event_range_and_bound_notes() -> None:
     )
 
     component_axis = figure.axes[3]
-    segments = [
-        segment
-        for collection in component_axis.collections
-        if hasattr(collection, "get_segments")
-        for segment in collection.get_segments()
-    ]
-    assert any(tuple(segment[:, 0]) == (-0.75, 0.75) for segment in segments)
+    assert not any(isinstance(collection, LineCollection) for collection in component_axis.collections)
     assert any("r00: lower bound, policy clipping" in text.get_text() for text in component_axis.texts)
     plt.close(figure)
 
