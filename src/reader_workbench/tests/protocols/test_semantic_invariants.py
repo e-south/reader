@@ -282,6 +282,39 @@ def test_four_state_event_window_compiles_protocol_owned_state_display_labels() 
     }
 
 
+def test_four_state_event_window_uses_custom_state_values_as_default_display_labels() -> None:
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id="plate_reader/four_state_event_window",
+            analysis={
+                "source": {
+                    "state_values": {"00": "none", "10": "a", "01": "b", "11": "a+b"},
+                }
+            },
+            outputs={
+                "plots": {
+                    "include": ["four_state_event_window_diagnostic"],
+                    "views": {
+                        "four_state_event_window_diagnostic": {
+                            "subjects": [
+                                {
+                                    "source_experiment_id": "trace-source",
+                                    "design_id": "design-a",
+                                    "filename": "design-a",
+                                }
+                            ]
+                        }
+                    },
+                }
+            },
+        )
+    )
+
+    diagnostic = next(step for step in protocol.compile().plots if step.id == "four_state_event_window_diagnostic")
+
+    assert diagnostic.with_["state_labels"] == {"00": "none", "10": "a", "01": "b", "11": "a+b"}
+
+
 def test_four_state_event_window_can_compile_an_explicit_diagnostic_subject_set() -> None:
     subjects = [
         {

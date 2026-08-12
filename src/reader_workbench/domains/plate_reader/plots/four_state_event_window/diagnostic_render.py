@@ -103,6 +103,7 @@ def render_four_state_event_window_diagnostic(
         ]
         if diagnostic.reference_design_id != diagnostic.design_id:
             legend.append(Line2D([0], [0], color="#9AA3AD", linestyle="--", linewidth=1.2, label=reference_label))
+        legend.extend(_component_uncertainty_legend_handles(diagnostic))
         if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
         figure.legend(
@@ -114,6 +115,31 @@ def render_four_state_event_window_diagnostic(
             handletextpad=0.55,
         )
     return figure
+
+
+def _component_uncertainty_legend_handles(diagnostic: FourStateEventWindowDiagnostic) -> list[Any]:
+    """Return compact keys for the component panel's two interval encodings."""
+
+    from matplotlib.lines import Line2D  # noqa: PLC0415
+
+    interval_mass = 100.0 * diagnostic.descriptive_interval_mass
+    return [
+        Line2D(
+            [0],
+            [0],
+            color="#536273",
+            linewidth=5.0,
+            alpha=0.20,
+            label="event timing sensitivity",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color="#536273",
+            linewidth=1.5,
+            label=f"{interval_mass:g}% resampling interval",
+        ),
+    ]
 
 
 def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, signal_kind: str) -> None:
