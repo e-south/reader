@@ -19,13 +19,44 @@ def draw_component_panel(
     axis_labels: Mapping[str, str],
     reference_label: str,
 ) -> None:
-    """Draw reduced components and their two semantic groups."""
+    """Draw reduced components, uncertainty intervals, and their semantic groups."""
 
     y = np.arange(len(COMPONENT_COLUMNS))
     values = np.asarray(diagnostic.component_values)
+    interval_low = np.asarray(diagnostic.component_descriptive_interval_low)
+    interval_high = np.asarray(diagnostic.component_descriptive_interval_high)
+    event_range = np.asarray(diagnostic.component_event_half_range)
     for index, (component, value) in enumerate(zip(COMPONENT_COLUMNS, values, strict=True)):
         state = component[1:]
         color = STATE_COLORS[state]
+        sensitivity = axis.hlines(
+            y[index],
+            value - event_range[index],
+            value + event_range[index],
+            color=color,
+            linewidth=5.0,
+            alpha=0.18,
+            zorder=1,
+        )
+        sensitivity.set_gid("four-state-event-window-component-event-range")
+        interval = axis.hlines(
+            y[index],
+            interval_low[index],
+            interval_high[index],
+            color=color,
+            linewidth=1.4,
+            zorder=2,
+        )
+        interval.set_gid("four-state-event-window-component-descriptive-interval")
+        caps = axis.vlines(
+            [interval_low[index], interval_high[index]],
+            y[index] - 0.09,
+            y[index] + 0.09,
+            color=color,
+            linewidth=1.1,
+            zorder=2,
+        )
+        caps.set_gid("four-state-event-window-component-descriptive-caps")
         axis.scatter(
             value,
             y[index],
@@ -99,6 +130,10 @@ def quality_notes(diagnostic: FourStateEventWindowDiagnostic) -> list[str]:
             flags.append("policy clipping")
         if diagnostic.component_has_instrument_overflow[index]:
             flags.append("instrument overflow")
+        if diagnostic.component_event_has_policy_clipping[index]:
+            flags.append("event-range clipping")
+        if diagnostic.component_event_has_instrument_overflow[index]:
+            flags.append("event-range overflow")
         if flags:
             notes.append(f"{component}: {', '.join(flags)}")
     return notes
