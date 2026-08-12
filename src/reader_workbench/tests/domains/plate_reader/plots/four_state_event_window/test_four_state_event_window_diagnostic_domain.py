@@ -193,7 +193,14 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(legend_labels)
     assert "event timing sensitivity" not in legend_labels
     assert "90% resampling interval" not in legend_labels
-    assert not any(isinstance(collection, LineCollection) for collection in figure.axes[3].collections)
+    assert any(
+        collection.get_gid() == "four-state-event-window-component-descriptive-interval"
+        for collection in figure.axes[3].collections
+    )
+    assert any(
+        collection.get_gid() == "four-state-event-window-component-event-range"
+        for collection in figure.axes[3].collections
+    )
     component_labels = {text.get_text() for text in figure.axes[3].texts}
     assert "Response $r_i$\nlog$_2$(YFP/CFP)" in component_labels
     assert "Signal $b_i$\nlog$_2$(YFP/OD600)\nrelative to reference-a" in component_labels
@@ -237,7 +244,7 @@ def test_post_minus_pre_diagnostic_discloses_and_shades_the_pre_window() -> None
     plt.close(figure)
 
 
-def test_diagnostic_renders_component_bound_notes_without_uncertainty_ranges() -> None:
+def test_diagnostic_renders_component_intervals_and_bound_notes() -> None:
     designs = _designs_frame()
     selected = (
         designs["experiment_id"].eq("source-a")
@@ -259,9 +266,13 @@ def test_diagnostic_renders_component_bound_notes_without_uncertainty_ranges() -
     )
 
     component_axis = figure.axes[3]
-    assert not any(isinstance(collection, LineCollection) for collection in component_axis.collections)
+    assert any(
+        isinstance(collection, LineCollection)
+        and collection.get_gid() == "four-state-event-window-component-descriptive-interval"
+        for collection in component_axis.collections
+    )
     assert any("r00: lower bound, policy clipping" in text.get_text() for text in component_axis.texts)
-    assert not any("event-range" in text.get_text() for text in component_axis.texts)
+    assert any("event-range clipping, event-range overflow" in text.get_text() for text in component_axis.texts)
     plt.close(figure)
 
 
