@@ -107,7 +107,13 @@ def _four_state_event_window_plot_output(
     analysis: dict[str, Any],
 ) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
-    compiler_owned = {"axis_labels", "pre_window_duration_h", "primary_reduction_id", "reference_label"}
+    compiler_owned = {
+        "axis_labels",
+        "pre_window_duration_h",
+        "primary_reduction_id",
+        "reference_label",
+        "state_labels",
+    }
     overridden = sorted(compiler_owned.intersection(settings))
     if overridden:
         raise ConfigError(
@@ -161,7 +167,9 @@ def _diagnostic_display_labels(analysis: dict[str, Any]) -> dict[str, object]:
             "response": f"log$_2$({source['response_channel']})",
             "magnitude": f"log$_2$({source['magnitude_channel']})",
         },
-        "state_labels": {state: str(label) for state, label in source["state_values"].items()},
+        "state_labels": {
+            state: str(label) for state, label in source.get("state_labels", source["state_values"]).items()
+        },
         "reference_label": str(source["reference_design_id"]),
     }
 

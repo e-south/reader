@@ -42,8 +42,13 @@ def render_four_state_event_window_diagnostic(
     with use_style(
         {
             "axes_titleweight": "regular",
-            "figure_figsize": (16.0, 5.2),
-            "font_scale": 0.76,
+            "figure_figsize": (18.5, 6.0),
+            "font_size": 13.0,
+            "axes_labelsize": 13.0,
+            "axes_titlesize": 15.0,
+            "xtick_labelsize": 11.5,
+            "ytick_labelsize": 11.5,
+            "legend_fontsize": 11.5,
         }
     ):
         import matplotlib.pyplot as plt  # noqa: PLC0415
@@ -52,7 +57,7 @@ def render_four_state_event_window_diagnostic(
         figure, axes = plt.subplots(
             1,
             4,
-            figsize=(16.0, 5.2),
+            figsize=(18.5, 6.0),
             constrained_layout=True,
             gridspec_kw={"width_ratios": (1.0, 1.0, 1.0, 0.95)},
         )
@@ -61,30 +66,29 @@ def render_four_state_event_window_diagnostic(
         states = validated_state_labels(state_labels)
         for axis, signal_kind, panel_title in (
             (axes[0], "growth", "Growth"),
-            (axes[1], "response", "Reporter ratio"),
+            (axes[1], "response", "Response"),
             (axes[2], "magnitude", "Signal vs reference"),
         ):
             _draw_trace_panel(axis, diagnostic=diagnostic, signal_kind=signal_kind)
-            axis.set_title(panel_title, pad=8)
-            axis.set_xlabel("Time from event estimate (h)")
-            axis.set_ylabel(labels[signal_kind])
+            axis.set_title(panel_title, pad=12)
+            axis.set_xlabel("Time from event estimate (h)", labelpad=8)
+            axis.set_ylabel(labels[signal_kind], labelpad=8)
         draw_component_panel(
             axes[3],
             diagnostic=diagnostic,
             axis_labels=labels,
             reference_label=reference_label,
         )
-        axes[3].set_title("Response-window phenotype", pad=8)
+        window_start, window_end = diagnostic.window
+        axes[3].set_title(f"{window_start:g}–{window_end:g} h mean", pad=12)
+        for axis in axes:
+            axis.set_box_aspect(1.0)
 
-        interval_mass_percent = diagnostic.descriptive_interval_mass * 100.0
-        response_basis = " · response shown as post − pre" if diagnostic.response_basis == "post_minus_pre" else ""
-        metadata = (
-            f"{diagnostic.window[0]:g}–{diagnostic.window[1]:g} h after "
-            f"{diagnostic.event_id.replace('_', ' ')} · {diagnostic.observation_stat} across observations · "
-            f"{interval_mass_percent:g}% resampling range · event timing ±{diagnostic.event_time_uncertainty_h:.2g} h"
-            f"{response_basis}"
+        figure.suptitle(
+            title or f"{diagnostic.source_experiment_id} :: {diagnostic.design_id}",
+            fontsize=19.0,
+            fontweight="bold",
         )
-        figure.suptitle(f"{title or f'{diagnostic.source_experiment_id} :: {diagnostic.design_id}'}\n{metadata}")
 
         legend = [
             Line2D(
@@ -99,28 +103,16 @@ def render_four_state_event_window_diagnostic(
         ]
         if diagnostic.reference_design_id != diagnostic.design_id:
             legend.append(Line2D([0], [0], color="#9AA3AD", linestyle="--", linewidth=1.2, label=reference_label))
-        legend.extend(
-            [
-                Line2D(
-                    [0],
-                    [0],
-                    color="#64748b",
-                    linewidth=5.0,
-                    alpha=0.25,
-                    label="event-time range",
-                ),
-                Line2D(
-                    [0],
-                    [0],
-                    color="#64748b",
-                    linewidth=1.5,
-                    label=f"{interval_mass_percent:g}% resampling range",
-                ),
-            ]
-        )
         if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
-        figure.legend(handles=legend, loc="outside lower center", ncol=min(len(legend), 8), frameon=False)
+        figure.legend(
+            handles=legend,
+            loc="outside lower center",
+            ncol=min(len(legend), 8),
+            frameon=False,
+            columnspacing=1.5,
+            handletextpad=0.55,
+        )
     return figure
 
 

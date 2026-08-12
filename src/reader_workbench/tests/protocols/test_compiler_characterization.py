@@ -44,7 +44,7 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("four_state_event_window",),
         "plots": ("four_state_event_window_summary",),
         "exports": ("designs_table", "events_table"),
-        "sha256": "7eebf69ddc9bc73957821eb1aa5593006ee5c295ae9eed04f88dedcaa2da558f",  # pragma: allowlist secret
+        "sha256": "82630d548790c07c0ec869877743092ebeb8c5cc9b9a458a57e30310b4977fe3",  # pragma: allowlist secret
     },
     "logic/four_state_vector_screen": {
         "pipeline": (

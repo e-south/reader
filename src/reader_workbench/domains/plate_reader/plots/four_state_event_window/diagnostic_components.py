@@ -52,7 +52,7 @@ def draw_component_panel(
     axis.axhline(3.5, color="#cbd5e1", linewidth=0.8)
     axis.set_yticks(y, labels=COMPONENT_COLUMNS)
     axis.invert_yaxis()
-    axis.set_xlabel("Reduced value (log$_2$ units)")
+    axis.set_xlabel("Reduced value (log$_2$ units)", labelpad=8)
     _draw_group_label(axis, start=-0.35, end=3.35, label=f"Response $r_i$\n{axis_labels['response']}")
     _draw_group_label(
         axis,
@@ -69,7 +69,7 @@ def draw_component_panel(
             transform=axis.transAxes,
             ha="left",
             va="top",
-            fontsize=7.0,
+            fontsize=10.5,
             color="#7c2d12",
             wrap=True,
         )
@@ -93,7 +93,7 @@ def _draw_group_label(axis: Any, *, start: float, end: float, label: str) -> Non
         transform=transform,
         ha="left",
         va="center",
-        fontsize=7.2,
+        fontsize=11.5,
         color="#536273",
         linespacing=1.15,
         clip_on=False,
