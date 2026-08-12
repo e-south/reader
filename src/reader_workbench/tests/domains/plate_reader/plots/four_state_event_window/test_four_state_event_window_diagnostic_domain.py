@@ -3,14 +3,14 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
-from matplotlib.collections import LineCollection
+from matplotlib.collections import LineCollection, PolyCollection
 
 from reader_workbench.domains.plate_reader.plots.four_state_event_window import (
     COMPONENT_COLUMNS,
     prepare_four_state_event_window_diagnostic,
     render_four_state_event_window_diagnostic,
 )
-from reader_workbench.domains.plate_reader.plots.four_state_event_window.diagnostic_render import _aligned_trace_center
+from reader_workbench.domains.plate_reader.plots.four_state_event_window.diagnostic_render import _aligned_trace_summary
 
 
 def _traces_frame() -> pd.DataFrame:
@@ -167,9 +167,9 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
         line for line in figure.axes[2].lines if line.get_gid() == "four-state-event-window-reference-trace"
     ]
     assert all(line.get_linestyle() == "--" for line in reference_traces)
-    assert all(line.get_linewidth() >= 1.6 for line in reference_traces)
+    assert all(line.get_linewidth() == pytest.approx(1.15) for line in reference_traces)
     assert all(line.get_alpha() >= 0.7 for line in reference_traces)
-    assert all(line.get_markevery() == 2 for line in reference_traces)
+    assert all(line.get_markevery() == 4 for line in reference_traces)
     assert all(
         line.get_gid() != "four-state-event-window-reference-trace" for axis in figure.axes[:2] for line in axis.lines
     )
@@ -188,6 +188,14 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     centered_traces = [line for line in figure.axes[0].lines if line.get_gid() == "four-state-event-window-trace"]
     assert all(line.get_markeredgecolor() == "white" for line in centered_traces)
     assert all(line.get_markeredgewidth() == pytest.approx(0.55) for line in centered_traces)
+    observation_bands = [
+        collection
+        for axis in figure.axes[:3]
+        for collection in axis.collections
+        if collection.get_gid() == "four-state-event-window-observation-interval"
+    ]
+    assert observation_bands
+    assert all(isinstance(collection, PolyCollection) for collection in observation_bands)
     assert "reference-a" in {text.get_text() for text in figure.legends[0].get_texts()}
     legend_labels = {text.get_text() for text in figure.legends[0].get_texts()}
     assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(legend_labels)
@@ -276,17 +284,19 @@ def test_diagnostic_renders_component_intervals_and_bound_notes() -> None:
     plt.close(figure)
 
 
-def test_aligned_trace_center_honors_stat_and_rejects_unaligned_grids() -> None:
+def test_aligned_trace_summary_honors_stat_interval_and_rejects_unaligned_grids() -> None:
     traces = [
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [1.0, 2.0]}),
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [2.0, 3.0]}),
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [9.0, 10.0]}),
     ]
 
-    _, mean = _aligned_trace_center(traces, observation_stat="mean")
-    _, median = _aligned_trace_center(traces, observation_stat="median")
+    _, mean, low, high = _aligned_trace_summary(traces, observation_stat="mean", interval_mass=0.8)
+    _, median, _, _ = _aligned_trace_summary(traces, observation_stat="median", interval_mass=0.8)
     unaligned = [*traces[:2], pd.DataFrame({"time_from_event_h": [0.1, 1.1], "plot_value": [9.0, 10.0]})]
 
     assert mean.tolist() == pytest.approx([4.0, 5.0])
     assert median.tolist() == pytest.approx([2.0, 3.0])
-    assert _aligned_trace_center(unaligned, observation_stat="mean") is None
+    assert low.tolist() == pytest.approx([1.2, 2.2])
+    assert high.tolist() == pytest.approx([7.6, 8.6])
+    assert _aligned_trace_summary(unaligned, observation_stat="mean", interval_mass=0.8) is None

@@ -140,6 +140,7 @@ def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, 
             linestyle="-",
             reference=False,
             observation_stat=diagnostic.observation_stat,
+            interval_mass=diagnostic.descriptive_interval_mass,
             gid="four-state-event-window-trace",
         )
         if signal_kind == "magnitude" and diagnostic.reference_design_id != diagnostic.design_id:
@@ -154,6 +155,7 @@ def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, 
                 linestyle="--",
                 reference=True,
                 observation_stat=diagnostic.observation_stat,
+                interval_mass=diagnostic.descriptive_interval_mass,
                 gid="four-state-event-window-reference-trace",
             )
 
@@ -181,25 +183,13 @@ def _draw_observed_traces(
     linestyle: str,
     reference: bool,
     observation_stat: str,
+    interval_mass: float,
     gid: str,
 ) -> None:
     traces: list[pd.DataFrame] = []
     for _, trace in rows.groupby("position", sort=True):
         trace = trace.sort_values("time_from_event_h", kind="stable")
         traces.append(trace)
-        axis.plot(
-            trace["time_from_event_h"],
-            trace["plot_value"],
-            color=color,
-            linestyle=linestyle,
-            linewidth=0.65 if reference else 0.8,
-            marker=marker,
-            markersize=2.0,
-            markeredgecolor="white",
-            markeredgewidth=0.3,
-            alpha=0.10 if reference else 0.15,
-            markevery=2 if reference else None,
-        )
         flagged = trace.loc[
             trace["value_policy_clipped"].astype(bool)
             | trace["value_instrument_overflow"].astype(bool)
@@ -214,31 +204,47 @@ def _draw_observed_traces(
                 color="#7c2d12",
                 zorder=4,
             )
-    aligned = _aligned_trace_center(traces, observation_stat=observation_stat)
+    aligned = _aligned_trace_summary(
+        traces,
+        observation_stat=observation_stat,
+        interval_mass=interval_mass,
+    )
     if aligned is None:
-        return
-    times, values = aligned
+        raise ValueError("four-state event-window diagnostic requires aligned observation time grids")
+    times, values, interval_low, interval_high = aligned
+    band = axis.fill_between(
+        times,
+        interval_low,
+        interval_high,
+        color=color,
+        alpha=0.07 if reference else 0.14,
+        linewidth=0.0,
+        zorder=1,
+    )
+    band.set_gid("four-state-event-window-observation-interval")
     (line,) = axis.plot(
         times,
         values,
         color=color,
         linestyle=linestyle,
-        linewidth=1.9 if linestyle == "-" else 1.7,
+        linewidth=1.9 if not reference else 1.15,
         marker=marker,
-        markersize=4.0 if not reference else 3.4,
+        markersize=4.0 if not reference else 2.7,
         markeredgecolor="white",
         markeredgewidth=0.55 if not reference else 0.45,
-        alpha=0.72 if reference else 1.0,
-        markevery=2 if reference else None,
+        alpha=0.78 if reference else 1.0,
+        markevery=4 if reference else None,
+        zorder=3,
     )
     line.set_gid(gid)
 
 
-def _aligned_trace_center(
+def _aligned_trace_summary(
     traces: list[pd.DataFrame],
     *,
     observation_stat: str,
-) -> tuple[np.ndarray, np.ndarray] | None:
+    interval_mass: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
     if not traces:
         return None
     times = traces[0]["time_from_event_h"].to_numpy(dtype=float)
@@ -246,7 +252,9 @@ def _aligned_trace_center(
         return None
     values = np.vstack([trace["plot_value"].to_numpy(dtype=float) for trace in traces])
     center = np.mean(values, axis=0) if observation_stat == "mean" else np.median(values, axis=0)
-    return times, center
+    tail = (1.0 - interval_mass) / 2.0
+    interval_low, interval_high = np.quantile(values, [tail, 1.0 - tail], axis=0)
+    return times, center, interval_low, interval_high
 
 
 __all__ = ["BOUND_MARKERS", "STATE_COLORS", "STATE_MARKERS", "render_four_state_event_window_diagnostic"]

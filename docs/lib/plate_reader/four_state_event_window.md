@@ -68,8 +68,9 @@ protocol:
 The compiler supplies the reduction marked `role: primary`; plot configuration
 cannot override that scientific contract. The diagnostic shows observed traces,
 the selected event and reduction windows, and the eight persisted component
-values. Faint time-series lines retain the individual observations. In the
-component panel, capped lines show the configured descriptive resampling
+values. Shaded time-series bands show the configured pointwise descriptive
+interval across observations; they describe replicate spread rather than a
+population confidence interval. In the component panel, capped lines show the configured descriptive resampling
 interval and pale bars show the component range under permitted event-time
 shifts. These two encodings belong in a figure caption, not the treatment
 legend. The diagnostic also shows the pre-event window for `post_minus_pre` and

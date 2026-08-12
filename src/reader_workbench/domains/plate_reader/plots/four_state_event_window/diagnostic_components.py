@@ -19,8 +19,6 @@ def draw_component_panel(
     axis_labels: Mapping[str, str],
     reference_label: str,
 ) -> None:
-    """Draw reduced components, uncertainty intervals, and their semantic groups."""
-
     y = np.arange(len(COMPONENT_COLUMNS))
     values = np.asarray(diagnostic.component_values)
     interval_low = np.asarray(diagnostic.component_descriptive_interval_low)
