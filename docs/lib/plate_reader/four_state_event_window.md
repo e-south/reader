@@ -66,11 +66,12 @@ protocol:
 ```
 
 The compiler supplies the reduction marked `role: primary`; plot configuration
-cannot override that scientific contract. The diagnostic labels the reduction
-method, response basis, observation statistic, descriptive interval mass, and
-event-time uncertainty. It distinguishes descriptive resampling intervals from
-event-time sensitivity, shows the pre-event window for `post_minus_pre`, and marks
-non-exact, clipped, or overflow-affected values. Python callers discover the
+cannot override that scientific contract. The diagnostic shows observed traces,
+the selected event and reduction windows, and the eight persisted component
+values. It shows the pre-event window for `post_minus_pre` and marks non-exact,
+clipped, or overflow-affected values. Descriptive intervals and event-time
+sensitivity remain available in the persisted dataframe rather than adding a
+second uncertainty vocabulary to the plot. Python callers discover the
 manifest-backed record catalog with `reader_workbench.api.records()` and load dataframe
 contents with `reader_workbench.api.read_dataframe()`.
 
