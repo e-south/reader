@@ -190,8 +190,8 @@ def test_render_four_state_event_window_diagnostic_has_four_neutral_panels() -> 
     assert "reference-a" in {text.get_text() for text in figure.legends[0].get_texts()}
     legend_labels = {text.get_text() for text in figure.legends[0].get_texts()}
     assert {"No treatment", "Treatment A", "Treatment B", "Treatments A + B"}.issubset(legend_labels)
-    assert "event timing sensitivity" in legend_labels
-    assert "90% resampling interval" in legend_labels
+    assert "event timing sensitivity" not in legend_labels
+    assert "90% resampling interval" not in legend_labels
     component_labels = {text.get_text() for text in figure.axes[3].texts}
     assert "Response $r_i$\nlog$_2$(YFP/CFP)" in component_labels
     assert "Signal $b_i$\nlog$_2$(YFP/OD600)\nrelative to reference-a" in component_labels

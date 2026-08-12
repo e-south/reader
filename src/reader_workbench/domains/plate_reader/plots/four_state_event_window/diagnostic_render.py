@@ -53,14 +53,16 @@ def render_four_state_event_window_diagnostic(
             "legend_fontsize": 11.5,
         }
     ):
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        from matplotlib.figure import Figure  # noqa: PLC0415
         from matplotlib.lines import Line2D  # noqa: PLC0415
 
-        figure, axes = plt.subplots(
-            1,
-            4,
+        figure = Figure(
             figsize=(18.5, 6.0),
             constrained_layout=True,
+        )
+        axes = figure.subplots(
+            1,
+            4,
             gridspec_kw={"width_ratios": (1.0, 1.0, 1.0, 0.95)},
         )
         figure.set_gid("four-state-event-window-diagnostic")
@@ -107,7 +109,6 @@ def render_four_state_event_window_diagnostic(
             legend.append(
                 Line2D([0], [0], color=_REFERENCE_COLOR, linestyle="--", linewidth=1.7, label=reference_label)
             )
-        legend.extend(_component_uncertainty_legend_handles(diagnostic))
         if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
         figure.legend(
@@ -119,31 +120,6 @@ def render_four_state_event_window_diagnostic(
             handletextpad=0.55,
         )
     return figure
-
-
-def _component_uncertainty_legend_handles(diagnostic: FourStateEventWindowDiagnostic) -> list[Any]:
-    """Return compact keys for the component panel's two interval encodings."""
-
-    from matplotlib.lines import Line2D  # noqa: PLC0415
-
-    interval_mass = 100.0 * diagnostic.descriptive_interval_mass
-    return [
-        Line2D(
-            [0],
-            [0],
-            color="#536273",
-            linewidth=5.0,
-            alpha=0.20,
-            label="event timing sensitivity",
-        ),
-        Line2D(
-            [0],
-            [0],
-            color="#536273",
-            linewidth=1.5,
-            label=f"{interval_mass:g}% resampling interval",
-        ),
-    ]
 
 
 def _draw_trace_panel(axis: Any, *, diagnostic: FourStateEventWindowDiagnostic, signal_kind: str) -> None:
