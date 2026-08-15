@@ -19,6 +19,7 @@ def require_well_exclusion_support_failure(
     response: pd.DataFrame,
     magnitude: pd.DataFrame,
     event_estimates_h: Sequence[float],
+    pre_window_end_h: float,
     experiment_id: str,
 ) -> None:
     for exclusion in exclusions:
@@ -46,6 +47,30 @@ def require_well_exclusion_support_failure(
                 except ValueError as exc:
                     if _is_support_failure(str(exc)):
                         support_failures.append(str(exc))
+        if reduction.response_basis == "post_minus_pre":
+            if reduction.pre_window_duration_h is None:
+                raise ValueError(f"{experiment_id}:{reduction.id}: delta response lacks an explicit pre-event window.")
+            trace = response.loc[response["position"].astype(str).eq(exclusion.position)]
+            try:
+                reduce_temporal_trace(
+                    trace["time"].to_numpy(dtype=float),
+                    trace["value"].to_numpy(dtype=float),
+                    spec=four_state_event_window_temporal_spec(
+                        reduction,
+                        quality,
+                        absolute_window_h=(
+                            pre_window_end_h - reduction.pre_window_duration_h,
+                            pre_window_end_h,
+                        ),
+                    ),
+                    trace_id=f"{experiment_id}:{exclusion.position}:{reduction.id}:pre-support",
+                    policy_clipped=trace["value_policy_clipped"].to_numpy(dtype=bool),
+                    instrument_overflow=trace["value_instrument_overflow"].to_numpy(dtype=bool),
+                    bound_kinds=trace["value_bound_kind"].to_numpy(dtype=object),
+                )
+            except ValueError as exc:
+                if _is_support_failure(str(exc)):
+                    support_failures.append(str(exc))
         if not support_failures:
             raise ValueError(
                 f"{experiment_id}:{exclusion.position}:{exclusion.reduction_id} "
