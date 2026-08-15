@@ -109,6 +109,28 @@ def render_four_state_event_window_diagnostic(
             legend.append(
                 Line2D([0], [0], color=_REFERENCE_COLOR, linestyle="--", linewidth=1.7, label=reference_label)
             )
+        legend.extend(
+            (
+                Line2D(
+                    [0],
+                    [0],
+                    color="#64748b",
+                    linewidth=5.0,
+                    alpha=0.28,
+                    label="event timing sensitivity",
+                ),
+                Line2D(
+                    [0],
+                    [0],
+                    color="#334155",
+                    linewidth=1.4,
+                    marker="|",
+                    markersize=8.0,
+                    markeredgewidth=1.1,
+                    label=f"{100.0 * diagnostic.descriptive_interval_mass:g}% resampling interval",
+                ),
+            )
+        )
         if has_quality_flags(diagnostic):
             legend.append(Line2D([0], [0], color="#7c2d12", marker="x", linestyle="none", label="quality/bound flag"))
         figure.legend(
