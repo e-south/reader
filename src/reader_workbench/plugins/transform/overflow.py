@@ -54,14 +54,7 @@ class OverflowHandling(Plugin):
             if unexpected_nonfinite.any():
                 raise ValueError("overflow_handling: NaN or negative infinity cannot represent instrument overflow")
             policy_clipped, prior_overflow, bounds = _incoming_value_provenance(df)
-            flagged = pd.Series(False, index=df.index)
-            if cfg.flag_column in df.columns:
-                raw_flags = df[cfg.flag_column]
-                if raw_flags.isna().any() or not raw_flags.map(lambda value: isinstance(value, (bool, np.bool_))).all():
-                    raise ValueError(
-                        f"overflow_handling: {cfg.flag_column!r} must contain booleans without missing values"
-                    )
-                flagged = flagged | raw_flags.astype(bool)
+            flagged = _declared_instrument_overflow(df, flag_column=cfg.flag_column)
             if cfg.treat_inf_as_overflow:
                 flagged = flagged | np.isposinf(df["value"])
             elif (~np.isfinite(df["value"]) & ~(flagged | prior_overflow)).any():
@@ -75,19 +68,27 @@ class OverflowHandling(Plugin):
             df[cfg.flag_column] = instrument_overflow
             return {"df": df}
         if act == "drop":
-            return {"df": df.dropna(subset=["value"])}
+            unexpected_nonfinite = df["value"].isna() | np.isneginf(df["value"])
+            if unexpected_nonfinite.any():
+                raise ValueError("overflow_handling: NaN or negative infinity cannot represent instrument overflow")
+            policy_clipped, prior_overflow, bounds = _incoming_value_provenance(df)
+            flagged = _declared_instrument_overflow(df, flag_column=cfg.flag_column)
+            if cfg.treat_inf_as_overflow:
+                flagged = flagged | np.isposinf(df["value"])
+            elif (~np.isfinite(df["value"]) & ~(flagged | prior_overflow)).any():
+                raise ValueError("overflow_handling: non-finite values must be classified as instrument overflow")
+            drop_rows = policy_clipped | prior_overflow | bounds.ne("exact") | flagged
+            out = df.loc[~drop_rows].copy()
+            out["value_policy_clipped"] = False
+            out["value_instrument_overflow"] = False
+            out["value_bound_kind"] = "exact"
+            out[cfg.flag_column] = False
+            return {"df": out}
         if act == "nan":
             return {"df": df}
         if act == "max":
             # 1) mark which rows are overflowed
-            flagged = pd.Series(False, index=df.index)
-            if cfg.flag_column in df.columns:
-                raw_flags = df[cfg.flag_column]
-                if raw_flags.isna().any() or not raw_flags.map(lambda value: isinstance(value, (bool, np.bool_))).all():
-                    raise ValueError(
-                        f"overflow_handling: {cfg.flag_column!r} must contain booleans without missing values"
-                    )
-                flagged = flagged | raw_flags.astype(bool)
+            flagged = _declared_instrument_overflow(df, flag_column=cfg.flag_column)
             if cfg.treat_inf_as_overflow:
                 flagged = flagged | ~np.isfinite(df["value"])
             elif (~np.isfinite(df["value"]) & ~flagged).any():
@@ -174,6 +175,16 @@ def _incoming_value_provenance(frame: pd.DataFrame) -> tuple[pd.Series, pd.Serie
     if not (policy_clipped | instrument_overflow).eq(bounds.ne("exact")).all():
         raise ValueError("overflow_handling: clipping and overflow provenance disagrees with value_bound_kind")
     return policy_clipped, instrument_overflow, bounds
+
+
+def _declared_instrument_overflow(frame: pd.DataFrame, *, flag_column: str) -> pd.Series:
+    flagged = pd.Series(False, index=frame.index, dtype=bool)
+    if flag_column not in frame.columns:
+        return flagged
+    raw_flags = frame[flag_column]
+    if raw_flags.isna().any() or not raw_flags.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+        raise ValueError(f"overflow_handling: {flag_column!r} must contain booleans without missing values")
+    return raw_flags.astype(bool)
 
 
 def _strict_provenance_boolean(values: pd.Series, *, field: str) -> pd.Series:

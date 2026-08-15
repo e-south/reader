@@ -148,3 +148,44 @@ def test_growth_pipeline_promotes_classified_instrument_overflow() -> None:
     assert promoted["value"].tolist() == [float("inf")]
     assert promoted["value_instrument_overflow"].tolist() == [True]
     assert promoted["value_bound_kind"].tolist() == ["lower"]
+
+
+def test_growth_pipeline_drop_policy_promotes_only_exact_retained_rows() -> None:
+    steps = compose_growth_pipeline(
+        ingest_channels=["OD700"],
+        growth_channel="OD700",
+        blank_config={},
+        overflow_config={"action": "drop"},
+    )
+    overflow = next(step for step in steps if step.id == "overflow")
+    promotion = next(step for step in steps if step.id == "sample_measurements")
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "A3"],
+            "time": [0.0, 0.0, 0.0],
+            "channel": ["OD700", "OD700", "OD700"],
+            "value": [0.1, float("inf"), 0.3],
+            "type": ["SAMPLE", "SAMPLE", "SAMPLE"],
+            "treatment": ["condition-a", "condition-a", "condition-a"],
+            "design_id": ["design-a", "design-a", "design-a"],
+            "overflow": [False, False, True],
+        }
+    )
+    context = SimpleNamespace(logger=None)
+
+    classified = OverflowHandling().run(
+        context,
+        {"df": frame},
+        OverflowCfg.model_validate(overflow.with_),
+    )["df"]
+    promoted = PromoteToTidyPlusMap().run(
+        context,
+        {"df": classified},
+        PromoteCfg.model_validate(promotion.with_),
+    )["df"]
+
+    assert promoted["position"].tolist() == ["A1"]
+    assert promoted["value"].tolist() == [0.1]
+    assert promoted["value_policy_clipped"].tolist() == [False]
+    assert promoted["value_instrument_overflow"].tolist() == [False]
+    assert promoted["value_bound_kind"].tolist() == ["exact"]
