@@ -19,6 +19,13 @@ def test_synergy_config_has_one_mixed_mode_and_single_workbook_default() -> None
     assert cfg.mode == "mixed"
     assert cfg.auto_pick == "single"
     assert cfg.auto_include == ["*.xlsx", "*.XLSX"]
+    assert cfg.time_offset_h == 0.0
+
+
+@pytest.mark.parametrize("time_offset_h", [-1.0, float("inf"), float("nan"), True, False])
+def test_synergy_config_rejects_invalid_time_offset(time_offset_h: object) -> None:
+    with pytest.raises(ValidationError):
+        SynergyH1UnifiedCfg(channel_map={"OD600": "OD600"}, time_offset_h=time_offset_h)
 
 
 def test_synergy_mixed_config_requires_explicit_channel_map() -> None:

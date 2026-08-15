@@ -10,7 +10,9 @@ from reader_workbench.domains.plate_reader.plots.four_state_event_window import 
     prepare_four_state_event_window_diagnostic,
     render_four_state_event_window_diagnostic,
 )
-from reader_workbench.domains.plate_reader.plots.four_state_event_window.diagnostic_render import _aligned_trace_summary
+from reader_workbench.domains.plate_reader.plots.four_state_event_window.diagnostic_render import (
+    summarize_observed_traces,
+)
 
 
 def _traces_frame() -> pd.DataFrame:
@@ -284,19 +286,30 @@ def test_diagnostic_renders_component_intervals_and_bound_notes() -> None:
     plt.close(figure)
 
 
-def test_aligned_trace_summary_honors_stat_interval_and_rejects_unaligned_grids() -> None:
+def test_trace_summary_honors_stat_interval_on_partially_observed_grids() -> None:
     traces = [
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [1.0, 2.0]}),
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [2.0, 3.0]}),
         pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [9.0, 10.0]}),
     ]
 
-    _, mean, low, high = _aligned_trace_summary(traces, observation_stat="mean", interval_mass=0.8)
-    _, median, _, _ = _aligned_trace_summary(traces, observation_stat="median", interval_mass=0.8)
-    unaligned = [*traces[:2], pd.DataFrame({"time_from_event_h": [0.1, 1.1], "plot_value": [9.0, 10.0]})]
+    _, mean, low, high = summarize_observed_traces(traces, observation_stat="mean", interval_mass=0.8)
+    _, median, _, _ = summarize_observed_traces(traces, observation_stat="median", interval_mass=0.8)
+    partially_observed = [
+        *traces[:2],
+        pd.DataFrame({"time_from_event_h": [0.0], "plot_value": [9.0]}),
+    ]
 
     assert mean.tolist() == pytest.approx([4.0, 5.0])
     assert median.tolist() == pytest.approx([2.0, 3.0])
     assert low.tolist() == pytest.approx([1.2, 2.2])
     assert high.tolist() == pytest.approx([7.6, 8.6])
-    assert _aligned_trace_summary(unaligned, observation_stat="mean", interval_mass=0.8) is None
+    times, mean, low, high = summarize_observed_traces(
+        partially_observed,
+        observation_stat="mean",
+        interval_mass=0.8,
+    )
+    assert times.tolist() == pytest.approx([0.0, 1.0])
+    assert mean.tolist() == pytest.approx([4.0, 2.5])
+    assert low.tolist() == pytest.approx([1.2, 2.1])
+    assert high.tolist() == pytest.approx([7.6, 2.9])

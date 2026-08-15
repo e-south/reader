@@ -9,6 +9,7 @@ from .common import _deep_merge, _step
 SYNERGY_H1_INGEST_RECIPE_ID = "plate_reader/synergy_h1"
 DUAL_REPORTER_BASE_RECIPE_ID = "plate_reader/dual_reporter_screen_base"
 SINGLE_REPORTER_BASE_RECIPE_ID = "plate_reader/single_reporter_screen_base"
+GROWTH_BASE_RECIPE_ID = "plate_reader/growth_screen_base"
 
 
 def compose_dual_reporter_pipeline(
@@ -104,6 +105,47 @@ def compose_single_reporter_pipeline(
             },
             writes={"df": RecordOutputDecl(record_id="sample_measurements/df")},
             source_recipe=SINGLE_REPORTER_BASE_RECIPE_ID,
+            source_recipe_with=recipe_arguments,
+        ),
+    )
+
+
+def compose_growth_pipeline(
+    *,
+    ingest_channels: list[str],
+    growth_channel: str,
+    blank_config: dict[str, Any],
+    overflow_config: dict[str, Any],
+) -> tuple[PluginStepDecl, ...]:
+    """Compose a plate-reader pipeline that preserves one growth channel."""
+
+    recipe_arguments = {"growth_channel": growth_channel}
+    return (
+        _step(
+            id="ingest",
+            plugin="ingest/synergy_h1",
+            with_={"channels": ingest_channels},
+            source_recipe=SYNERGY_H1_INGEST_RECIPE_ID,
+        ),
+        *_sample_map_and_preprocessing_steps(
+            blank_config=blank_config,
+            overflow_config=overflow_config,
+            source_recipe=GROWTH_BASE_RECIPE_ID,
+            recipe_arguments=recipe_arguments,
+        ),
+        _step(
+            id="sample_measurements",
+            plugin="validator/to_tidy_plus_map",
+            reads={"df": RecordInputDecl(record_id="overflow/df")},
+            with_={
+                "include_types": ["SAMPLE"],
+                "require_columns": ["treatment", "design_id"],
+                "require_non_null": True,
+                "trim_and_require_non_blank": ["treatment", "design_id"],
+                "require_finite": ["time", "value"],
+            },
+            writes={"df": RecordOutputDecl(record_id="sample_measurements/df")},
+            source_recipe=GROWTH_BASE_RECIPE_ID,
             source_recipe_with=recipe_arguments,
         ),
     )

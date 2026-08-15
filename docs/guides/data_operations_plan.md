@@ -31,7 +31,6 @@ The short path is:
   must be captured and when to stop for clarification.
 - [Transfer and verification](./data_operations_plan/transfer_and_verification.md):
   stage inputs, run checks, and verify generated evidence.
-
 For the concrete intake workflow, continue with
 [Experiment bootstrap](./experiment_bootstrap.md). For the execution loop, use
 [Preflight, run, verify](./preflight_run_verify.md).

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -9,8 +11,32 @@ from reader_workbench.plotting.sinks import PlotFigure
 from reader_workbench.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
-from .common import alias_column, best_subplot_grid, colors_for, plot_figure, require_columns, warn_if_empty
+from .common import (
+    alias_column,
+    best_subplot_grid,
+    colors_for,
+    nonfinite_value_counts,
+    plot_figure,
+    require_columns,
+    warn_if_empty,
+)
 from .grouping import GroupMatch, resolve_groups
+
+
+def _finite_distribution_rows(frame: pd.DataFrame, *, row_kind: str) -> pd.DataFrame:
+    work = frame.copy()
+    work["value"] = pd.to_numeric(work["value"], errors="coerce")
+    finite = np.isfinite(work["value"].to_numpy(dtype=float, copy=False))
+    omitted = int((~finite).sum())
+    if omitted:
+        noun = "row" if omitted == 1 else "rows"
+        logging.getLogger("reader").warning(
+            "distributions: omitted %d non-finite %s %s before density estimation",
+            omitted,
+            row_kind,
+            noun,
+        )
+    return work.loc[finite].copy()
 
 
 def _figure_groups(
@@ -69,15 +95,33 @@ def plot_distributions(
     # --- resolve columns (assertive, no silent fallbacks) ---
     ch_list = [str(c) for c in channels]
     require_columns(df, ["channel", "value"], where="distributions")
-    work = df[df["channel"].astype(str).isin(ch_list)].copy()
-    if warn_if_empty(work, where="distributions", detail="after channel filter"):
+    selected_work = df[df["channel"].astype(str).isin(ch_list)].copy()
+    if warn_if_empty(selected_work, where="distributions", detail="after channel filter"):
         return []
-    work["value"] = pd.to_numeric(work["value"], errors="coerce")
-    work = work.dropna(subset=["value"])
-
-    gcol = alias_column(work, group_on) if group_on else None
-    if gcol and gcol not in work.columns:
+    gcol = alias_column(selected_work, group_on) if group_on else None
+    if gcol and gcol not in selected_work.columns:
         raise ValueError(f"distributions: missing group_on column {gcol!r}")
+    if gcol:
+        group_values = selected_work[gcol]
+        valid_group = group_values.notna() & ~group_values.astype(str).str.strip().str.casefold().isin(
+            {"", "nan", "none"}
+        )
+        selected_work = selected_work.loc[valid_group].copy()
+        if warn_if_empty(selected_work, where="distributions", detail="after group_on identity filter"):
+            return []
+
+    work = selected_work
+    work = _finite_distribution_rows(work, row_kind="measurement")
+    if warn_if_empty(work, where="distributions", detail="after non-finite value filter"):
+        return []
+
+    selected_blanks = blanks
+    blank_work = selected_blanks
+    if not blanks.empty:
+        require_columns(blanks, ["channel", "value"], where="distribution blanks")
+        selected_blanks = blanks[blanks["channel"].astype(str).isin(ch_list)].copy()
+        blank_work = _finite_distribution_rows(selected_blanks, row_kind="blank")
+
     if hue:
         hcol = alias_column(work, hue)
         if hcol not in work.columns:
@@ -150,8 +194,8 @@ def plot_distributions(
                         sns.kdeplot(data=dch, x="value", ax=ax, lw=1.8, fill=True, alpha=fill_alpha)
 
                     # optional blanks median
-                    if not blanks.empty:
-                        b = blanks[blanks["channel"].astype(str) == ch]
+                    if not blank_work.empty:
+                        b = blank_work[blank_work["channel"].astype(str) == ch]
                         if not b.empty:
                             med = float(pd.to_numeric(b["value"], errors="coerce").median())
                             ax.axvline(med, ls="--", lw=1.0, alpha=0.6)
@@ -165,7 +209,26 @@ def plot_distributions(
 
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
+                source_sub = selected_work.copy()
+                if gcol and members != [None]:
+                    source_sub = source_sub[source_sub[gcol].astype(str).isin(members)]
+                observed_count, nonfinite_count = nonfinite_value_counts(
+                    pd.concat([source_sub, selected_blanks], ignore_index=True)
+                )
+                description = None
+                if nonfinite_count:
+                    description = (
+                        f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                        "non-finite rows were omitted before density estimation."
+                    )
+                figures.append(
+                    plot_figure(
+                        fig=fig,
+                        filename=stub,
+                        fig_kwargs=fig_kwargs,
+                        description=description,
+                    )
+                )
 
     else:  # panel_by == "group"
         if not gcol:
@@ -204,8 +267,8 @@ def plot_distributions(
                     ax.set_visible(False)
                     continue
                 sns.kdeplot(data=dd, x="value", ax=ax, lw=1.8, fill=True, alpha=fill_alpha)
-                if not blanks.empty:
-                    b = blanks[blanks["channel"].astype(str) == ch]
+                if not blank_work.empty:
+                    b = blank_work[blank_work["channel"].astype(str) == ch]
                     if not b.empty:
                         med = float(pd.to_numeric(b["value"], errors="coerce").median())
                         ax.axvline(med, ls="--", lw=1.0, alpha=0.6)
@@ -216,5 +279,27 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
+            observed_count, nonfinite_count = nonfinite_value_counts(
+                pd.concat(
+                    [
+                        selected_work[selected_work["channel"].astype(str) == ch],
+                        selected_blanks[selected_blanks["channel"].astype(str) == ch],
+                    ],
+                    ignore_index=True,
+                )
+            )
+            description = None
+            if nonfinite_count:
+                description = (
+                    f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                    "non-finite rows were omitted before density estimation."
+                )
+            figures.append(
+                plot_figure(
+                    fig=fig,
+                    filename=stub,
+                    fig_kwargs=fig_kwargs,
+                    description=description,
+                )
+            )
     return figures

@@ -1072,6 +1072,7 @@ def test_plate_reader_single_reporter_compiler_derives_channels_from_analysis() 
 
     assert ingest.with_["channels"] == ["OD700", "mCherry"]
     assert fold_change.with_["target"] == "mCherry/OD700"
+    assert fold_change.reads["df"].record_id == "sample_measurements/df"
 
 
 def test_dual_reporter_ranking_references_declared_metrics() -> None:

@@ -4,54 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
-import numpy as np
+from .contract_fields import exact_fields as _exact_fields
+from .contract_fields import finite as _finite
+from .contract_fields import mapping as _mapping
+from .contract_fields import nonempty as _nonempty
+from .design_dispositions import DesignDisposition, parse_design_dispositions
+from .well_exclusions import WellExclusion, parse_well_exclusions
 
 ReductionMethod = Literal["geometric_time_mean", "integrated_linear_mean"]
 ResponseBasis = Literal["post_window", "post_minus_pre"]
 ReductionRole = Literal["primary", "sensitivity"]
 ObservationStat = Literal["mean", "median"]
 EventEstimateMethod = Literal["segment_gap_midpoint"]
-
-
-def _mapping(value: object, *, context: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{context} must be a mapping.")
-    return {str(key): item for key, item in value.items()}
-
-
-def _exact_fields(
-    value: object,
-    *,
-    context: str,
-    required: set[str],
-    optional: set[str] | None = None,
-) -> dict[str, Any]:
-    payload = _mapping(value, context=context)
-    allowed = required | (optional or set())
-    unknown = sorted(set(payload) - allowed)
-    if unknown:
-        raise ValueError(f"{context} has unknown fields: {unknown}.")
-    missing = sorted(required - set(payload))
-    if missing:
-        raise ValueError(f"{context} is missing required fields: {missing}.")
-    return payload
-
-
-def _nonempty(value: object, *, context: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{context} must be a non-empty string.")
-    return value.strip()
-
-
-def _finite(value: object, *, context: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{context} must be a finite number.")
-    result = float(value)
-    if not np.isfinite(result):
-        raise ValueError(f"{context} must be a finite number.")
-    return result
 
 
 @dataclass(frozen=True)
@@ -64,6 +30,8 @@ class FourStateEventWindowSourceSpec:
     state_values: Mapping[str, str]
     state_labels: Mapping[str, str]
     state_values_case_sensitive: bool = True
+    well_exclusions: tuple[WellExclusion, ...] = ()
+    design_dispositions: tuple[DesignDisposition, ...] = ()
 
     @classmethod
     def from_mapping(cls, value: object) -> FourStateEventWindowSourceSpec:
@@ -79,7 +47,12 @@ class FourStateEventWindowSourceSpec:
             value,
             context="source",
             required=fields,
-            optional={"state_labels", "state_values_case_sensitive"},
+            optional={
+                "design_dispositions",
+                "state_labels",
+                "state_values_case_sensitive",
+                "well_exclusions",
+            },
         )
         state_values = _mapping(payload["state_values"], context="source.state_values")
         expected_states = {"00", "10", "01", "11"}
@@ -101,16 +74,36 @@ class FourStateEventWindowSourceSpec:
         case_sensitive = payload.get("state_values_case_sensitive", True)
         if not isinstance(case_sensitive, bool):
             raise ValueError("source.state_values_case_sensitive must be true or false.")
+        reference_design_id = _nonempty(payload["reference_design_id"], context="source.reference_design_id")
         return cls(
             response_channel=_nonempty(payload["response_channel"], context="source.response_channel"),
             magnitude_channel=_nonempty(payload["magnitude_channel"], context="source.magnitude_channel"),
             growth_channel=_nonempty(payload["growth_channel"], context="source.growth_channel"),
-            reference_design_id=_nonempty(payload["reference_design_id"], context="source.reference_design_id"),
+            reference_design_id=reference_design_id,
             state_column=_nonempty(payload["state_column"], context="source.state_column"),
             state_values=normalized_values,
             state_labels=normalized_labels,
             state_values_case_sensitive=case_sensitive,
+            well_exclusions=parse_well_exclusions(payload.get("well_exclusions", [])),
+            design_dispositions=parse_design_dispositions(payload.get("design_dispositions", [])),
         )
+
+    def require_known_experiment_ids(self, experiment_ids: Sequence[str]) -> None:
+        """Reject design selections that do not name a resolved source experiment."""
+
+        known = {str(value) for value in experiment_ids}
+        referenced = {item.experiment_id for item in (*self.well_exclusions, *self.design_dispositions)}
+        unknown = sorted(referenced - known)
+        if unknown:
+            raise ValueError(f"source experiment selections name unknown experiments: {unknown}.")
+
+    def require_known_reduction_ids(self, reduction_ids: Sequence[str]) -> None:
+        """Reject design dispositions that do not name a declared reduction."""
+
+        known = {str(value) for value in reduction_ids}
+        for disposition in self.design_dispositions:
+            if disposition.reduction_id not in known:
+                raise ValueError(f"design disposition names unknown reduction {disposition.reduction_id!r}.")
 
 
 @dataclass(frozen=True)
@@ -306,8 +299,10 @@ class FourStateEventWindowAnalysisSpec:
             raise ValueError("reduction ids must be non-empty and unique.")
         if sum(spec.role == "primary" for spec in reductions) != 1:
             raise ValueError("analysis must declare exactly one primary reduction.")
+        source = FourStateEventWindowSourceSpec.from_mapping(payload["source"])
+        source.require_known_reduction_ids(ids)
         return cls(
-            source=FourStateEventWindowSourceSpec.from_mapping(payload["source"]),
+            source=source,
             event=EventSpec.from_mapping(payload["event"]),
             reductions=reductions,
             aggregation=AggregationSpec.from_mapping(payload["aggregation"]),

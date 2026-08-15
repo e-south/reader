@@ -108,17 +108,44 @@ class RatioTransform(Plugin):
         # Join (lhs may be many-to-one vs rhs on the key)
         merged = pd.merge(lhs, rhs, on=key, how="inner", validate="many_to_one")
 
-        # Numerics + validity filter (drop invalids to satisfy tidy.v1: no NaNs)
+        # Only declared instrument lower bounds may explain a non-finite operand.
         merged["__num__"] = pd.to_numeric(merged["__num__"], errors="coerce")
         merged["__den__"] = pd.to_numeric(merged["__den__"], errors="coerce")
-        ok = merged["__num__"].notna() & merged["__den__"].notna() & (merged["__den__"] != 0)
-        dropped = int((~ok).sum())
-        if dropped:
+        finite = np.isfinite(merged["__num__"]) & np.isfinite(merged["__den__"])
+        numerator_overflow = (
+            np.isposinf(merged["__num__"])
+            & merged["__num_instrument_overflow__"]
+            & merged["__num_bound_kind__"].eq("lower")
+        )
+        denominator_overflow = (
+            np.isposinf(merged["__den__"])
+            & merged["__den_instrument_overflow__"]
+            & merged["__den_bound_kind__"].eq("lower")
+        )
+        nonfinite = ~finite
+        omittable = (
+            nonfinite
+            & (np.isfinite(merged["__num__"]) | numerator_overflow)
+            & (np.isfinite(merged["__den__"]) | denominator_overflow)
+        )
+        unexpected_nonfinite = nonfinite & ~omittable
+        if unexpected_nonfinite.any():
+            raise ValueError("ratio: unexpected non-finite operand lacks instrument-overflow lower-bound provenance")
+
+        nonfinite_count = int(omittable.sum())
+        if nonfinite_count:
             ctx.logger.warning(
-                "[warn]ratio[/warn] • %s: dropped %d row(s) due to missing/zero denominator", cfg.name, dropped
+                "[warn]ratio[/warn] • %s: omitted %d aligned pair(s) with non-finite operands",
+                cfg.name,
+                nonfinite_count,
             )
 
-        merged = merged.loc[ok].copy()
+        invalid = finite & (merged["__den__"] == 0)
+        dropped = int(invalid.sum())
+        if dropped:
+            ctx.logger.warning("[warn]ratio[/warn] • %s: dropped %d row(s) due to zero denominator", cfg.name, dropped)
+
+        merged = merged.loc[~omittable & ~invalid].copy()
         bounded = merged["__num_bound_kind__"].ne("exact") | merged["__den_bound_kind__"].ne("exact")
         nonpositive = merged["__num__"].le(0.0) | merged["__den__"].le(0.0)
         if (bounded & nonpositive).any():

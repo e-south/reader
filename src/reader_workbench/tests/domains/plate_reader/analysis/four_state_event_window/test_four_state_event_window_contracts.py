@@ -87,6 +87,87 @@ def test_source_labels_default_to_source_values() -> None:
     assert spec.source.state_labels == spec.source.state_values
 
 
+def test_source_rejects_design_prefilters_that_would_remove_measured_traces() -> None:
+    payload = _payload()
+    payload["source"]["included_design_ids_by_experiment"] = {  # type: ignore[index]
+        "experiment-b": ["reference", "candidate-b"],
+    }
+
+    with pytest.raises(ValueError, match="unknown fields.*included_design_ids_by_experiment"):
+        FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+
+def test_source_accepts_exact_well_exclusions() -> None:
+    payload = _payload()
+    payload["source"]["well_exclusions"] = [  # type: ignore[index]
+        {
+            "experiment_id": "experiment-b",
+            "design_id": "candidate-b",
+            "state": "01",
+            "position": "D7",
+            "reduction_id": "primary",
+            "reason": "insufficient_event_window_coverage",
+        }
+    ]
+
+    spec = FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+    assert spec.source.well_exclusions[0].position == "D7"
+    assert spec.source.well_exclusions[0].reason == "insufficient_event_window_coverage"
+    spec.source.require_known_experiment_ids(("experiment-a", "experiment-b"))
+
+
+def test_source_accepts_plate_scoped_design_dispositions() -> None:
+    payload = _payload()
+    payload["source"]["design_dispositions"] = [  # type: ignore[index]
+        {
+            "experiment_id": "experiment-b",
+            "design_id": "candidate-b",
+            "state": "01",
+            "reduction_id": "primary",
+            "reason": "insufficient_state_observations",
+        }
+    ]
+
+    spec = FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+    assert spec.source.design_dispositions[0].design_id == "candidate-b"
+    assert spec.source.design_dispositions[0].state == "01"
+    spec.source.require_known_experiment_ids(("experiment-a", "experiment-b"))
+
+
+def test_analysis_rejects_design_disposition_for_unknown_reduction() -> None:
+    payload = _payload()
+    payload["source"]["design_dispositions"] = [  # type: ignore[index]
+        {
+            "experiment_id": "experiment-b",
+            "design_id": "candidate-b",
+            "state": "01",
+            "reduction_id": "misspelled",
+            "reason": "insufficient_state_observations",
+        }
+    ]
+
+    with pytest.raises(ValueError, match="design disposition names unknown reduction 'misspelled'"):
+        FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+
+def test_source_rejects_duplicate_well_exclusions() -> None:
+    payload = _payload()
+    exclusion = {
+        "experiment_id": "experiment-b",
+        "design_id": "candidate-b",
+        "state": "01",
+        "position": "D7",
+        "reduction_id": "primary",
+        "reason": "insufficient_event_window_coverage",
+    }
+    payload["source"]["well_exclusions"] = [exclusion, exclusion.copy()]  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="well_exclusions must not repeat"):
+        FourStateEventWindowAnalysisSpec.from_mapping(payload)
+
+
 def test_analysis_requires_one_primary_reduction() -> None:
     payload = _payload()
     payload["reductions"][0]["role"] = "sensitivity"  # type: ignore[index]
@@ -180,6 +261,7 @@ def test_protocol_and_transform_publish_only_observation_named_surfaces() -> Non
     }
     assert "min_observations_per_state" in quality
     assert "descriptive_resampling_draws" in ports
+    assert ports["dispositions"].contract == "plate_reader.four_state_event_window.dispositions.v1"
     assert "bootstrap_draws" not in ports
 
 

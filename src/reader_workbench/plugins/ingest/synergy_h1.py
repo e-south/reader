@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import pandas as pd
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from reader_workbench.domains.plate_reader.io.synergy_h1 import (
     parse_kinetic_only,
@@ -31,6 +31,12 @@ class SynergyH1UnifiedCfg(PluginConfig):
     # time normalization
     time_round_decimals: int | None = 12
     time_step_h: float | None = None
+    time_offset_h: float = Field(
+        default=0.0,
+        ge=0.0,
+        allow_inf_nan=False,
+        description="Hours added to parsed measurement times when assay age is known outside the workbook.",
+    )
 
     # auto-discovery knobs
     auto_roots: list[str] | None = None
@@ -41,6 +47,13 @@ class SynergyH1UnifiedCfg(PluginConfig):
 
     # logging
     print_summary: bool = True
+
+    @field_validator("time_offset_h", mode="before")
+    @classmethod
+    def reject_boolean_time_offset(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("time_offset_h must be a non-negative finite number, not a boolean")
+        return value
 
     @model_validator(mode="after")
     def require_channel_contract(self) -> Self:
@@ -179,6 +192,7 @@ class SynergyH1(Plugin):
                     sheet_names=cfg.sheet_names,
                     time_round_decimals=cfg.time_round_decimals,
                     time_step_h=cfg.time_step_h,
+                    time_offset_h=cfg.time_offset_h,
                 )
             elif effective_mode == "snapshot_only":
                 out = parse_snapshot_and_timeseries(
@@ -188,6 +202,7 @@ class SynergyH1(Plugin):
                     sheet_names=cfg.sheet_names,
                     time_round_decimals=cfg.time_round_decimals,
                     time_step_h=cfg.time_step_h,
+                    time_offset_h=cfg.time_offset_h,
                     include_snapshot=True,
                     include_kinetic=False,
                 )
@@ -199,6 +214,7 @@ class SynergyH1(Plugin):
                     sheet_names=cfg.sheet_names,
                     time_round_decimals=cfg.time_round_decimals,
                     time_step_h=cfg.time_step_h,
+                    time_offset_h=cfg.time_offset_h,
                     include_snapshot=True,
                     include_kinetic=True,
                 )

@@ -72,6 +72,7 @@ def test_four_state_event_window_contracts_replace_retired_contract_ids() -> Non
         "plate_reader.four_state_event_window.descriptive_resampling_draws.v3",
         "plate_reader.four_state_event_window.traces.v3",
         "plate_reader.four_state_event_window.events.v2",
+        "plate_reader.four_state_event_window.dispositions.v1",
     }
     retired_prefix = "plate_reader." + "response_" + "window."
 

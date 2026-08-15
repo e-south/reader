@@ -27,6 +27,7 @@ class FoldChangeCfg(PluginConfig):
     # Grouping and labels
     treatment_column: str = "treatment"  # we will prefer '<col>_alias' when present
     group_by: list[str] = Field(default_factory=lambda: ["design_id"])
+    expected_treatments: list[str] = Field(default_factory=list)
 
     # Baseline policy
     use_global_baseline: bool = False
@@ -67,6 +68,7 @@ class FoldChange(Plugin):
             observation_stat=cfg.observation_stat,
             treatment_column=cfg.treatment_column,
             group_by=tuple(cfg.group_by),
+            expected_treatments=tuple(cfg.expected_treatments),
             use_global_baseline=cfg.use_global_baseline,
             global_baseline_value=cfg.global_baseline_value,
             overrides=tuple(dict(rule) for rule in cfg.overrides),

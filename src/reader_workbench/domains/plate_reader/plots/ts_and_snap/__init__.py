@@ -12,7 +12,7 @@ from reader_workbench.plotting.sinks import PlotFigure
 from reader_workbench.plotting.style import DEFAULT_RC as _RC
 from reader_workbench.plotting.style import PaletteBook, use_style
 
-from ..common import colors_for, plot_figure
+from ..common import colors_for, nonfinite_value_counts, plot_figure
 from ..grouping import GroupMatch
 from ..panels import (
     draw_snapshot_panel,
@@ -146,6 +146,7 @@ def plot_ts_and_snap(
 
     figures: list[PlotFigure] = []
     snap_fallbacks: list[dict[str, object]] = []
+    group_panel_counts: dict[str, tuple[int, int]] = {}
 
     def _draw_group_pair(
         *,
@@ -324,6 +325,12 @@ def plot_ts_and_snap(
                 legend_fontsize=float(fig_kwargs.get("legend_fontsize", 8.0)),
             )
 
+        count_frames = [ts]
+        if snapshot_data is not None:
+            count_frames.append(snapshot_data.frame)
+        panel_values = pd.concat(count_frames, ignore_index=True)
+        group_panel_counts[str(label)] = nonfinite_value_counts(panel_values)
+
         if square_panels:
             ax_ts.set_box_aspect(1.0)
             ax_snap.set_box_aspect(1.0)
@@ -363,7 +370,22 @@ def plot_ts_and_snap(
             if title:
                 fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 1.04)))
             stub = filename or f"ts_snap__{ch_snap}__paired_row"
-            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
+            observed_count = sum(group_panel_counts[group.label][0] for group in group_frames)
+            nonfinite_count = sum(group_panel_counts[group.label][1] for group in group_frames)
+            description = None
+            if nonfinite_count:
+                description = (
+                    f"Selected panel measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                    "affected time-series summaries were withheld."
+                )
+            figures.append(
+                plot_figure(
+                    fig=fig,
+                    filename=stub,
+                    fig_kwargs=fig_kwargs,
+                    description=description,
+                )
+            )
     else:
         for group in group_frames:
             hue_levels = resolve_level_order(
@@ -394,7 +416,22 @@ def plot_ts_and_snap(
                 else:
                     base = f"ts_snap__{ch_snap}"
                     stub = f"{base}{group_tag}" if group_tag else f"{base}__{group.label}"
-                figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
+                observed_count, nonfinite_count = group_panel_counts[group.label]
+                description = None
+                if nonfinite_count:
+                    description = (
+                        f"Selected panel measurements: {observed_count} observed, "
+                        f"{nonfinite_count} omitted as non-finite; "
+                        "affected time-series summaries were withheld."
+                    )
+                figures.append(
+                    plot_figure(
+                        fig=fig,
+                        filename=stub,
+                        fig_kwargs=fig_kwargs,
+                        description=description,
+                    )
+                )
     if snap_fallbacks:
         log = logging.getLogger("reader")
         sample = []

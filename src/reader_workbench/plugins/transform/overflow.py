@@ -11,7 +11,7 @@ from reader_workbench.workbench.registry import Plugin, PluginConfig
 
 
 class OverflowCfg(PluginConfig):
-    action: Literal["max", "drop", "nan", "none"] = "max"
+    action: Literal["max", "drop", "nan", "none"] = "none"
     clip_quantile: float = 0.999
     # New: explicit capping strategy
     cap_strategy: Literal["provided", "infer", "quantile"] = "quantile"
@@ -50,6 +50,25 @@ class OverflowHandling(Plugin):
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         act = cfg.action.lower()
         if act == "none":
+            unexpected_nonfinite = df["value"].isna() | np.isneginf(df["value"])
+            if unexpected_nonfinite.any():
+                raise ValueError("overflow_handling: NaN or negative infinity cannot represent instrument overflow")
+            flagged = pd.Series(False, index=df.index)
+            if cfg.flag_column in df.columns:
+                raw_flags = df[cfg.flag_column]
+                if raw_flags.isna().any() or not raw_flags.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+                    raise ValueError(
+                        f"overflow_handling: {cfg.flag_column!r} must contain booleans without missing values"
+                    )
+                flagged = flagged | raw_flags.astype(bool)
+            if cfg.treat_inf_as_overflow:
+                flagged = flagged | np.isposinf(df["value"])
+            elif (~np.isfinite(df["value"]) & ~flagged).any():
+                raise ValueError("overflow_handling: non-finite values must be classified as instrument overflow")
+            df["value_policy_clipped"] = False
+            df["value_instrument_overflow"] = flagged.astype(bool)
+            df["value_bound_kind"] = np.where(flagged, "lower", "exact")
+            df[cfg.flag_column] = flagged.astype(bool)
             return {"df": df}
         if act == "drop":
             return {"df": df.dropna(subset=["value"])}

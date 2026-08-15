@@ -261,6 +261,12 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
                         ),
                         primary=True,
                     ),
+                    ProtocolFigureSpec(
+                        id="custom_pair",
+                        kind="qc",
+                        summary="Protocol-level fallback for the custom pair.",
+                        primary=False,
+                    ),
                 ),
             )
         ]
@@ -294,7 +300,7 @@ def test_plot_files_persist_protocol_figure_descriptions_and_exports_keep_plugin
     )
     assert latest["export:export_dummy"].description == "Test export plugin."
     custom_record = latest["plot:custom_pair"]
-    assert custom_record.description == "Render two test plot files."
+    assert custom_record.description == "Protocol-level fallback for the custom pair."
     custom_paths = {path.name: path for path in custom_record.files}
     assert custom_record.description_for(custom_paths["custom_kinetics.pdf"]) == ("Reporter kinetics over assay time.")
     assert custom_record.description_for(custom_paths["custom_summary.pdf"]) == ("Endpoint summary by treatment.")

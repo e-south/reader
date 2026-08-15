@@ -47,6 +47,10 @@ class FourStateEventWindowTransform(Plugin):
             ),
             "traces": dataframe_output("traces", "plate_reader.four_state_event_window.traces.v3"),
             "events": dataframe_output("events", "plate_reader.four_state_event_window.events.v2"),
+            "dispositions": dataframe_output(
+                "dispositions",
+                "plate_reader.four_state_event_window.dispositions.v1",
+            ),
         }
 
     def run(self, ctx, inputs, cfg):
@@ -57,6 +61,7 @@ class FourStateEventWindowTransform(Plugin):
         experiment_ids = tuple(item.ref.experiment_id for item in response)
         if len(set(experiment_ids)) != len(experiment_ids):
             raise ValueError("four-state event-window source experiments must be unique")
+        spec.source.require_known_experiment_ids(experiment_ids)
         for label, collection in (("magnitude", magnitude), ("trajectory", trajectory)):
             observed = tuple(item.ref.experiment_id for item in collection)
             if observed != experiment_ids:
@@ -81,7 +86,7 @@ class FourStateEventWindowTransform(Plugin):
                 event_spec=spec.event,
             )
             materialized.append(materialize_experiment(source, request=spec))
-        names = ("wells", "designs", "descriptive_resampling_draws", "traces", "events")
+        names = ("wells", "designs", "descriptive_resampling_draws", "traces", "events", "dispositions")
         return {
             name: pd.concat([frames[index] for frames in materialized], ignore_index=True)
             for index, name in enumerate(names)

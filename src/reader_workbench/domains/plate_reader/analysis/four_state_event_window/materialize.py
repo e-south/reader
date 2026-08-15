@@ -6,6 +6,7 @@ import pandas as pd
 
 from .aggregation import build_design_records
 from .contracts import FourStateEventWindowAnalysisSpec, ReductionSpec
+from .disposition_records import disposition_frame, partition_reduction_wells
 from .observation_resampling import descriptive_resampling_records
 from .reduction import (
     combine_bound_kinds,
@@ -13,19 +14,34 @@ from .reduction import (
     invert_bound_kind,
     reduce_temporal_trace,
 )
-from .sources import ExperimentSource
+from .sources import ExperimentSource, event_record
+from .well_exclusion_validation import require_well_exclusion_support_failure
 
 
 def materialize_experiment(
     source: ExperimentSource,
     *,
     request: FourStateEventWindowAnalysisSpec,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Build midpoint well/design records plus event-bound sensitivity."""
 
+    require_well_exclusion_support_failure(
+        source.well_exclusions,
+        reductions={item.id: item for item in request.reductions},
+        quality=request.quality,
+        response=source.response,
+        magnitude=source.magnitude,
+        event_estimates_h=(
+            source.event.interval_start_assay_h,
+            source.event.estimate_assay_h,
+            source.event.interval_end_assay_h,
+        ),
+        experiment_id=source.experiment_id,
+    )
     well_frames: list[pd.DataFrame] = []
     design_frames: list[pd.DataFrame] = []
     draw_frames: list[pd.DataFrame] = []
+    disposition_records: list[dict[str, object]] = []
     for reduction in request.reductions:
         midpoint = _reduce_wells(
             source,
@@ -45,18 +61,31 @@ def materialize_experiment(
             reduction=reduction,
             event_estimate_h=source.event.interval_end_assay_h,
         )
+        eligible_midpoint, eligible_lower, eligible_upper, reduction_dispositions = partition_reduction_wells(
+            midpoint,
+            lower,
+            upper,
+            exclusions=request.source.well_exclusions,
+            dispositions=request.source.design_dispositions,
+            experiment_id=source.experiment_id,
+            reduction_id=reduction.id,
+            reference_design_id=request.source.reference_design_id,
+            available_design_ids=set(source.response["design_id"].astype(str)),
+            required_count=request.quality.min_observations_per_state,
+        )
         well_frames.append(midpoint)
-        draw_frames.append(descriptive_resampling_records(midpoint, request=request))
+        draw_frames.append(descriptive_resampling_records(eligible_midpoint, request=request))
         design_frames.append(
             build_design_records(
-                midpoint,
-                lower=lower,
-                upper=upper,
+                eligible_midpoint,
+                lower=eligible_lower,
+                upper=eligible_upper,
                 source=source,
                 request=request,
                 reduction=reduction,
             )
         )
+        disposition_records.extend(reduction_dispositions)
 
     wells = pd.concat(well_frames, ignore_index=True)
     designs = pd.concat(design_frames, ignore_index=True)
@@ -71,23 +100,7 @@ def materialize_experiment(
     if draws.duplicated(subset=draw_key).any():
         raise ValueError(f"{source.experiment_id}: descriptive-resampling draw identity is not unique.")
     traces = _trace_record(source, request=request)
-    events = pd.DataFrame.from_records(
-        [
-            {
-                "experiment_id": source.event.experiment_id,
-                "event_id": source.event.event_id,
-                "event_kind": source.event.event_kind,
-                "event_interval_start_assay_h": source.event.interval_start_assay_h,
-                "event_interval_end_assay_h": source.event.interval_end_assay_h,
-                "event_time_estimate_assay_h": source.event.estimate_assay_h,
-                "event_time_estimate_method": source.event.estimate_method,
-                "event_time_uncertainty_h": source.event.uncertainty_h,
-                "post_event_coverage_h": source.event.post_event_coverage_h,
-                "declaration": source.event.declaration,
-            }
-        ]
-    )
-    return wells, designs, draws, traces, events
+    return wells, designs, draws, traces, event_record(source.event), disposition_frame(disposition_records)
 
 
 def _reduce_wells(
@@ -144,9 +157,16 @@ def _summaries_by_trace(
     pre_window_end_h: float | None,
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
+    excluded = {
+        (item.design_id, item.state, item.position)
+        for item in request.source.well_exclusions
+        if item.experiment_id == source_experiment_id(frame) and item.reduction_id == reduction.id
+    }
     for (design_id, state, position), trace in frame.groupby(
         ["design_id", "state", "position"], sort=True, dropna=False
     ):
+        if (str(design_id), str(state), str(position)) in excluded:
+            continue
         trace_id = f"{frame['experiment_id'].iloc[0]}:{signal_kind}:{design_id}:{state}:{position}:{reduction.id}"
         post = reduce_temporal_trace(
             trace["time"].to_numpy(dtype=float),
@@ -212,6 +232,10 @@ def _summaries_by_trace(
     if result.empty:
         raise ValueError(f"{signal_kind} reduction produced no well records.")
     return result
+
+
+def source_experiment_id(frame: pd.DataFrame) -> str:
+    return str(frame["experiment_id"].iloc[0])
 
 
 def _trace_record(source: ExperimentSource, *, request: FourStateEventWindowAnalysisSpec) -> pd.DataFrame:

@@ -11,6 +11,7 @@ from reader_workbench.domains.time_series import (
 from reader_workbench.errors import ConfigError
 from reader_workbench.protocols.model import CompiledProtocolPlan
 from reader_workbench.protocols.semantic_coverage import (
+    _plate_reader_growth_semantic_program,
     _plate_reader_semantic_program,
     _plate_reader_single_reporter_semantic_program,
 )
@@ -31,7 +32,11 @@ from .common import (
     _input_mapping,
     _step,
 )
-from .plate_reader_pipeline import compose_dual_reporter_pipeline, compose_single_reporter_pipeline
+from .plate_reader_pipeline import (
+    compose_dual_reporter_pipeline,
+    compose_growth_pipeline,
+    compose_single_reporter_pipeline,
+)
 
 PLATE_READER_EXPORT_OUTPUTS = {"crosstalk_pairs_table"}
 
@@ -47,7 +52,7 @@ def compile_plate_reader_four_state_event_window(protocol: Any):
     resource_ids = {name: tuple(effective_inputs.get(name, ())) for name in input_names}
     writes = {
         name: RecordOutputDecl(record_id=f"four_state_event_window/{name}")
-        for name in ("wells", "designs", "descriptive_resampling_draws", "traces", "events")
+        for name in ("wells", "designs", "descriptive_resampling_draws", "traces", "events", "dispositions")
     }
     pipeline = (
         _step(
@@ -310,6 +315,44 @@ def compile_plate_reader_single_reporter_screen(protocol: Any):
     )
 
 
+def compile_plate_reader_growth_screen(protocol: Any):
+    """Compile one configured growth channel without inventing reporter semantics."""
+
+    analysis = _analysis_options(protocol)
+    growth_channel = _analysis_channel(analysis, key="growth_channel", default="OD600")
+    preprocessing = _analysis_mapping(analysis, key="preprocessing")
+    blank_cfg = _analysis_mapping(preprocessing, key="blank")
+    overflow_cfg = {"action": "none", **_analysis_mapping(preprocessing, key="overflow")}
+    ingest_channels = _configured_ingest_channels(protocol, required=(growth_channel,))
+    pipeline = compose_growth_pipeline(
+        ingest_channels=ingest_channels,
+        growth_channel=growth_channel,
+        blank_config=blank_cfg,
+        overflow_config=overflow_cfg,
+    )
+    selected_plots = protocol.select_plot_outputs(allowed=_plate_reader_growth_plot_output_ids())
+    plots = tuple(
+        _plate_reader_growth_plot_output(
+            protocol,
+            output_id=output_id,
+            growth_channel=growth_channel,
+        )
+        for output_id in selected_plots
+    )
+    selected_exports = protocol.select_export_outputs(defaults=(), allowed=set())
+    if selected_exports:
+        raise ConfigError("plate_reader/growth_screen does not currently compile export artifacts.")
+    return CompiledProtocolPlan(
+        pipeline=pipeline,
+        plots=plots,
+        exports=(),
+        semantic_program=_plate_reader_growth_semantic_program(
+            protocol,
+            growth_channel=growth_channel,
+        ),
+    )
+
+
 def _configured_ingest_channels(protocol: Any, *, required: tuple[str, ...]) -> list[str]:
     ingest = _input_mapping(protocol, key="ingest")
     configured = ingest.get("channels")
@@ -403,6 +446,16 @@ def _plate_reader_single_reporter_plot_output_ids() -> set[str]:
     }
 
 
+def _plate_reader_growth_plot_output_ids() -> set[str]:
+    return {
+        "raw_kinetics",
+        "endpoint_by_condition",
+        "endpoint_by_design",
+        "growth_overview",
+        "value_distributions",
+    }
+
+
 def _plate_reader_fold_change_step(*, measurement: str) -> PluginStepDecl:
     if measurement != "yfp_cfp":
         raise ConfigError(f"Unsupported fold-change measurement {measurement!r}")
@@ -422,7 +475,7 @@ def _plate_reader_single_reporter_fold_change_step(
     return _step(
         id="fold_change__single_reporter",
         plugin="transform/fold_change",
-        reads={"df": RecordInputDecl(record_id="ratio_reporter_normalizer/df")},
+        reads={"df": RecordInputDecl(record_id="sample_measurements/df")},
         with_={
             "target": _single_reporter_ratio_label(
                 reporter_channel=reporter_channel, normalizer_channel=normalizer_channel
@@ -749,6 +802,83 @@ def _plate_reader_single_reporter_plot_output(
             with_=_deep_merge(defaults, settings),
         )
     raise ConfigError(f"Unknown single-reporter plot output {output_id!r}")
+
+
+def _plate_reader_growth_plot_output(
+    protocol: Any,
+    *,
+    output_id: str,
+    growth_channel: str,
+) -> PluginStepDecl:
+    settings = protocol.plot_view_config(figure_id=output_id)
+    reads = {
+        "df": RecordInputDecl(record_id="overflow/df"),
+        "blanks": RecordInputDecl(record_id="blank/blanks"),
+    }
+    if output_id == "raw_kinetics":
+        defaults = {
+            "partition": {"by": "design_id"},
+            "hue": "treatment",
+            "y": [growth_channel],
+            "add_sheet_line": True,
+        }
+        return _step(
+            id=output_id,
+            plugin="plot/time_series",
+            reads={"df": reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_condition":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
+        defaults = {
+            "x": "treatment",
+            "y": growth_channel,
+            "partition": {"by": "design_id"},
+        }
+        return _step(
+            id=output_id,
+            plugin="plot/snapshot_barplot",
+            reads={"df": reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "endpoint_by_design":
+        _require_plot_time(settings=settings, output_id=output_id, key="time")
+        defaults = {
+            "x": "design_id",
+            "y": growth_channel,
+            "hue": "treatment",
+        }
+        return _step(
+            id=output_id,
+            plugin="plot/snapshot_barplot",
+            reads={"df": reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "growth_overview":
+        _require_plot_time(settings=settings, output_id=output_id, key="snap_time")
+        defaults = {
+            "partition": {"by": "design_id"},
+            "ts_channel": growth_channel,
+            "ts_hue": "treatment",
+            "ts_add_sheet_line": True,
+            "ts_mark_snap_time": True,
+            "snap_channel": growth_channel,
+        }
+        return _step(
+            id=output_id,
+            plugin="plot/ts_and_snap",
+            reads={"df": reads["df"]},
+            with_=_deep_merge(defaults, settings),
+        )
+    if output_id == "value_distributions":
+        defaults = {"channels": [growth_channel], "partition": {"by": "design_id"}}
+        return _step(
+            id=output_id,
+            plugin="plot/distributions",
+            reads=reads,
+            with_=_deep_merge(defaults, settings),
+        )
+    raise ConfigError(f"Unknown growth-screen plot output {output_id!r}")
 
 
 def _single_reporter_diagnostic_policy(protocol: Any) -> tuple[dict[str, object], dict[str, str]]:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ._kinetic import tidy_kinetic_blocks
@@ -98,8 +100,12 @@ def _finalize_measurements(
     missing_message: str,
     time_round_decimals: int | None,
     time_step_h: float | None,
+    time_offset_h: float,
     filter_to_channels: bool,
 ) -> pd.DataFrame:
+    require(not isinstance(time_offset_h, (bool, np.bool_)), "time_offset_h must not be a boolean")
+    require(math.isfinite(time_offset_h), "time_offset_h must be finite")
+    require(time_offset_h >= 0.0, "time_offset_h must be greater than or equal to 0")
     result = frame
     if filter_to_channels and channels:
         result = result[result["channel"].isin(channels)].reset_index(drop=True)
@@ -108,6 +114,19 @@ def _finalize_measurements(
         result["time"],
         time_round_decimals=time_round_decimals,
         time_step_h=time_step_h,
+    )
+    with np.errstate(over="ignore", invalid="ignore"):
+        result["time"] = result["time"] + float(time_offset_h)
+    require(
+        result["time"].map(math.isfinite).all(),
+        "time values must remain finite after applying time_offset_h",
+    )
+    if time_round_decimals is not None:
+        with np.errstate(over="ignore", invalid="ignore"):
+            result["time"] = result["time"].round(int(time_round_decimals))
+    require(
+        result["time"].map(math.isfinite).all(),
+        "time values must remain finite after applying time_offset_h",
     )
     result["value"] = pd.to_numeric(result["value"], errors="raise")
     require(result["time"].ge(0).all(), "Internal error: negative time encountered after alignment")
@@ -130,6 +149,7 @@ def parse_snapshot_and_timeseries(
     sheet_names: Sequence[str] | None = None,
     time_round_decimals: int | None = 12,
     time_step_h: float | None = None,
+    time_offset_h: float = 0.0,
     include_snapshot: bool = True,
     include_kinetic: bool = True,
 ) -> pd.DataFrame:
@@ -138,6 +158,7 @@ def parse_snapshot_and_timeseries(
     ensure_excel_path(workbook)
     channel_map_ci = normalize_channel_map(channel_map)
     require(channels or channel_map_ci, "Provide either 'channels' or 'channel_map'")
+    expected_channels = set(channels or channel_map_ci.values())
 
     frames: list[pd.DataFrame] = []
     map_free_raw_by_channel: dict[str, tuple[str, str, str]] = {}
@@ -185,7 +206,6 @@ def parse_snapshot_and_timeseries(
     require(frames, f"No parsable data found in {workbook.name}")
     result = pd.concat(frames, ignore_index=True)
 
-    expected_channels = set(channels or channel_map_ci.values())
     requested_sources = {
         source for source, requested in (("snapshot", include_snapshot), ("kinetic", include_kinetic)) if requested
     }
@@ -214,6 +234,7 @@ def parse_snapshot_and_timeseries(
         missing_message="Missing data for channels",
         time_round_decimals=time_round_decimals,
         time_step_h=time_step_h,
+        time_offset_h=time_offset_h,
         filter_to_channels=True,
     )
 
@@ -226,6 +247,7 @@ def parse_kinetic_only(
     sheet_names: Sequence[str] | None = None,
     time_round_decimals: int | None = 12,
     time_step_h: float | None = None,
+    time_offset_h: float = 0.0,
 ) -> pd.DataFrame:
     """Parse kinetic blocks from one Synergy H1 workbook."""
     workbook = Path(path)
@@ -268,5 +290,6 @@ def parse_kinetic_only(
         missing_message="Kinetic data missing for channels",
         time_round_decimals=time_round_decimals,
         time_step_h=time_step_h,
+        time_offset_h=time_offset_h,
         filter_to_channels=False,
     )

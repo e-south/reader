@@ -27,6 +27,7 @@ def test_builtin_contract_catalog_is_explicit_and_stable() -> None:
         "plate_reader.four_state_event_window.descriptive_resampling_draws.v3",
         "plate_reader.four_state_event_window.traces.v3",
         "plate_reader.four_state_event_window.events.v2",
+        "plate_reader.four_state_event_window.dispositions.v1",
         "fold_change.v1",
         "logic.four_state_vector.v1",
         "logic.four_state_vector_collection.v1",

@@ -252,6 +252,50 @@ def test_descriptive_resampling_handles_observed_rows_without_inferential_claims
     assert contrast_lower <= contrast_upper
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.asarray([1.0, np.inf, 3.0]),
+        np.asarray([np.inf, np.inf]),
+    ],
+    ids=["partially-censored", "fully-censored"],
+)
+def test_descriptive_resampling_omits_censored_groups_instead_of_reporting_an_exact_mean(
+    values: np.ndarray,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="reader"):
+        summary = descriptive_mean_resampling_interval(
+            values,
+            interval_mass=0.9,
+            resamples=20,
+            rng=np.random.default_rng(0),
+        )
+
+    assert np.isnan(summary).all()
+    assert "omitted censored summary" in caplog.text
+    assert f"{int((~np.isfinite(values)).sum())} non-finite" in caplog.text
+    assert f"{values.size} observed" in caplog.text
+
+
+def test_descriptive_linear_resampling_omits_a_contrast_with_a_censored_group(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="reader"):
+        summary = descriptive_linear_resampling_interval(
+            [np.asarray([1.0, np.inf]), np.asarray([0.5, 0.75])],
+            coefficients=[1.0, -1.0],
+            interval_mass=0.9,
+            resamples=20,
+            rng=np.random.default_rng(0),
+        )
+
+    assert np.isnan(summary).all()
+    assert "omitted censored summary" in caplog.text
+    assert "1 non-finite" in caplog.text
+    assert "2 observed" in caplog.text
+
+
 def test_descriptive_linear_resampling_validates_shape_and_draw_count() -> None:
     kwargs = {
         "interval_mass": 0.9,

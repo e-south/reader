@@ -9,6 +9,7 @@ from reader_workbench.workbench.input_discovery import (
     DEFAULT_WORKBOOK_INCLUDE as DEFAULT_INCLUDE,
 )
 
+from ._builtins_plate_reader_growth import build_plate_reader_growth_protocol
 from ._builtins_plate_reader_variants import build_plate_reader_variant_protocol
 from .compiler import (
     compile_cytometry_flow_panel,
@@ -295,6 +296,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                     ),
                     _field("time_step_h", "Override time-step spacing in hours.", kind="number", allow_none=True),
                     _field(
+                        "time_offset_h",
+                        "Hours added to parsed measurement times when assay age is known outside the workbook.",
+                        kind="number",
+                        default=0.0,
+                    ),
+                    _field(
                         "auto_roots",
                         "Directories to scan for workbook auto-discovery.",
                         kind="string_list",
@@ -351,6 +358,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "Grouping columns for comparison baselines.",
                         kind="string_list",
                         default=["design_id"],
+                    ),
+                    _field(
+                        "expected_treatments",
+                        "Optional complete treatment set required in every fold-change cohort.",
+                        kind="string_list",
+                        default=[],
                     ),
                     _field(
                         "use_global_baseline",
@@ -699,6 +712,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
+                        "time_offset_h": binding_value("ingest.time_offset_h", 0.0),
                         "auto_roots": binding_value("ingest.auto_roots", None),
                         "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
@@ -717,6 +731,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "observation_stat": binding_value("fold_change.observation_stat", "median"),
                         "treatment_column": binding_value("fold_change.treatment_column", "treatment"),
                         "group_by": binding_value("fold_change.group_by", ["design_id"]),
+                        "expected_treatments": binding_value("fold_change.expected_treatments", []),
                         "use_global_baseline": binding_value("fold_change.use_global_baseline", False),
                         "global_baseline_value": binding_value("fold_change.global_baseline_value", None),
                         "overrides": binding_value("fold_change.overrides", []),
@@ -787,6 +802,12 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         default=12,
                     ),
                     _field("time_step_h", "Override time-step spacing in hours.", kind="number", allow_none=True),
+                    _field(
+                        "time_offset_h",
+                        "Hours added to parsed measurement times when assay age is known outside the workbook.",
+                        kind="number",
+                        default=0.0,
+                    ),
                     _field(
                         "auto_roots",
                         "Directories to scan for workbook auto-discovery.",
@@ -1200,6 +1221,7 @@ BUILTIN_PROTOCOLS: tuple[ProtocolDescriptor, ...] = (
                         "sheet_names": binding_value("ingest.sheet_names", None),
                         "time_round_decimals": binding_value("ingest.time_round_decimals", 12),
                         "time_step_h": binding_value("ingest.time_step_h", None),
+                        "time_offset_h": binding_value("ingest.time_offset_h", 0.0),
                         "auto_roots": binding_value("ingest.auto_roots", None),
                         "auto_include": binding_value("ingest.auto_include", list(DEFAULT_INCLUDE)),
                         "auto_exclude": binding_value("ingest.auto_exclude", list(DEFAULT_EXCLUDE)),
@@ -1612,11 +1634,16 @@ _PLATE_READER_SINGLE_REPORTER_PROTOCOL = build_plate_reader_variant_protocol(
     dual_reporter_protocol=_DUAL_REPORTER_PROTOCOL,
     field_builder=_field,
 )
+_PLATE_READER_GROWTH_PROTOCOL = build_plate_reader_growth_protocol(
+    dual_reporter_protocol=_DUAL_REPORTER_PROTOCOL,
+    field_builder=_field,
+)
 
 BUILTIN_PROTOCOLS = (
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "workbench/generic"),
     _DUAL_REPORTER_PROTOCOL,
     _PLATE_READER_SINGLE_REPORTER_PROTOCOL,
+    _PLATE_READER_GROWTH_PROTOCOL,
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "plate_reader/four_state_event_window"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_screen"),
     next(item for item in BUILTIN_PROTOCOLS if item.protocol == "logic/four_state_vector_collection"),

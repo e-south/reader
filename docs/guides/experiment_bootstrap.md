@@ -59,6 +59,7 @@ Then narrow to the assay family you need:
 ```bash
 uv run reader ls --root experiments --details --protocol plate_reader/single_reporter_screen
 uv run reader ls --root experiments --details --protocol plate_reader/dual_reporter_screen
+uv run reader ls --root experiments --details --protocol plate_reader/growth_screen
 uv run reader protocols <protocol-id>
 uv run reader protocols <protocol-id> --example-config
 ```
@@ -132,6 +133,12 @@ every mapped channel must occur in both snapshot and kinetic data; one source
 cannot hide missing measurements in the other. Auto-discovery accepts one
 modern `.xlsx` workbook by default. Use `auto_pick: latest` only when selecting
 the newest file is an intentional experiment policy.
+
+Synergy snapshots are acquisition-relative at time 0 unless the workbook
+contains a time axis. Set `protocol.inputs.ingest.time_offset_h` only when a
+separate, cited source establishes elapsed assay age. A filename, an old output
+name, or a customary endpoint is not sufficient authority for an offset. The
+offset must be a non-negative finite number; boolean values are rejected.
 
 ## 5. Build metadata deliberately
 

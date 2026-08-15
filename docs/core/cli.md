@@ -148,7 +148,9 @@ uv run reader init ./experiments/my_experiment --protocol <protocol-id>
 
 Use `plate_reader/dual_reporter_screen` for dual-reporter panels. Use
 `plate_reader/single_reporter_screen` for one reporter normalized to a
-configured denominator. Choose `logic/four_state_vector_screen` only when the experiment
+configured denominator. Use `plate_reader/growth_screen` for one measured
+growth channel with explicit sample and treatment metadata. Choose
+`logic/four_state_vector_screen` only when the experiment
 declares an ordered four-state measurement contract.
 
 Inspect one experiment end to end:

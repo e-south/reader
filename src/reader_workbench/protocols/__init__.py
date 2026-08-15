@@ -4,6 +4,7 @@ from .compiler import (
     compile_generic_protocol,
     compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
+    compile_plate_reader_growth_screen,
     compile_plate_reader_single_reporter_screen,
 )
 from .model import (
@@ -74,5 +75,6 @@ __all__ = [
     "compile_generic_protocol",
     "compile_logic_four_state_vector_screen",
     "compile_plate_reader_dual_reporter_screen",
+    "compile_plate_reader_growth_screen",
     "compile_plate_reader_single_reporter_screen",
 ]
