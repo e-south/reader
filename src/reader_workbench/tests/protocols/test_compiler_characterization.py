@@ -51,7 +51,7 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("ingest", "merge_map", "labels", "blank", "overflow", "sample_measurements"),
         "plots": ("raw_kinetics", "value_distributions"),
         "exports": (),
-        "sha256": "dc586e748b20d5db9fbff8e9808eade66fbb349a03d9fe8d6ae618b873b69821",  # pragma: allowlist secret
+        "sha256": "6111ec78b26b9a00e35f349a51fbeb904926d7f0f48ac40a06e747da4788eed6",  # pragma: allowlist secret
     },
     "logic/four_state_vector_screen": {
         "pipeline": (
@@ -144,6 +144,39 @@ def test_growth_protocol_preserves_measurements_by_default() -> None:
     overflow = next(step for step in plan.pipeline if step.id == "overflow")
 
     assert overflow.with_["action"] == "none"
+
+
+def test_growth_plots_read_validated_sample_measurements() -> None:
+    plan = (
+        builtin_runtime()
+        .bind_protocol(
+            ProtocolBinding(
+                id="plate_reader/growth_screen",
+                outputs={
+                    "plots": {
+                        "profile": "none",
+                        "include": [
+                            "raw_kinetics",
+                            "endpoint_by_condition",
+                            "endpoint_by_design",
+                            "growth_overview",
+                            "value_distributions",
+                        ],
+                        "views": {
+                            "endpoint_by_condition": {"time": 14.0},
+                            "endpoint_by_design": {"time": 14.0},
+                            "growth_overview": {"snap_time": 14.0},
+                        },
+                    }
+                },
+            )
+        )
+        .compile()
+    )
+
+    assert {plot.reads["df"].record_id for plot in plan.plots} == {"sample_measurements/df"}
+    distributions = next(plot for plot in plan.plots if plot.id == "value_distributions")
+    assert distributions.reads["blanks"].record_id == "blank/blanks"
 
 
 def test_growth_protocol_allows_explicit_quantile_clipping() -> None:
