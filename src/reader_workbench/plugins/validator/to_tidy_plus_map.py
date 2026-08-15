@@ -16,6 +16,7 @@ class PromoteCfg(PluginConfig):
     require_non_null: bool = True  # be strict when promoting
     trim_and_require_non_blank: list[str] = Field(default_factory=list)
     require_finite: list[str] = Field(default_factory=list)
+    allow_instrument_overflow: list[str] = Field(default_factory=list)
     # Only promote a subset of rows (e.g., samples). If provided, we require the column to exist.
     type_column: str = "type"
     include_types: list[str] = Field(default_factory=list)  # e.g., ["SAMPLE"]
@@ -90,12 +91,19 @@ class PromoteToTidyPlusMap(Plugin):
         missing = [c for c in cfg.require_columns if c not in df.columns]
         if missing:
             raise ExecutionError(f"Cannot promote to plate_reader.annotated.v1; missing columns: {missing}")
-        validation_columns = set(cfg.trim_and_require_non_blank) | set(cfg.require_finite)
+        validation_columns = (
+            set(cfg.trim_and_require_non_blank) | set(cfg.require_finite) | set(cfg.allow_instrument_overflow)
+        )
         missing_validation = sorted(validation_columns - set(df.columns))
         if missing_validation:
             raise ExecutionError(
                 "Cannot promote to plate_reader.annotated.v1; configured validation refers to "
                 f"missing columns: {missing_validation}"
+            )
+        unvalidated_overflow = sorted(set(cfg.allow_instrument_overflow) - set(cfg.require_finite))
+        if unvalidated_overflow:
+            raise ExecutionError(
+                f"Cannot promote; allow_instrument_overflow must name columns in require_finite: {unvalidated_overflow}"
             )
         if cfg.require_non_null:
             bad = {c: int(df[c].isna().sum()) for c in cfg.require_columns if df[c].isna().any()}
@@ -113,7 +121,28 @@ class PromoteToTidyPlusMap(Plugin):
         nonfinite: dict[str, int] = {}
         for column in cfg.require_finite:
             numeric = pd.to_numeric(df[column], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
-            invalid_count = int((~np.isfinite(numeric)).sum())
+            invalid = ~np.isfinite(numeric)
+            if column in cfg.allow_instrument_overflow:
+                overflow_column = f"{column}_instrument_overflow"
+                bound_column = f"{column}_bound_kind"
+                missing_provenance = [name for name in (overflow_column, bound_column) if name not in df.columns]
+                if missing_provenance:
+                    raise ExecutionError(
+                        "Cannot promote; instrument-overflow validation requires provenance columns: "
+                        f"{missing_provenance}"
+                    )
+                raw_flags = df[overflow_column]
+                if raw_flags.isna().any() or not raw_flags.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+                    raise ExecutionError(
+                        f"Cannot promote; {overflow_column!r} must contain booleans without missing values"
+                    )
+                declared_overflow = (
+                    np.isposinf(numeric)
+                    & raw_flags.to_numpy(dtype=bool)
+                    & df[bound_column].astype("string").eq("lower").to_numpy(dtype=bool)
+                )
+                invalid &= ~declared_overflow
+            invalid_count = int(invalid.sum())
             if invalid_count:
                 nonfinite[column] = invalid_count
         if nonfinite:

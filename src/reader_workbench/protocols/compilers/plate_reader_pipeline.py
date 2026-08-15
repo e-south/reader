@@ -143,6 +143,7 @@ def compose_growth_pipeline(
                 "require_non_null": True,
                 "trim_and_require_non_blank": ["treatment", "design_id"],
                 "require_finite": ["time", "value"],
+                "allow_instrument_overflow": ["value"],
             },
             writes={"df": RecordOutputDecl(record_id="sample_measurements/df")},
             source_recipe=GROWTH_BASE_RECIPE_ID,

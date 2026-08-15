@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pandas as pd
+
+from reader_workbench.plugins.transform.overflow import OverflowCfg, OverflowHandling
+from reader_workbench.plugins.validator.to_tidy_plus_map import PromoteCfg, PromoteToTidyPlusMap
 from reader_workbench.protocols.compilers.plate_reader_pipeline import (
     DUAL_REPORTER_BASE_RECIPE_ID,
     GROWTH_BASE_RECIPE_ID,
@@ -103,3 +109,42 @@ def test_growth_pipeline_preserves_one_channel_without_reporter_semantics() -> N
     assert all(
         step.source_recipe is not None and step.source_recipe.with_ == {"growth_channel": "OD700"} for step in steps[1:]
     )
+
+
+def test_growth_pipeline_promotes_classified_instrument_overflow() -> None:
+    steps = compose_growth_pipeline(
+        ingest_channels=["OD700"],
+        growth_channel="OD700",
+        blank_config={},
+        overflow_config={"action": "none"},
+    )
+    overflow = next(step for step in steps if step.id == "overflow")
+    promotion = next(step for step in steps if step.id == "sample_measurements")
+    frame = pd.DataFrame(
+        {
+            "position": ["A1"],
+            "time": [0.0],
+            "channel": ["OD700"],
+            "value": [float("inf")],
+            "type": ["SAMPLE"],
+            "treatment": ["condition-a"],
+            "design_id": ["design-a"],
+            "overflow": [False],
+        }
+    )
+    context = SimpleNamespace(logger=None)
+
+    classified = OverflowHandling().run(
+        context,
+        {"df": frame},
+        OverflowCfg.model_validate(overflow.with_),
+    )["df"]
+    promoted = PromoteToTidyPlusMap().run(
+        context,
+        {"df": classified},
+        PromoteCfg.model_validate(promotion.with_),
+    )["df"]
+
+    assert promoted["value"].tolist() == [float("inf")]
+    assert promoted["value_instrument_overflow"].tolist() == [True]
+    assert promoted["value_bound_kind"].tolist() == ["lower"]
