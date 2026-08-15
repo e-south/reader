@@ -62,6 +62,35 @@ def test_time_series_window_does_not_change_snapshot_endpoint() -> None:
     plt.close(figures[0].fig)
 
 
+def test_composite_time_series_withholds_finite_bounded_observations() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "A3"],
+            "time": [0.0, 0.0, 0.0],
+            "channel": ["OD600"] * 3,
+            "value": [1.0, 3.0, 101.0],
+            "treatment": ["control"] * 3,
+            "value_policy_clipped": [False, False, True],
+            "value_instrument_overflow": [False, False, False],
+            "value_bound_kind": ["exact", "exact", "lower"],
+        }
+    )
+
+    figures = plot_ts_and_snap(
+        df=frame,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        snap_x="treatment",
+        snap_channel="OD600",
+        snap_time=0.0,
+    )
+
+    assert figures[0].fig.axes[0].lines[0].get_ydata().tolist() == [2.0]
+    plt.close(figures[0].fig)
+
+
 def test_time_series_levels_follow_the_windowed_channel_rows() -> None:
     frame = pd.DataFrame(
         {
@@ -286,7 +315,8 @@ def test_composite_figure_describes_nonfinite_selected_panel_measurements() -> N
     )
 
     assert figures[0].description == (
-        "Selected panel measurements: 18 observed, 1 omitted as non-finite; affected time-series summaries were withheld."
+        "Selected panel measurements: 18 observed, 1 omitted as bounded or non-finite; "
+        "affected time-series summaries were withheld."
     )
     plt.close(figures[0].fig)
 

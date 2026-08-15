@@ -58,11 +58,45 @@ def plot_figure(
     return PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi, description=description)
 
 
-def nonfinite_value_counts(frame: pd.DataFrame, *, value_col: str = "value") -> tuple[int, int]:
-    """Return total and non-finite counts without modifying source rows."""
+def exact_observation_counts(frame: pd.DataFrame, *, value_col: str = "value") -> tuple[int, int]:
+    """Return total and bounded-or-non-finite counts without modifying source rows."""
 
+    exact = _exact_observation_mask(frame, value_col=value_col)
+    return len(frame), int((~exact).sum())
+
+
+def select_exact_observations(
+    frame: pd.DataFrame,
+    *,
+    where: str,
+    value_col: str = "value",
+) -> pd.DataFrame:
+    """Withhold observations that cannot support exact descriptive summaries."""
+
+    exact = _exact_observation_mask(frame, value_col=value_col)
+    omitted_count = int((~exact).sum())
+    if omitted_count:
+        logging.getLogger("reader").warning(
+            "%s: withheld %d bounded or non-finite observation(s)",
+            where,
+            omitted_count,
+        )
+    selected = frame.loc[exact].copy()
+    selected[value_col] = pd.to_numeric(selected[value_col], errors="coerce")
+    return selected
+
+
+def _exact_observation_mask(frame: pd.DataFrame, *, value_col: str) -> pd.Series:
     values = pd.to_numeric(frame[value_col], errors="coerce").to_numpy(dtype=float, copy=False)
-    return int(values.size), int((~np.isfinite(values)).sum())
+    exact = pd.Series(np.isfinite(values), index=frame.index)
+    bound_column = f"{value_col}_bound_kind"
+    if bound_column in frame.columns:
+        exact &= frame[bound_column].eq("exact")
+    for suffix in ("policy_clipped", "instrument_overflow"):
+        flag_column = f"{value_col}_{suffix}"
+        if flag_column in frame.columns:
+            exact &= frame[flag_column].eq(False)
+    return exact
 
 
 def descriptive_mean_resampling_interval(
@@ -302,10 +336,11 @@ __all__ = [
     "descriptive_linear_resampling_interval",
     "descriptive_mean_resampling_interval",
     "colors_for",
-    "nonfinite_value_counts",
+    "exact_observation_counts",
     "plot_figure",
     "pretty_name",
     "require_columns",
+    "select_exact_observations",
     "shared_numeric_limits",
     "warn_if_empty",
 ]

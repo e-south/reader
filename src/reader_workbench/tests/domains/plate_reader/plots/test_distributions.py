@@ -61,9 +61,12 @@ def test_distributions_filter_and_report_nonfinite_measurements(
     )
     frame = pd.DataFrame(
         {
-            "channel": ["signal"] * 4,
-            "value": [1.0, 2.0, 3.0, np.inf],
-            "design_id": ["design_a"] * 4,
+            "channel": ["signal"] * 5,
+            "value": [1.0, 2.0, 3.0, np.inf, 100.0],
+            "design_id": ["design_a"] * 5,
+            "value_policy_clipped": [False, False, False, False, True],
+            "value_instrument_overflow": [False, False, False, True, False],
+            "value_bound_kind": ["exact", "exact", "exact", "lower", "lower"],
         }
     )
 
@@ -72,11 +75,12 @@ def test_distributions_filter_and_report_nonfinite_measurements(
 
     assert len(figures) == 1
     assert figures[0].description == (
-        "Selected measurements: 4 observed, 1 omitted as non-finite; non-finite rows were omitted before density estimation."
+        "Selected measurements: 5 observed, 2 omitted as bounded or non-finite; "
+        "bounded or non-finite rows were omitted before density estimation."
     )
     assert len(observed) == 1
-    assert np.isfinite(observed[0]).all()
-    assert "distributions: omitted 1 non-finite measurement row" in caplog.text
+    assert observed[0].tolist() == [1.0, 2.0, 3.0]
+    assert "distributions: withheld 2 bounded or non-finite observation(s)" in caplog.text
     for figure in figures:
         plt.close(figure.fig)
 
@@ -96,7 +100,7 @@ def test_distributions_omit_and_report_fully_censored_measurements(
         figures = _plot(frame)
 
     assert figures == []
-    assert "distributions: omitted 3 non-finite measurement rows" in caplog.text
+    assert "distributions: withheld 3 bounded or non-finite observation(s)" in caplog.text
 
 
 def test_distribution_description_includes_selected_nonfinite_blank_rows(
@@ -129,7 +133,7 @@ def test_distribution_description_includes_selected_nonfinite_blank_rows(
     )
 
     assert figures[0].description == (
-        "Selected measurements: 4 observed, 1 omitted as non-finite; "
-        "non-finite rows were omitted before density estimation."
+        "Selected measurements: 4 observed, 1 omitted as bounded or non-finite; "
+        "bounded or non-finite rows were omitted before density estimation."
     )
     plt.close(figures[0].fig)

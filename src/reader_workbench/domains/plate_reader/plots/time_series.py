@@ -16,7 +16,7 @@ from ..ordering import order_levels
 from .common import (
     alias_column,
     best_subplot_grid,
-    nonfinite_value_counts,
+    exact_observation_counts,
     plot_figure,
     pretty_name,
     require_columns,
@@ -298,11 +298,12 @@ def plot_time_series(
                 group_tag = f"__{str(group_col)}={str(label)}"
             stub = (f"{filename}{group_tag}" if group_tag else filename) if filename else f"ts__{label}"
             selected = d[d["channel"].astype(str).isin([str(channel) for channel in y_feats])]
-            observed_count, nonfinite_count = nonfinite_value_counts(selected)
+            observed_count, omitted_count = exact_observation_counts(selected)
             description = None
-            if nonfinite_count:
+            if omitted_count:
                 description = (
-                    f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                    f"Selected measurements: {observed_count} observed, {omitted_count} "
+                    "omitted as bounded or non-finite; "
                     "affected time-series summaries were withheld."
                 )
             figures.append(

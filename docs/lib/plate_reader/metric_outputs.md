@@ -49,7 +49,10 @@ remains a consumer concern.
 `plate_reader/growth_screen` preserves one configured measurement channel and
 publishes annotated sample records. It does not manufacture a reporter ratio,
 MIC threshold, dose-response model, or study conclusion. Those analyses remain
-separate, explicitly selected consumers of the neutral growth record.
+separate, explicitly selected consumers of the neutral growth record. Plot
+summaries aggregate only exact finite observations; bounded, clipped, and
+overflow-flagged rows remain in the record and are reported as withheld from
+descriptive summaries.
 
 ## Dual-reporter triptych
 
