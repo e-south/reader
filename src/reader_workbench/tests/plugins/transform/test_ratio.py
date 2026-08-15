@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
@@ -96,6 +97,76 @@ def test_ratio_combines_numerator_and_denominator_observation_provenance(denomin
     assert derived["value_policy_clipped"].tolist() == [True, False]
     assert derived["value_instrument_overflow"].tolist() == [False, True]
     assert derived["value_bound_kind"].tolist() == ["lower", "upper"]
+
+
+def test_ratio_omits_nonfinite_operand_pairs_and_preserves_finite_bounds() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A1", "A2", "A2", "A3", "A3", "A4", "A4"],
+            "time": [0.0] * 8,
+            "channel": ["YFP", "CFP"] * 4,
+            "value": [float("inf"), 2.0, 10.0, float("inf"), 12.0, 3.0, 12.0, 3.0],
+            "overflow": [True, False, False, True, True, False, False, True],
+            "value_policy_clipped": [False] * 8,
+            "value_instrument_overflow": [True, False, False, True, True, False, False, True],
+            "value_bound_kind": ["lower", "exact", "exact", "lower", "lower", "exact", "exact", "lower"],
+        }
+    )
+    logger = Mock()
+
+    result = RatioTransform().run(
+        SimpleNamespace(logger=logger),
+        {"df": frame},
+        RatioCfg(name="YFP/CFP", numerator="YFP", denominator="CFP"),
+    )["df"]
+
+    raw = result.loc[result["channel"].isin(["YFP", "CFP"])]
+    assert len(raw) == len(frame)
+    assert raw["value"].tolist() == frame["value"].tolist()
+
+    derived = result.loc[result["channel"].eq("YFP/CFP")].sort_values("position")
+    assert derived["position"].tolist() == ["A3", "A4"]
+    assert derived["value"].tolist() == pytest.approx([4.0, 4.0])
+    assert derived["value_bound_kind"].tolist() == ["lower", "upper"]
+    logger.warning.assert_called_once_with(
+        "[warn]ratio[/warn] • %s: omitted %d aligned pair(s) with non-finite operands",
+        "YFP/CFP",
+        2,
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "instrument_overflow", "bound_kind"),
+    [
+        (float("inf"), False, "exact"),
+        (float("inf"), False, "lower"),
+        (float("nan"), True, "lower"),
+        (float("-inf"), True, "lower"),
+    ],
+)
+def test_ratio_rejects_nonfinite_operands_without_instrument_lower_bound_provenance(
+    value: float,
+    instrument_overflow: bool,
+    bound_kind: str,
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A1"],
+            "time": [0.0, 0.0],
+            "channel": ["YFP", "CFP"],
+            "value": [value, 2.0],
+            "value_policy_clipped": [bound_kind != "exact" and not instrument_overflow, False],
+            "value_instrument_overflow": [instrument_overflow, False],
+            "value_bound_kind": [bound_kind, "exact"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="unexpected non-finite operand"):
+        RatioTransform().run(
+            _ctx(),
+            {"df": frame},
+            RatioCfg(name="YFP/CFP", numerator="YFP", denominator="CFP"),
+        )
 
 
 @pytest.mark.parametrize(

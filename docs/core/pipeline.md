@@ -205,6 +205,10 @@ Reader does not choose a scientific endpoint. The neutral plate-reader starter
 selects kinetics and QC views only. Enabling fold-change requires explicit
 `protocol.inputs.fold_change.report_times`; selecting an endpoint figure
 requires its `time` or `snap_time` under `protocol.outputs.plots.views`.
+When the complete condition set is known, declare it with
+`protocol.inputs.fold_change.expected_treatments`; fold-change then rejects any
+group/time cohort with missing or unexpected treatments instead of inferring
+completeness from observed rows.
 
 ## Plate-reader example
 
@@ -338,7 +342,11 @@ For plate-reader assays, the protocol boundary matters:
 
 - `plate_reader/dual_reporter_screen` owns CFP/YFP-style dual-reporter panels.
 - `plate_reader/single_reporter_screen` owns single-reporter panels such as RFP/OD600 screens.
+- `plate_reader/growth_screen` owns one-channel growth and dose-response measurements without inventing a reporter.
 - `logic/four_state_vector_screen` owns the ordered four-state vector measurement contract.
+
+The growth protocol preserves measured values and instrument overflow flags by
+default. Quantile or cap-based clipping requires an explicit overflow policy.
 
 ## Mental model
 

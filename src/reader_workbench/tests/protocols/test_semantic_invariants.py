@@ -31,6 +31,7 @@ def test_builtin_protocol_tuple_keeps_public_order_stable() -> None:
         "workbench/generic",
         "plate_reader/dual_reporter_screen",
         "plate_reader/single_reporter_screen",
+        "plate_reader/growth_screen",
         "plate_reader/four_state_event_window",
         "logic/four_state_vector_screen",
         "logic/four_state_vector_collection",

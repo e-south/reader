@@ -9,6 +9,53 @@ import pytest
 from reader_workbench.plugins.transform.overflow import OverflowCfg, OverflowHandling
 
 
+def test_overflow_default_preserves_measurements_and_instrument_flags() -> None:
+    frame = pd.DataFrame(
+        {
+            "channel": ["YFP", "YFP"],
+            "value": [10.0, 100.0],
+            "overflow": [False, True],
+        }
+    )
+
+    result = OverflowHandling().run(
+        SimpleNamespace(logger=None),
+        {"df": frame},
+        OverflowCfg(),
+    )["df"]
+
+    assert result["value"].tolist() == [10.0, 100.0]
+    assert result["overflow"].tolist() == [False, True]
+    assert result["value_policy_clipped"].tolist() == [False, False]
+    assert result["value_instrument_overflow"].tolist() == [False, True]
+    assert result["value_bound_kind"].tolist() == ["exact", "lower"]
+
+
+def test_overflow_none_classifies_positive_infinity_as_instrument_overflow() -> None:
+    frame = pd.DataFrame({"channel": ["YFP"], "value": [float("inf")], "overflow": [False]})
+
+    result = OverflowHandling().run(
+        SimpleNamespace(logger=None),
+        {"df": frame},
+        OverflowCfg(action="none"),
+    )["df"]
+
+    assert result["value_instrument_overflow"].tolist() == [True]
+    assert result["value_bound_kind"].tolist() == ["lower"]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("-inf")])
+def test_overflow_none_rejects_unexpected_nonfinite_values(value: float) -> None:
+    frame = pd.DataFrame({"channel": ["YFP"], "value": [value], "overflow": [True]})
+
+    with pytest.raises(ValueError, match="NaN or negative infinity"):
+        OverflowHandling().run(
+            SimpleNamespace(logger=None),
+            {"df": frame},
+            OverflowCfg(action="none"),
+        )
+
+
 def test_overflow_max_distinguishes_policy_clipping_from_instrument_overflow() -> None:
     frame = pd.DataFrame(
         {

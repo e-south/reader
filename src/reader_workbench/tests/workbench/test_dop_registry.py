@@ -67,6 +67,18 @@ def test_dop_classes_cli_filters_by_protocol() -> None:
     assert [item["id"] for item in payload["data_classes"]] == ["plate_reader_screen"]
 
 
+def test_dop_classes_cli_routes_growth_screens_through_the_plate_reader_class() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["dop", "classes", "--protocol", "plate_reader/growth_screen", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = cli_success_data(result.output)
+    assert [item["id"] for item in payload["data_classes"]] == ["plate_reader_screen"]
+
+
 def test_dop_ready_specs_cli_emits_json() -> None:
     runner = CliRunner()
     result = runner.invoke(cli.app, ["dop", "ready-specs", "--format", "json"])

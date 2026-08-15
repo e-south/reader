@@ -2,7 +2,7 @@
 doc_id: reader-plate-four-state-event-window
 surface: public-analysis-contract
 owner: reader-maintainers
-last_verified: 2026-08-01
+last_verified: 2026-08-15
 summary: Declared-event, four-state response summaries produced by the canonical record-backed experiment lifecycle.
 ---
 
@@ -39,7 +39,14 @@ quality thresholds. A normal run produces manifest-backed records for:
 - resolved event timing and event-relative coordinates;
 - well-level interpolation and reduction results;
 - within-experiment observation aggregation, descriptive resampling, and censor bounds; and
-- design summaries, traces, and event intervals.
+- design summaries, traces, event intervals, and scoped eligibility dispositions.
+
+Reader never removes a measured design to make a downstream vector valid. Raw
+traces remain in the trace record. An unsupported well may be omitted from one
+named reduction only when its failed support contract is recorded. If the
+remaining wells do not meet the declared state minimum, the design stays in the
+trace and well records while the disposition record explains why that plate and
+reduction do not publish a design summary.
 
 The standard summary plot and CSV export plugins consume those records. An
 optional focused diagnostic renders growth and response traces, magnitude
@@ -105,6 +112,8 @@ the assayed entity and condition; otherwise Reader leaves it unresolved. The
 public design record is `plate_reader.four_state_event_window.designs.v4`; the
 draw record is
 `plate_reader.four_state_event_window.descriptive_resampling_draws.v3`.
+Eligibility decisions are published as
+`plate_reader.four_state_event_window.dispositions.v1`.
 The design record keeps authored thresholds (`allowed_*`, `required_*`)
 separate from observed support (`min_*_count`, `max_observed_*`) so downstream
 checks cannot confuse a policy with a measurement.
@@ -118,7 +127,8 @@ into a downstream biological objective or campaign claim.
 Before output mutation, Reader rejects empty collections, missing or changed
 source records, incompatible dataframe contracts, and content-digest drift.
 The domain analysis then rejects misaligned experiment order, ambiguous state
-mappings, invalid event bounds or reductions, and insufficient trace support.
+mappings, invalid event bounds or reductions, unrecorded trace-support failures,
+and dispositions that are not justified by the same temporal reducer.
 It does not infer identity or semantics from experiment names.
 
 Open an experiment with `reader.open_experiment()` before using those public

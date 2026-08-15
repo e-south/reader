@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from reader_workbench.protocols.compilers.plate_reader_pipeline import (
     DUAL_REPORTER_BASE_RECIPE_ID,
+    GROWTH_BASE_RECIPE_ID,
     SINGLE_REPORTER_BASE_RECIPE_ID,
     SYNERGY_H1_INGEST_RECIPE_ID,
     compose_dual_reporter_pipeline,
+    compose_growth_pipeline,
     compose_single_reporter_pipeline,
 )
 
@@ -72,3 +74,32 @@ def test_single_reporter_pipeline_binds_channels_and_recipe_arguments() -> None:
     assert {step.source_recipe.recipe for step in steps[1:] if step.source_recipe is not None} == {
         SINGLE_REPORTER_BASE_RECIPE_ID
     }
+
+
+def test_growth_pipeline_preserves_one_channel_without_reporter_semantics() -> None:
+    steps = compose_growth_pipeline(
+        ingest_channels=["OD700"],
+        growth_channel="OD700",
+        blank_config={"stat": "median"},
+        overflow_config={"mode": "clip"},
+    )
+
+    assert [step.id for step in steps] == [
+        "ingest",
+        "merge_map",
+        "labels",
+        "blank",
+        "overflow",
+        "sample_measurements",
+    ]
+    assert steps[0].with_ == {"channels": ["OD700"]}
+    sample_measurements = steps[-1]
+    assert sample_measurements.plugin == "validator/to_tidy_plus_map"
+    assert sample_measurements.reads["df"].record_id == "overflow/df"
+    assert sample_measurements.writes["df"].record_id == "sample_measurements/df"
+    assert all(
+        step.source_recipe is not None and step.source_recipe.recipe == GROWTH_BASE_RECIPE_ID for step in steps[1:]
+    )
+    assert all(
+        step.source_recipe is not None and step.source_recipe.with_ == {"growth_channel": "OD700"} for step in steps[1:]
+    )

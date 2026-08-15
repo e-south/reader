@@ -25,6 +25,7 @@ class FoldChangeAnalysisSpec:
     observation_stat: Literal["median", "mean"] = "median"
     treatment_column: str = "treatment"
     group_by: tuple[str, ...] = ("design_id",)
+    expected_treatments: tuple[str, ...] = ()
     use_global_baseline: bool = False
     global_baseline_value: str | None = None
     overrides: tuple[Mapping[str, Any], ...] = ()
@@ -132,11 +133,38 @@ def compute_fold_change_table(
         raise ValueError("fold_change: none of the group_by columns are present in the dataframe")
 
     target = str(spec.target)
+    expected_treatments = tuple(str(value).strip() for value in spec.expected_treatments)
+    if any(not value for value in expected_treatments) or len(set(expected_treatments)) != len(expected_treatments):
+        raise ValueError("fold_change: expected_treatments must contain unique non-empty labels")
+    expected_treatment_set = set(expected_treatments)
     base = df[df["channel"].astype(str) == target].copy()
     if base.empty:
         if logger is not None:
             logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
         return build_empty_fold_change_table(group_cols=group_cols, spec=spec)
+
+    exact_finite = pd.Series(np.isfinite(base["value"]), index=base.index)
+    if "value_bound_kind" in base.columns:
+        exact_finite &= base["value_bound_kind"].eq("exact")
+    for flag_column in ("value_policy_clipped", "value_instrument_overflow"):
+        if flag_column in base.columns:
+            exact_finite &= base[flag_column].eq(False)
+    if not exact_finite.all():
+        raise ValueError(
+            "fold_change: requires exact finite values; "
+            f"found {int((~exact_finite).sum())} censored, bounded, or non-finite target observation(s)"
+        )
+
+    identity_mask = pd.Series(True, index=base.index)
+    for column in [*group_cols, treatment_col]:
+        values = base[column]
+        identity_mask &= values.notna() & ~values.astype(str).str.strip().str.casefold().isin({"", "nan", "none"})
+    incomplete_identity_rows = int((~identity_mask).sum())
+    if incomplete_identity_rows:
+        raise ValueError(
+            "fold_change: requires complete analytical identity for every target observation; "
+            f"found {incomplete_identity_rows} row(s) with missing group or treatment labels"
+        )
 
     out_rows: list[dict[str, Any]] = []
     nearest_keys: list[str] = [col for col in (group_cols + [treatment_col, "position"]) if col in base.columns]
@@ -154,6 +182,20 @@ def compute_fold_change_table(
                     target,
                 )
             continue
+
+        if expected_treatment_set:
+            for group_values, cohort in snapped.groupby(group_cols, dropna=False):
+                if not isinstance(group_values, tuple):
+                    group_values = (group_values,)
+                group_desc = " | ".join(f"{column}={group_values[index]}" for index, column in enumerate(group_cols))
+                observed_treatments = set(cohort[treatment_col].astype(str))
+                missing = sorted(expected_treatment_set - observed_treatments, key=smart_string_numeric_key)
+                unexpected = sorted(observed_treatments - expected_treatment_set, key=smart_string_numeric_key)
+                if missing or unexpected:
+                    raise ValueError(
+                        f"fold_change: incomplete treatment cohort at t≈{timepoint:g} h for {group_desc}; "
+                        f"missing={missing}, unexpected={unexpected}"
+                    )
 
         agg_extras = {}
         if "treatment" in snapped.columns:

@@ -15,11 +15,12 @@ BUILTIN_DATA_CLASSES: tuple[DataClassSpec, ...] = (
         protocol_candidates=(
             "plate_reader/dual_reporter_screen",
             "plate_reader/single_reporter_screen",
+            "plate_reader/growth_screen",
         ),
         minimum_capture=(
             "raw plate-reader workbook or export",
             "sample map with measured well coverage",
-            "channel labels and denominator/ratio meaning",
+            "channel labels and any denominator or derived-measurement meaning",
             "treatment and control semantics",
             "plate and well identifiers, plus any source-declared replicate and design identifiers",
         ),

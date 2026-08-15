@@ -13,7 +13,15 @@ from reader_workbench.plotting.sinks import PlotFigure
 from reader_workbench.plotting.style import PaletteBook, use_style
 
 from ..ordering import order_levels
-from .common import alias_column, best_subplot_grid, plot_figure, pretty_name, require_columns, warn_if_empty
+from .common import (
+    alias_column,
+    best_subplot_grid,
+    nonfinite_value_counts,
+    plot_figure,
+    pretty_name,
+    require_columns,
+    warn_if_empty,
+)
 from .grouping import GroupMatch, resolve_groups
 from .panels import draw_time_series_panel, marker_map_for_levels
 
@@ -289,5 +297,20 @@ def plot_time_series(
             if group_col and members != [None]:
                 group_tag = f"__{str(group_col)}={str(label)}"
             stub = (f"{filename}{group_tag}" if group_tag else filename) if filename else f"ts__{label}"
-            figures.append(plot_figure(fig=fig, filename=stub, fig_kwargs=fig_kwargs))
+            selected = d[d["channel"].astype(str).isin([str(channel) for channel in y_feats])]
+            observed_count, nonfinite_count = nonfinite_value_counts(selected)
+            description = None
+            if nonfinite_count:
+                description = (
+                    f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                    "affected time-series summaries were withheld."
+                )
+            figures.append(
+                plot_figure(
+                    fig=fig,
+                    filename=stub,
+                    fig_kwargs=fig_kwargs,
+                    description=description,
+                )
+            )
     return figures

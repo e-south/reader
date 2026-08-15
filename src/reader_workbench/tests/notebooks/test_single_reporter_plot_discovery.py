@@ -165,6 +165,6 @@ def test_engine_persists_single_reporter_diagnostic_for_canonical_notebook_disco
     assert len(deliverables.plot_rows) == 1
     assert deliverables.plot_rows[0]["Record ID"] == "plot:single_reporter_diagnostic"
     assert deliverables.plot_rows[0]["Description"] == (
-        "One-row normalizer, reporter, ratio, and condition-reduction diagnostic using an explicit endpoint or "
-        "interval."
+        "Normalizer, reporter, and reporter-normalizer kinetics with an explicit endpoint or interval reduction, "
+        "temporally reduced declared-replicate values by condition, and visible normalizer QC."
     )

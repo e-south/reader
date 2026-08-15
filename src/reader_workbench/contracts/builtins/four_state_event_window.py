@@ -186,6 +186,29 @@ CONTRACTS: tuple[DataFrameContract, ...] = (
         kind="four-state-event-window-event",
         allow_extra_columns=False,
     ),
+    DataFrameContract(
+        id="plate_reader.four_state_event_window.dispositions.v1",
+        description="Plate- and reduction-scoped well or design eligibility dispositions.",
+        columns=[
+            ColumnRule("experiment_id", "string"),
+            ColumnRule("design_id", "string"),
+            ColumnRule("scope", "string", allowed_values=["well", "design"]),
+            ColumnRule("state", "string", allowed_values=_STATES),
+            ColumnRule("position", "string", allow_nan=True),
+            ColumnRule("reduction_id", "string"),
+            ColumnRule(
+                "reason",
+                "string",
+                allowed_values=["insufficient_event_window_coverage", "insufficient_state_observations"],
+            ),
+            ColumnRule("observed_count", "int", allow_nan=True, nonnegative=True),
+            ColumnRule("required_count", "int", allow_nan=True, nonnegative=True),
+        ],
+        unique_keys=[["experiment_id", "design_id", "scope", "state", "position", "reduction_id"]],
+        domain="plate_reader",
+        kind="four-state-event-window-disposition",
+        allow_extra_columns=False,
+    ),
 )
 
 __all__ = ["CONTRACTS"]

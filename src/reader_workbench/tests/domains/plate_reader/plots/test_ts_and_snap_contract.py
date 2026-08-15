@@ -3,6 +3,7 @@ from __future__ import annotations
 import warnings
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pytest
 from matplotlib.colors import to_rgba
@@ -262,6 +263,31 @@ def test_composite_figure_returns_publication_metadata() -> None:
     )
 
     assert (figures[0].filename, figures[0].ext, figures[0].dpi) == ("endpoint_pair", "png", 144)
+    plt.close(figures[0].fig)
+
+
+def test_composite_figure_describes_nonfinite_selected_panel_measurements() -> None:
+    frame = _windowed_frame()
+    frame.loc[
+        frame["channel"].eq("OD600") & frame["time"].eq(8.0) & frame["position"].eq("0-0"),
+        "value",
+    ] = np.inf
+
+    figures = plot_ts_and_snap(
+        df=frame,
+        group_on=None,
+        pool_sets=None,
+        ts_channel="OD600",
+        ts_hue="treatment",
+        ts_time_window=[0.0, 8.0],
+        snap_x="treatment",
+        snap_channel="RFP/OD600",
+        snap_time=12.0,
+    )
+
+    assert figures[0].description == (
+        "Selected panel measurements: 18 observed, 1 omitted as non-finite; affected time-series summaries were withheld."
+    )
     plt.close(figures[0].fig)
 
 

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .contracts import EventSpec, FourStateEventWindowSourceSpec
+from .well_exclusions import WellExclusion
 
 STATE_ORDER = ("00", "10", "01", "11")
 ANNOTATED_CONTRACT = "plate_reader.annotated.v1"
@@ -35,6 +36,26 @@ class ExperimentSource:
     magnitude: pd.DataFrame
     trajectory: pd.DataFrame
     event: EventInterval
+    well_exclusions: tuple[WellExclusion, ...] = ()
+
+
+def event_record(event: EventInterval) -> pd.DataFrame:
+    return pd.DataFrame.from_records(
+        [
+            {
+                "experiment_id": event.experiment_id,
+                "event_id": event.event_id,
+                "event_kind": event.event_kind,
+                "event_interval_start_assay_h": event.interval_start_assay_h,
+                "event_interval_end_assay_h": event.interval_end_assay_h,
+                "event_time_estimate_assay_h": event.estimate_assay_h,
+                "event_time_estimate_method": event.estimate_method,
+                "event_time_uncertainty_h": event.uncertainty_h,
+                "post_event_coverage_h": event.post_event_coverage_h,
+                "declaration": event.declaration,
+            }
+        ]
+    )
 
 
 def build_experiment_source(
@@ -81,6 +102,14 @@ def build_experiment_source(
         context=f"{experiment_id}:growth",
         require_positive=False,
     )
+    well_exclusions = tuple(item for item in source_spec.well_exclusions if item.experiment_id == experiment_id)
+    _validate_well_exclusions(
+        well_exclusions,
+        response=response,
+        magnitude=magnitude,
+        trajectory=trajectory,
+        experiment_id=experiment_id,
+    )
     event = resolve_event_interval(response, experiment_id=experiment_id, event_spec=event_spec)
     magnitude_event = resolve_event_interval(magnitude, experiment_id=experiment_id, event_spec=event_spec)
     growth_event = resolve_event_interval(trajectory, experiment_id=experiment_id, event_spec=event_spec)
@@ -100,7 +129,32 @@ def build_experiment_source(
         magnitude=magnitude,
         trajectory=trajectory,
         event=event,
+        well_exclusions=well_exclusions,
     )
+
+
+def _validate_well_exclusions(
+    exclusions: tuple[WellExclusion, ...],
+    *,
+    response: pd.DataFrame,
+    magnitude: pd.DataFrame,
+    trajectory: pd.DataFrame,
+    experiment_id: str,
+) -> None:
+    for exclusion in exclusions:
+        expected = {(exclusion.design_id, exclusion.state)}
+        for signal_kind, frame in (
+            ("response", response),
+            ("magnitude", magnitude),
+            ("growth", trajectory),
+        ):
+            selected = frame.loc[frame["position"].astype(str).eq(exclusion.position)]
+            observed = set(zip(selected["design_id"].astype(str), selected["state"].astype(str), strict=True))
+            if observed != expected:
+                raise ValueError(
+                    f"{experiment_id}:{signal_kind} well exclusion {exclusion.position!r} "
+                    f"does not match design/state {exclusion.design_id!r}/{exclusion.state!r}."
+                )
 
 
 def resolve_event_interval(
@@ -249,5 +303,6 @@ __all__ = [
     "EventInterval",
     "ExperimentSource",
     "build_experiment_source",
+    "event_record",
     "resolve_event_interval",
 ]

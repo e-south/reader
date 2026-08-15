@@ -16,6 +16,7 @@ from reader_workbench.protocols.compiler import (
     compile_logic_four_state_vector_screen,
     compile_plate_reader_dual_reporter_screen,
     compile_plate_reader_four_state_event_window,
+    compile_plate_reader_growth_screen,
     compile_plate_reader_single_reporter_screen,
 )
 from reader_workbench.runtime import builtin_runtime
@@ -44,7 +45,13 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("four_state_event_window",),
         "plots": ("four_state_event_window_summary",),
         "exports": ("designs_table", "events_table"),
-        "sha256": "7eebf69ddc9bc73957821eb1aa5593006ee5c295ae9eed04f88dedcaa2da558f",  # pragma: allowlist secret
+        "sha256": "7fd49c2b80fc32c76a9e1215d4c86bdbd8613e912b5213a23f1ec309bc635cd7",  # pragma: allowlist secret
+    },
+    "plate_reader/growth_screen": {
+        "pipeline": ("ingest", "merge_map", "labels", "blank", "overflow", "sample_measurements"),
+        "plots": ("raw_kinetics", "value_distributions"),
+        "exports": (),
+        "sha256": "1710d3530426316f1e88ec5861422a8778e49e3b636631151814521f2d7cb5bc",  # pragma: allowlist secret
     },
     "logic/four_state_vector_screen": {
         "pipeline": (
@@ -132,6 +139,41 @@ def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str
     assert _plan_digest(plan) == expected["sha256"]
 
 
+def test_growth_protocol_preserves_measurements_by_default() -> None:
+    plan = builtin_runtime().bind_protocol(ProtocolBinding(id="plate_reader/growth_screen")).compile()
+    overflow = next(step for step in plan.pipeline if step.id == "overflow")
+
+    assert overflow.with_["action"] == "none"
+
+
+def test_growth_protocol_allows_explicit_quantile_clipping() -> None:
+    plan = (
+        builtin_runtime()
+        .bind_protocol(
+            ProtocolBinding(
+                id="plate_reader/growth_screen",
+                analysis={
+                    "preprocessing": {
+                        "overflow": {
+                            "action": "max",
+                            "cap_strategy": "quantile",
+                            "clip_quantile": 0.99,
+                        }
+                    }
+                },
+            )
+        )
+        .compile()
+    )
+    overflow = next(step for step in plan.pipeline if step.id == "overflow")
+
+    assert overflow.with_ == {
+        "action": "max",
+        "cap_strategy": "quantile",
+        "clip_quantile": 0.99,
+    }
+
+
 @pytest.mark.parametrize(
     "compiler",
     [
@@ -141,6 +183,7 @@ def test_builtin_compiled_plan_matches_characterization_fixture(protocol_id: str
         compile_logic_four_state_vector_collection,
         compile_plate_reader_dual_reporter_screen,
         compile_plate_reader_four_state_event_window,
+        compile_plate_reader_growth_screen,
         compile_plate_reader_single_reporter_screen,
     ],
 )

@@ -27,7 +27,7 @@ summary time, event, ordered-state ontology, classification, or objective.
 
 | Lane | Explicit selector | Time basis | Durable output |
 | --- | --- | --- | --- |
-| General plate-reader | `plate_reader/dual_reporter_screen` or `plate_reader/single_reporter_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
+| General plate-reader | `plate_reader/dual_reporter_screen`, `plate_reader/single_reporter_screen`, or `plate_reader/growth_screen` | acquisition time and configured endpoints | annotated records, plots, and optional fold-change tables |
 | Four-state vector | `logic/four_state_vector_screen` | one selected acquisition-time snapshot | `four_state_vector/vector` under `logic.four_state_vector.v1` |
 | Four-state event-window | `plate_reader/four_state_event_window` | one declared event and event-relative windows | typed dataframe records plus registered plot and export artifacts |
 
@@ -45,6 +45,11 @@ Historical four-state vector normally does
 not meet that identity: it uses one acquisition-time snapshot, per-design logic
 scaling, and corner-specific intensity normalization. Downstream interpretation
 remains a consumer concern.
+
+`plate_reader/growth_screen` preserves one configured measurement channel and
+publishes annotated sample records. It does not manufacture a reporter ratio,
+MIC threshold, dose-response model, or study conclusion. Those analyses remain
+separate, explicitly selected consumers of the neutral growth record.
 
 ## Dual-reporter triptych
 

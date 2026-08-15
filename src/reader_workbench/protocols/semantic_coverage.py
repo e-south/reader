@@ -166,6 +166,26 @@ def _plate_reader_single_reporter_semantic_program(
     )
 
 
+def _plate_reader_growth_semantic_program(
+    protocol: Any,
+    *,
+    growth_channel: str,
+) -> ProtocolSemanticProgram:
+    return _semantic_program(
+        protocol,
+        overrides={
+            "Growth": ProtocolSemanticExecution(
+                status="compiled",
+                step_ids=("ingest",),
+                plugin_ids=("ingest/synergy_h1",),
+                record_ids=("ingest/df",),
+                note=f"Raw {growth_channel} values are materialized on the ingest dataframe.",
+            )
+        },
+        active_profile="growth_raw",
+    )
+
+
 def _logic_semantic_program(protocol: Any, *, include_four_state_vector: bool) -> ProtocolSemanticProgram:
     overrides: dict[str, ProtocolSemanticExecution] = {}
     if include_four_state_vector:

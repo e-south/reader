@@ -179,6 +179,50 @@ def test_snapshot_preserves_declared_overflow_tokens(tmp_path: Path) -> None:
     assert bool(reading["overflow"])
 
 
+def test_snapshot_applies_declared_assay_time_offset(tmp_path: Path) -> None:
+    workbook = _write_workbook(
+        tmp_path / "snapshot.xlsx",
+        _snapshot_rows(),
+    )
+
+    result = parse_snapshot_and_timeseries(
+        workbook,
+        channels=["OD600", "YFP"],
+        channel_map={"OD600:600": "OD600", "YFP:500,530": "YFP"},
+        include_kinetic=False,
+        time_offset_h=18.0,
+    )
+
+    assert set(result["time"]) == {18.0}
+
+
+@pytest.mark.parametrize("time_offset_h", [-1.0, float("inf"), float("nan"), True, False])
+def test_snapshot_rejects_invalid_assay_time_offset(tmp_path: Path, time_offset_h: object) -> None:
+    workbook = _write_workbook(tmp_path / "snapshot.xlsx", _snapshot_rows())
+
+    with pytest.raises(ValueError, match="time_offset_h must"):
+        parse_snapshot_and_timeseries(
+            workbook,
+            channels=["OD600", "YFP"],
+            channel_map={"OD600:600": "OD600", "YFP:500,530": "YFP"},
+            include_kinetic=False,
+            time_offset_h=time_offset_h,  # type: ignore[arg-type]
+        )
+
+
+def test_snapshot_rejects_finite_offset_that_overflows_time(tmp_path: Path) -> None:
+    workbook = _write_workbook(tmp_path / "snapshot.xlsx", _snapshot_rows())
+
+    with pytest.raises(ValueError, match="time values must remain finite"):
+        parse_snapshot_and_timeseries(
+            workbook,
+            channels=["OD600", "YFP"],
+            channel_map={"OD600:600": "OD600", "YFP:500,530": "YFP"},
+            include_kinetic=False,
+            time_offset_h=float.fromhex("0x1.fffffffffffffp+1023"),
+        )
+
+
 def test_kinetic_rejects_nonnumeric_measurement_with_context(tmp_path: Path) -> None:
     workbook = _write_workbook(
         tmp_path / "kinetic.xlsx",

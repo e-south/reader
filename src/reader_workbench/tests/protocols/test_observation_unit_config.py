@@ -47,6 +47,38 @@ def test_logic_four_state_vector_screen_accepts_observation_stat_keys() -> None:
 
 
 @pytest.mark.parametrize(
+    ("protocol_id", "fold_change_step_id"),
+    [
+        ("plate_reader/dual_reporter_screen", "fold_change__yfp_over_cfp"),
+        ("plate_reader/single_reporter_screen", "fold_change__single_reporter"),
+    ],
+)
+def test_plate_reader_fold_change_binds_expected_treatments_into_compiled_step(
+    protocol_id: str,
+    fold_change_step_id: str,
+) -> None:
+    expected_treatments = ["baseline", "induced"]
+    protocol = builtin_protocol_catalog().bind(
+        ProtocolBinding(
+            id=protocol_id,
+            inputs={
+                "fold_change": {
+                    "report_times": [8.0],
+                    "expected_treatments": expected_treatments,
+                }
+            },
+            analysis={"include_fold_change": True},
+        )
+    )
+
+    step = next(item for item in protocol.compile().pipeline if item.id == fold_change_step_id)
+    effective_step_config = protocol.effective_plugin_config(plugin_id=step.plugin, step_with=step.with_)
+
+    assert protocol.effective_inputs()["fold_change"]["expected_treatments"] == expected_treatments
+    assert effective_step_config["expected_treatments"] == expected_treatments
+
+
+@pytest.mark.parametrize(
     ("section", "legacy_key", "value"),
     [
         ("aggregation", "replicate_stat", "mean"),

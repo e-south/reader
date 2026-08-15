@@ -52,3 +52,26 @@ def test_fold_change_config_names_the_observation_statistic() -> None:
     cfg = FoldChangeCfg(target="YFP/CFP", report_times=[8.0], observation_stat="mean")
 
     assert cfg.observation_stat == "mean"
+
+
+def test_fold_change_plugin_enforces_declared_expected_treatments() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1"],
+            "time": [8.0],
+            "channel": ["YFP/CFP"],
+            "value": [2.0],
+            "design_id": ["D1"],
+            "treatment": ["control"],
+        }
+    )
+    cfg = FoldChangeCfg(
+        target="YFP/CFP",
+        report_times=[8.0],
+        expected_treatments=["control", "induced"],
+        use_global_baseline=True,
+        global_baseline_value="control",
+    )
+
+    with pytest.raises(ValueError, match="incomplete treatment cohort"):
+        FoldChange().run(_ctx(), {"df": frame}, cfg)

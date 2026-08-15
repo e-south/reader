@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 
 from reader_workbench.plotting.sinks import PlotFigure
 
@@ -49,10 +51,18 @@ def plot_figure(
     fig: Any,
     filename: str,
     fig_kwargs: Mapping[str, Any] | None,
+    description: str | None = None,
 ) -> PlotFigure:
     ext = str((fig_kwargs or {}).get("ext", "pdf")).lower()
     dpi = (fig_kwargs or {}).get("dpi", None)
-    return PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi)
+    return PlotFigure(fig=fig, filename=filename, ext=ext, dpi=dpi, description=description)
+
+
+def nonfinite_value_counts(frame: pd.DataFrame, *, value_col: str = "value") -> tuple[int, int]:
+    """Return total and non-finite counts without modifying source rows."""
+
+    values = pd.to_numeric(frame[value_col], errors="coerce").to_numpy(dtype=float, copy=False)
+    return int(values.size), int((~np.isfinite(values)).sum())
 
 
 def descriptive_mean_resampling_interval(
@@ -66,8 +76,13 @@ def descriptive_mean_resampling_interval(
 
     mass = _interval_mass(interval_mass)
     draws = _resample_count(resamples)
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
+    observed = np.asarray(values, dtype=float)
+    finite_mask = np.isfinite(observed)
+    censored_count = int((~finite_mask).sum())
+    if censored_count:
+        _warn_censored_summary(censored_count=censored_count, observed_count=int(observed.size))
+        return (math.nan, math.nan, math.nan)
+    finite = observed
     if finite.size == 0:
         return (math.nan, math.nan, math.nan)
     mean = float(finite.mean())
@@ -93,16 +108,21 @@ def descriptive_linear_resampling_interval(
 ) -> tuple[float, float, float]:
     mass = _interval_mass(interval_mass)
     draws = _resample_count(resamples)
-    finite_groups: list[np.ndarray] = []
+    observed_groups = [np.asarray(group, dtype=float) for group in groups]
     coeffs = [float(value) for value in coefficients]
-    for group in groups:
-        values = np.asarray(group, dtype=float)
-        values = values[np.isfinite(values)]
+    if len(observed_groups) != len(coeffs):
+        raise ValueError("descriptive_linear_resampling_interval: groups and coefficients must have the same length")
+
+    finite_groups: list[np.ndarray] = []
+    for values in observed_groups:
+        finite_mask = np.isfinite(values)
+        censored_count = int((~finite_mask).sum())
+        if censored_count:
+            _warn_censored_summary(censored_count=censored_count, observed_count=int(values.size))
+            return (math.nan, math.nan, math.nan)
         if values.size == 0:
             return (math.nan, math.nan, math.nan)
         finite_groups.append(values)
-    if len(finite_groups) != len(coeffs):
-        raise ValueError("descriptive_linear_resampling_interval: groups and coefficients must have the same length")
 
     mean = float(sum(coeff * values.mean() for coeff, values in zip(coeffs, finite_groups, strict=True)))
     if all(values.size <= 1 for values in finite_groups):
@@ -131,6 +151,14 @@ def _resample_count(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError("descriptive resample count must be a positive integer")
     return value
+
+
+def _warn_censored_summary(*, censored_count: int, observed_count: int) -> None:
+    logging.getLogger("reader").warning(
+        "plot summary: omitted censored summary; %d non-finite value(s) among %d observed value(s)",
+        censored_count,
+        observed_count,
+    )
 
 
 def shared_numeric_limits(
@@ -274,6 +302,7 @@ __all__ = [
     "descriptive_linear_resampling_interval",
     "descriptive_mean_resampling_interval",
     "colors_for",
+    "nonfinite_value_counts",
     "plot_figure",
     "pretty_name",
     "require_columns",

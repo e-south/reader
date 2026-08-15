@@ -11,12 +11,17 @@ PLOT_PACKAGE = DOMAIN_ROOT / "plots" / "four_state_event_window"
 def test_four_state_event_window_modules_stay_bounded() -> None:
     limits = {
         ANALYSIS_PACKAGE / "aggregation.py": 220,
+        ANALYSIS_PACKAGE / "contract_fields.py": 100,
         ANALYSIS_PACKAGE / "contracts.py": 360,
+        ANALYSIS_PACKAGE / "design_dispositions.py": 80,
+        ANALYSIS_PACKAGE / "disposition_records.py": 150,
         ANALYSIS_PACKAGE / "event_sensitivity.py": 60,
         ANALYSIS_PACKAGE / "materialize.py": 280,
         ANALYSIS_PACKAGE / "reduction.py": 260,
         ANALYSIS_PACKAGE / "seeds.py": 40,
         ANALYSIS_PACKAGE / "sources.py": 340,
+        ANALYSIS_PACKAGE / "well_exclusions.py": 100,
+        ANALYSIS_PACKAGE / "well_exclusion_validation.py": 100,
         ANALYSIS_PACKAGE / "observation_resampling.py": 130,
         PLOT_PACKAGE / "diagnostic.py": 320,
         PLOT_PACKAGE / "diagnostic_components.py": 150,
@@ -38,12 +43,17 @@ def test_four_state_event_window_roles_have_distinct_packages() -> None:
     assert analysis_modules == {
         "__init__.py",
         "aggregation.py",
+        "contract_fields.py",
         "contracts.py",
+        "design_dispositions.py",
+        "disposition_records.py",
         "event_sensitivity.py",
         "materialize.py",
         "reduction.py",
         "seeds.py",
         "sources.py",
+        "well_exclusions.py",
+        "well_exclusion_validation.py",
         "observation_resampling.py",
     }
     assert not (DOMAIN_ROOT / "evidence").exists()

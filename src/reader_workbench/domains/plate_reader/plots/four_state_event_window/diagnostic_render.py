@@ -204,14 +204,14 @@ def _draw_observed_traces(
                 color="#7c2d12",
                 zorder=4,
             )
-    aligned = _aligned_trace_summary(
+    summary = summarize_observed_traces(
         traces,
         observation_stat=observation_stat,
         interval_mass=interval_mass,
     )
-    if aligned is None:
-        raise ValueError("four-state event-window diagnostic requires aligned observation time grids")
-    times, values, interval_low, interval_high = aligned
+    if summary is None:
+        raise ValueError("four-state event-window diagnostic requires observed trace points")
+    times, values, interval_low, interval_high = summary
     band = axis.fill_between(
         times,
         interval_low,
@@ -239,7 +239,7 @@ def _draw_observed_traces(
     line.set_gid(gid)
 
 
-def _aligned_trace_summary(
+def summarize_observed_traces(
     traces: list[pd.DataFrame],
     *,
     observation_stat: str,
@@ -247,14 +247,28 @@ def _aligned_trace_summary(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
     if not traces:
         return None
-    times = traces[0]["time_from_event_h"].to_numpy(dtype=float)
-    if any(not np.array_equal(times, trace["time_from_event_h"].to_numpy(dtype=float)) for trace in traces[1:]):
-        return None
-    values = np.vstack([trace["plot_value"].to_numpy(dtype=float) for trace in traces])
-    center = np.mean(values, axis=0) if observation_stat == "mean" else np.median(values, axis=0)
+    observed = pd.concat(
+        (
+            trace.loc[:, ["time_from_event_h", "plot_value"]].assign(trace_index=index)
+            for index, trace in enumerate(traces)
+        ),
+        ignore_index=True,
+    )
+    grouped = observed.groupby("time_from_event_h", sort=True, observed=True)["plot_value"]
+    times = grouped.size().index.to_numpy(dtype=float)
+    center = (
+        grouped.mean().to_numpy(dtype=float) if observation_stat == "mean" else grouped.median().to_numpy(dtype=float)
+    )
     tail = (1.0 - interval_mass) / 2.0
-    interval_low, interval_high = np.quantile(values, [tail, 1.0 - tail], axis=0)
+    interval_low = grouped.quantile(tail).to_numpy(dtype=float)
+    interval_high = grouped.quantile(1.0 - tail).to_numpy(dtype=float)
     return times, center, interval_low, interval_high
 
 
-__all__ = ["BOUND_MARKERS", "STATE_COLORS", "STATE_MARKERS", "render_four_state_event_window_diagnostic"]
+__all__ = [
+    "BOUND_MARKERS",
+    "STATE_COLORS",
+    "STATE_MARKERS",
+    "render_four_state_event_window_diagnostic",
+    "summarize_observed_traces",
+]
