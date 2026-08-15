@@ -22,6 +22,11 @@ from .common import (
 from .grouping import GroupMatch, resolve_groups
 
 
+def _distribution_observation_counts(*frames: pd.DataFrame) -> tuple[int, int]:
+    counts = [exact_observation_counts(frame) for frame in frames if not frame.empty]
+    return sum(total for total, _ in counts), sum(omitted for _, omitted in counts)
+
+
 def _figure_groups(
     *,
     df: pd.DataFrame,
@@ -195,9 +200,7 @@ def plot_distributions(
                 source_sub = selected_work.copy()
                 if gcol and members != [None]:
                     source_sub = source_sub[source_sub[gcol].astype(str).isin(members)]
-                observed_count, omitted_count = exact_observation_counts(
-                    pd.concat([source_sub, selected_blanks], ignore_index=True)
-                )
+                observed_count, omitted_count = _distribution_observation_counts(source_sub, selected_blanks)
                 description = None
                 if omitted_count:
                     description = (
@@ -263,14 +266,9 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            observed_count, omitted_count = exact_observation_counts(
-                pd.concat(
-                    [
-                        selected_work[selected_work["channel"].astype(str) == ch],
-                        selected_blanks[selected_blanks["channel"].astype(str) == ch],
-                    ],
-                    ignore_index=True,
-                )
+            observed_count, omitted_count = _distribution_observation_counts(
+                selected_work[selected_work["channel"].astype(str) == ch],
+                selected_blanks[selected_blanks["channel"].astype(str) == ch],
             )
             description = None
             if omitted_count:
