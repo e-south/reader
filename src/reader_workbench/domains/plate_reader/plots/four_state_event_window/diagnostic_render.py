@@ -276,7 +276,8 @@ def summarize_observed_traces(
         ),
         ignore_index=True,
     )
-    grouped = observed.groupby("time_from_event_h", sort=True, observed=True)["plot_value"]
+    observed_by_time = observed.groupby("time_from_event_h", sort=True, observed=True)
+    grouped = observed_by_time["plot_value"]
     times = grouped.size().index.to_numpy(dtype=float)
     center = (
         grouped.mean().to_numpy(dtype=float) if observation_stat == "mean" else grouped.median().to_numpy(dtype=float)
@@ -284,6 +285,17 @@ def summarize_observed_traces(
     tail = (1.0 - interval_mass) / 2.0
     interval_low = grouped.quantile(tail).to_numpy(dtype=float)
     interval_high = grouped.quantile(1.0 - tail).to_numpy(dtype=float)
+    trace_cohorts = observed_by_time["trace_index"].apply(lambda values: frozenset(values.tolist())).tolist()
+    break_indices = [
+        index
+        for index, (previous, current) in enumerate(zip(trace_cohorts, trace_cohorts[1:], strict=False), start=1)
+        if current != previous
+    ]
+    if break_indices:
+        times = np.insert(times, break_indices, np.nan)
+        center = np.insert(center, break_indices, np.nan)
+        interval_low = np.insert(interval_low, break_indices, np.nan)
+        interval_high = np.insert(interval_high, break_indices, np.nan)
     return times, center, interval_low, interval_high
 
 
