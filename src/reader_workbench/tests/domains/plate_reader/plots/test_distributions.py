@@ -137,3 +137,37 @@ def test_distribution_description_includes_selected_nonfinite_blank_rows(
         "bounded or non-finite rows were omitted before density estimation."
     )
     plt.close(figures[0].fig)
+
+
+@pytest.mark.parametrize("panel_by", ["channel", "group"])
+def test_distribution_counting_does_not_treat_unannotated_finite_blanks_as_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    panel_by: str,
+) -> None:
+    monkeypatch.setattr(
+        "reader_workbench.domains.plate_reader.plots.distributions.sns.kdeplot",
+        lambda **_: None,
+    )
+    frame = pd.DataFrame(
+        {
+            "channel": ["signal"] * 3,
+            "value": [1.0, 2.0, 3.0],
+            "design_id": ["design_a"] * 3,
+            "value_policy_clipped": [False] * 3,
+            "value_instrument_overflow": [False] * 3,
+            "value_bound_kind": ["exact"] * 3,
+        }
+    )
+    blanks = pd.DataFrame({"channel": ["signal"], "value": [0.5]})
+
+    figures = plot_distributions(
+        df=frame,
+        blanks=blanks,
+        channels=["signal"],
+        group_on="design_id",
+        panel_by=panel_by,
+        fig_kwargs={},
+    )
+
+    assert figures[0].description is None
+    plt.close(figures[0].fig)
