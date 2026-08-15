@@ -63,6 +63,61 @@ def test_overflow_none_classifies_positive_infinity_as_instrument_overflow() -> 
     assert result["value_bound_kind"].tolist() == ["lower"]
 
 
+def test_overflow_none_preserves_incoming_bounds_and_unions_detected_overflow() -> None:
+    frame = pd.DataFrame(
+        {
+            "channel": ["YFP", "YFP", "YFP"],
+            "value": [50.0, float("inf"), 75.0],
+            "overflow": [False, False, False],
+            "value_policy_clipped": [True, False, False],
+            "value_instrument_overflow": [False, False, True],
+            "value_bound_kind": ["lower", "exact", "lower"],
+        }
+    )
+
+    result = OverflowHandling().run(
+        SimpleNamespace(logger=None),
+        {"df": frame},
+        OverflowCfg(action="none"),
+    )["df"]
+
+    assert result["value"].tolist() == [50.0, float("inf"), 75.0]
+    assert result["overflow"].tolist() == [False, True, True]
+    assert result["value_policy_clipped"].tolist() == [True, False, False]
+    assert result["value_instrument_overflow"].tolist() == [False, True, True]
+    assert result["value_bound_kind"].tolist() == ["lower", "lower", "lower"]
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        pd.DataFrame(
+            {
+                "channel": ["YFP"],
+                "value": [50.0],
+                "value_policy_clipped": [True],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "channel": ["YFP"],
+                "value": [50.0],
+                "value_policy_clipped": [True],
+                "value_instrument_overflow": [False],
+                "value_bound_kind": ["exact"],
+            }
+        ),
+    ],
+)
+def test_overflow_none_rejects_incomplete_or_contradictory_provenance(frame: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="provenance"):
+        OverflowHandling().run(
+            SimpleNamespace(logger=None),
+            {"df": frame},
+            OverflowCfg(action="none"),
+        )
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("-inf")])
 def test_overflow_none_rejects_unexpected_nonfinite_values(value: float) -> None:
     frame = pd.DataFrame({"channel": ["YFP"], "value": [value], "overflow": [True]})

@@ -53,6 +53,7 @@ class OverflowHandling(Plugin):
             unexpected_nonfinite = df["value"].isna() | np.isneginf(df["value"])
             if unexpected_nonfinite.any():
                 raise ValueError("overflow_handling: NaN or negative infinity cannot represent instrument overflow")
+            policy_clipped, prior_overflow, bounds = _incoming_value_provenance(df)
             flagged = pd.Series(False, index=df.index)
             if cfg.flag_column in df.columns:
                 raw_flags = df[cfg.flag_column]
@@ -63,12 +64,15 @@ class OverflowHandling(Plugin):
                 flagged = flagged | raw_flags.astype(bool)
             if cfg.treat_inf_as_overflow:
                 flagged = flagged | np.isposinf(df["value"])
-            elif (~np.isfinite(df["value"]) & ~flagged).any():
+            elif (~np.isfinite(df["value"]) & ~(flagged | prior_overflow)).any():
                 raise ValueError("overflow_handling: non-finite values must be classified as instrument overflow")
-            df["value_policy_clipped"] = False
-            df["value_instrument_overflow"] = flagged.astype(bool)
-            df["value_bound_kind"] = np.where(flagged, "lower", "exact")
-            df[cfg.flag_column] = flagged.astype(bool)
+            instrument_overflow = prior_overflow | flagged
+            bounds = bounds.copy()
+            bounds.loc[flagged] = bounds.loc[flagged].map(_union_lower_bound)
+            df["value_policy_clipped"] = policy_clipped
+            df["value_instrument_overflow"] = instrument_overflow
+            df["value_bound_kind"] = bounds
+            df[cfg.flag_column] = instrument_overflow
             return {"df": df}
         if act == "drop":
             return {"df": df.dropna(subset=["value"])}
@@ -141,3 +145,42 @@ class OverflowHandling(Plugin):
 
             return {"df": out.drop(columns="__cap__")}
         raise ValueError(f"unknown overflow action {cfg.action}")
+
+
+def _incoming_value_provenance(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series]:
+    fields = {"value_policy_clipped", "value_instrument_overflow", "value_bound_kind"}
+    present = fields & set(frame.columns)
+    if present and present != fields:
+        raise ValueError("overflow_handling: value provenance must provide all three fields together")
+    if not present:
+        return (
+            pd.Series(False, index=frame.index, dtype=bool),
+            pd.Series(False, index=frame.index, dtype=bool),
+            pd.Series("exact", index=frame.index, dtype=object),
+        )
+
+    policy_clipped = _strict_provenance_boolean(frame["value_policy_clipped"], field="value_policy_clipped")
+    instrument_overflow = _strict_provenance_boolean(
+        frame["value_instrument_overflow"], field="value_instrument_overflow"
+    )
+    bounds = frame["value_bound_kind"]
+    if bounds.isna().any() or not bounds.map(lambda value: isinstance(value, str)).all():
+        raise ValueError("overflow_handling: value_bound_kind provenance must contain strings without missing values")
+    bounds = bounds.astype(str)
+    allowed = {"exact", "lower", "upper", "indeterminate"}
+    unknown = sorted(set(bounds) - allowed)
+    if unknown:
+        raise ValueError(f"overflow_handling: unsupported value_bound_kind provenance: {unknown}")
+    if not (policy_clipped | instrument_overflow).eq(bounds.ne("exact")).all():
+        raise ValueError("overflow_handling: clipping and overflow provenance disagrees with value_bound_kind")
+    return policy_clipped, instrument_overflow, bounds
+
+
+def _strict_provenance_boolean(values: pd.Series, *, field: str) -> pd.Series:
+    if values.isna().any() or not values.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+        raise ValueError(f"overflow_handling: {field} provenance must contain booleans without missing values")
+    return values.astype(bool)
+
+
+def _union_lower_bound(bound: object) -> str:
+    return "lower" if str(bound) in {"exact", "lower"} else "indeterminate"
