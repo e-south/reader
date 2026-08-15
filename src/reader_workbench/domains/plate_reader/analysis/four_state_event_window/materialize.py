@@ -36,6 +36,7 @@ def materialize_experiment(
             source.event.estimate_assay_h,
             source.event.interval_end_assay_h,
         ),
+        pre_window_end_h=source.event.interval_start_assay_h,
         experiment_id=source.experiment_id,
     )
     well_frames: list[pd.DataFrame] = []
