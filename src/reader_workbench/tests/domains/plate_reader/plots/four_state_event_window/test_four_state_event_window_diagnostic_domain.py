@@ -309,7 +309,29 @@ def test_trace_summary_honors_stat_interval_on_partially_observed_grids() -> Non
         observation_stat="mean",
         interval_mass=0.8,
     )
-    assert times.tolist() == pytest.approx([0.0, 1.0])
-    assert mean.tolist() == pytest.approx([4.0, 2.5])
-    assert low.tolist() == pytest.approx([1.2, 2.1])
-    assert high.tolist() == pytest.approx([7.6, 2.9])
+    assert times[[0, 2]].tolist() == pytest.approx([0.0, 1.0])
+    assert mean[[0, 2]].tolist() == pytest.approx([4.0, 2.5])
+    assert low[[0, 2]].tolist() == pytest.approx([1.2, 2.1])
+    assert high[[0, 2]].tolist() == pytest.approx([7.6, 2.9])
+    assert pd.isna([times[1], mean[1], low[1], high[1]]).all()
+
+
+def test_trace_summary_breaks_between_independently_shifted_well_grids() -> None:
+    traces = [
+        pd.DataFrame({"time_from_event_h": [0.0, 1.0], "plot_value": [10.0, 20.0]}),
+        pd.DataFrame({"time_from_event_h": [0.1, 1.1], "plot_value": [100.0, 200.0]}),
+    ]
+
+    times, center, low, high = summarize_observed_traces(
+        traces,
+        observation_stat="mean",
+        interval_mass=0.8,
+    )
+
+    assert len(times) == 7
+    assert pd.isna(times[[1, 3, 5]]).all()
+    assert pd.isna(center[[1, 3, 5]]).all()
+    assert times[[0, 2, 4, 6]].tolist() == pytest.approx([0.0, 0.1, 1.0, 1.1])
+    assert center[[0, 2, 4, 6]].tolist() == pytest.approx([10.0, 100.0, 20.0, 200.0])
+    assert low[[0, 2, 4, 6]].tolist() == pytest.approx([10.0, 100.0, 20.0, 200.0])
+    assert high[[0, 2, 4, 6]].tolist() == pytest.approx([10.0, 100.0, 20.0, 200.0])
