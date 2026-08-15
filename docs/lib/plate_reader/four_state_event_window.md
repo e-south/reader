@@ -79,8 +79,8 @@ values. Shaded time-series bands show the configured pointwise descriptive
 interval across observations; they describe replicate spread rather than a
 population confidence interval. In the component panel, capped lines show the configured descriptive resampling
 interval and pale bars show the component range under permitted event-time
-shifts. These two encodings belong in a figure caption, not the treatment
-legend. The diagnostic also shows the pre-event window for `post_minus_pre` and
+shifts. The figure legend identifies both encodings and reports the configured
+resampling interval percentage. The diagnostic also shows the pre-event window for `post_minus_pre` and
 marks non-exact, clipped, or overflow-affected values. Python callers discover the
 manifest-backed record catalog with `reader_workbench.api.records()` and load dataframe
 contents with `reader_workbench.api.read_dataframe()`.
