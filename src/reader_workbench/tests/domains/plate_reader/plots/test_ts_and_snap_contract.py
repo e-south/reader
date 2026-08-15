@@ -88,6 +88,10 @@ def test_composite_time_series_withholds_finite_bounded_observations() -> None:
     )
 
     assert figures[0].fig.axes[0].lines[0].get_ydata().tolist() == [2.0]
+    assert figures[0].description == (
+        "Selected panel measurements: 3 observed, 1 omitted as bounded or non-finite; "
+        "affected time-series summaries were withheld."
+    )
     plt.close(figures[0].fig)
 
 

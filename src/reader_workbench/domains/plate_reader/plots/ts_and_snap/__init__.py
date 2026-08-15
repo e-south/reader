@@ -47,6 +47,28 @@ _FIG_STYLE_KEYS = {
     "suptitle_y",
 }
 
+
+def _source_observation_count_frames(
+    *,
+    time_series: pd.DataFrame,
+    snapshot: pd.DataFrame | None,
+    ts_channel: str,
+    snap_channel: str,
+    ts_x_col: str,
+    ts_time_window: list[float] | None,
+) -> tuple[pd.DataFrame, ...]:
+    if snapshot is None or snapshot.empty:
+        return (time_series,)
+    if ts_channel != snap_channel:
+        return time_series, snapshot
+    if not ts_time_window:
+        return (time_series,)
+    lo, hi = (float(value) for value in ts_time_window)
+    snapshot_x = pd.to_numeric(snapshot[ts_x_col], errors="coerce")
+    snapshot_only = snapshot.loc[~snapshot_x.between(lo, hi, inclusive="both")]
+    return (time_series,) if snapshot_only.empty else (time_series, snapshot_only)
+
+
 # -------------------------------- main API --------------------------------
 
 
@@ -325,9 +347,14 @@ def plot_ts_and_snap(
                 legend_fontsize=float(fig_kwargs.get("legend_fontsize", 8.0)),
             )
 
-        count_frames = [ts]
-        if snapshot_data is not None:
-            count_frames.append(snapshot_data.frame)
+        count_frames = _source_observation_count_frames(
+            time_series=ts,
+            snapshot=(snapshot_data.frame if snapshot_data is not None else None),
+            ts_channel=ch_ts,
+            snap_channel=ch_snap,
+            ts_x_col=ts_x_col,
+            ts_time_window=ts_time_window,
+        )
         panel_values = pd.concat(count_frames, ignore_index=True)
         group_panel_counts[str(label)] = exact_observation_counts(panel_values)
 
