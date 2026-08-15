@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 import polars as pl
 
@@ -31,6 +33,7 @@ def select_snapshot_rows(
     if snapped.empty:
         fallback = nearest_time_per_key(df, target_time=float(target_time), keys=list(keys), tol=float("inf"))
         fallback = fallback[fallback["channel"].astype(str) == str(channel)].copy()
+        fallback = _withhold_bounded_observations(fallback)
         if fallback.empty:
             return SnapshotSelection(rows=fallback, time_used=float(target_time), fell_back=True)
         times_used = pd.to_numeric(fallback["time"], errors="coerce").dropna()
@@ -45,9 +48,29 @@ def select_snapshot_rows(
             fallback_times_preview=preview,
         )
 
+    snapped = _withhold_bounded_observations(snapped)
     times_used = pd.to_numeric(snapped["time"], errors="coerce").dropna()
     time_used = float(times_used.median()) if not times_used.empty else float(target_time)
     return SnapshotSelection(rows=snapped, time_used=time_used, fell_back=False)
+
+
+def _withhold_bounded_observations(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    numeric = pd.to_numeric(frame["value"], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+    exact = pd.Series(np.isfinite(numeric), index=frame.index)
+    if "value_bound_kind" in frame.columns:
+        exact &= frame["value_bound_kind"].eq("exact")
+    for flag_column in ("value_policy_clipped", "value_instrument_overflow"):
+        if flag_column in frame.columns:
+            exact &= frame[flag_column].eq(False)
+    withheld_count = int((~exact).sum())
+    if withheld_count:
+        logging.getLogger("reader").warning(
+            "snapshot summary: withheld %d bounded or non-finite observation(s)",
+            withheld_count,
+        )
+    return frame.loc[exact].copy()
 
 
 def summarize_snapshot_values(

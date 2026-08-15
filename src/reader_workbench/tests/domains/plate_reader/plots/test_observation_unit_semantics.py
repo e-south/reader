@@ -13,6 +13,7 @@ from reader_workbench.domains.plate_reader.plots.common import (
     descriptive_mean_resampling_interval,
 )
 from reader_workbench.domains.plate_reader.plots.dual_reporter_triptych import build_triptych_data
+from reader_workbench.domains.plate_reader.plots.panels.snapshot_data import select_snapshot_rows
 from reader_workbench.domains.plate_reader.plots.snapshot_barplot import plot_snapshot_barplot
 from reader_workbench.domains.plate_reader.plots.snapshot_barplot.planning import compute_shared_ylim
 from reader_workbench.domains.time_series import ObservationAggregationSpec
@@ -218,6 +219,32 @@ def test_snapshot_plot_uses_descriptive_dispersion_contract() -> None:
             time=1.0,
             dispersion="sem",
         )
+
+
+def test_snapshot_selection_withholds_bounded_observations() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "A3"],
+            "time": [8.0, 8.0, 8.0],
+            "channel": ["OD600", "OD600", "OD600"],
+            "value": [2.0, 100.0, float("inf")],
+            "condition": ["control", "control", "control"],
+            "value_policy_clipped": [False, True, False],
+            "value_instrument_overflow": [False, False, True],
+            "value_bound_kind": ["exact", "lower", "lower"],
+        }
+    )
+
+    selection = select_snapshot_rows(
+        df=frame,
+        target_time=8.0,
+        keys=["condition", "position"],
+        channel="OD600",
+        tolerance=0.1,
+    )
+
+    assert selection.rows["position"].tolist() == ["A1"]
+    assert selection.rows["value"].tolist() == [2.0]
 
 
 def test_descriptive_resampling_rejects_percentage_scale_interval_mass() -> None:
