@@ -11,7 +11,7 @@ from reader_workbench.workbench.registry import Plugin, PluginConfig
 
 
 class OverflowCfg(PluginConfig):
-    action: Literal["max", "drop", "nan", "none"] = "none"
+    action: Literal["max", "drop", "nan", "none"] = "max"
     clip_quantile: float = 0.999
     # New: explicit capping strategy
     cap_strategy: Literal["provided", "infer", "quantile"] = "quantile"

@@ -9,7 +9,26 @@ import pytest
 from reader_workbench.plugins.transform.overflow import OverflowCfg, OverflowHandling
 
 
-def test_overflow_default_preserves_measurements_and_instrument_flags() -> None:
+def test_overflow_default_caps_measurements() -> None:
+    frame = pd.DataFrame(
+        {
+            "channel": ["YFP", "YFP"],
+            "value": [10.0, float("inf")],
+            "overflow": [False, True],
+        }
+    )
+
+    result = OverflowHandling().run(
+        SimpleNamespace(logger=None),
+        {"df": frame},
+        OverflowCfg(),
+    )["df"]
+
+    assert result["value"].tolist() == [10.0, 10.0]
+    assert result["value_bound_kind"].tolist() == ["exact", "lower"]
+
+
+def test_overflow_none_preserves_measurements_and_instrument_flags() -> None:
     frame = pd.DataFrame(
         {
             "channel": ["YFP", "YFP"],
@@ -21,7 +40,7 @@ def test_overflow_default_preserves_measurements_and_instrument_flags() -> None:
     result = OverflowHandling().run(
         SimpleNamespace(logger=None),
         {"df": frame},
-        OverflowCfg(),
+        OverflowCfg(action="none"),
     )["df"]
 
     assert result["value"].tolist() == [10.0, 100.0]
