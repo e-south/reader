@@ -178,3 +178,27 @@ def test_fold_change_rejects_group_wholly_absent_from_report_time() -> None:
 
     with pytest.raises(ValueError, match="incomplete treatment cohort.*absent.*baseline.*induced"):
         compute_fold_change_table(frame, spec=spec)
+
+
+def test_fold_change_rejects_absent_target_with_expected_treatments() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2"],
+            "time": [8.0, 8.0],
+            "channel": ["other", "other"],
+            "value": [2.0, 8.0],
+            "design_id": ["design-a", "design-a"],
+            "treatment": ["baseline", "induced"],
+        }
+    )
+    spec = FoldChangeAnalysisSpec(
+        target="signal",
+        report_times=(8.0,),
+        expected_treatments=("baseline", "induced"),
+        use_global_baseline=True,
+        global_baseline_value="baseline",
+        attach_metadata=(),
+    )
+
+    with pytest.raises(ValueError, match="target channel 'signal' has no rows.*expected_treatments"):
+        compute_fold_change_table(frame, spec=spec)

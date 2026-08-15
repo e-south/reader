@@ -139,6 +139,10 @@ def compute_fold_change_table(
     expected_treatment_set = set(expected_treatments)
     base = df[df["channel"].astype(str) == target].copy()
     if base.empty:
+        if expected_treatment_set:
+            raise ValueError(
+                f"fold_change: target channel {target!r} has no rows while expected_treatments is declared"
+            )
         if logger is not None:
             logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
         return build_empty_fold_change_table(group_cols=group_cols, spec=spec)
