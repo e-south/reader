@@ -812,7 +812,7 @@ def _plate_reader_growth_plot_output(
 ) -> PluginStepDecl:
     settings = protocol.plot_view_config(figure_id=output_id)
     reads = {
-        "df": RecordInputDecl(record_id="overflow/df"),
+        "df": RecordInputDecl(record_id="sample_measurements/df"),
         "blanks": RecordInputDecl(record_id="blank/blanks"),
     }
     if output_id == "raw_kinetics":
