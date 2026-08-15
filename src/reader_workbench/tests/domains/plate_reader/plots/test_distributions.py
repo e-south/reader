@@ -99,8 +99,96 @@ def test_distributions_omit_and_report_fully_censored_measurements(
     with caplog.at_level("WARNING", logger="reader"):
         figures = _plot(frame)
 
-    assert figures == []
+    assert len(figures) == 1
+    assert figures[0].description == (
+        "Selected measurements: 3 observed, 3 omitted as bounded or non-finite; "
+        "bounded or non-finite rows were omitted before density estimation. "
+        "At least one distribution was withheld because no exact observations remained."
+    )
+    assert [text.get_text() for text in figures[0].fig.axes[0].texts] == [
+        "Distribution withheld\nNo exact observations"
+    ]
     assert "distributions: withheld 3 bounded or non-finite observation(s)" in caplog.text
+    plt.close(figures[0].fig)
+
+
+def test_distributions_emit_withheld_artifact_for_a_fully_bounded_design(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_values: list[list[float]] = []
+
+    def capture_kdeplot(*, data: pd.DataFrame, x: str, **_: object) -> None:
+        rendered_values.append(data[x].tolist())
+
+    monkeypatch.setattr(
+        "reader_workbench.domains.plate_reader.plots.distributions.sns.kdeplot",
+        capture_kdeplot,
+    )
+    frame = pd.DataFrame(
+        {
+            "channel": ["signal"] * 4,
+            "value": [1.0, 2.0, 100.0, 100.0],
+            "design_id": ["design_a", "design_a", "design_b", "design_b"],
+            "value_policy_clipped": [False, False, True, True],
+            "value_instrument_overflow": [False] * 4,
+            "value_bound_kind": ["exact", "exact", "lower", "lower"],
+        }
+    )
+
+    figures = _plot(frame)
+
+    assert [figure.filename for figure in figures] == ["distrib__design_a", "distrib__design_b"]
+    assert rendered_values == [[1.0, 2.0]]
+    assert figures[1].description == (
+        "Selected measurements: 2 observed, 2 omitted as bounded or non-finite; "
+        "bounded or non-finite rows were omitted before density estimation. "
+        "At least one distribution was withheld because no exact observations remained."
+    )
+    assert [text.get_text() for text in figures[1].fig.axes[0].texts] == [
+        "Distribution withheld\nNo exact observations"
+    ]
+    for figure in figures:
+        plt.close(figure.fig)
+
+
+def test_distribution_group_panels_identify_the_withheld_design(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "reader_workbench.domains.plate_reader.plots.distributions.sns.kdeplot",
+        lambda **_: None,
+    )
+    frame = pd.DataFrame(
+        {
+            "channel": ["signal"] * 4,
+            "value": [1.0, 2.0, 100.0, 100.0],
+            "design_id": ["design_a", "design_a", "design_b", "design_b"],
+            "value_policy_clipped": [False, False, True, True],
+            "value_instrument_overflow": [False] * 4,
+            "value_bound_kind": ["exact", "exact", "lower", "lower"],
+        }
+    )
+
+    figures = plot_distributions(
+        df=frame,
+        blanks=frame.iloc[0:0],
+        channels=["signal"],
+        group_on="design_id",
+        panel_by="group",
+        fig_kwargs={},
+    )
+
+    assert len(figures) == 1
+    assert [axis.get_title() for axis in figures[0].fig.axes] == ["design_a", "design_b"]
+    assert [text.get_text() for text in figures[0].fig.axes[1].texts] == [
+        "Distribution withheld\nNo exact observations"
+    ]
+    assert figures[0].description == (
+        "Selected measurements: 4 observed, 2 omitted as bounded or non-finite; "
+        "bounded or non-finite rows were omitted before density estimation. "
+        "At least one distribution was withheld because no exact observations remained."
+    )
+    plt.close(figures[0].fig)
 
 
 def test_distribution_description_includes_selected_nonfinite_blank_rows(
