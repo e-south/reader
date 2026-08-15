@@ -51,7 +51,7 @@ COMPILED_PLAN_FIXTURES = {
         "pipeline": ("ingest", "merge_map", "labels", "blank", "overflow", "sample_measurements"),
         "plots": ("raw_kinetics", "value_distributions"),
         "exports": (),
-        "sha256": "1710d3530426316f1e88ec5861422a8778e49e3b636631151814521f2d7cb5bc",  # pragma: allowlist secret
+        "sha256": "dc586e748b20d5db9fbff8e9808eade66fbb349a03d9fe8d6ae618b873b69821",  # pragma: allowlist secret
     },
     "logic/four_state_vector_screen": {
         "pipeline": (
