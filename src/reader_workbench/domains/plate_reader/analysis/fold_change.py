@@ -147,18 +147,6 @@ def compute_fold_change_table(
             logger.warning("fold_change: target channel %r has no rows; emitting typed empty table", target)
         return build_empty_fold_change_table(group_cols=group_cols, spec=spec)
 
-    exact_finite = pd.Series(np.isfinite(base["value"]), index=base.index)
-    if "value_bound_kind" in base.columns:
-        exact_finite &= base["value_bound_kind"].eq("exact")
-    for flag_column in ("value_policy_clipped", "value_instrument_overflow"):
-        if flag_column in base.columns:
-            exact_finite &= base[flag_column].eq(False)
-    if not exact_finite.all():
-        raise ValueError(
-            "fold_change: requires exact finite values; "
-            f"found {int((~exact_finite).sum())} censored, bounded, or non-finite target observation(s)"
-        )
-
     identity_mask = pd.Series(True, index=base.index)
     for column in [*group_cols, treatment_col]:
         values = base[column]
@@ -178,6 +166,7 @@ def compute_fold_change_table(
         snapped = nearest_time_per_key(
             base, target_time=float(timepoint), keys=nearest_keys, tol=float(spec.time_tolerance)
         )
+        _require_exact_finite_values(snapped)
         if expected_treatment_set:
             snapped_groups = set(snapped[group_cols].drop_duplicates().itertuples(index=False, name=None))
             for group_values in group_roster:
@@ -443,6 +432,20 @@ def compute_fold_change_table(
                         logger.info("   • %s → %s", str(group_value), items)
 
     return out
+
+
+def _require_exact_finite_values(frame: pd.DataFrame) -> None:
+    exact_finite = pd.Series(np.isfinite(frame["value"]), index=frame.index)
+    if "value_bound_kind" in frame.columns:
+        exact_finite &= frame["value_bound_kind"].eq("exact")
+    for flag_column in ("value_policy_clipped", "value_instrument_overflow"):
+        if flag_column in frame.columns:
+            exact_finite &= frame[flag_column].eq(False)
+    if not exact_finite.all():
+        raise ValueError(
+            "fold_change: requires exact finite values; "
+            f"found {int((~exact_finite).sum())} censored, bounded, or non-finite selected target observation(s)"
+        )
 
 
 def build_empty_fold_change_table(*, group_cols: list[str], spec: FoldChangeAnalysisSpec) -> pd.DataFrame:

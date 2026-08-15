@@ -131,6 +131,34 @@ def test_fold_change_rejects_censored_values_instead_of_reporting_exact_fc() -> 
         compute_fold_change_table(frame, spec=spec)
 
 
+def test_fold_change_ignores_bounded_observations_outside_report_cohort() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "A3"],
+            "time": [8.0, 8.0, 24.0],
+            "channel": ["signal", "signal", "signal"],
+            "value": [2.0, 4.0, 100.0],
+            "value_policy_clipped": [False, False, True],
+            "value_instrument_overflow": [False, False, False],
+            "value_bound_kind": ["exact", "exact", "lower"],
+            "design_id": ["design_a", "design_a", "design_a"],
+            "treatment": ["baseline", "induced", "baseline"],
+        }
+    )
+    spec = FoldChangeAnalysisSpec(
+        target="signal",
+        report_times=(8.0,),
+        time_tolerance=0.1,
+        use_global_baseline=True,
+        global_baseline_value="baseline",
+        attach_metadata=(),
+    )
+
+    table = compute_fold_change_table(frame, spec=spec).sort_values("treatment")
+
+    assert table["FC"].tolist() == [1.0, 2.0]
+
+
 def test_fold_change_rejects_incomplete_declared_treatment_cohort() -> None:
     frame = pd.DataFrame(
         {
