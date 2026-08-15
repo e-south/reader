@@ -27,6 +27,39 @@ def _distribution_observation_counts(*frames: pd.DataFrame) -> tuple[int, int]:
     return sum(total for total, _ in counts), sum(omitted for _, omitted in counts)
 
 
+def _distribution_description(
+    selected_count: int,
+    withheld_count: int,
+    *,
+    distribution_withheld: bool,
+) -> str | None:
+    if not withheld_count:
+        return None
+    description = (
+        f"Selected measurements: {selected_count} observed, {withheld_count} "
+        "omitted as bounded or non-finite; bounded or non-finite rows were omitted "
+        "before density estimation."
+    )
+    if distribution_withheld:
+        description += " At least one distribution was withheld because no exact observations remained."
+    return description
+
+
+def _draw_withheld_distribution(axis, *, channel: str) -> None:
+    axis.text(
+        0.5,
+        0.5,
+        "Distribution withheld\nNo exact observations",
+        ha="center",
+        va="center",
+        transform=axis.transAxes,
+    )
+    axis.set_xticks([])
+    axis.set_yticks([])
+    axis.set_xlabel(channel)
+    axis.set_ylabel("density")
+
+
 def _figure_groups(
     *,
     df: pd.DataFrame,
@@ -100,8 +133,6 @@ def plot_distributions(
 
     work = selected_work
     work = select_exact_observations(work, where="distributions")
-    if warn_if_empty(work, where="distributions", detail="after exact-observation filter"):
-        return []
 
     selected_blanks = blanks
     blank_work = selected_blanks
@@ -119,7 +150,7 @@ def plot_distributions(
 
     # --- figure groups (decides how many files we emit) ---
     fig_groups = _figure_groups(
-        df=(work if not gcol else work.rename(columns={gcol: str(gcol)})),
+        df=(selected_work if not gcol else selected_work.rename(columns={gcol: str(gcol)})),
         group_on=(str(gcol) if gcol else None),
         pool_sets=pool_sets,
         pool_match=pool_match,
@@ -130,11 +161,13 @@ def plot_distributions(
         rows, cols = best_subplot_grid(len(ch_list))
         for label, members in fig_groups:
             legend_shown = False
+            distribution_withheld = False
+            source_sub = selected_work.copy()
+            if gcol and members != [None]:
+                source_sub = source_sub[source_sub[gcol].astype(str).isin(members)]
             sub = work.copy()
             if gcol and members != [None]:
                 sub = sub[sub[gcol].astype(str).isin(members)]
-            if sub.empty:
-                continue
 
             # overlay colors per member (multiple overlays if members>1)
             colors = colors_for(max(1, len(members)), palette_book)
@@ -149,7 +182,12 @@ def plot_distributions(
                     ax = axes[j]
                     dch = sub[sub["channel"].astype(str) == ch]
                     if dch.empty:
-                        ax.set_visible(False)
+                        source_channel = source_sub[source_sub["channel"].astype(str) == ch]
+                        if source_channel.empty:
+                            ax.set_visible(False)
+                        else:
+                            _draw_withheld_distribution(ax, channel=str(ch))
+                            distribution_withheld = True
                         continue
 
                     if hue:
@@ -197,23 +235,17 @@ def plot_distributions(
 
                 # Ensure user-specified filename remains unique per file
                 stub = f"{filename}__{str(gcol) + '=' if gcol else ''}{label}" if filename else f"distrib__{label}"
-                source_sub = selected_work.copy()
-                if gcol and members != [None]:
-                    source_sub = source_sub[source_sub[gcol].astype(str).isin(members)]
                 observed_count, omitted_count = _distribution_observation_counts(source_sub, selected_blanks)
-                description = None
-                if omitted_count:
-                    description = (
-                        f"Selected measurements: {observed_count} observed, {omitted_count} "
-                        "omitted as bounded or non-finite; bounded or non-finite rows were omitted "
-                        "before density estimation."
-                    )
                 figures.append(
                     plot_figure(
                         fig=fig,
                         filename=stub,
                         fig_kwargs=fig_kwargs,
-                        description=description,
+                        description=_distribution_description(
+                            observed_count,
+                            omitted_count,
+                            distribution_withheld=distribution_withheld,
+                        ),
                     )
                 )
 
@@ -238,20 +270,27 @@ def plot_distributions(
         rows, cols = best_subplot_grid(len(members_union))
 
         sub = work[work["channel"].astype(str) == ch]
-        if sub.empty:
-            return []
 
         colors = colors_for(1, palette_book)
         with use_style(rc=fig_kwargs.get("rc"), color_cycle=colors):
             fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), constrained_layout=True)
             axes = np.atleast_1d(axes).ravel()
             fig.suptitle(str(ch), y=float(fig_kwargs.get("suptitle_y", 1.04)))
+            distribution_withheld = False
             for j, gv in enumerate(members_union):
                 ax = axes[j]
+                ax.set_title(str(gv))
                 dd = sub[sub[gcol].astype(str) == str(gv)]
                 vals = pd.to_numeric(dd["value"], errors="coerce").dropna()
                 if vals.empty:
-                    ax.set_visible(False)
+                    source_group = selected_work.loc[
+                        selected_work["channel"].astype(str).eq(ch) & selected_work[gcol].astype(str).eq(str(gv))
+                    ]
+                    if source_group.empty:
+                        ax.set_visible(False)
+                    else:
+                        _draw_withheld_distribution(ax, channel=str(ch))
+                        distribution_withheld = True
                     continue
                 sns.kdeplot(data=dd, x="value", ax=ax, lw=1.8, fill=True, alpha=fill_alpha)
                 if not blank_work.empty:
@@ -270,19 +309,16 @@ def plot_distributions(
                 selected_work[selected_work["channel"].astype(str) == ch],
                 selected_blanks[selected_blanks["channel"].astype(str) == ch],
             )
-            description = None
-            if omitted_count:
-                description = (
-                    f"Selected measurements: {observed_count} observed, {omitted_count} "
-                    "omitted as bounded or non-finite; bounded or non-finite rows were omitted "
-                    "before density estimation."
-                )
             figures.append(
                 plot_figure(
                     fig=fig,
                     filename=stub,
                     fig_kwargs=fig_kwargs,
-                    description=description,
+                    description=_distribution_description(
+                        observed_count,
+                        omitted_count,
+                        distribution_withheld=distribution_withheld,
+                    ),
                 )
             )
     return figures
