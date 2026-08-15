@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-from ..common import descriptive_mean_resampling_interval
+from ..common import descriptive_mean_resampling_interval, select_exact_observations
 
 _MARKERS = ["o", "s", "^", "D", "P", "X", "v", "<", ">", "h", "H"]
 
@@ -156,6 +156,7 @@ def draw_time_series_panel(
     ax.grid(False)
     ax.yaxis.grid(True, which="major")
     ax.xaxis.grid(True, which="major")
+    data = select_exact_observations(data, where="time-series summary")
 
     if show_observations:
         for hue in hue_levels:

@@ -12,7 +12,7 @@ from reader_workbench.plotting.sinks import PlotFigure
 from reader_workbench.plotting.style import DEFAULT_RC as _RC
 from reader_workbench.plotting.style import PaletteBook, use_style
 
-from ..common import colors_for, nonfinite_value_counts, plot_figure
+from ..common import colors_for, exact_observation_counts, plot_figure
 from ..grouping import GroupMatch
 from ..panels import (
     draw_snapshot_panel,
@@ -329,7 +329,7 @@ def plot_ts_and_snap(
         if snapshot_data is not None:
             count_frames.append(snapshot_data.frame)
         panel_values = pd.concat(count_frames, ignore_index=True)
-        group_panel_counts[str(label)] = nonfinite_value_counts(panel_values)
+        group_panel_counts[str(label)] = exact_observation_counts(panel_values)
 
         if square_panels:
             ax_ts.set_box_aspect(1.0)
@@ -371,11 +371,12 @@ def plot_ts_and_snap(
                 fig.suptitle(str(title), y=float(fig_kwargs.get("suptitle_y", 1.04)))
             stub = filename or f"ts_snap__{ch_snap}__paired_row"
             observed_count = sum(group_panel_counts[group.label][0] for group in group_frames)
-            nonfinite_count = sum(group_panel_counts[group.label][1] for group in group_frames)
+            omitted_count = sum(group_panel_counts[group.label][1] for group in group_frames)
             description = None
-            if nonfinite_count:
+            if omitted_count:
                 description = (
-                    f"Selected panel measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
+                    f"Selected panel measurements: {observed_count} observed, {omitted_count} "
+                    "omitted as bounded or non-finite; "
                     "affected time-series summaries were withheld."
                 )
             figures.append(
@@ -416,12 +417,12 @@ def plot_ts_and_snap(
                 else:
                     base = f"ts_snap__{ch_snap}"
                     stub = f"{base}{group_tag}" if group_tag else f"{base}__{group.label}"
-                observed_count, nonfinite_count = group_panel_counts[group.label]
+                observed_count, omitted_count = group_panel_counts[group.label]
                 description = None
-                if nonfinite_count:
+                if omitted_count:
                     description = (
                         f"Selected panel measurements: {observed_count} observed, "
-                        f"{nonfinite_count} omitted as non-finite; "
+                        f"{omitted_count} omitted as bounded or non-finite; "
                         "affected time-series summaries were withheld."
                     )
                 figures.append(

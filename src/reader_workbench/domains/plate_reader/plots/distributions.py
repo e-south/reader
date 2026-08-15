@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,28 +13,13 @@ from .common import (
     alias_column,
     best_subplot_grid,
     colors_for,
-    nonfinite_value_counts,
+    exact_observation_counts,
     plot_figure,
     require_columns,
+    select_exact_observations,
     warn_if_empty,
 )
 from .grouping import GroupMatch, resolve_groups
-
-
-def _finite_distribution_rows(frame: pd.DataFrame, *, row_kind: str) -> pd.DataFrame:
-    work = frame.copy()
-    work["value"] = pd.to_numeric(work["value"], errors="coerce")
-    finite = np.isfinite(work["value"].to_numpy(dtype=float, copy=False))
-    omitted = int((~finite).sum())
-    if omitted:
-        noun = "row" if omitted == 1 else "rows"
-        logging.getLogger("reader").warning(
-            "distributions: omitted %d non-finite %s %s before density estimation",
-            omitted,
-            row_kind,
-            noun,
-        )
-    return work.loc[finite].copy()
 
 
 def _figure_groups(
@@ -111,8 +94,8 @@ def plot_distributions(
             return []
 
     work = selected_work
-    work = _finite_distribution_rows(work, row_kind="measurement")
-    if warn_if_empty(work, where="distributions", detail="after non-finite value filter"):
+    work = select_exact_observations(work, where="distributions")
+    if warn_if_empty(work, where="distributions", detail="after exact-observation filter"):
         return []
 
     selected_blanks = blanks
@@ -120,7 +103,7 @@ def plot_distributions(
     if not blanks.empty:
         require_columns(blanks, ["channel", "value"], where="distribution blanks")
         selected_blanks = blanks[blanks["channel"].astype(str).isin(ch_list)].copy()
-        blank_work = _finite_distribution_rows(selected_blanks, row_kind="blank")
+        blank_work = select_exact_observations(selected_blanks, where="distribution blanks")
 
     if hue:
         hcol = alias_column(work, hue)
@@ -212,14 +195,15 @@ def plot_distributions(
                 source_sub = selected_work.copy()
                 if gcol and members != [None]:
                     source_sub = source_sub[source_sub[gcol].astype(str).isin(members)]
-                observed_count, nonfinite_count = nonfinite_value_counts(
+                observed_count, omitted_count = exact_observation_counts(
                     pd.concat([source_sub, selected_blanks], ignore_index=True)
                 )
                 description = None
-                if nonfinite_count:
+                if omitted_count:
                     description = (
-                        f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
-                        "non-finite rows were omitted before density estimation."
+                        f"Selected measurements: {observed_count} observed, {omitted_count} "
+                        "omitted as bounded or non-finite; bounded or non-finite rows were omitted "
+                        "before density estimation."
                     )
                 figures.append(
                     plot_figure(
@@ -279,7 +263,7 @@ def plot_distributions(
                 axes[k].set_visible(False)
 
             stub = f"{filename}__{ch}" if filename else f"distrib__{ch}"
-            observed_count, nonfinite_count = nonfinite_value_counts(
+            observed_count, omitted_count = exact_observation_counts(
                 pd.concat(
                     [
                         selected_work[selected_work["channel"].astype(str) == ch],
@@ -289,10 +273,11 @@ def plot_distributions(
                 )
             )
             description = None
-            if nonfinite_count:
+            if omitted_count:
                 description = (
-                    f"Selected measurements: {observed_count} observed, {nonfinite_count} omitted as non-finite; "
-                    "non-finite rows were omitted before density estimation."
+                    f"Selected measurements: {observed_count} observed, {omitted_count} "
+                    "omitted as bounded or non-finite; bounded or non-finite rows were omitted "
+                    "before density estimation."
                 )
             figures.append(
                 plot_figure(

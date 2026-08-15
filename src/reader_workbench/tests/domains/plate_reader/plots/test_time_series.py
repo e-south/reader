@@ -76,6 +76,42 @@ def test_time_series_describes_selected_nonfinite_measurements() -> None:
 
     assert len(rendered) == 1
     assert rendered[0].description == (
-        "Selected measurements: 4 observed, 1 omitted as non-finite; affected time-series summaries were withheld."
+        "Selected measurements: 4 observed, 1 omitted as bounded or non-finite; "
+        "affected time-series summaries were withheld."
     )
     plt.close(rendered[0].fig)
+
+
+def test_time_series_withholds_finite_bounded_observations_from_summary() -> None:
+    frame = pd.DataFrame(
+        {
+            "position": ["A1", "A2", "A3"],
+            "time": [0.0, 0.0, 0.0],
+            "channel": ["signal"] * 3,
+            "value": [1.0, 3.0, 101.0],
+            "state": ["state_a"] * 3,
+            "value_policy_clipped": [False, False, True],
+            "value_instrument_overflow": [False, False, False],
+            "value_bound_kind": ["exact", "exact", "lower"],
+        }
+    )
+
+    figure = plot_time_series(
+        df=frame,
+        x="time",
+        y=["signal"],
+        hue="state",
+        channels=None,
+        group_on=None,
+        pool_sets=None,
+        pool_match="exact",
+        fig_kwargs={},
+        add_sheet_line=False,
+        sheet_line_kwargs=None,
+        log_transform=False,
+        time_window=None,
+        palette_book=None,
+    )[0].fig
+
+    assert figure.axes[0].lines[0].get_ydata().tolist() == [2.0]
+    plt.close(figure)
