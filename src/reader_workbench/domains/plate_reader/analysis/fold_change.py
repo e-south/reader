@@ -168,11 +168,23 @@ def compute_fold_change_table(
 
     out_rows: list[dict[str, Any]] = []
     nearest_keys: list[str] = [col for col in (group_cols + [treatment_col, "position"]) if col in base.columns]
+    group_roster = list(base[group_cols].drop_duplicates().itertuples(index=False, name=None))
 
     for timepoint in [float(item) for item in spec.report_times]:
         snapped = nearest_time_per_key(
             base, target_time=float(timepoint), keys=nearest_keys, tol=float(spec.time_tolerance)
         )
+        if expected_treatment_set:
+            snapped_groups = set(snapped[group_cols].drop_duplicates().itertuples(index=False, name=None))
+            for group_values in group_roster:
+                if group_values in snapped_groups:
+                    continue
+                group_desc = " | ".join(f"{column}={group_values[index]}" for index, column in enumerate(group_cols))
+                missing = sorted(expected_treatment_set, key=smart_string_numeric_key)
+                raise ValueError(
+                    f"fold_change: incomplete treatment cohort at t≈{timepoint:g} h for {group_desc}; "
+                    f"missing={missing}, unexpected=[]"
+                )
         if snapped.empty:
             if logger is not None:
                 logger.warning(
