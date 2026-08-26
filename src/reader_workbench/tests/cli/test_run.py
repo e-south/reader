@@ -161,6 +161,7 @@ def test_resolve_pipeline_step_id_hint_includes_target_config(tmp_path: Path) ->
     assert str(cfg) in str(exc_info.value)
 
 
+@pytest.mark.integration
 def test_read_only_commands_do_not_create_journal(tmp_path: Path) -> None:
     cfg_payload = base_reader_config(
         experiment_id="exp_read_only",

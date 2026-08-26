@@ -14,16 +14,20 @@ The distribution and import package are named `reader-workbench` and
 
 ## Install
 
-Install Reader as a command-line tool:
+Reader has not yet been published to PyPI. Install the current source release as
+a command-line tool:
 
 ```bash
-uv tool install reader-workbench
+uv tool install git+https://github.com/e-south/reader.git
 ```
 
-Or install it into an active Python environment:
+For development, install from a checkout:
 
 ```bash
-python -m pip install reader-workbench
+git clone https://github.com/e-south/reader.git
+cd reader
+uv sync --locked --group dev
+uv run reader demo
 ```
 
 The installed command is `reader`:
@@ -37,13 +41,6 @@ reader init ./experiments/my_experiment --protocol plate_reader/single_reporter_
 The demo prints a guided command tour. It does not execute a pipeline or write
 files. Every generated starter can be inspected and validated before data is
 added.
-
-## Contribute from a checkout
-
-```bash
-uv sync --locked --group dev
-uv run reader demo
-```
 
 ## Learn more
 
