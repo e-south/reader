@@ -38,6 +38,9 @@ The unit of work is an **experiment directory**:
   - If output content is wrong, fix the pipeline code/config and re-run to regenerate.
 - Keep disposable repository-local scratch under `.tmp/`; `tmp/` is not a valid top-level namespace.
 - Ask before committing any data or generated outputs.
+- Never run `git clean -fdX` in this repository. Ignored experiment inputs and
+  outputs can be irreplaceable; retire them only through an exact,
+  experiment-owned review.
 
 ### Environment & tooling (uv)
 This project uses `uv`:

@@ -82,6 +82,13 @@ def test_test_job_installs_normal_locked_dependencies() -> None:
     assert install["run"] == "uv sync --locked --group dev"
 
 
+def test_ci_runs_a_nonempty_portable_integration_gate() -> None:
+    steps = _workflow("checks.yaml")["jobs"]["tests"]["steps"]
+    integration = next(step for step in steps if step.get("name") == "Run portable integration gate")
+
+    assert integration["run"] == "uv run --locked pytest -q -m integration --maxfail=1"
+
+
 def test_package_and_release_smoke_tests_use_normal_pip_resolution() -> None:
     for workflow_name, job_name in (("checks.yaml", "package"), ("release.yaml", "build")):
         steps = _workflow(workflow_name)["jobs"][job_name]["steps"]

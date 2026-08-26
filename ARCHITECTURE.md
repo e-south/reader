@@ -260,6 +260,9 @@ worth decomposing when a change reaches them:
   compiler; `src/reader_workbench/protocols/compiler.py` is only its stable public facade
 - notebook composition belongs under `src/reader_workbench/workbench/notebooks/`, while
   reusable calculations belong under `src/reader_workbench/domains/`
+- `src/reader_workbench/protocols/builtins.py` is the stable public catalog
+  facade; when a protocol family next changes, move its descriptor builders to
+  a family-owned module and keep the facade as the composition point
 
 New work should move one coherent responsibility at a time into a domain or
 family package. A split is useful when it creates an explicit contract or

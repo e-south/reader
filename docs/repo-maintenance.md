@@ -2,7 +2,7 @@
 doc_id: reader-repo-maintenance
 surface: maintainer-runbook
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-08-26
 summary: Broader Reader branch, CI, repository health, and delivery workflow beyond the minimum change gate.
 ---
 
@@ -78,7 +78,7 @@ Reader keeps continuous verification and publication distinct:
   covers the published runtime surface, and coverage upload remains separately
   permissioned. Notebook execution uses a separately managed environment until
   Reader can publish a safe Marimo dependency resolution. The final `Checks`
-  job is the only required branch-protection context.
+  job and `CodeQL` are required branch-protection contexts.
 - `Release` in [.github/workflows/release.yaml](../.github/workflows/release.yaml)
   runs only for a published GitHub release whose `v<version>` tag exactly
   matches `pyproject.toml`. An unprivileged job builds the distributions, then
@@ -97,3 +97,7 @@ Local commands:
   commands against one ignored local experiment when data-backed dogfood is in
   scope
 - `git diff --check`: whitespace and merge-marker hygiene
+
+Do not use `git clean -fdX` as repository cleanup. Reader intentionally ignores
+local experiment inputs as well as generated outputs, so that command can erase
+source data. Inspect and retire one named experiment surface at a time.
