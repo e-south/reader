@@ -12,6 +12,9 @@ jobs:
     name: Build distribution
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -31,10 +34,30 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+      - name: Verify successful main checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .tmp/release-evidence
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/checks.yaml/runs" \
+            -f head_sha="$GITHUB_SHA" -f event=push -f per_page=100 \
+            > .tmp/release-checks.json
+          python src/reader_workbench/maintenance/release.py \
+            --checks .tmp/release-checks.json --revision "$GITHUB_SHA" \
+            > .tmp/release-evidence/checks.json
       - name: Verify lockfile
         run: uv lock --check
       - name: Build distributions
-        run: uv build --no-sources
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          python - <<'PY'
+          import pathlib, tomllib
+          requirements = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['build-system']['requires']
+          pathlib.Path('.tmp/release-evidence/build-requirements.in').write_text('\n'.join(requirements) + '\n')
+          PY
+          uv pip compile .tmp/release-evidence/build-requirements.in --generate-hashes \
+            -o .tmp/release-evidence/build-requirements.lock
+          uv build --no-sources --build-constraints .tmp/release-evidence/build-requirements.lock
       - name: Smoke-test built wheel
         run: |
           python -m venv .tmp/wheel-smoke
@@ -46,13 +69,43 @@ jobs:
           .tmp/wheel-smoke/bin/reader protocols --format json > /dev/null
       - name: Verify distribution metadata
         run: uvx --from twine==7.0.0 twine check dist/*
+      - name: Retain release evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, platform, subprocess, tomllib
+          root = pathlib.Path('.')
+          project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
+          sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          evidence = root / '.tmp/release-evidence'
+          citation = (root / 'CITATION.cff').read_text()
+          (evidence / 'CITATION.cff').write_text(citation + f'version: "{project["version"]}"\n')
+          record = {
+              'name': project['name'], 'version': project['version'],
+              'revision': os.environ['GITHUB_SHA'], 'tag': os.environ['GITHUB_REF_NAME'],
+              'python': platform.python_version(), 'uv_lock_sha256': sha(root / 'uv.lock'),
+              'uv': subprocess.check_output(['uv', '--version'], text=True).strip(),
+              'build_lock_sha256': sha(evidence / 'build-requirements.lock'),
+              'checks': json.loads((evidence / 'checks.json').read_text()),
+              'artifacts': {p.name: sha(p) for p in sorted((root / 'dist').glob('*'))
+                            if p.name.endswith(('.whl', '.tar.gz'))},
+          }
+          (evidence / 'provenance.json').write_text(json.dumps(record, indent=2) + '\n')
+          PY
+      - name: Upload release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-evidence
+          path: .tmp/release-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: distributions
           path: dist/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 90
 
   publish:
     name: Publish to PyPI

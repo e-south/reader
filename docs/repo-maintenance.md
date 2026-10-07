@@ -57,6 +57,7 @@ Choose the smallest verification set that still exercises the risk:
 The quality bar for those checks is defined in [QUALITY.md](../QUALITY.md).
 
 Release preparation must also apply the
+[release and downstream-pin procedure](./guides/releases.md) and the
 [package namespace migration](./guides/package_namespace_migration.md) to
 downstream Python consumers and external plugin distributions. The installed
 CLI and persisted wire identities are intentionally unchanged.
@@ -81,7 +82,8 @@ Reader keeps continuous verification and publication distinct:
   job and `CodeQL` are required branch-protection contexts.
 - `Release` in [.github/workflows/release.yaml](../.github/workflows/release.yaml)
   runs only for a published GitHub release whose `v<version>` tag exactly
-  matches `pyproject.toml`. An unprivileged job builds the distributions, then
+  matches `pyproject.toml` and whose exact main commit passed its latest
+  main-push `Checks` run. An unprivileged job builds the distributions, then
   a `pypi` environment job publishes them through OIDC. PyPI must trust
   `e-south/reader`, workflow `release.yaml`, and environment `pypi` before the
   first release.

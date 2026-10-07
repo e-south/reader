@@ -118,12 +118,22 @@ def test_coverage_upload_has_repository_context_and_fails_closed() -> None:
 def test_release_oidc_is_limited_to_publish_job() -> None:
     jobs = _workflow("release.yaml")["jobs"]
 
-    assert jobs["build"].get("permissions") is None
+    assert jobs["build"]["permissions"] == {"contents": "read", "actions": "read"}
     assert jobs["publish"]["permissions"] == {"id-token": "write"}
     assert jobs["publish"]["environment"] == {
         "name": "pypi",
         "url": "https://pypi.org/p/reader-workbench",
     }
+
+
+def test_release_requires_exact_commit_ci_before_build_and_retains_evidence() -> None:
+    steps = _workflow("release.yaml")["jobs"]["build"]["steps"]
+    names = [step.get("name") for step in steps]
+    gate = next(step for step in steps if step.get("name") == "Verify successful main checks")
+    assert "maintenance/release.py" in gate["run"]
+    assert '--revision "$GITHUB_SHA"' in gate["run"]
+    assert names.index(gate["name"]) < names.index("Build distributions")
+    assert "Retain release evidence" in names
 
 
 def test_release_requires_a_tagged_main_commit() -> None:

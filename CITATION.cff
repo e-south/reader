@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Cite Reader and record the exact version, source revision and artifact checksum used."
+type: software
+title: "Reader: validated, traceable analysis of experimental instrument data"
+authors:
+  - family-names: South
+    given-names: Eric J.
+repository-code: "https://github.com/e-south/reader"
+license: MIT
+# pyproject.toml owns the version; the release workflow adds it to the bundle citation.
