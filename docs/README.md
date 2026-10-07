@@ -54,6 +54,8 @@ outputs. Use the reference pages when you need exact CLI or config details.
   tracked changes.
 - [Repo maintenance](./repo-maintenance.md): repo-wide checks, CI, and
   maintenance guidance.
+- [Releases and downstream pins](./guides/releases.md): immutable tags, PyPI
+  publication, artifact evidence and paper-companion acceptance.
 - [Workbench gardening](./guides/workbench_gardening.md): maintainer workflow
   for architecture, docs, and verification-surface cleanup.
 - [Plugin development](./core/plugins.md): add or extend ingest, transform,
