@@ -47,6 +47,20 @@ jobs:
             > .tmp/release-evidence/checks.json
       - name: Verify lockfile
         run: uv lock --check
+      - name: Verify immutable package-page banner
+        run: |
+          python - <<'PYBANNER'
+          import pathlib, re, tomllib, urllib.request
+          root = pathlib.Path('.')
+          project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
+          url = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', (root / 'README.md').read_text())[0]
+          expected = f"https://raw.githubusercontent.com/e-south/reader/v{project['version']}/assets/reader-banner.png"
+          assert url == expected, 'Banner must be bound to the released version'
+          with urllib.request.urlopen(url, timeout=30) as response:
+              published = response.read(10_000_001)
+          assert published == (root / 'assets/reader-banner.png').read_bytes(), 'Published banner differs from source'
+          assert len(published) < 10_000_000 and published.startswith(b'\x89PNG\r\n\x1a\n')
+          PYBANNER
       - name: Build distributions
         run: |
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
@@ -83,6 +97,7 @@ jobs:
               'name': project['name'], 'version': project['version'],
               'revision': os.environ['GITHUB_SHA'], 'tag': os.environ['GITHUB_REF_NAME'],
               'python': platform.python_version(), 'uv_lock_sha256': sha(root / 'uv.lock'),
+              'readme_sha256': sha(root / 'README.md'), 'banner_sha256': sha(root / 'assets/reader-banner.png'),
               'uv': subprocess.check_output(['uv', '--version'], text=True).strip(),
               'build_lock_sha256': sha(evidence / 'build-requirements.lock'),
               'checks': json.loads((evidence / 'checks.json').read_text()),

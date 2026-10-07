@@ -72,3 +72,16 @@ an additional archival identifier, not a substitute for the executable version.
 
 See [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
 and the [namespace migration](./package_namespace_migration.md).
+
+### Package-page images
+
+The README is also the PyPI description. Keep its links absolute and use a
+PNG banner at an immutable source commit or the matching `v<version>` tag.
+Never use a relative asset path or a mutable branch for a release image. Keep
+published tags and their assets; changing a new banner must not change older
+release pages. When incrementing the version, update a version-bound README
+image URL in the same change. The package tests enforce this relationship.
+
+Before publishing, fetch the banner URL after the tag exists and compare its
+bytes with the source PNG. Check the rendered PyPI page after upload. The PNG is
+a package-page export; its editable SVG remains the artwork source.
