@@ -1,4 +1,4 @@
-# ![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/v1.0.0/assets/reader-banner.png)
+# ![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/v1.0.1/assets/reader-banner.png)
 
 [![Checks](https://github.com/e-south/reader/actions/workflows/checks.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/checks.yaml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/downloads/release/python-3120/)
