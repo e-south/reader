@@ -1,4 +1,4 @@
-# ![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/main/assets/reader-banner.svg)
+# ![Reader data workbench](https://raw.githubusercontent.com/e-south/reader/v1.0.0/assets/reader-banner.png)
 
 [![Checks](https://github.com/e-south/reader/actions/workflows/checks.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/checks.yaml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/downloads/release/python-3120/)
@@ -14,11 +14,10 @@ The distribution and import package are named `reader-workbench` and
 
 ## Install
 
-Reader has not yet been published to PyPI. Install the current source release as
-a command-line tool:
+Install Reader as a command-line tool:
 
 ```bash
-uv tool install git+https://github.com/e-south/reader.git
+uv tool install reader-workbench
 ```
 
 For development, install from a checkout:

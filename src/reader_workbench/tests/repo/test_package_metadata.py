@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -56,3 +57,21 @@ def test_compile_checks_target_the_existing_import_package() -> None:
         assert "compileall -q src/reader_workbench" in text, path
         assert "compileall src/reader`" not in text, path
         assert "compileall -q src/reader\n" not in text, path
+
+
+def test_package_readme_uses_durable_images_and_absolute_links() -> None:
+    root = REPO_ROOT
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    assert project["readme"] == "README.md"
+    text = (root / "README.md").read_text()
+    targets = re.findall(r"\]\(([^)]+)\)", text)
+    assert all(target.startswith(("https://", "#")) for target in targets)
+    images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
+    banner = images[0]
+    prefix = "https://raw.githubusercontent.com/e-south/reader/"
+    assert banner.startswith(prefix)
+    revision, relative = banner.removeprefix(prefix).split("/", 1)
+    assert revision == "v" + project["version"] or re.fullmatch(r"[0-9a-f]{40}", revision)
+    assert relative.endswith(".png")
+    data = (root / relative).read_bytes()
+    assert data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) < 10_000_000
