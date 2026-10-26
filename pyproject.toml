@@ -37,7 +37,7 @@ dependencies = [
   "pillow>=12.3.0",
   "polars>=1.36.1",
   "flowio>=1.4.0",
-  "filelock>=3.20.3,<4",
+  "filelock>=4.2.4,<5",
 ]
 
 [project.scripts]
