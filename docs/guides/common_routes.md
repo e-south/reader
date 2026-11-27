@@ -73,14 +73,13 @@ reader run "$exp"
 reader plot "$exp" --list
 reader plot "$exp"
 reader export "$exp" --list
-reader export "$exp"
 reader records "$exp"
 reader verify "$exp"
 ```
 
-Run the pipeline first, then list or render plots and exports as needed.
-`reader records` inspects the catalog; `reader verify` proves the current
-evidence still matches its sources and files.
+The sample plate defines two plots. If your config also lists exports, run
+`reader export "$exp"` to write them. `reader records` lists the catalog
+entries, and `reader verify` checks their inputs and files.
 
 ## Use JSON for automation
 

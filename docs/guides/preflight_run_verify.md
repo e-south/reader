@@ -49,20 +49,18 @@ reader export "$exp" --list
 - Use `plot --list` and `export --list` to confirm resolved outputs before
   generating them.
 
-## 4. Execute only the slice you need
+## 4. Run the pipeline and generate outputs
 
 ```bash
 reader run "$exp"
 reader plot "$exp"
-reader export "$exp"
 reader notebook "$exp" --mode none
-reader notebook "$exp" --mode run --headless
 ```
 
-`run` materializes records. `plot` and `export` materialize their output
-surfaces after the experiment is ready. `notebook --mode none` scaffolds a
-review notebook without launching Marimo, and `--mode run --headless` prints a
-loopback URL for agent/browser review.
+These commands produce records, the sample plate's plots, and a notebook
+scaffold. If `reader export "$exp" --list` shows configured exports, use
+`reader export "$exp"` to write them. To launch the notebook separately, see
+the [notebook guide](./notebooks.md) for the Marimo environment and launch modes.
 
 ## 5. Verify outputs and provenance
 
@@ -85,9 +83,8 @@ For a human review, also inspect:
 - generated plot files
 - generated export files
 
-The record catalog proves what was produced; the invocation ledger records each
-attempt and terminal result. Neither requires guessing from filesystem state or
-using `JOURNAL.md` as a machine log.
+The catalog identifies the generated records. The invocation ledger records each
+attempt and its outcome.
 
 ## Recovery loop
 
