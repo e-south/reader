@@ -2,20 +2,20 @@
 doc_id: reader-docs-index
 surface: documentation-index
 owner: reader-maintainers
-last_verified: 2026-08-01
+last_verified: 2026-11-27
 summary: Routes readers to the smallest current guide or reference for operating and maintaining reader.
 ---
 
 # Documentation index
 
-Use this index to find the smallest doc that answers the current question.
-Start with the guides if you want to see how `reader` moves from inputs to
-outputs. Use the reference pages when you need exact CLI or config details.
+Start with a sample run, or go directly to the guide for your own experiment.
+The reference pages cover CLI options, Python interfaces, and configuration.
 
 ## Start here
 
 - [Getting started](./guides/getting_started.md): install `reader`, check the
   environment, and inspect a first experiment.
+- [Run a sample plate](./guides/demo.md) walks one well from two example workbooks to verified records and plots.
 - [Common tasks](./guides/common_routes.md): shortest routes for discovery,
   validation, execution, and JSON output.
 
@@ -29,7 +29,6 @@ outputs. Use the reference pages when you need exact CLI or config details.
   capture metadata minimums, and keep intake decisions explicit.
 - [Experiment bootstrap](./guides/experiment_bootstrap.md): create an
   experiment from local or Drive-backed inputs and verify the run.
-- [End-to-end demo](./guides/demo.md): one concrete walkthrough from discovery to outputs.
 
 ## User guides
 
