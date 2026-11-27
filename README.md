@@ -2,7 +2,7 @@
 
 [![Checks on main](https://github.com/e-south/reader/actions/workflows/checks.yaml/badge.svg?branch=main)](https://github.com/e-south/reader/actions/workflows/checks.yaml?query=branch%3Amain)
 [![Coverage on main](https://codecov.io/gh/e-south/reader/branch/main/graph/badge.svg)](https://app.codecov.io/gh/e-south/reader/tree/main)
-[![PyPI](https://img.shields.io/pypi/v/reader-workbench.svg)](https://pypi.org/project/reader-workbench/)
+[![PyPI](https://img.shields.io/pypi/v/reader-workbench)](https://pypi.org/project/reader-workbench/)
 [![Supported Python](https://img.shields.io/pypi/pyversions/reader-workbench.svg)](https://docs.python.org/3.12/)
 [![MIT license](https://img.shields.io/badge/license-MIT-3D8068.svg)](https://github.com/e-south/reader/blob/main/LICENSE)
 
