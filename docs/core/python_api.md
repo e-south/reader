@@ -2,37 +2,37 @@
 doc_id: reader-python-api
 surface: api-reference
 owner: reader-maintainers
-last_verified: 2026-08-01
+last_verified: 2026-11-27
 summary: Stable task-oriented Python entrypoints for inspecting, verifying, and running Reader experiments without composing workbench internals.
 ---
 
 # Python API
 
-Use `reader_workbench.api` when Python code needs Reader results directly. The API owns
-config loading, protocol binding, and workbench compilation, so callers do not
-need to assemble runtime, declaration, graph, engine, and record objects.
+Use `reader_workbench.api` to read records from another Python program. Install
+`reader-workbench` into that program's Python 3.12 environment. An isolated
+`uv tool install` makes the CLI available to your shell.
+
+After [running the sample plate](../guides/demo.md), change to the directory
+containing `experiments/`. This example verifies the experiment and reads the
+final table by record ID.
 
 ```python
 from reader_workbench import open_experiment
-from reader_workbench.api import inspect, notebook, plan, plots, read_artifact, read_dataframe, records, run, validate, verify
+from reader_workbench.api import read_dataframe, verify
 
-experiment = open_experiment("experiments/my_experiment")
-
-preflight = validate(experiment)
-inspection = inspect(experiment)
-execution_plan = plan(experiment)
-plot_catalog = plots(experiment)
-record_catalog = records(experiment)
-tidy = read_dataframe(experiment, "ingest/df")
+experiment = open_experiment("experiments/first_plate")
 verification = verify(experiment)
-execution = run(experiment)
-notebook_result = notebook(experiment)
+if verification.status != "ok":
+    raise RuntimeError(verification.issues)
+
+result = read_dataframe(experiment, "sample_measurements/df")
+print(result.dataframe[["position", "time", "channel", "value"]])
 ```
 
-Each operation returns a typed result with `to_dict()` for serialization. An
-`Experiment` loads and compiles its config once and can be reused across calls.
-Its stable public state is `config_path` and `identity`; parsed config, compiled
-declarations, runtime composition, and record stores remain API internals.
+`result.dataframe` contains the measurements. `result.to_dict()` returns the
+record identity, digest, contract, and dataframe shape for serialization.
+Reuse the same `Experiment` for other operations on this config. Its public
+attributes are `config_path` and `identity`.
 
 ## Experiment operations
 

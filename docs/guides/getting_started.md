@@ -2,88 +2,57 @@
 doc_id: reader-getting-started
 surface: tutorial
 owner: reader-maintainers
-last_verified: 2026-07-28
-summary: Minimal setup and first-inspection path for a new Reader user.
+last_verified: 2026-11-27
+summary: Install Reader and inspect the config and input requirements for a first experiment.
 ---
 
 # Getting started
 
-Reader uses `uv` for installation and command execution. Start with the guided
-command tour, then discover a protocol or inspect an existing experiment. None
-of these steps changes a real experiment.
-
-## Install a checkout
+Install the released CLI with [uv](https://docs.astral.sh/uv/). Reader uses
+Python 3.12. If your shell cannot find the installed command, run
+`uv tool update-shell` and open a new shell.
 
 ```bash
-uv sync --locked
+uv tool install reader-workbench --python 3.12
+reader --version
+reader protocols
 ```
 
-This creates or updates `.venv` with Reader and its runtime dependencies.
-The distribution name is `reader-workbench`, the Python import package is
-`reader_workbench`, and the installed command is `reader`.
-Existing Python integrations should follow the
-[package namespace migration](./package_namespace_migration.md); Reader does
-not provide a compatibility shim for the retired import package.
+The distribution is `reader-workbench`, the command is `reader`, and the
+Python import name is `reader_workbench`. For a source checkout, use the
+[development setup](../../README.md#develop-from-a-checkout).
 
-Reader does not currently publish a notebook dependency extra. The released
-Marimo and PyMdown dependency constraints do not provide a resolution Reader
-can safely advertise. Notebook scaffolding remains available; use a separately
-managed and audited Marimo environment for interactive launch.
+## Create and inspect a starter
 
-## Run the guided demo
+From an empty working directory, create a single-reporter plate experiment.
+If you already followed the README, start at `reader inspect`.
 
 ```bash
-uv run reader demo
+exp=./experiments/first_plate
+reader init "$exp" --protocol plate_reader/single_reporter_screen
+reader inspect "$exp"
+reader validate "$exp" --no-files
+reader explain "$exp"
 ```
 
-The demo prints a 14-command tour. It does not execute those commands, use
-example data, or write files.
+`init` creates `config.yaml`, `inputs/`, and `notebooks/`. The config selects
+the `reader/v8` schema and sets the protocol's channels and output options.
+`inspect` shows that setup. `validate --no-files` checks the configuration
+and step connections. `explain` shows where each step reads and writes.
 
-## Discover protocols and experiments
+## Add measurements
 
-```bash
-uv run reader protocols
-uv run reader ls --root experiments
-uv run reader ls --root experiments --details --readiness
-```
+The starter expects one instrument workbook in `inputs/` and a sample map
+at `inputs/metadata.xlsx`. The map connects well positions to sample and
+treatment identifiers. Supply your label mapping in `annotations.labels`.
 
-`reader protocols` lists the assay types Reader knows how to scaffold. Start
-with `reader ls` for existing experiments; add `--details --readiness` when you
-need protocol, output, and preflight state in the same view.
+- To try Reader with invented measurements, follow [Run a sample plate](./demo.md).
+- For your own files, use [Experiment bootstrap](./experiment_bootstrap.md) to establish the metadata, then [Preflight, run, verify](./preflight_run_verify.md) to validate the files and produce records.
+- To find an existing experiment, run `reader ls --root experiments --details --readiness` from its parent workspace.
 
-## Scaffold a new experiment
-
-```bash
-uv run reader init ./experiments/my_experiment --protocol plate_reader/single_reporter_screen
-uv run reader validate ./experiments/my_experiment/config.yaml --no-files
-```
-
-The starter contains only protocol-owned defaults and declared input
-resources; Reader creates `outputs/` only when a real run writes results. Edit
-the metadata and protocol choices before adding instrument files to `inputs/`.
-
-## Inspect one experiment before execution
-
-```bash
-uv run reader inspect experiments/template/config.yaml
-uv run reader validate experiments/template/config.yaml --no-files
-uv run reader explain experiments/template/config.yaml
-```
-
-Use `inspect` for the bound experiment summary, `validate` for preflight checks, and `explain` for the compiled runtime plan.
-
-## Maintainer checks
-
-Contributors should use the [repo change gate](../repo-change-gate.md) for the
-current test, lint, formatting, documentation, and build commands. New users do
-not need to run the full maintainer suite before trying Reader.
-
-## Continue from here
-
-- [Common tasks](./common_routes.md)
-- [Preflight, run, verify](./preflight_run_verify.md)
-- [Automation and JSON](./automation.md)
-- [CLI reference](../core/cli.md)
-- [Configuring `reader/v8`](../core/pipeline.md)
-- [Notebooks](./notebooks.md)
-- [Package namespace migration](./package_namespace_migration.md)
+After a run, the catalog at `outputs/manifests/records.json` lists the generated
+records. `reader verify "$exp"` checks them against the files and configuration.
+See [Common tasks](./common_routes.md) for plots, exports, and JSON, or
+[Notebooks](./notebooks.md) for scaffolding and launching a notebook in a
+separately managed Marimo environment. Existing Python integrations can use
+the [namespace migration guide](./package_namespace_migration.md).
