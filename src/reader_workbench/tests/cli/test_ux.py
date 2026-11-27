@@ -777,6 +777,45 @@ def test_init_command_scaffolds_new_experiment(tmp_path: Path) -> None:
     assert spec.protocol.id == "plate_reader/dual_reporter_screen"
 
 
+@pytest.mark.parametrize("collision", ["target", "notebooks", "config.yaml"])
+def test_init_rejects_collisions_before_writing(tmp_path: Path, collision: str) -> None:
+    target = tmp_path / "experiment"
+    if collision == "target":
+        target.write_text("keep", encoding="utf-8")
+    else:
+        target.mkdir()
+        if collision == "config.yaml":
+            (target / collision).mkdir()
+        else:
+            (target / collision).write_text("keep", encoding="utf-8")
+    before = sorted(tmp_path.rglob("*"))
+
+    result = CliRunner().invoke(cli.app, ["init", str(target), "-p", "workbench/generic", "--force"])
+
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+    assert target.name in result.output
+    assert sorted(tmp_path.rglob("*")) == before
+    if collision != "config.yaml":
+        existing = target if collision == "target" else target / collision
+        assert existing.read_text(encoding="utf-8") == "keep"
+
+
+def test_init_accepts_existing_directory_with_period_and_preserves_config(tmp_path: Path) -> None:
+    target = tmp_path / "run.01"
+    target.mkdir()
+    args = ["init", str(target), "-p", "workbench/generic"]
+    runner = CliRunner()
+    assert runner.invoke(cli.app, args).exit_code == 0
+    config = target / "config.yaml"
+    config.write_text("# hand edited", encoding="utf-8")
+
+    result = runner.invoke(cli.app, args)
+
+    assert result.exit_code == 1
+    assert config.read_text(encoding="utf-8") == "# hand edited"
+
+
 def test_single_reporter_init_scaffolds_map_free_kinetic_ingest(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "experiments" / "20260317_single_reporter"

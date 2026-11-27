@@ -292,22 +292,32 @@ def init(
     except ConfigError as err:
         raise typer.BadParameter(str(err)) from err
     target_dir = Path(target).expanduser()
-    if target_dir.suffix:
-        raise typer.BadParameter("init expects a directory path, not a file path")
+    if not target_dir.is_dir() and (target_dir.exists() or target_dir.suffix):
+        raise typer.BadParameter(f"Expected an experiment directory at {target_dir}.", param_hint="DIR")
     target_dir = target_dir.resolve()
     config_path = target_dir / "config.yaml"
+    if config_path.exists() and not config_path.is_file():
+        raise typer.BadParameter(f"Expected a config file at {config_path}.", param_hint="DIR")
     if config_path.exists() and not force:
         shared.abort(f"{config_path} already exists. Pass --force to overwrite it.")
-    target_dir.mkdir(parents=True, exist_ok=True)
-    (target_dir / "inputs").mkdir(exist_ok=True)
-    (target_dir / "notebooks").mkdir(exist_ok=True)
+    scaffold_dirs = (target_dir / "inputs", target_dir / "notebooks")
+    for directory in scaffold_dirs:
+        if directory.exists() and not directory.is_dir():
+            raise typer.BadParameter(f"Expected a directory at {directory}.", param_hint="DIR")
     example_document = _load("reader_workbench.workbench.inspection.protocols").protocol_example_document(descriptor)
     experiment_block = dict(example_document["experiment"])
     experiment_block["id"] = target_dir.name
     if title:
         experiment_block["title"] = title
     example_document["experiment"] = experiment_block
-    config_path.write_text(_load("yaml").safe_dump(example_document, sort_keys=False), encoding="utf-8")
+    config_text = _load("yaml").safe_dump(example_document, sort_keys=False)
+    try:
+        for directory in scaffold_dirs:
+            directory.mkdir(parents=True, exist_ok=True)
+        with config_path.open("w" if force else "x", encoding="utf-8") as handle:
+            handle.write(config_text)
+    except OSError as err:
+        raise typer.BadParameter(f"Could not scaffold {target_dir}: {err}", param_hint="DIR") from err
 
     summary = Table(box=box.ROUNDED, expand=True, show_header=False)
     summary.add_column("Field", style="accent", no_wrap=True)
