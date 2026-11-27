@@ -2,19 +2,21 @@
 doc_id: reader-preflight-run-verify
 surface: operator-guide
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-11-27
 summary: Canonical non-mutating preflight, execution, and provenance-verification loop for one experiment.
 ---
 
 # Preflight, run, verify
 
-Use this path when you need the shortest reliable route from inspection to
-execution for one experiment.
+Use a configured experiment with its input files in place. The commands below
+use the [sample plate](./demo.md). Set `exp` to your own experiment directory
+to run them on your files. In a source checkout, prefix `reader` with `uv run`.
 
 ## 1. Discover the experiment
 
 ```bash
-uv run reader ls --root experiments --details --readiness
+exp=./experiments/first_plate
+reader ls --root experiments --details --readiness
 ```
 
 Use `reader ls` to confirm the experiment exists, which protocol it uses, and
@@ -23,9 +25,9 @@ whether it is blocked, draft, runnable, or already has records.
 ## 2. Inspect the plan before execution
 
 ```bash
-uv run reader inspect <config|dir|index>
-uv run reader steps <config|dir|index>
-uv run reader explain <config|dir|index>
+reader inspect "$exp"
+reader steps "$exp"
+reader explain "$exp"
 ```
 
 Use `inspect` for the full experiment summary, `steps` for the pipeline chain,
@@ -34,11 +36,11 @@ and `explain` for the compiled runtime plan.
 ## 3. Run the cheapest preflight check that answers the question
 
 ```bash
-uv run reader validate <config|dir|index> --no-files
-uv run reader validate <config|dir|index>
-uv run reader run <config|dir|index> --dry-run
-uv run reader plot <config|dir|index> --list
-uv run reader export <config|dir|index> --list
+reader validate "$exp" --no-files
+reader validate "$exp"
+reader run "$exp" --dry-run
+reader plot "$exp" --list
+reader export "$exp" --list
 ```
 
 - Use `validate --no-files` for schema and wiring only.
@@ -47,27 +49,25 @@ uv run reader export <config|dir|index> --list
 - Use `plot --list` and `export --list` to confirm resolved outputs before
   generating them.
 
-## 4. Execute only the slice you need
+## 4. Run the pipeline and generate outputs
 
 ```bash
-uv run reader run <config|dir|index>
-uv run reader plot <config|dir|index>
-uv run reader export <config|dir|index>
-uv run reader notebook <config|dir|index> --mode none
-uv run reader notebook <config|dir|index> --mode run --headless
+reader run "$exp"
+reader plot "$exp"
+reader notebook "$exp" --mode none
 ```
 
-`run` materializes records. `plot` and `export` materialize their output
-surfaces after the experiment is ready. `notebook --mode none` scaffolds a
-review notebook without launching Marimo, and `--mode run --headless` prints a
-loopback URL for agent/browser review.
+These commands produce records, the sample plate's plots, and a notebook
+scaffold. If `reader export "$exp" --list` shows configured exports, use
+`reader export "$exp"` to write them. To launch the notebook separately, see
+the [notebook guide](./notebooks.md) for the Marimo environment and launch modes.
 
 ## 5. Verify outputs and provenance
 
 ```bash
-uv run reader records <config|dir|index>
-uv run reader verify <config|dir|index>
-uv run reader inspect <config|dir|index>
+reader records "$exp"
+reader verify "$exp"
+reader inspect "$exp"
 ```
 
 `records` is the catalog view. `verify` checks the current config, source files,
@@ -83,9 +83,8 @@ For a human review, also inspect:
 - generated plot files
 - generated export files
 
-The record catalog proves what was produced; the invocation ledger records each
-attempt and terminal result. Neither requires guessing from filesystem state or
-using `JOURNAL.md` as a machine log.
+The catalog identifies the generated records. The invocation ledger records each
+attempt and its outcome.
 
 ## Recovery loop
 

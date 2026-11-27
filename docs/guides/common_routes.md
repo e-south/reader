@@ -2,20 +2,26 @@
 doc_id: reader-common-routes
 surface: task-router
 owner: reader-maintainers
-last_verified: 2026-07-28
+last_verified: 2026-11-27
 summary: Short command routes for common Reader discovery, preflight, execution, output, and recovery tasks.
 ---
 
 # Common tasks
 
-Use this page when you know what you want to do and need the shortest command path.
+These commands use the installed CLI. In a source checkout, use `uv run reader`.
+For commands that take an experiment, set its path once. This example uses
+the [sample plate](./demo.md).
+
+```bash
+exp=./experiments/first_plate
+```
 
 ## List experiments
 
 ```bash
-uv run reader ls --root experiments
-uv run reader ls --root experiments --details
-uv run reader ls --root experiments --details --readiness
+reader ls --root experiments
+reader ls --root experiments --details
+reader ls --root experiments --details --readiness
 ```
 
 The first command lists discovered experiments. `--details` adds selected
@@ -31,9 +37,9 @@ verification; an empty or invalid catalog is not sufficient.
 ## Inspect one experiment
 
 ```bash
-uv run reader inspect <config|dir|index>
-uv run reader steps <config|dir|index>
-uv run reader explain <config|dir|index>
+reader inspect "$exp"
+reader steps "$exp"
+reader explain "$exp"
 ```
 
 Use `inspect` for the full summary, `steps` for the pipeline chain only, and `explain` for the compiled runtime plan.
@@ -41,10 +47,11 @@ Use `inspect` for the full summary, `steps` for the pipeline chain only, and `ex
 ## Discover protocols and scaffold a new experiment
 
 ```bash
-uv run reader protocols
-uv run reader protocols <protocol-id>
-uv run reader protocols <protocol-id> --example-config
-uv run reader init ./experiments/<new-experiment> --protocol <protocol-id>
+reader protocols
+protocol=plate_reader/single_reporter_screen
+reader protocols "$protocol"
+reader protocols "$protocol" --example-config
+reader init ./experiments/another_plate --protocol "$protocol"
 ```
 
 Use the protocol commands to see the public assay definition before you scaffold a new experiment.
@@ -52,9 +59,9 @@ Use the protocol commands to see the public assay definition before you scaffold
 ## Validate before execution
 
 ```bash
-uv run reader validate <config|dir|index>
-uv run reader validate <config|dir|index> --no-files
-uv run reader run <config|dir|index> --dry-run
+reader validate "$exp"
+reader validate "$exp" --no-files
+reader run "$exp" --dry-run
 ```
 
 `validate --no-files` is the cheapest preflight path when you only need schema and wiring checks. `run --dry-run` shows the execution slice without mutating outputs.
@@ -62,26 +69,25 @@ uv run reader run <config|dir|index> --dry-run
 ## Materialize outputs
 
 ```bash
-uv run reader run <config|dir|index>
-uv run reader plot <config|dir|index> --list
-uv run reader plot <config|dir|index>
-uv run reader export <config|dir|index> --list
-uv run reader export <config|dir|index>
-uv run reader records <config|dir|index>
-uv run reader verify <config|dir|index>
+reader run "$exp"
+reader plot "$exp" --list
+reader plot "$exp"
+reader export "$exp" --list
+reader records "$exp"
+reader verify "$exp"
 ```
 
-Run the pipeline first, then list or render plots and exports as needed.
-`reader records` inspects the catalog; `reader verify` proves the current
-evidence still matches its sources and files.
+The sample plate defines two plots. If your config also lists exports, run
+`reader export "$exp"` to write them. `reader records` lists the catalog
+entries, and `reader verify` checks their inputs and files.
 
 ## Use JSON for automation
 
 ```bash
-uv run reader ls --root experiments --details --readiness --format json
-uv run reader inspect <config|dir|index> --format json
-uv run reader validate <config|dir|index> --no-files --format json
-uv run reader run <config|dir|index> --dry-run --format json
+reader ls --root experiments --details --readiness --format json
+reader inspect "$exp" --format json
+reader validate "$exp" --no-files --format json
+reader run "$exp" --dry-run --format json
 ```
 
 Use JSON output when another tool needs stable machine-readable discovery, inspection, or preflight data.
@@ -92,4 +98,4 @@ Use JSON output when another tool needs stable machine-readable discovery, inspe
 - [Automation and JSON](./automation.md)
 - [CLI reference](../core/cli.md)
 - [Configuring `reader/v8`](../core/pipeline.md)
-- [End-to-end demo](./demo.md)
+- [Run a sample plate](./demo.md)
